@@ -36,6 +36,9 @@ If the user named a target, use it.
 - Benchmarks (gridcl-bench, from M3s): `--cores 36` so the node's CPU is not shared, and a
   longer `--time`. Copy the JSON results from `target/hpc/<target>/<job id>/` to `docs/perf/data/`
   only when the plan's task asks for it.
+- Benchmarks or timings on Locust: Locust has no scheduler and is shared with other users. Use
+  the result only if the summary's `node load:` line is `idle` before and after the run;
+  otherwise discard it and repeat the run later (ADR-0002).
 
 ## 4. Run
 
@@ -52,7 +55,7 @@ scripts/hpc/remote-test.sh <target> [options] -- <command>
 ## 5. Report
 
 Report the target, job id, commit (and whether the tree was dirty), the command, the result, and
-the first failure from the runner's summary. The full logs are in `target/hpc/<target>/<job id>/`;
+the first failure from the runner's summary. On Locust also report the `node load:` line. The full logs are in `target/hpc/<target>/<job id>/`;
 read them only as far as needed to locate a failure.
 
 ## 6. When it goes wrong

@@ -84,6 +84,8 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   changes, benchmarks, or when the user asks. Say why when you schedule them.
 - CPU benchmarks on Myriad request the whole node (`--cores 36`); never draw SIMD conclusions
   from a node shared with other jobs.
+- Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
+  from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).
 - At most two remote jobs at a time. Cancel jobs you no longer need; leave none queued at the
   end of a session.
 - Never put user ids, private host names, project codes or credentials in committed files; they
