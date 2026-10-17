@@ -87,24 +87,31 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 | Item | M3 Max | Myriad V100 | Myriad A100 | Locust |
 | --- | --- | --- | --- | --- |
 | SSH alias and scheduler kind | local | `myriad`, `sge` | `myriad`, `sge` | *(E0)* |
-| OS and architecture | macOS, arm64 *(E0: version)* | *(E0)* | *(E0)* | Linux, aarch64 *(E0: distribution)* |
-| Rust toolchain | *(E0)* | *(E0)* | *(E0)* | *(E0)* |
+| OS and architecture | macOS 27.0.1 (26A434), arm64 | *(E0)* | *(E0)* | Linux, aarch64 *(E0: distribution)* |
+| Rust toolchain | 1.95.0 (59807616e 2026-04-14), from `rust-toolchain.toml` | *(E0)* | *(E0)* | *(E0)* |
 | Module lines for jobs | – | *(E0)* | *(E0)* | *(E0)* |
 | CUDA toolkit and `CUDA_PATH` | – | 12.x *(E0)* | *(E0)* | *(E0)* |
 | Driver version and its CUDA version (`nvidia-smi`) | – | *(E0)* | *(E0)* | *(E0)* |
 | Compute capability (env-check) | – | 7.0 *(E0: confirm)* | 8.0 *(E0: confirm)* | 9.0 *(E0: confirm)* |
-| f64 and u64 support (env-check) | CPU: *(E0)*; Metal: no f64 *(E0: confirm)* | *(E0)* | *(E0)* | *(E0)* |
-| `max_page_size`, `max_bindings` | *(E0)* | *(E0)* | *(E0)* | *(E0)* |
-| CPU runtime: `load_width`, vector registers, hardware threads | *(E0)* | *(E0)* | *(E0)* | *(E0)* |
-| CPU model and SIMD extensions | Apple M3 Max, NEON; P- and E-cores *(E0)* | Xeon Gold 6140/6240, AVX-512 *(E0: confirm)* | *(E0)* | Grace (Neoverse V2), NEON and SVE2 *(E0: confirm)* |
-| MPI implementation and version | *(E0)* | *(E0)* | *(E0)* | *(E0)* |
+| f64 and u64 support (env-check) | CPU: f64 and u64; Metal: u64, no f64 (f64 checks reported unsupported); u32 atomic add on both | *(E0)* | *(E0)* | *(E0)* |
+| `max_page_size`, `max_bindings` | CPU: 2^36 B (64 GiB), 2^32 − 1; Metal: 2^32 − 4 B, 28 | *(E0)* | *(E0)* | *(E0)* |
+| CPU runtime: `load_width`, vector registers, hardware threads | 128 bits, 32, 16; plane size 1; IO-optimized sizes f32 16, f64 8 (Metal: 4, 2; plane size 32) | *(E0)* | *(E0)* | *(E0)* |
+| CPU model and SIMD extensions | Apple M3 Max, 12 P-cores and 4 E-cores; NEON (AdvSIMD with FP16, BF16, I8MM, DotProd), no SVE | Xeon Gold 6140/6240, AVX-512 *(E0: confirm)* | *(E0)* | Grace (Neoverse V2), NEON and SVE2 *(E0: confirm)* |
+| MPI implementation and version | Open MPI 5.0.10 (Homebrew); 4-rank allreduce passes | *(E0)* | *(E0)* | *(E0)* |
 | CUDA-aware MPI available | – | *(E0)* | *(E0)* | *(E0)* |
 | Internet access on compute nodes | – | *(E0)* | *(E0)* | *(E0)* |
-| Clean build time of env-check | *(E0)* | *(E0)* | *(E0)* | *(E0)* |
+| Clean build time of env-check | 89 s (`--release --features cpu,metal,mpi`) | *(E0)* | *(E0)* | *(E0)* |
 | Queue wait and run time (median of 3) | – | *(E0)* | *(E0)* | *(E0)* |
-| Gmsh, `vtk`, `meshio`, Claude Code versions | *(E0)* | – | – | – |
+| Gmsh, `vtk`, `meshio`, Claude Code versions | Gmsh 4.15.2-git (unpinned; M4 sets the pin); vtk 9.7.1 and meshio 5.3.5 in `.venv` (Python 3.14.7); Claude Code 2.1.295 | – | – | – |
 
 Re-run env-check on a target after its maintenance window or a module change, and update this table.
+
+### Notes on the M3 Max
+
+- `scripts/check-local-tools.sh` checks and prints the local tool versions.
+- env-check at 10^7 elements, release build, launch and read-back: CPU f32 add 38 ms at vector size 1 and 11 ms at 16, f64 add 34 ms at 1 and 15 ms at 8, u32 atomic histogram 170 ms; Metal f32 add 64 ms at 1 and 26 ms at 4, histogram 19 ms. Every check matches the host result bitwise.
+- On Metal (wgpu MSL), `identity.fingerprint` is `spirv_0_0`: CubeCL 0.11 names every wgpu fingerprint `spirv_{vendor}_{device}`, whatever the shader language.
+- Claude Code's Bash sandbox blocks Metal and `sysctl`: inside it, env-check finds no Metal device and records the CPU model and SIMD flags as unknown. Metal runs and the env-check host record need a command run outside the sandbox (`/sandbox` manages this).
 
 ## Change history
 
