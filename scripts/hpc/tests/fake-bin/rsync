@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Fake rsync for scripts/hpc/tests: drops the host part of host:path arguments and the
+# remote shell option, then runs the real rsync (FAKE_REAL_RSYNC, or the next rsync on PATH).
+set -u
+: "${FAKE_STATE:?fake rsync: FAKE_STATE is not set}"
+here=$(cd "$(dirname "$0")" && pwd)
+
+real=${FAKE_REAL_RSYNC:-}
+if [ -z "$real" ]; then
+    IFS=:
+    for dir in $PATH; do
+        if [ "$dir" != "$here" ] && [ -x "$dir/rsync" ]; then
+            real=$dir/rsync
+            break
+        fi
+    done
+    unset IFS
+fi
+[ -n "$real" ] || { echo "fake rsync: no real rsync on PATH" >&2; exit 127; }
+
+args=()
+while [ $# -gt 0 ]; do
+    case $1 in
+        -e | --rsh) shift ;;            # skip the option and, below, its value
+        --rsh=*) ;;
+        -*) args+=("$1") ;;
+        [A-Za-z0-9]*:*) args+=("${1#*:}") ;; # host:path -> path
+        *) args+=("$1") ;;
+    esac
+    shift
+done
+printf '%s\n' "${args[*]}" >>"$FAKE_STATE/rsync.log"
+exec "$real" "${args[@]}"

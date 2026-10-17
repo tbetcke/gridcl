@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Fake nvidia-smi of the compute nodes (scripts/hpc/tests): a V100 header, or the
+# compute capabilities for --query-gpu=compute_cap.
+case "$*" in
+    *compute_cap*)
+        echo "7.0"
+        echo "7.0"
+        ;;
+    *)
+        echo "+-----------------------------------------------------------------------------------------+"
+        echo "| NVIDIA-SMI 550.54.15              Driver Version: 550.54.15      CUDA Version: 12.4     |"
+        echo "|-----------------------------------------+------------------------+----------------------+"
+        echo "|   0  Tesla V100-PCIE-32GB           On  |   00000000:3B:00.0 Off |                    0 |"
+        echo "|   1  Tesla V100-PCIE-32GB           On  |   00000000:D8:00.0 Off |                    0 |"
+        echo "+-----------------------------------------------------------------------------------------+"
+        ;;
+esac

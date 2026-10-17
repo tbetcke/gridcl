@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Fake rustup of the remote nodes (scripts/hpc/tests): logs its arguments to
+# $FAKE_STATE/rustup.log and succeeds.
+set -u
+printf '%s\n' "$*" >>"${FAKE_STATE:?}/rustup.log"
+exit 0

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Fake ssh for scripts/hpc/tests: runs the remote command locally, in the fake remote
+# home, with fake-bin/remote (cargo, rustup, rustc, nvidia-smi) and the fake scheduler
+# first on PATH. FAKE_SSH_UNREACHABLE=1 simulates a closed connection.
+set -u
+: "${FAKE_STATE:?fake ssh: FAKE_STATE is not set}"
+here=$(cd "$(dirname "$0")" && pwd)
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        -[bcDEeFIiJLlmOoPpQRSWw]) shift 2 ;; # options that take an argument
+        --) shift; break ;;
+        -*) shift ;;
+        *) break ;;
+    esac
+done
+host=${1:?fake ssh: no host}
+shift
+printf '%s %s\n' "$host" "$*" >>"$FAKE_STATE/ssh.log"
+
+if [ -n "${FAKE_SSH_UNREACHABLE:-}" ]; then
+    echo "ssh: connect to host $host port 22: Operation timed out" >&2
+    exit 255
+fi
+
+mkdir -p "$FAKE_STATE/remote-home"
+cd "$FAKE_STATE/remote-home" || exit 255
+export HOME="$FAKE_STATE/remote-home" FAKE_SSH_HOST="$host"
+export PATH="$here/remote:$here:$PATH"
+if [ $# -eq 0 ]; then
+    exec bash -s
+fi
+# Like sshd: the words are joined with spaces and run by the remote shell.
+exec bash -c "$*"

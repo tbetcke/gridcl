@@ -25,3 +25,7 @@ scripts/hpc/targets.env
 
 # Python environment for the vtk/meshio checks (docs/plans/E0.md)
 .venv/
+
+# Remote-test runner: copied job results (local) and job results in remote trees
+target/hpc/
+results/

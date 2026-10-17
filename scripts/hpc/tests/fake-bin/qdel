@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Fake SGE qdel for scripts/hpc/tests: deletes the jobs from $FAKE_STATE/sge/jobs/,
+# stops a running one, and logs every deleted id to $FAKE_STATE/sge/qdel.log.
+set -u
+: "${FAKE_STATE:?fake qdel: FAKE_STATE is not set}"
+sge=$FAKE_STATE/sge
+mkdir -p "$sge/jobs"
+
+status=0
+for id in "$@"; do
+    case $id in -*) continue ;; esac
+    if [ -d "$sge/jobs/$id" ]; then
+        pid=$(cat "$sge/jobs/$id/pid" 2>/dev/null)
+        if [ -n "$pid" ]; then
+            pkill -TERM -P "$pid" 2>/dev/null
+            kill -TERM "$pid" 2>/dev/null
+        fi
+        rm -rf "${sge:?}/jobs/$id"
+        echo "$id" >>"$sge/qdel.log"
+        echo "${USER:-user} has deleted job $id"
+    else
+        echo "denied: job \"$id\" does not exist" >&2
+        status=1
+    fi
+done
+exit "$status"

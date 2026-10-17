@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Fake rustc of the remote nodes (scripts/hpc/tests).
+echo "rustc 1.95.0 (fake)"
