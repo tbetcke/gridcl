@@ -25,6 +25,9 @@
 #   - the tree of branch B is <BASE>/<B with '/' replaced by '_'>, results of job <id>
 #     are in <tree>/results/<id>/ and are copied to target/hpc/<target>/<id>/ locally;
 #   - a direct job's id is <timestamp>-<pid>, and its remote pid file is named <id>.pid;
+#   - a direct job writes node-load-before.txt and node-load-after.txt, each ending in a
+#     line node_load=idle or node_load=busy: <reasons>, and its summary has a line
+#     "node load: before ...; after ..." (ADR-0002);
 #   - status.sh prints nothing when no job is queued or running.
 set -u
 
@@ -147,6 +150,10 @@ teardown() {
     for pid in $(cat "$FAKE_STATE"/sge/jobs/*/pid 2>/dev/null); do
         pkill -TERM -P "$pid" 2>/dev/null
         kill -TERM "$pid" 2>/dev/null
+    done
+    # shellcheck disable=SC2013,SC2046 # one pid per file
+    for pid in $(cat $(pid_files) /dev/null 2>/dev/null); do
+        kill -TERM "$pid" 2>/dev/null # timeout passes it on to the direct job
     done
     if [ -n "${KEEP:-}" ]; then
         echo "    kept $T"
@@ -341,6 +348,7 @@ case_summary_header_and_length() {
     expect_grep "$T/stdout" '^queue wait: [0-9]' "queue wait"
     expect_grep "$T/stdout" '^run time: [0-9]' "run time"
     expect_grep "$T/stdout" '^first failure: ' "first failure"
+    expect_no_grep "$T/stdout" '^node load:' "no node-load line on SGE targets"
     local n key prev=0
     for key in 'target:' 'job id:' 'commit:' 'dirty:' 'command:' 'exit status:' \
         'queue wait:' 'run time:' 'first failure:'; do
@@ -497,6 +505,11 @@ case_direct_remote_timeout() {
     expect_grep "$T/stdout" '^target: locust$' "summary target"
     grep -rq direct-ok "$LOCAL/target/hpc/locust/$id" 2>/dev/null || fail "direct results not copied"
     expect_grep "$FAKE_STATE/ssh.log" '^fake-locust .*timeout' "remote side runs timeout"
+    local dir=$LOCAL/target/hpc/locust/$id
+    expect_grep "$dir/node-load-before.txt" '^node_load=(idle|busy)' "node-load snapshot before the command"
+    expect_grep "$dir/node-load-after.txt" '^node_load=(idle|busy)' "node-load snapshot after the command"
+    expect_grep "$T/stdout" '^node load: before (idle|busy).*; after (idle|busy)' "node-load line in the summary"
+    [ "$(wc -l <"$T/stdout")" -le 40 ] || fail "direct summary longer than 40 lines"
 
     rt locust -- exit 5
     expect_status 5 "direct exit status"

@@ -68,17 +68,44 @@ config_value() { # config_value <key>: the value of a settings key, empty when u
     printf '%s' "${!name:-}"
 }
 
+# config_source: reads the settings file into the shell; sets CFG_FILE.
+config_source() {
+    CFG_FILE=${GRIDCL_TARGETS_ENV:-$HPC_DIR/targets.env}
+    if [ ! -f "$CFG_FILE" ]; then
+        hpc_die 125 "no settings file $CFG_FILE: copy scripts/hpc/targets.example.env to" \
+            "scripts/hpc/targets.env and fill in the values (docs/dev-environment.md)"
+    fi
+    # shellcheck source=/dev/null # personal settings, not in the repository
+    . "$CFG_FILE" || hpc_die 125 "cannot read the settings file $CFG_FILE"
+}
+
+config_has_target() { # config_has_target <target>: the settings file sets its HOST
+    config_source
+    [ -n "$(config_value "$(hpc_prefix "$1")_HOST")" ]
+}
+
+# config_remotes <scheduler>: one line per distinct host among the configured targets of a
+# scheduler kind: "<host> <target>[,<target>...] <base>...". Exits 125 on a settings error.
+config_remotes() {
+    local t
+    for t in $HPC_TARGETS; do
+        config_has_target "$t" || continue
+        config_load "$t"
+        [ "$CFG_SCHEDULER" = "$1" ] || continue
+        echo "$CFG_HOST $t $CFG_BASE"
+    done | awk '
+        !($1 in order) { order[$1] = ++n; host[n] = $1 }
+        { targets[$1] = targets[$1] (targets[$1] == "" ? "" : ",") $2 }
+        !(($1 SUBSEP $3) in seen) { seen[$1, $3] = 1; bases[$1] = bases[$1] " " $3 }
+        END { for (i = 1; i <= n; i++) print host[i], targets[host[i]] bases[host[i]] }'
+}
+
 # config_load <target>: reads the settings file and sets CFG_HOST, CFG_SCHEDULER, CFG_BASE,
 # CFG_LOGIN_MODULES, CFG_MODULES, CFG_CUDA_PATH, CFG_CORES_REQUEST and CFG_MEM_REQUEST.
 config_load() {
     local target=$1 file prefix key missing=""
-    file=${GRIDCL_TARGETS_ENV:-$HPC_DIR/targets.env}
-    if [ ! -f "$file" ]; then
-        hpc_die 125 "no settings file $file: copy scripts/hpc/targets.example.env to" \
-            "scripts/hpc/targets.env and fill in the values (docs/dev-environment.md)"
-    fi
-    # shellcheck source=/dev/null # personal settings, not in the repository
-    . "$file" || hpc_die 125 "cannot read the settings file $file"
+    config_source
+    file=$CFG_FILE
     prefix=$(hpc_prefix "$target")
     for key in HOST SCHEDULER BASE; do
         [ -n "$(config_value "${prefix}_$key")" ] || missing="$missing ${prefix}_$key"

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Fake nvidia-smi of the compute nodes (scripts/hpc/tests): a V100 header, or the
-# compute capabilities for --query-gpu=compute_cap.
+# Fake nvidia-smi of the compute nodes (scripts/hpc/tests): a V100 header, the compute
+# capabilities for --query-gpu=compute_cap, idle GPUs for --query-gpu=index,utilization.gpu,...
+# and no processes for --query-compute-apps.
 case "$*" in
     *compute_cap*)
         echo "7.0"
         echo "7.0"
+        ;;
+    *query-compute-apps*) ;;
+    *utilization.gpu*)
+        echo "0, 0, 0, 32768"
+        echo "1, 0, 0, 32768"
         ;;
     *)
         echo "+-----------------------------------------------------------------------------------------+"

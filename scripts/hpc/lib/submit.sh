@@ -1,5 +1,6 @@
 # shellcheck shell=bash disable=SC2034,SC2153 # globals are shared between remote-test.sh and the libs
-# Fetch, job script, submission and waiting (scripts/hpc, steps 3-5), SGE kind.
+# Fetch, job script, submission and waiting (scripts/hpc, steps 3-5). Submission is SGE's
+# here; direct targets start their job with lib/direct.sh and share the rest.
 
 # submit_manifests <command>: the Cargo manifests to fetch for, one per line: every
 # --manifest-path of the command, or "." (the root Cargo.toml) when it names none and the
@@ -54,15 +55,15 @@ submit_build_command() {
 }
 
 # submit_render: the job script of this submission on stdout: jobs/<target>.sh with its
-# placeholders replaced and the requests of targets.env added, the job settings, and
+# placeholders replaced and the requests of targets.env added (SGE), the job settings, and
 # jobs/common.sh.
 submit_render() {
     local template=$HPC_DIR/jobs/$TARGET.sh requests="" rendered
     [ -f "$template" ] || hpc_die 125 "no job script $template"
-    if [ -n "$JOB_CORES" ]; then
+    if [ -n "$JOB_CORES" ] && [ "$CFG_SCHEDULER" = sge ]; then
         requests="#\$ $(hpc_replace "$CFG_CORES_REQUEST" '{cores}' "$JOB_CORES")"
     fi
-    if [ -n "$CFG_MEM_REQUEST" ]; then
+    if [ -n "$CFG_MEM_REQUEST" ] && [ "$CFG_SCHEDULER" = sge ]; then
         requests="${requests:+$requests$'\n'}#\$ $CFG_MEM_REQUEST"
     fi
     rendered=$(
@@ -95,6 +96,7 @@ submit_render() {
     echo
     echo "# --- job settings, rendered by scripts/hpc/remote-test.sh ---"
     printf 'GRIDCL_HPC_TARGET=%q\n' "$TARGET"
+    printf 'GRIDCL_HPC_SCHEDULER=%q\n' "$CFG_SCHEDULER"
     printf 'GRIDCL_HPC_TREE=%q\n' "$TREE"
     printf 'GRIDCL_HPC_BRANCH=%q\n' "$GIT_BRANCH"
     printf 'GRIDCL_HPC_COMMIT=%q\n' "$GIT_COMMIT"
@@ -120,7 +122,7 @@ submit_fetch() {
     manifests=$(submit_manifests "$CMD")
     hpc_msg "fetching on $CFG_HOST (log: $TREE/.gridcl-hpc/fetch-$TARGET.log)"
     # shellcheck disable=SC2086 # one word per manifest
-    hpc_remote r_fetch "$TREE" "$TARGET" "$CFG_LOGIN_MODULES" $manifests
+    hpc_remote r_fetch "$CFG_SCHEDULER" "$TREE" "$TARGET" "$CFG_LOGIN_MODULES" $manifests
     hpc_remote_check $? "the fetch step"
 }
 
@@ -141,11 +143,16 @@ submit_job() {
 }
 
 # submit_wait: polls until the job has ended or --max-wait has passed since submission;
-# sets JOB_STATE to done (exit status written), gone (ended without one) or timeout.
+# sets JOB_STATE to done (exit status written), gone (ended without one), cancelled
+# (cancel.sh), walltime (a direct job stopped at --time) or timeout, and JOB_ENDED=yes when
+# the job is known to have ended. On direct targets `timeout` on the node enforces
+# --max-wait; the runner's own deadline follows 30 s later as a backstop.
 submit_wait() {
     local deadline=$((JOB_SUBMITTED_LOCAL + MAX_WAIT_SECONDS)) state rc last="" gone=0 fails=0
+    JOB_ENDED=""
+    [ "$CFG_SCHEDULER" != direct ] || deadline=$((deadline + 30))
     while :; do
-        state=$(hpc_remote r_poll "$TREE" "$JOB_ID")
+        state=$(hpc_remote r_poll "$TREE" "$JOB_ID" "$CFG_SCHEDULER")
         rc=$?
         if [ "$rc" != 0 ]; then
             fails=$((fails + 1))
@@ -157,14 +164,26 @@ submit_wait() {
         else
             fails=0
             case $state in
-                done)
-                    JOB_STATE="done"
+                done | cancelled)
+                    JOB_STATE=$state
+                    JOB_ENDED=yes
+                    return 0
+                    ;;
+                limit)
+                    # timeout on the node stopped the job at the smaller of --time and --max-wait.
+                    if [ "$TIME_SECONDS" -lt "$MAX_WAIT_SECONDS" ]; then
+                        JOB_STATE=walltime
+                    else
+                        JOB_STATE=timeout
+                    fi
+                    JOB_ENDED=yes
                     return 0
                     ;;
                 gone)
                     gone=$((gone + 1))
                     if [ "$gone" -ge 3 ]; then
                         JOB_STATE=gone
+                        JOB_ENDED=yes
                         return 0
                     fi
                     ;;
@@ -186,7 +205,10 @@ submit_wait() {
 
 # submit_delete: deletes the job (after --max-wait or on a signal).
 submit_delete() {
-    hpc_remote r_delete "$TREE" "$JOB_ID" >/dev/null
+    case $CFG_SCHEDULER in
+        sge) hpc_remote r_delete "$TREE" "$JOB_ID" >/dev/null ;;
+        direct) hpc_remote r_direct_stop "$TREE" "$JOB_ID" >/dev/null ;;
+    esac
 }
 
 # --- remote side ------------------------------------------------------------------
@@ -223,9 +245,11 @@ r_fetch_steps() { # r_fetch_steps <tree> <target> <login modules> [manifest...]
     done
 }
 
-r_fetch() { # r_fetch <tree> <target> <login modules> [manifest...]: log in .gridcl-hpc/
-    local log=$1/.gridcl-hpc/fetch-$2.log rc
-    r_env sge
+r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> [manifest...]: log in .gridcl-hpc/
+    local log rc
+    r_env "$1"
+    shift
+    log=$1/.gridcl-hpc/fetch-$2.log
     mkdir -p "$1/.gridcl-hpc" || return 1
     (
         eval "$3"
@@ -265,15 +289,21 @@ r_submit() { # r_submit <tree> <job script> <job lines> <command line>: prints j
     echo "submitted=$now"
 }
 
-r_poll() { # r_poll <tree> <job id>: prints queued, running, done or gone
+# r_poll <tree> <job id> <scheduler>: prints queued, running, done, cancelled (cancel.sh),
+# limit (a direct job stopped by timeout on the node) or gone (ended without an exit status)
+r_poll() {
     local results=$1/results/$2
-    r_env sge
+    r_env "$3"
     if [ -f "$results/exit_status" ]; then
         echo "done"
-    elif qstat -j "$2" >/dev/null 2>&1; then
-        if [ -f "$results/times.env" ]; then echo running; else echo queued; fi
+    elif r_job_alive "$1" "$2" "$3"; then
+        if [ -f "$results/times.env" ] || [ "$3" = direct ]; then echo running; else echo queued; fi
     elif [ -f "$results/exit_status" ]; then
         echo "done"
+    elif [ -f "$results/cancelled" ]; then
+        echo cancelled
+    elif [ "$3" = direct ] && grep -Eqx '124|137' "$results/direct_status" 2>/dev/null; then
+        echo limit
     else
         echo gone
     fi
@@ -282,4 +312,27 @@ r_poll() { # r_poll <tree> <job id>: prints queued, running, done or gone
 r_delete() { # r_delete <tree> <job id>
     r_env sge
     qdel "$2" </dev/null
+}
+
+r_status_sge() { # r_status_sge: the user's SGE jobs (qstat; nothing when there are none)
+    r_env sge
+    qstat -u "${USER:-$(id -un)}" </dev/null
+}
+
+# r_cancel_sge <job id> <marker> <base>...: writes the marker to results/<id>/cancelled of the
+# tree below the bases that submitted the job (so its runner reports the cancellation), then
+# deletes the job. Status 0 deleted, 1 qdel failed, 4 no such job.
+r_cancel_sge() {
+    local id=$1 marker=$2 b f tree
+    shift 2
+    r_env sge
+    qstat -j "$id" >/dev/null 2>&1 || return 4
+    for b in "$@"; do
+        for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
+            [ -f "$f" ] || continue
+            tree=${f%/.gridcl-hpc/*}
+            mkdir -p "$tree/results/$id" && echo "$marker" >"$tree/results/$id/cancelled"
+        done
+    done
+    qdel "$id" </dev/null >/dev/null
 }

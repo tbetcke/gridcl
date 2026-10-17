@@ -4,8 +4,9 @@
 # A job writes <tree>/results/<job id>/ (see jobs/common.sh); report_collect copies it to
 # target/hpc/<target>/<job id>/ and report_summary prints at most 40 lines on stdout:
 # the header lines target, job id, commit, dirty, command, exit status, queue wait,
-# run time, first failure, then node and results, then an excerpt of output.log that
-# starts at the first failure.
+# run time, first failure, then node and results, on direct targets the node load before
+# and after the command (ADR-0002), then an excerpt of output.log that starts at the first
+# failure.
 
 # Lines that count as a failure in output.log; the first one is the "first failure".
 REPORT_FAILURE_RE='(^|[^A-Za-z_])(error(\[E[0-9]+\])?:|ERROR([^A-Za-z_]|$)|FAILED|panicked at|CUDA_ERROR_[A-Z_]+|[Ss]egmentation fault|command not found|Killed$)'
@@ -42,6 +43,12 @@ report_one_line() { # report_one_line <text>: one summary line of at most 300 ch
     printf '%s' "$1" | tr '\n\t' '  ' | cut -c 1-300
 }
 
+report_node_load() { # report_node_load <file>: idle, "busy: <reasons>" or "not recorded"
+    local v
+    v=$(sed -n 's/^node_load=//p' "$1" 2>/dev/null | tail -n 1)
+    echo "${v:-not recorded}"
+}
+
 # report_summary <state>: prints the summary; sets REPORT_STATUS, the runner's exit status.
 report_summary() {
     local state=$1 log times status_line failure="" fline="" queue run start end bstart bend rstart
@@ -75,9 +82,23 @@ report_summary() {
                 *) status_line=$REPORT_STATUS ;;
             esac
             ;;
+        cancelled)
+            REPORT_STATUS=125
+            status_line="none (job $JOB_ID cancelled with scripts/hpc/cancel.sh)"
+            failure="job cancelled with scripts/hpc/cancel.sh"
+            ;;
+        walltime)
+            REPORT_STATUS=125
+            status_line="none (stopped on the node at the --time limit $OPT_TIME)"
+            failure="--time $OPT_TIME exceeded"
+            ;;
         *)
             REPORT_STATUS=125
-            status_line="none (the job ended without writing one: deleted, or killed by the scheduler; see qacct -j $JOB_ID)"
+            if [ "$CFG_SCHEDULER" = direct ]; then
+                status_line="none (the job ended without writing one; see direct.log in the results)"
+            else
+                status_line="none (the job ended without writing one: deleted, or killed by the scheduler; see qacct -j $JOB_ID)"
+            fi
             failure="job ended without an exit status"
             ;;
     esac
@@ -127,6 +148,9 @@ report_summary() {
     else
         echo "node: ${node:-none}; results: none"
     fi
+    if [ "$CFG_SCHEDULER" = direct ]; then
+        echo "node load: $(report_one_line "before $(report_node_load "$LOCAL_RESULTS/node-load-before.txt"); after $(report_node_load "$LOCAL_RESULTS/node-load-after.txt")")"
+    fi
 
     [ -s "$log" ] || return 0
     total=$(wc -l <"$log" | tr -d ' ')
@@ -148,11 +172,12 @@ report_summary() {
 
 # --- remote side ------------------------------------------------------------------
 
-r_collect() { # r_collect <tree> <job id>: moves the scheduler log in, drops the job file
+r_collect() { # r_collect <tree> <job id>: moves the scheduler log in, drops the job's state
     local tree=$1 id=$2
     if [ -f "$tree/results/sge-$id.log" ]; then
         mkdir -p "$tree/results/$id" && mv -f "$tree/results/sge-$id.log" "$tree/results/$id/sge.log"
     fi
     rm -f "$tree/.gridcl-hpc/jobs/$id"
+    [ -f "$tree/.gridcl-hpc/run/$id.pid" ] || rm -f "$tree/.gridcl-hpc/run/$id.wrap"
     if [ -d "$tree/results/$id" ]; then echo results=yes; else echo results=no; fi
 }
