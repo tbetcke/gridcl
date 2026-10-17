@@ -173,24 +173,178 @@ pub struct CudaInfo {
 impl Report {
     /// Sets `passed` from the devices, the MPI and CUDA records and `errors`.
     pub fn finish(&mut self) {
-        todo!()
+        let devices = self.devices.iter().all(|d| d.passed);
+        let mpi = self.mpi.as_ref().is_none_or(|m| m.allreduce_passed);
+        let cuda = self.cuda.as_ref().is_none_or(|c| c.passed);
+        self.passed = devices && mpi && cuda && self.errors.is_empty();
     }
 
     /// Pretty-printed JSON.
     pub fn to_json(&self) -> String {
-        todo!()
+        // The report holds only strings, numbers, booleans, options and vectors, which
+        // serde_json always serialises; a non-finite `millis` becomes `null`.
+        serde_json::to_string_pretty(self).expect("a report always serialises to JSON")
     }
 
     /// Parses a report written by [`Report::to_json`].
     pub fn from_json(text: &str) -> Result<Report, serde_json::Error> {
-        let _ = text;
-        todo!()
+        serde_json::from_str(text)
     }
 }
 
 impl DeviceReport {
     /// Sets `passed` from the checks.
     pub fn finish(&mut self) {
-        todo!()
+        self.passed = self.checks.iter().all(|c| c.status != CheckStatus::Fail);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(status: CheckStatus) -> KernelCheck {
+        KernelCheck {
+            kernel: "elementwise_add".to_string(),
+            precision: "f32".to_string(),
+            vector_size: 4,
+            elements: 4096,
+            status,
+            millis: Some(1.234),
+            detail: None,
+        }
+    }
+
+    fn device(statuses: &[CheckStatus]) -> DeviceReport {
+        let mut device = DeviceReport {
+            runtime: "metal".to_string(),
+            index: 0,
+            visible_devices: 1,
+            name: "Apple M3 Max".to_string(),
+            fingerprint: "msl".to_string(),
+            supports_f64: false,
+            supports_u64: true,
+            atomic_u32_add: true,
+            max_page_size: 1 << 32,
+            max_bindings: 28,
+            max_cube_count: [65535; 3],
+            plane_size_min: 32,
+            plane_size_max: 32,
+            load_width: 128,
+            vector_register_count: None,
+            max_units_per_cube: 1024,
+            max_cube_dim: [1024; 3],
+            io_vector_sizes_f32: vec![4, 2, 1],
+            io_vector_sizes_f64: vec![2, 1],
+            checks: statuses.iter().map(|&s| check(s)).collect(),
+            passed: false,
+        };
+        device.finish();
+        device
+    }
+
+    fn report(devices: Vec<DeviceReport>) -> Report {
+        let mut report = Report {
+            schema_version: SCHEMA_VERSION,
+            tool_version: "0.1.0".to_string(),
+            host: HostInfo {
+                os: "macos".to_string(),
+                os_version: "27.0".to_string(),
+                arch: "aarch64".to_string(),
+                cpu_model: "Apple M3 Max".to_string(),
+                hardware_threads: 16,
+                performance_cores: Some(12),
+                efficiency_cores: Some(4),
+                simd_flags: vec!["neon".to_string()],
+                rustc_version: "rustc 1.95.0".to_string(),
+            },
+            devices,
+            mpi: None,
+            cuda: None,
+            errors: Vec::new(),
+            passed: false,
+        };
+        report.finish();
+        report
+    }
+
+    #[test]
+    fn device_passes_unless_a_check_fails() {
+        assert!(device(&[CheckStatus::Pass, CheckStatus::Unsupported]).passed);
+        assert!(device(&[]).passed);
+        assert!(!device(&[CheckStatus::Pass, CheckStatus::Fail]).passed);
+    }
+
+    #[test]
+    fn report_passes_iff_everything_passed() {
+        assert!(report(vec![device(&[CheckStatus::Pass])]).passed);
+        assert!(
+            !report(vec![
+                device(&[CheckStatus::Pass]),
+                device(&[CheckStatus::Fail])
+            ])
+            .passed
+        );
+
+        let mut with_error = report(vec![device(&[CheckStatus::Pass])]);
+        with_error.errors.push("cuda: no device".to_string());
+        with_error.finish();
+        assert!(!with_error.passed);
+
+        let mut with_mpi = report(Vec::new());
+        with_mpi.mpi = Some(MpiInfo {
+            rank: 0,
+            size: 2,
+            library_version: "Open MPI v5.0.8".to_string(),
+            implementation: "open-mpi".to_string(),
+            allreduce_result: 0,
+            allreduce_expected: 1,
+            allreduce_passed: false,
+            device_index: Some(0),
+            cuda_aware: CudaAware::Unknown,
+            cuda_aware_method: "ompi_info --parsable --all".to_string(),
+        });
+        with_mpi.finish();
+        assert!(!with_mpi.passed);
+    }
+
+    #[test]
+    fn json_round_trip_and_lowercase_enums() {
+        let mut original = report(vec![device(&[
+            CheckStatus::Pass,
+            CheckStatus::Unsupported,
+            CheckStatus::Fail,
+        ])]);
+        original.cuda = Some(CudaInfo {
+            compiler: "llvm".to_string(),
+            compute_capability: vec!["7.0".to_string()],
+            nvidia_smi_compute_capability: vec!["7.0".to_string()],
+            cuda_path: None,
+            toolkit_version: Some("12.2.140".to_string()),
+            toolkit_source: Some("version.json".to_string()),
+            driver_version: Some("550.54.15".to_string()),
+            driver_cuda_version: Some("12.4".to_string()),
+            toolkit_not_newer_than_driver: Some(true),
+            expect_sm: Some(70),
+            expect_cuda_major: None,
+            problems: Vec::new(),
+            passed: true,
+        });
+        original.finish();
+        let text = original.to_json();
+        assert_eq!(Report::from_json(&text).expect("parses"), original);
+
+        let value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+        let checks = &value["devices"][0]["checks"];
+        assert_eq!(checks[0]["status"], "pass");
+        assert_eq!(checks[1]["status"], "unsupported");
+        assert_eq!(checks[2]["status"], "fail");
+        assert_eq!(value["mpi"], serde_json::Value::Null);
+        assert_eq!(value["passed"], false);
+        assert_eq!(
+            serde_json::to_string(&CudaAware::Yes).expect("serialises"),
+            "\"yes\""
+        );
+        assert!(Report::from_json("{\"schema_version\": 1}").is_err());
     }
 }
