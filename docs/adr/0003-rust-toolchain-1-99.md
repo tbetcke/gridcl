@@ -1,6 +1,6 @@
 # ADR-0003: Pin the Rust toolchain at 1.99 instead of 1.95
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-17
 - **Raised in:** E0 T6 (maintainer's request)
 - **Design sections affected:** "Implementation roadmap / E0 Development environment" (scope); "M0 Workspace and CI" (scope); "Risks and mitigations" (the Rust MSRV row); Listing H1 (CLAUDE.md, toolchain line)
@@ -62,4 +62,4 @@ Conditions before E0 continues on 1.99:
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-17 (option 2), with the conditions under "Proposed decision".
