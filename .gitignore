@@ -22,3 +22,6 @@ scripts/hpc/targets.env
 
 # macOS
 .DS_Store
+
+# Python environment for the vtk/meshio checks (docs/plans/E0.md)
+.venv/
