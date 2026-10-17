@@ -1,6 +1,6 @@
 # ADR-0002: Node-load checks on Locust, an open node without a scheduler
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-17
 - **Raised in:** E0 T4 (maintainer's note before T4 started)
 - **Design sections affected:** "Vectorization and CPU execution / Benchmarks" (Conditions); "Development environment and test targets" (remote-test runner, steps 4 and 6; the Locust paragraph); the CLAUDE.md listing of test-target rules
@@ -42,4 +42,4 @@ Option 2. It closes the gap with the least change: the runner records the eviden
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-17: option 2, with the idle thresholds as proposed.
