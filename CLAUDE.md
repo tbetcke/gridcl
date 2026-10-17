@@ -64,7 +64,7 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
 - Use the test-runner subagent for full-suite, multi-backend and MPI runs, so logs stay out of
   the main context. Use the design-reviewer subagent before a plan is approved and before a
   milestone PR.
-- Never push, force-push, rewrite history or merge into main; the maintainer does that.
+- Claude may push branches and merge into main. Never force-push or rewrite history.
 
 ## Test targets
 

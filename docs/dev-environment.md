@@ -20,7 +20,7 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
 
 1. **Accounts.**
     - **Myriad:** every UCL Research Computing account includes Myriad. Apply through the Research Computing sign-up process if you do not have one.
-    - **Locust:** one of UCL ARC's experimental "Project Contender" systems. Request access from ARC (James Legg, j.legg@ucl.ac.uk) with a short statement of use, for example "portability and performance testing of a GPU mesh library on Grace Hopper". ARC says these systems are not meant for large production runs.
+    - **Locust:** one of UCL ARC's experimental "Project Contender" systems. Request access from ARC (James Legg) with a short statement of use, for example "portability and performance testing of a GPU mesh library on Grace Hopper". ARC says these systems are not meant for large production runs.
 
 2. **SSH keys.** Create a key on the M3 Max if you have none (`ssh-keygen -t ed25519`) and install it on Myriad (`ssh-copy-id myriad`) and on Locust. Off campus, the UCL SSH gateway accepts keys only.
 
