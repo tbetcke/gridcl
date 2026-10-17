@@ -29,6 +29,7 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git merge --no-ff *)",
+      "Bash(git push *)",
       "Bash(git worktree list)",
       "Bash(scripts/mpi-test.sh *)",
       "Bash(cargo run --manifest-path tools/env-check/Cargo.toml *)",
@@ -41,7 +42,14 @@
       "Bash(cargo bench *)"
     ],
     "deny": [
-      "Bash(git push *)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * +*)",
+      "Bash(git push *--mirror*)",
+      "Bash(git push *--delete*)",
+      "Bash(git push * -d *)",
+      "Bash(git push * :*)",
       "Bash(git reset --hard *)",
       "Bash(git rebase *)",
       "Bash(cargo publish *)"
