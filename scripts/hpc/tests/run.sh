@@ -14,7 +14,7 @@
 #   targets.env   personal settings, passed to the runner through GRIDCL_TARGETS_ENV
 # fake-bin/ stands in for ssh (runs the remote command locally), rsync (drops the host
 # part), qsub, qstat and qdel; fake-bin/remote/ holds the commands of the remote nodes
-# (cargo, rustup, rustc, nvidia-smi), which log to state/. GRIDCL_HPC_POLL sets the
+# (cargo, rustup, rustc, nvidia-smi, curl), which log to state/. GRIDCL_HPC_POLL sets the
 # runner's polling interval in seconds.
 #
 # Conventions the cases rely on (docs/design.md, "Development environment and test

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Fake curl of the compute nodes (scripts/hpc/tests): logs its arguments to
+# $FAKE_STATE/curl.log and fails like a node without internet access, so the job
+# prologue's internet check never leaves the machine.
+printf '%s\n' "$*" >>"${FAKE_STATE:?}/curl.log"
+echo "curl: (7) Failed to connect (fake compute node without internet access)" >&2
+exit 7
