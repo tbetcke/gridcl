@@ -1495,7 +1495,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Scope:**
 
 - the targets of "Development environment and test targets": the M3 Max, the Myriad V100 and A100 nodes, and Locust;
-- `rust-toolchain.toml` with Rust 1.95 at the repository root, and a `.gitignore` that covers build output, `target/hpc/` and `scripts/hpc/targets.env`;
+- `rust-toolchain.toml` with Rust 1.99 at the repository root, and a `.gitignore` that covers build output, `target/hpc/` and `scripts/hpc/targets.env`;
 - `tools/env-check/`, a standalone crate outside the future workspace. For each runtime compiled in (`cpu`, `metal`, `cuda`) it:
     - opens the device and records its name and properties (f64 and u64 support, `max_page_size`, `max_bindings`, `max_cube_count`, plane sizes, `load_width`, `vector_register_count`, `max_units_per_cube`, and `io_optimized_vector_sizes` for f32 and f64);
     - runs an element-wise add over 10^7 elements in f32 and, where supported, f64, at vector size 1 and at the widest size the device offers, with `calculate_cube_count_elemwise`;
@@ -1527,7 +1527,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M0 Workspace and CI
 
-**Scope:** the workspace of "Workspace layout" as skeleton crates; `rust-toolchain.toml` with Rust 1.95; `cubecl = "=0.11.0"` in `[workspace.dependencies]`; gridcl-testing with `test_client()`; the gridcl-mpi-tests skeleton; the hosted CI jobs cpu, mpi-mpich, mpi-openmpi and vulkan, plus skeletons for the conformance and ptscotch jobs. gridcl-testing selects the device from `GRIDCL_TEST_DEVICE` both locally and inside `scripts/hpc` jobs.
+**Scope:** the workspace of "Workspace layout" as skeleton crates; `rust-toolchain.toml` with Rust 1.99; `cubecl = "=0.11.0"` in `[workspace.dependencies]`; gridcl-testing with `test_client()`; the gridcl-mpi-tests skeleton; the hosted CI jobs cpu, mpi-mpich, mpi-openmpi and vulkan, plus skeletons for the conformance and ptscotch jobs. gridcl-testing selects the device from `GRIDCL_TEST_DEVICE` both locally and inside `scripts/hpc` jobs.
 
 **Acceptance:**
 
@@ -1740,7 +1740,7 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Host-staged transport stays the default. GPU-aware path behind a feature, with an integration test on a CUDA-aware MPI runner. Keep `CudaAllocator::Sync`. Re-check on every CubeCL upgrade. |
 | MPI flavour differences: `MPI_Comm` is a pointer in Open MPI and an integer in MPICH | `Mpi` holds the communicator in an `Rc` and is not `Send` under either; `Comm` requires neither `Send` nor `Sync`; CI runs both MPICH and Open MPI. |
 | rsmpi lacks neighbourhood collectives; no Rust bindings exist for PT-Scotch's distributed API or for ParMETIS | Own wrappers over `mpi::ffi`; own ptscotch-sys and parmetis-sys with width probing; vendored METIS as the dependency-free fallback; dedicated CI image; check the ParMETIS licence. |
-| Rust 1.95 MSRV is declared only in CubeCL's workspace, not in its published manifests | Pin the toolchain in `rust-toolchain.toml`; CI images with Rust ≥ 1.95. |
+| Rust 1.95 MSRV is declared only in CubeCL's workspace, not in its published manifests | Pin the toolchain (Rust 1.99) in `rust-toolchain.toml`; CI images with that toolchain. |
 | Pyramid geometry: Gmsh's high-order pyramid basis may differ from the DefElement space inside the cell | Use the DefElement Lagrange pyramid space; validate face traces against Gmsh fixtures; treat pyramids with p > 2 as experimental. |
 | ndelement's current numbering is unreleased; ndelement has no prism or pyramid elements | Pin commit f8cbffe in gridcl-conformance only. The nightly job and every pin bump re-check the conventions, and a failure forces an explicit decision. Prisms and pyramids are checked against DOLFINx's Gmsh maps and Gmsh fixtures. |
 | Node-ordering mistakes in I/O; VTK's legacy renumbering of higher-order hexahedra | Generated orderings with coordinate matching; Gmsh-written fixtures; VTU version 2.2; checks through VTK's own reader. |
@@ -1765,7 +1765,7 @@ Convert this document to `docs/design.md` in the repository, add the working agr
 
 - Design reference: docs/design.md (gridcl Design B, revised design, October 2026).
   Public types in "Architecture" and "API walkthrough" change only via an ADR in docs/adr/.
-- Toolchain: stable Rust 1.95, pinned in rust-toolchain.toml.
+- Toolchain: stable Rust 1.99, pinned in rust-toolchain.toml.
 - CubeCL: cubecl = "=0.11.0" in [workspace.dependencies].
   - Crates that define or launch kernels may depend on cubecl without runtime features.
   - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.

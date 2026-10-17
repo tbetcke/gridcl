@@ -60,7 +60,7 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
     | Tool | Install | Used for |
     | --- | --- | --- |
     | Xcode command-line tools | `xcode-select --install` | compilers, Metal |
-    | rustup | rustup.rs; `rust-toolchain.toml` then installs Rust 1.95 | everything |
+    | rustup | rustup.rs; `rust-toolchain.toml` then installs Rust 1.99 | everything |
     | Claude Code ≥ 2.1.286 | as documented by Anthropic | the workflow |
     | Open MPI or MPICH (one of them) | Homebrew | local MPI runs; hosted CI covers the other |
     | rsync 3.x | Homebrew (the rsync that ships with macOS may lack the filter options the runner uses) | the remote-test runner |
@@ -88,7 +88,7 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 | --- | --- | --- | --- | --- |
 | SSH alias and scheduler kind | local | `myriad`, `sge` | `myriad`, `sge` | *(E0)* |
 | OS and architecture | macOS 27.0.1 (26A434), arm64 | *(E0)* | *(E0)* | Linux, aarch64 *(E0: distribution)* |
-| Rust toolchain | 1.95.0 (59807616e 2026-04-14), from `rust-toolchain.toml` | *(E0)* | *(E0)* | *(E0)* |
+| Rust toolchain | 1.99.1 (58cf8f9c3 2026-10-13), from `rust-toolchain.toml` (ADR-0003) | *(E0)* | *(E0)* | *(E0)* |
 | Module lines for jobs | – | *(E0)* | *(E0)* | *(E0)* |
 | CUDA toolkit and `CUDA_PATH` | – | 12.x *(E0)* | *(E0)* | *(E0)* |
 | Driver version and its CUDA version (`nvidia-smi`) | – | *(E0)* | *(E0)* | *(E0)* |
@@ -100,7 +100,7 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 | MPI implementation and version | Open MPI 5.0.10 (Homebrew); 4-rank allreduce passes | *(E0)* | *(E0)* | *(E0)* |
 | CUDA-aware MPI available | – | *(E0)* | *(E0)* | *(E0)* |
 | Internet access on compute nodes | – | *(E0)* | *(E0)* | *(E0)* |
-| Clean build time of env-check | 89 s (`--release --features cpu,metal,mpi`) | *(E0)* | *(E0)* | *(E0)* |
+| Clean build time of env-check | 81 s on Rust 1.99.1 (`--release --features cpu,metal,mpi`) | *(E0)* | *(E0)* | *(E0)* |
 | Queue wait and run time (median of 3) | – | *(E0)* | *(E0)* | *(E0)* |
 | Gmsh, `vtk`, `meshio`, Claude Code versions | Gmsh 4.15.2-git (unpinned; M4 sets the pin); vtk 9.7.1 and meshio 5.3.5 in `.venv` (Python 3.14.7); Claude Code 2.1.295 | – | – | – |
 

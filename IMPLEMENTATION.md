@@ -51,7 +51,7 @@ The development tooling and the Rust workspace do not exist yet. Milestone E0 cr
 
    | Needed from | Tool | Used for |
    | --- | --- | --- |
-   | E0 | rustup (`rust-toolchain.toml` then installs Rust 1.95) | everything |
+   | E0 | rustup (`rust-toolchain.toml` then installs Rust 1.99) | everything |
    | E0 | rsync 3.x from Homebrew | the remote-test runner |
    | E0 | Open MPI or MPICH (one of them; hosted CI covers both) | MPI smoke test; every milestone from M6 |
    | E0 | the M3 Max's GPU | Metal tests (Vulkan runs in hosted CI) |

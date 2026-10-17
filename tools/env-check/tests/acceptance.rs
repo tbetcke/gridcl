@@ -222,7 +222,7 @@ fn report_is_valid_json() {
     assert!(report.errors.is_empty(), "{:?}", report.errors);
     assert!(!report.host.os.is_empty() && !report.host.arch.is_empty());
     assert!(
-        report.host.rustc_version.starts_with("rustc 1.95"),
+        report.host.rustc_version.starts_with("rustc 1.99"),
         "{:?}",
         report.host.rustc_version
     );

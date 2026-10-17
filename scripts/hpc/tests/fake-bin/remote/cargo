@@ -5,6 +5,6 @@ set -u
 printf 'offline=%s target_dir=%s args=%s\n' "${CARGO_NET_OFFLINE:-}" "${CARGO_TARGET_DIR:-}" \
     "$*" >>"${FAKE_STATE:?}/cargo.log"
 case ${1:-} in
-    --version) echo "cargo 1.95.0 (fake)" ;;
+    --version) echo "cargo 1.99.1 (fake)" ;;
 esac
 exit 0

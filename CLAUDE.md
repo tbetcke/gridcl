@@ -2,7 +2,7 @@
 
 - Design reference: docs/design.md (gridcl Design B, revised design, October 2026).
   Public types in "Architecture" and "API walkthrough" change only via an ADR in docs/adr/.
-- Toolchain: stable Rust 1.95, pinned in rust-toolchain.toml.
+- Toolchain: stable Rust 1.99, pinned in rust-toolchain.toml.
 - CubeCL: cubecl = "=0.11.0" in [workspace.dependencies].
   - Crates that define or launch kernels may depend on cubecl without runtime features.
   - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
