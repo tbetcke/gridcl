@@ -197,9 +197,20 @@ fn check_runtime(
             )),
         }
     }
-    // TODO(E0 T2): for RuntimeKind::Cuda set report.cuda from cuda_info::collect(
-    // CudaCompiler::of_build(), the fingerprints of the checked devices, options.expect_sm,
-    // options.expect_cuda_major).
+    if runtime == RuntimeKind::Cuda {
+        let fingerprints: Vec<String> = report
+            .devices
+            .iter()
+            .filter(|d| d.runtime == runtime.name())
+            .map(|d| d.fingerprint.clone())
+            .collect();
+        report.cuda = Some(cuda_info::collect(
+            cuda_info::CudaCompiler::of_build(),
+            &fingerprints,
+            options.expect_sm,
+            options.expect_cuda_major,
+        ));
+    }
 }
 
 /// A check that did not run, with its outcome and the reason.
@@ -321,13 +332,16 @@ pub fn run(options: &Options) -> Report {
 /// `--mpi-only`: the allreduce and the device `rank % devices` of each selected runtime.
 #[cfg(feature = "mpi")]
 fn run_mpi(options: &Options, report: &mut Report) {
-    // TODO(E0 T2): initialise mpi_check::MpiSession, call check_runtime(runtime, options,
-    // Some(rank), report) for each of selected_runtimes(..), and set report.mpi from
-    // session.check(device index).
-    let _ = options;
-    report
-        .errors
-        .push("--mpi-only is not yet implemented (E0 T2)".to_string());
+    let session = match mpi_check::MpiSession::init() {
+        Ok(session) => session,
+        Err(error) => return report.errors.push(format!("MPI: {error}")),
+    };
+    let rank = usize::try_from(session.rank()).expect("MPI ranks are non-negative");
+    for runtime in selected_runtimes(options.runtime, &mut report.errors) {
+        check_runtime(runtime, options, Some(rank), report);
+    }
+    let device_index = report.devices.first().map(|d| d.index);
+    report.mpi = Some(session.check(device_index));
 }
 
 /// `--mpi-only` without the `mpi` feature is an error.
