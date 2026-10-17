@@ -1,0 +1,50 @@
+{
+  "worktree": {
+    "baseRef": "head"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cargo build)",
+      "Bash(cargo build *)",
+      "Bash(cargo check)",
+      "Bash(cargo check *)",
+      "Bash(cargo test)",
+      "Bash(cargo test *)",
+      "Bash(cargo clippy)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo fmt)",
+      "Bash(cargo fmt *)",
+      "Bash(cargo doc *)",
+      "Bash(cargo tree *)",
+      "Bash(cargo metadata *)",
+      "Bash(cargo run --manifest-path conformance/Cargo.toml *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git merge --no-ff *)",
+      "Bash(git worktree list)",
+      "Bash(scripts/mpi-test.sh *)",
+      "Bash(cargo run --manifest-path tools/env-check/Cargo.toml *)",
+      "Bash(cargo run --release --manifest-path tools/env-check/Cargo.toml *)",
+      "Bash(scripts/hpc/remote-test.sh *)",
+      "Bash(scripts/hpc/status.sh)",
+      "Bash(scripts/hpc/status.sh *)",
+      "Bash(scripts/hpc/cancel.sh *)",
+      "Bash(cargo run --release -p gridcl-bench *)",
+      "Bash(cargo bench *)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git rebase *)",
+      "Bash(cargo publish *)"
+    ]
+  }
+}
