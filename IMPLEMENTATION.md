@@ -20,7 +20,7 @@ Each milestone of `docs/design.md` goes through the same loop: plan, implement, 
 | `.claude/skills/hpc-test/` | `/hpc-test [target] [-- command]`: runs tests on Myriad or Locust; Claude uses it for every CUDA run |
 | `.claude/agents/test-runner.md` | Subagent that runs test suites and reports only failures |
 | `.claude/agents/design-reviewer.md` | Read-only subagent that checks plans and diffs against the design |
-| `.claude/settings.json` | Pre-approved cargo, git and `scripts/hpc` commands, denied pushes and history rewrites, `worktree.baseRef: "head"` |
+| `.claude/settings.json` | Pre-approved cargo, git and `scripts/hpc` commands, denied history rewrites, `worktree.baseRef: "head"` |
 
 The development tooling and the Rust workspace do not exist yet. Milestone E0 creates `rust-toolchain.toml`, the remote-test runner (`scripts/hpc/`) and the probe `tools/env-check/`; M0 then creates the workspace, CI and `scripts/mpi-test.sh`.
 
@@ -110,7 +110,7 @@ Claude writes the failing acceptance tests first (T0), then implements one task 
 
 - When Claude suggests clearing the context, run `/clear` and then `/implement-milestone M3`. It resumes at the first unticked task. To start at a specific task, use `/implement-milestone M3 T5`.
 - If the design does not fit, Claude drafts an ADR and stops. Decide as in step 3, then run `/implement-milestone M3` again.
-- **Permission mode:** use the default mode (you approve each edit) for M0 and M1a while you get a feel for the work. Later, `claude --permission-mode acceptEdits` saves prompts. Routine cargo and git commands are pre-approved in `.claude/settings.json`; `git push`, `git rebase`, `git reset --hard` and `cargo publish` are denied.
+- **Permission mode:** use the default mode (you approve each edit) for M0 and M1a while you get a feel for the work. Later, `claude --permission-mode acceptEdits` saves prompts. Routine cargo and git commands are pre-approved in `.claude/settings.json`; `git rebase`, `git reset --hard` and `cargo publish` are denied. Claude may push and merge.
 
 At the end, Claude runs the full acceptance suite through the test-runner and sets `Status: implemented`.
 
@@ -123,7 +123,9 @@ $ claude
 
 Claude runs the design-reviewer on `main...HEAD` and the test-runner on every required backend. It checks each acceptance criterion against a passing test, fixes Blockers and Majors, lists Minors for you, fills the plan's Review section and prints a PR description.
 
-### 6. Merge (you)
+### 6. Merge (you or Claude)
+
+Claude may do these steps when you ask.
 
 1. Push the branch and open a pull request with the printed description.
 2. Merge after CI passes.

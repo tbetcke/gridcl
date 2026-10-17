@@ -55,4 +55,5 @@ counted as missing.
     - deviations and ADRs;
     - targets and backends not tested, and why.
 4. Tell the user the next steps: push the branch, open the PR, merge after CI passes, then
-   set `Status: done` in the plan on main.
+   set `Status: done` in the plan on main. Offer to do these steps; do them only when the
+   user agrees.
