@@ -1,6 +1,6 @@
 # ADR-0004: Build CubeCL's LLVM with Spack on Myriad (the prebuilt bundle needs glibc ≥ 2.34)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-17 (revised 2026-10-18 after the Spack feasibility test; the first draft proposed an Apptainer container, now option 3)
 - **Raised in:** E0 T6 (Myriad survey and smoke run)
 - **Design sections affected:** "Development environment and test targets" (remote-test runner, step 3; Myriad rules); "Risks and mitigations" (the LLVM-bundle row and a new row); `docs/dev-environment.md` (Myriad reference, runner configuration)
@@ -81,4 +81,4 @@ Option 2. On Myriad, CubeCL's LLVM comes from a Spack build of the bundle's LLVM
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-18 (option 2, Spack-built LLVM; option 3, the Apptainer image, stays the fallback).
