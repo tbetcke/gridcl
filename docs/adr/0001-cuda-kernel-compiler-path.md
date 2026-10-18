@@ -1,6 +1,6 @@
 # ADR-0001: CUDA kernels compile with CubeCL's default LLVM backend, not NVRTC
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-18
 - **Raised in:** E0 plan, open question 1; measured in E0 T7 (Myriad V100 acceptance)
 - **Design sections affected:** "CUDA toolkit and driver"; "Development environment and test targets" (remote-test runner, Myriad rules); "Risks and mitigations"; `.claude/skills/hpc-test/SKILL.md` (troubleshooting table)
@@ -68,4 +68,4 @@ Option 2. CUDA work uses CubeCL's default `cuda` feature (LLVM → PTX, with the
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-18 (option 2: CubeCL's default `cuda` LLVM backend; `cuda-cpp` stays a diagnostic path in env-check).
