@@ -1,0 +1,28 @@
+# Spack environment of the Myriad LLVM build (ADR-0004), rendered by setup.sh into
+# @ROOT@/env/spack.yaml. The spec matches tracel-llvm-bundler 23.1.0-3: LLVM and lld only,
+# Release, static libraries, RTTI, no assertions, targets X86, NVPTX and AMDGPU, no zlib or
+# zstd. Generic x86_64 so the tools run on every node type.
+spack:
+  specs:
+  - gridcl.llvm@23.1.0 +lld ~clang ~lldb ~polly ~lua ~gold ~mlir ~flang ~libomptarget ~offload ~python ~z3 ~zstd ~cuda ~llvm_dylib compiler-rt=none libcxx=none libunwind=none build_type=Release targets=x86,nvptx,amdgpu target=x86_64 %gcc@10.2.0
+  view: false
+  concretizer:
+    unify: true
+    reuse: false
+  repos:
+    gridcl: @ROOT@/repo/spack_repo/gridcl
+  config:
+    install_tree:
+      root: @ROOT@/opt
+    build_stage:
+    - $tempdir/$user/spack-stage
+    build_jobs: 36
+  packages:
+    all:
+      require:
+      - target=x86_64
+    cmake:
+      buildable: false
+      externals:
+      - spec: cmake@4.1.2
+        prefix: @CMAKE_PREFIX@

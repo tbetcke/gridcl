@@ -138,9 +138,20 @@ sync_prune() {
 # --- remote side ------------------------------------------------------------------
 
 r_env() { # r_env <scheduler>: the login environment of a non-interactive ssh session
+    local f
     if [ "$1" = sge ] && ! command -v qsub >/dev/null 2>&1 && [ -r /etc/profile ]; then
         # shellcheck source=/dev/null
         . /etc/profile >/dev/null 2>&1
+    fi
+    # The `module` function of the login shell is not exported to `bash -s` (Myriad).
+    if ! type module >/dev/null 2>&1; then
+        for f in "${MODULESHOME:+$MODULESHOME/init/bash}" /etc/profile.d/modules.sh; do
+            if [ -n "$f" ] && [ -r "$f" ]; then
+                # shellcheck source=/dev/null
+                . "$f" >/dev/null 2>&1
+                break
+            fi
+        done
     fi
     if [ -d "$HOME/.cargo/bin" ]; then
         PATH=$HOME/.cargo/bin:$PATH

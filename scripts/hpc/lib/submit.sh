@@ -29,6 +29,33 @@ submit_manifests() {
     [ -z "$found" ] || printf '%s\n' $found | awk '!seen[$0]++'
 }
 
+# submit_cargo_features <command>: the feature options of the command's cargo invocation
+# (--features, -F, --all-features, --no-default-features), as one line of words; words after
+# a lone `--` belong to the program and are skipped. The fetch step passes them on, since a
+# package such as cubecl-llvm is in the lock file but activated only by some features.
+submit_cargo_features() {
+    local w prev="" found=""
+    set -f
+    # shellcheck disable=SC2086 # split the command into words
+    for w in $1; do
+        w=${w%%[;&|)]*}
+        case $prev in
+            --features | -F) found="$found --features $w" ;;
+        esac
+        case $w in
+            --) break ;;
+            --features=* | -F?*)
+                w=${w#--features=}
+                found="$found --features ${w#-F}"
+                ;;
+            --all-features | --no-default-features) found="$found $w" ;;
+        esac
+        prev=$w
+    done
+    set +f
+    printf '%s\n' "${found# }"
+}
+
 # submit_build_command <command>: for a plain `cargo run|test|bench ...` (no shell syntax),
 # the cargo command that builds it without running (`cargo build ...`, `cargo test --no-run
 # ...`), so the job records build and run times separately; empty otherwise.
@@ -122,7 +149,8 @@ submit_fetch() {
     manifests=$(submit_manifests "$CMD")
     hpc_msg "fetching on $CFG_HOST (log: $TREE/.gridcl-hpc/fetch-$TARGET.log)"
     # shellcheck disable=SC2086 # one word per manifest
-    hpc_remote r_fetch "$CFG_SCHEDULER" "$TREE" "$TARGET" "$CFG_LOGIN_MODULES" $manifests
+    hpc_remote r_fetch "$CFG_SCHEDULER" "$TREE" "$TARGET" "$CFG_LOGIN_MODULES" \
+        "$(submit_cargo_features "$CMD")" $manifests
     hpc_remote_check $? "the fetch step"
 }
 
@@ -213,9 +241,9 @@ submit_delete() {
 
 # --- remote side ------------------------------------------------------------------
 
-r_fetch_steps() { # r_fetch_steps <tree> <target> <login modules> [manifest...]
-    local tree=$1 target=$2 m
-    shift 3
+r_fetch_steps() { # r_fetch_steps <tree> <target> <login modules> <features> [manifest...]
+    local tree=$1 target=$2 features=$4 m
+    shift 4
     cd "$tree" || return 1
     unset CARGO_NET_OFFLINE
     CARGO_TARGET_DIR=$tree/target/$target-login
@@ -236,16 +264,24 @@ r_fetch_steps() { # r_fetch_steps <tree> <target> <login modules> [manifest...]
         fi
         echo "+ cargo fetch $*"
         cargo fetch "$@" || return 1
-        if cargo pkgid "$@" cubecl-llvm >/dev/null 2>&1; then
-            echo "+ cargo build -p cubecl-llvm $*"
-            cargo build -p cubecl-llvm "$@" || return 1
+        # The LLVM bundle is downloaded by a build script below cubecl-llvm. cubecl-llvm may
+        # be in the lock file without being activated by the command's features, and
+        # `cargo build -p` accepts no features for it, so `cargo check` with the command's
+        # features runs the build scripts (no code generation). `cargo tree` exits 0
+        # either way, so its output decides whether that is needed.
+        # shellcheck disable=SC2086 # the features are a list of words
+        if cargo tree "$@" $features -e normal,build -i cubecl-llvm --depth 0 2>/dev/null |
+            grep -q '^cubecl-llvm '; then
+            echo "+ cargo check $* $features"
+            # shellcheck disable=SC2086
+            cargo check "$@" $features || return 1
         else
-            echo "no cubecl-llvm in the dependency graph of ${m}; LLVM bundle not needed"
+            echo "cubecl-llvm not activated for ${m} ${features}; LLVM bundle not needed"
         fi
     done
 }
 
-r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> [manifest...]: log in .gridcl-hpc/
+r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> <features> [manifest...]: log in .gridcl-hpc/
     local log rc
     r_env "$1"
     shift

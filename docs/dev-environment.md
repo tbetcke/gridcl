@@ -80,7 +80,32 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 - **Limits:** 72 hours of wall-clock time for 1 core and 48 hours for 2–36 cores. Home is also scratch, with a 1 TB quota (`gquota`).
 - **Login nodes:** for managing files, compiling and short tests (under 15 minutes). Everything else runs as a job.
 - **MPI with GPUs:** runs within a single node only.
-- **Building against `libcuda`:** UCL notes that code linking against `libcuda` must be built on a GPU node. CubeCL loads the driver library at run time, so building on a login node is expected to work; E0 confirms this or moves the build into the job.
+- **Building against `libcuda`:** UCL notes that code linking against `libcuda` must be built on a GPU node. CubeCL does not link it: cudarc loads `libcuda` and NVRTC at run time, so builds need no driver library. cudarc does read the CUDA version at build time, from `nvcc --version`; without `nvcc` it silently assumes the newest CUDA it knows (13.x, feature `fallback-latest`). Every CUDA build must therefore run with the toolkit module loaded, as in the job.
+
+### Checked by E0 (T6, 2026-10-17 and 18)
+
+- **Login nodes:** Red Hat Enterprise Linux 7.9, kernel 3.10, glibc 2.17, bash 4.2, rsync 3.1.2, git 2.32 (module, loaded by default). Rust comes from rustup in the remote home (installed without changing `PATH`; the runner adds `~/.cargo/bin`), and the fetch step installs the toolchain of `rust-toolchain.toml`.
+- **Compute nodes:** the V100 E nodes run the same RHEL 7.9 (glibc 2.17) and have no internet access (probe job: Xeon Gold 6240 with AVX-512, Tesla V100-PCIE-32GB, driver 550.127.05 = CUDA 12.4). Apptainer 1.2.4 is installed on login and compute nodes, in setuid mode; user namespaces are disabled, so images cannot be built from definition files on Myriad.
+- **SSH:** key-only logins through the gateway work non-interactively (`BatchMode=yes`); each connection takes about 2 s without connection sharing.
+- **Node types (`nodetypes`):** 16 E nodes (36 cores, 188 GB) and 6 L nodes (36 cores, 188 GB); no F nodes are listed. Also 1 U and 2 V nodes (48 cores, 251 GB), D, B and T nodes.
+- **Modules:** CUDA up to 12.2.2 (`cuda/12.2.2/gnu-10.2.0`, which sets `CUDA_PATH`); no CUDA 13 module. NVIDIA HPC SDK up to 24.5. GCC up to 10.2.0 (`compilers/gnu/10.2.0` with `gcc-libs/10.2.0`); clang only 8.0.0. Open MPI 4.1.1 (gnu-4.9.2, the default) and 4.0.5 (gnu-10.2.0); Intel MPI up to 2021.11. Environment Modules 5.3.1.
+- **Default environment:** the Intel 2018 compilers and Intel MPI are loaded by default, so the job's module lines start with `module purge`. `/usr/bin/cc` stays GCC 4.8.5 even with the GNU module loaded, and rustc links with `cc` by default; the module lines therefore set `CC=gcc`, `CXX=g++` and `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc`. The shell function `module` is defined by the login shell but not exported, so the runner sources `$MODULESHOME/init/bash` in `bash -s` sessions and in jobs.
+- **SGE requests:** `gpu` (per job), `memory` (`-l mem=…`, consumable per slot), `tmpfs` (per job, default 10G) and `h_rt`. Parallel environments include `smp` (one node) and `mpi`. The runner uses `-pe smp {cores}` for `--cores` and `--ranks` (GPU MPI runs stay within one node) and `-l mem=4G` per slot, so `--cores 36` asks for 144 GB of the 188 GB of a node.
+- **Fetch step:** `cargo fetch`, then `cargo check` with the command's features on the login node, which runs the build scripts; jobs build offline in their own target directory. With `XDG_DATA_HOME` set as below, the LLVM bundle comes from the Spack build and nothing is downloaded.
+- **Filesystem:** writing many small files into home (myriadfs) from a compute node is very slow: Spack's install of LLVM's headers took over two hours, against about 20 min for compiling LLVM on node-local disk.
+- **Smoke run:** `remote-test.sh myriad-v100 --cores 8 -- cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda` passed on 2026-10-18 (job 172549): `ptx_sm70`, CUDA 12.2 toolkit ≤ driver 12.4, compiler path `llvm`, f32, f64 and histogram checks pass. Queue wait 450 s, build 1829 s on 8 cores from a clean target directory, command 396 s. The checks took 26–147 s each, against milliseconds on Metal; E0 T7 investigates.
+
+### CubeCL's LLVM on Myriad (ADR-0004)
+
+cubecl-cuda (both `cuda` and `cuda-cpp`) and the CPU runtime need cubecl-llvm, whose build script downloads a prebuilt LLVM (tracel-llvm-bundler 23.1.0-3: LLVM 23.1.0) that needs glibc ≥ 2.34. On Myriad the same LLVM version is built with Spack and laid out where the bundler looks for it: `$XDG_DATA_HOME/tracel/tracel-llvm-23.1.0-3/` with the sentinel file `.tracel-llvm-installed`, which makes the bundler skip its download. The binaries link with LLD, because RHEL 7's GNU ld 2.27 resolves archives in one pass and misses LLVM symbols that only pliron-llvm uses.
+
+1. On a Myriad login node, in the runner's tree: `bash scripts/hpc/spack/setup.sh`. It installs Spack 1.2.2 in `~/spack` if missing, renders the environment into `~/gridcl-llvm` (`GRIDCL_LLVM_ROOT`), concretizes and fetches every source.
+2. `cd ~/gridcl-llvm && qsub build-llvm.sh`: a CPU-only job (36 cores, `h_rt` 6 h) that installs LLVM and lld, creates the bundler layout and `lld-bin/ld.lld`, and prints `llvm-config`. Progress is in `progress-<job id>.txt`.
+3. In `targets.env`, LOGIN_MODULES and MODULES export `XDG_DATA_HOME=$HOME/gridcl-llvm/xdg PATH=$HOME/gridcl-llvm/lld-bin:$PATH` after loading GCC 10.
+
+The Spack build matches the bundle: LLVM 23.1.0, Release, static, RTTI, no assertions, targets X86, NVPTX and AMDGPU, 122 LLVM and 6 lld libraries; `llvm-config --system-libs` is `-lrt -ldl -lpthread -lm`. Binaries need at most `GLIBC_2.16` and, at run time, GCC 10's `libstdc++` (`gcc-libs/10.2.0`). Spack builds its own Python and Perl (RHEL 7's are too old or depend on module variables) and uses Myriad's GCC 10.2 and cmake 4.1.2.
+
+When a CubeCL upgrade changes the bundler version, add the new LLVM version to `scripts/hpc/spack/repo/spack_repo/gridcl/packages/llvm/package.py` and to the spec in `spack.yaml.in`, update `bundle=` in `build-llvm.sh`, rebuild, and re-run env-check on Myriad. If the bundle can no longer be reproduced, ADR-0004 names an Apptainer image as the fallback.
 
 ## Recorded by E0
 
@@ -118,3 +143,4 @@ Re-run env-check on a target after its maintenance window or a module change, an
 | Date | Change |
 | --- | --- |
 | 2026-10-17 | Created with the targets and the Myriad reference; E0 fills in the rest. |
+| 2026-10-18 | Myriad checks of E0 T6; CubeCL's LLVM on Myriad from Spack (ADR-0004); Rust 1.99 (ADR-0003). |

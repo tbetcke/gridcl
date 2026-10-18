@@ -173,7 +173,7 @@ gridcl_job_node_load() {
 }
 
 gridcl_job_main() {
-    local results times log status=0
+    local results times log f status=0
     if [ -z "${JOB_ID:-}" ] || [ -z "${GRIDCL_HPC_TREE:-}" ]; then
         echo "common.sh: JOB_ID or GRIDCL_HPC_TREE not set; submit with scripts/hpc/remote-test.sh" >&2
         return 1
@@ -195,6 +195,16 @@ gridcl_job_main() {
         echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-}"
         echo "== module lines"
         printf '%s\n' "${GRIDCL_HPC_MODULES:-}"
+        # SGE may start the job with -S /bin/bash and no login shell, without `module`.
+        if ! type module >/dev/null 2>&1; then
+            for f in "${MODULESHOME:+$MODULESHOME/init/bash}" /etc/profile.d/modules.sh; do
+                if [ -n "$f" ] && [ -r "$f" ]; then
+                    # shellcheck source=/dev/null
+                    . "$f"
+                    break
+                fi
+            done
+        fi
         eval "${GRIDCL_HPC_MODULES:-}"
         echo "module lines exit status: $?"
     } >"$results/prologue.txt" 2>&1 </dev/null

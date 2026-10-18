@@ -305,10 +305,18 @@ case_job_script_sge_lines() {
     expect_grep "$FAKE_STATE/rustup.log" 'toolchain install' "toolchain installed on the login node"
     expect_grep "$FAKE_STATE/cargo.log" '^offline= .*fetch.*--manifest-path tools/env-check/Cargo.toml' \
         "cargo fetch online for the command's manifest"
-    expect_grep "$FAKE_STATE/cargo.log" '^offline= .*build.*-p cubecl-llvm.*--manifest-path tools/env-check/Cargo.toml' \
-        "LLVM bundle built on the login node"
+    expect_grep "$FAKE_STATE/cargo.log" '^offline= .*args=check --manifest-path tools/env-check/Cargo.toml --features cuda$' \
+        "build scripts (LLVM bundle) run on the login node with the command's features"
     expect_grep "$FAKE_STATE/cargo.log" '^offline=true target_dir=[^ ]+ args=run --release' \
         "command runs offline with a target dir"
+
+    # Without a feature option cubecl-llvm is not activated: no check on the login node.
+    : >"$FAKE_STATE/cargo.log"
+    rt myriad-v100 -- cargo run --release --manifest-path tools/env-check/Cargo.toml -- --features cuda
+    expect_status 0 "cargo command without features"
+    if grep -Eq '^offline= .*args=(check|build)' "$FAKE_STATE/cargo.log"; then
+        fail "login-node check although no feature activates cubecl-llvm"
+    fi
 }
 
 case_exit_status_passthrough() {
