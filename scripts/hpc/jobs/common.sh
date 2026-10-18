@@ -62,7 +62,7 @@ gridcl_job_prologue() {
 }
 
 # gridcl_job_cpu_others: CPU cores used by other users' processes (root included), sampled
-# over 1 s from /proc on Linux; elsewhere the sum of ps's %cpu. Empty when unknown.
+# over 5 s from /proc on Linux (ADR-0005); elsewhere the sum of ps's %cpu. Empty when unknown.
 gridcl_job_cpu_others() {
     local uid hz
     uid=$(id -u)
@@ -71,7 +71,7 @@ gridcl_job_cpu_others() {
         {
             echo "@A"
             cat /proc/[0-9]*/stat 2>/dev/null
-            sleep 1
+            sleep 5
             echo "@B"
             cat /proc/[0-9]*/stat 2>/dev/null
             echo "@U"
@@ -90,7 +90,7 @@ gridcl_job_cpu_others() {
             END {
                 for (p in b) if ((p in a) && (p in owner) && owner[p] != me) s += b[p] - a[p]
                 if (owners == 0) exit 1
-                printf "%.2f\n", s / hz
+                printf "%.2f\n", s / hz / 5
             }'
     else
         ps -A -o uid=,pcpu= 2>/dev/null |
@@ -98,10 +98,10 @@ gridcl_job_cpu_others() {
     fi
 }
 
-# gridcl_job_node_load <file>: a node-load snapshot (ADR-0002). The node is idle if no other
-# user has a GPU compute process, every GPU's utilisation is below 5%, other users'
-# processes use less than one core and the 1-minute load average is below 2; a value that
-# cannot be read counts as busy.
+# gridcl_job_node_load <file>: a node-load snapshot (ADR-0002, ADR-0005). The node is idle if
+# no other user has a GPU compute process, every GPU's utilisation is below 5% and other
+# users' processes use less than one core; a value that cannot be read counts as busy. The
+# 1-minute load average is recorded only: it includes the job's own build and command.
 gridcl_job_node_load() {
     local file=$1 uid reasons="" out idx util pid rest owner load others gpus=0
     uid=$(id -u)
@@ -152,11 +152,7 @@ gridcl_job_node_load() {
         else
             load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{ print $1 }')
         fi
-        echo "== load average (1 min): ${load:-unknown}"
-        case $load in
-            '' | *[!0-9.]*) reasons="${reasons:+$reasons, }load average unknown" ;;
-            *) awk -v l="$load" 'BEGIN { exit !(l < 2) }' || reasons="${reasons:+$reasons, }load average $load" ;;
-        esac
+        echo "== load average (1 min, recorded only): ${load:-unknown}"
         others=$(gridcl_job_cpu_others)
         echo "== CPU cores used by other users' processes: ${others:-unknown}"
         case $others in
