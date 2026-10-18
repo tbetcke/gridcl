@@ -1,6 +1,6 @@
 # ADR-0005: Node-load idle rule that does not count the runner's own work
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-18
 - **Raised in:** E0 T9 (Locust acceptance)
 - **Design sections affected:** "Development environment and test targets" (remote-test runner, step 4); amends ADR-0002
@@ -51,4 +51,4 @@ Option 3. On a shared node, the question is whether other users interfere, and p
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-18: option 3.
