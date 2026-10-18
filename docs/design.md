@@ -1401,7 +1401,7 @@ targets: myriad-v100 | myriad-a100 | locust
 
 1. **Configuration.** It reads `scripts/hpc/targets.env`, which is personal and git-ignored and is created from the committed `targets.example.env`. The file holds the SSH host aliases, the remote base directory, the module lines, `CUDA_PATH` and the scheduler kind (`sge` or `direct`).
 2. **Sync.** It copies the working tree to `<base>/<branch>/` with rsync, respecting `.gitignore`, and records the commit and a dirty flag.
-3. **Fetch.** It fetches crates on the login node, and the CPU runtime's LLVM bundle when needed, because compute nodes may have no internet access. Jobs run with `CARGO_NET_OFFLINE=true`.
+3. **Fetch.** It fetches crates on the login node, and the LLVM bundle when needed — on Myriad, whose RHEL 7 is too old for the prebuilt bundle, a Spack-built LLVM of the same version in the bundler's layout — because compute nodes have no internet access. Jobs run with `CARGO_NET_OFFLINE=true`.
 4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`. On direct targets the job also records a node-load snapshot immediately before and after the command: GPU utilisation and memory use, the GPU compute processes and their owners, the 1-minute load average, and the CPU share of other users' processes. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, other users' processes use less than one core in total, and the 1-minute load average is below 2.
 5. **Wait.** It polls the scheduler for up to `--max-wait` (default 3 hours, queue time included). On timeout it deletes the job and exits with status 124.
 6. **Report.** It copies the results to `target/hpc/<target>/<job id>/`, prints a summary of at most 40 lines with the first failure first (on direct targets including a `node load:` line, `idle` or `busy` with the reason, for both snapshots), and exits with the command's exit status.
@@ -1414,6 +1414,7 @@ targets: myriad-v100 | myriad-a100 | locust
 - Login nodes are for managing files, compiling and short tests (under 15 minutes); everything else runs as a job.
 - MPI jobs that use GPUs run within a single node. Multi-rank GPU tests therefore use the 2 V100s of an E or F node or the 4 A100s of an L node.
 - Home is also scratch, with a 1 TB quota. The runner keeps one tree per branch and removes the trees of merged branches.
+- Myriad runs RHEL 7.9 (glibc 2.17), older than CubeCL's prebuilt LLVM bundle allows (glibc ≥ 2.34). The same LLVM version is built with Spack (`scripts/hpc/spack/`, a CPU batch job) and linked with LLD; it is rebuilt when the bundler version changes (ADR-0004).
 
 ## Workspace layout
 
@@ -1748,7 +1749,8 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | Unmaintained dependencies | hdf5-metno instead of hdf5; mshio as a test oracle only; coupe removed. |
 | CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit no newer than the driver's CUDA version; env-check records both on every target. |
 | Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; V100 (most nodes) as the default; turnaround measured in E0; Locust runs never block a milestone. |
-| Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. |
+| Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. The prebuilt bundle needs glibc ≥ 2.34; on Myriad the same LLVM version is built with Spack and linked with LLD. |
+| Spack-built LLVM relies on undocumented bundler internals (sentinel file, directory name, `llvm-config`) | Rebuild and re-run env-check on Myriad with every CubeCL upgrade; Apptainer image as the fallback (ADR-0004). |
 | SIMD gains depend on kernel and hardware, and each vector size is a separate JIT compilation | Benchmark-driven policy (M3s) with scalar defaults; one vector size per kernel family and device class at run time; compile time recorded. |
 | Wider vectors raise register pressure and padding memory | Register-aware sizes from `vector_sizes_in_registers`; padding of at most 15 elements per buffer and 15 cells per block. |
 | CubeCL's vector API may change between releases | Pinned at `=0.11.0`; vector handling confined to `LaunchPlan`, `DeviceBuffer::vector_arg` and the kernels of the candidate list. |
