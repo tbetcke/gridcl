@@ -215,6 +215,16 @@ gridcl_job_main() {
     fi
     if [ -d "$HOME/.cargo/bin" ]; then PATH=$HOME/.cargo/bin:$PATH; fi
     export PATH
+    # Kernel caches on the job's node-local scratch: on Myriad's network home a new entry of
+    # the CUDA driver's JIT cache costs about 2 min per kernel, and creating CubeCL's cache
+    # database about 3 min (E0 T7). The fallback location of CubeCL's database follows
+    # XDG_CACHE_HOME.
+    if [ -n "${TMPDIR:-}" ] && [ -d "$TMPDIR" ] && [ -w "$TMPDIR" ]; then
+        CUDA_CACHE_PATH=$TMPDIR/gridcl-cache/nv
+        XDG_CACHE_HOME=$TMPDIR/gridcl-cache/xdg
+        export CUDA_CACHE_PATH XDG_CACHE_HOME
+    fi
+    echo "kernel caches: CUDA_CACHE_PATH=${CUDA_CACHE_PATH:-default} XDG_CACHE_HOME=${XDG_CACHE_HOME:-default}" >>"$results/prologue.txt"
     gridcl_job_prologue >>"$results/prologue.txt" 2>&1 </dev/null
 
     : >"$log"

@@ -93,7 +93,10 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 - **SGE requests:** `gpu` (per job), `memory` (`-l mem=…`, consumable per slot), `tmpfs` (per job, default 10G) and `h_rt`. Parallel environments include `smp` (one node) and `mpi`. The runner uses `-pe smp {cores}` for `--cores` and `--ranks` (GPU MPI runs stay within one node) and `-l mem=4G` per slot, so `--cores 36` asks for 144 GB of the 188 GB of a node.
 - **Fetch step:** `cargo fetch`, then `cargo check` with the command's features on the login node, which runs the build scripts; jobs build offline in their own target directory. With `XDG_DATA_HOME` set as below, the LLVM bundle comes from the Spack build and nothing is downloaded.
 - **Filesystem:** writing many small files into home (myriadfs) from a compute node is very slow: Spack's install of LLVM's headers took over two hours, against about 20 min for compiling LLVM on node-local disk.
-- **Smoke run:** `remote-test.sh myriad-v100 --cores 8 -- cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda` passed on 2026-10-18 (job 172549): `ptx_sm70`, CUDA 12.2 toolkit ≤ driver 12.4, compiler path `llvm`, f32, f64 and histogram checks pass. Queue wait 450 s, build 1829 s on 8 cores from a clean target directory, command 396 s. The checks took 26–147 s each, against milliseconds on Metal; E0 T7 investigates.
+- **Smoke run:** `remote-test.sh myriad-v100 --cores 8 -- cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda` passed on 2026-10-18 (job 172549): `ptx_sm70`, CUDA 12.2 toolkit ≤ driver 12.4, compiler path `llvm`, f32, f64 and histogram checks pass. Queue wait 450 s, build 1829 s on 8 cores from a clean target directory, command 396 s. The checks took 26–147 s each because the kernel caches were new and on myriadfs; see "Kernel caches".
+- **Kernel caches (E0 T7, jobs 175329 and 175391):** on myriadfs, a new entry in the CUDA driver's JIT cache (`~/.nv/ComputeCache`) costs about 2 min per kernel, and creating CubeCL's cache database (`~/.cache/cubecl`, CubeCL's fallback when no `Cargo.toml` lies above the working directory) about 3 min. With both on the job's node-local `$TMPDIR` (a 10 GB tmpfs), env-check takes 1.9 s, the same as with the JIT cache disabled. The job script therefore sets `CUDA_CACHE_PATH` and `XDG_CACHE_HOME` below `$TMPDIR` and records them in the prologue (`kernel caches:`). Once the repository has a workspace `Cargo.toml` (M0), CubeCL 0.11 keeps its database in `<tree>/target/environment` instead, which is on myriadfs again; M0 has to check where it goes.
+- **MPI:** the Open MPI 4.0.5 module built with GCC 10 needs `numactl/2.0.12`, `binutils/2.36.1/gnu-10.2.0` and `ucx/1.9.0/gnu-10.2.0`. rsmpi's bindgen needs libclang; the only one on Myriad is LLVM 8 (`llvm/8.0.0/gnu-4.9.2`), which the module lines pass with `LIBCLANG_PATH` and `CLANG_PATH` without loading that module, whose `bin/` and `LIBRARY_PATH` would come before the Spack-built LLVM. bindgen 0.72 asks for libclang 9 or newer, but the bindings it generates with libclang 8 work for env-check. This Open MPI is not CUDA-aware (relevant for M10).
+- **Acceptance (E0 T7, 2026-10-18):** `scripts/hpc/acceptance.sh myriad-v100` passed in two runs from the same sources: `gpus2` (job 175401), then `turnaround nvrtc fail max-wait` (jobs 175462–175496). The failing command exited 3 and its error was the summary's first failure. The `--max-wait 00:02:00` run was deleted while still queued, with exit status 124. `status.sh` was empty afterwards.
 
 ### CubeCL's LLVM on Myriad (ADR-0004)
 
@@ -112,21 +115,21 @@ When a CubeCL upgrade changes the bundler version, add the new LLVM version to `
 | Item | M3 Max | Myriad V100 | Myriad A100 | Locust |
 | --- | --- | --- | --- | --- |
 | SSH alias and scheduler kind | local | `myriad`, `sge` | `myriad`, `sge` | *(E0)* |
-| OS and architecture | macOS 27.0.1 (26A434), arm64 | *(E0)* | *(E0)* | Linux, aarch64 *(E0: distribution)* |
-| Rust toolchain | 1.99.1 (58cf8f9c3 2026-10-13), from `rust-toolchain.toml` (ADR-0003) | *(E0)* | *(E0)* | *(E0)* |
-| Module lines for jobs | – | *(E0)* | *(E0)* | *(E0)* |
-| CUDA toolkit and `CUDA_PATH` | – | 12.x *(E0)* | *(E0)* | *(E0)* |
-| Driver version and its CUDA version (`nvidia-smi`) | – | *(E0)* | *(E0)* | *(E0)* |
-| Compute capability (env-check) | – | 7.0 *(E0: confirm)* | 8.0 *(E0: confirm)* | 9.0 *(E0: confirm)* |
-| f64 and u64 support (env-check) | CPU: f64 and u64; Metal: u64, no f64 (f64 checks reported unsupported); u32 atomic add on both | *(E0)* | *(E0)* | *(E0)* |
-| `max_page_size`, `max_bindings` | CPU: 2^36 B (64 GiB), 2^32 − 1; Metal: 2^32 − 4 B, 28 | *(E0)* | *(E0)* | *(E0)* |
-| CPU runtime: `load_width`, vector registers, hardware threads | 128 bits, 32, 16; plane size 1; IO-optimized sizes f32 16, f64 8 (Metal: 4, 2; plane size 32) | *(E0)* | *(E0)* | *(E0)* |
-| CPU model and SIMD extensions | Apple M3 Max, 12 P-cores and 4 E-cores; NEON (AdvSIMD with FP16, BF16, I8MM, DotProd), no SVE | Xeon Gold 6140/6240, AVX-512 *(E0: confirm)* | *(E0)* | Grace (Neoverse V2), NEON and SVE2 *(E0: confirm)* |
-| MPI implementation and version | Open MPI 5.0.10 (Homebrew); 4-rank allreduce passes | *(E0)* | *(E0)* | *(E0)* |
-| CUDA-aware MPI available | – | *(E0)* | *(E0)* | *(E0)* |
-| Internet access on compute nodes | – | *(E0)* | *(E0)* | *(E0)* |
-| Clean build time of env-check | 81 s on Rust 1.99.1 (`--release --features cpu,metal,mpi`) | *(E0)* | *(E0)* | *(E0)* |
-| Queue wait and run time (median of 3) | – | *(E0)* | *(E0)* | *(E0)* |
+| OS and architecture | macOS 27.0.1 (26A434), arm64 | Red Hat Enterprise Linux 7.9 (kernel 3.10, glibc 2.17), x86_64 | *(E0)* | Linux, aarch64 *(E0: distribution)* |
+| Rust toolchain | 1.99.1 (58cf8f9c3 2026-10-13), from `rust-toolchain.toml` (ADR-0003) | 1.99.1 (58cf8f9c3 2026-10-13), rustup in the remote home, from `rust-toolchain.toml` | *(E0)* | *(E0)* |
+| Module lines for jobs | – | `module purge; module load gcc-libs/10.2.0 compilers/gnu/10.2.0; export CC=gcc CXX=g++ CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc; export XDG_DATA_HOME=$HOME/gridcl-llvm/xdg PATH=$HOME/gridcl-llvm/lld-bin:$PATH; module load numactl/2.0.12 binutils/2.36.1/gnu-10.2.0 ucx/1.9.0/gnu-10.2.0 mpi/openmpi/4.0.5/gnu-10.2.0; export LIBCLANG_PATH=/shared/ucl/apps/llvm/8.0.0/gnu-4.9.2/lib CLANG_PATH=/shared/ucl/apps/llvm/8.0.0/gnu-4.9.2/bin/clang; module load cuda/12.2.2/gnu-10.2.0` (login node: the same without the CUDA module) | *(E0)* | *(E0)* |
+| CUDA toolkit and `CUDA_PATH` | – | 12.2.2 (`version.json`: 12.2.20230823), `CUDA_PATH=/shared/ucl/apps/cuda/12.2.2/gnu-10.2.0`; both compiler paths pass: LLVM (`cuda`) and NVRTC (`cuda-cpp`) | *(E0)* | *(E0)* |
+| Driver version and its CUDA version (`nvidia-smi`) | – | 550.127.05, CUDA 12.4; toolkit 12.2 ≤ driver 12.4 | *(E0)* | *(E0)* |
+| Compute capability (env-check) | – | 7.0 (`ptx_sm70`, same as `nvidia-smi`) | 8.0 *(E0: confirm)* | 9.0 *(E0: confirm)* |
+| f64 and u64 support (env-check) | CPU: f64 and u64; Metal: u64, no f64 (f64 checks reported unsupported); u32 atomic add on both | f64 and u64; u32 atomic add; f32 (sizes 1, 4), f64 (1, 2) and the histogram match the host bitwise on both GPUs and both compiler paths | *(E0)* | *(E0)* |
+| `max_page_size`, `max_bindings` | CPU: 2^36 B (64 GiB), 2^32 − 1; Metal: 2^32 − 4 B, 28 | 8 518 139 904 B (7.9 GiB), 1024; plane size 32; IO-optimized sizes f32 4, f64 2 | *(E0)* | *(E0)* |
+| CPU runtime: `load_width`, vector registers, hardware threads | 128 bits, 32, 16; plane size 1; IO-optimized sizes f32 16, f64 8 (Metal: 4, 2; plane size 32) | 512 bits, 32, 8 (the job's 8 slots); plane size 1; IO-optimized sizes f32 16, f64 8; all checks pass (job 175485) | *(E0)* | *(E0)* |
+| CPU model and SIMD extensions | Apple M3 Max, 12 P-cores and 4 E-cores; NEON (AdvSIMD with FP16, BF16, I8MM, DotProd), no SVE | Xeon Gold 6240 (every job so far, E nodes); AVX-512 (F, CD, BW, DQ, VL, VNNI), AVX2, FMA | *(E0)* | Grace (Neoverse V2), NEON and SVE2 *(E0: confirm)* |
+| MPI implementation and version | Open MPI 5.0.10 (Homebrew); 4-rank allreduce passes | Open MPI 4.0.5 (`mpi/openmpi/4.0.5/gnu-10.2.0`, UCX 1.9.0); with `--gpus 2 --ranks 2` the 2-rank allreduce passes and rank 0 on GPU 0 and rank 1 on GPU 1 both pass (job 175401) | *(E0)* | *(E0)* |
+| CUDA-aware MPI available | – | no (`ompi_info`: `mpi_built_with_cuda_support` false) | *(E0)* | *(E0)* |
+| Internet access on compute nodes | – | no (`curl` to crates.io times out) | *(E0)* | *(E0)* |
+| Clean build time of env-check | 81 s on Rust 1.99.1 (`--release --features cpu,metal,mpi`) | 1829 s on 8 cores (job 172549, `--release --features cuda`); after a feature change 178 s on 8 cores (`cuda-cpp,cpu`) and 952 s on 1 core (`cuda`) | *(E0)* | *(E0)* |
+| Queue wait and run time (median of 3) | – | 1 GPU: queue 153 s, run 28 s (jobs 175462, 175480, 175482 on 2026-10-18; the first rebuilt CubeCL, 987 s); 2 GPUs: queue 7525 s (job 175401) | *(E0)* | *(E0)* |
 | Gmsh, `vtk`, `meshio`, Claude Code versions | Gmsh 4.15.2-git (unpinned; M4 sets the pin); vtk 9.7.1 and meshio 5.3.5 in `.venv` (Python 3.14.7); Claude Code 2.1.295 | – | – | – |
 
 Re-run env-check on a target after its maintenance window or a module change, and update this table.
@@ -144,3 +147,4 @@ Re-run env-check on a target after its maintenance window or a module change, an
 | --- | --- |
 | 2026-10-17 | Created with the targets and the Myriad reference; E0 fills in the rest. |
 | 2026-10-18 | Myriad checks of E0 T6; CubeCL's LLVM on Myriad from Spack (ADR-0004); Rust 1.99 (ADR-0003). |
+| 2026-10-18 | Myriad V100 column (E0 T7): acceptance, Open MPI, kernel caches on node-local scratch. |
