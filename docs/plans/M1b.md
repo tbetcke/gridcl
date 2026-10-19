@@ -154,7 +154,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
   - After: T0
   - Parallel with: T3 (disjoint files)
 
-- [ ] **T2 Orientation bits (A.6)**
+- [x] **T2 Orientation bits (A.6)**
   - Goal: `orientation_bits` with ndelement's layout, from origin ids.
   - Crates/files: `gridcl-refcell/src/orientation.rs`.
   - Public API added or changed: body of `orientation_bits`.
