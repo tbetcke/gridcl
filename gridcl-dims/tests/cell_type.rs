@@ -24,8 +24,8 @@ const CELL_TYPES: [CellType; 8] = [
     CellType::Pyramid,
 ];
 
-// Exhaustive matches: a new variant breaks the build here, and the `lists_are_complete` test
-// fails until the variant is also added to its list above.
+// Exhaustive matches: a new variant breaks the build here, next to the lists above, which must
+// then be extended by hand; `lists_are_complete` checks the order and uniqueness of their entries.
 
 fn cell1_index(cell: Cell1) -> usize {
     match cell {

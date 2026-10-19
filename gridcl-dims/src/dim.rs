@@ -28,9 +28,10 @@ mod sealed {
 pub trait Dim: sealed::Sealed + Copy + Default + Debug + Eq + Hash + Send + Sync + 'static {
     /// The dimension as a number.
     const N: usize;
-    /// One dimension lower. D0::Lower = D0; D0 is not a TopoDim, so it never has a boundary.
+    /// One dimension lower. `D0::Lower` is [`D0`]; `D0` is not a [`TopoDim`](crate::TopoDim),
+    /// so it never has a boundary.
     type Lower: Dim;
-    /// [T; N] on stable Rust, without generic_const_exprs.
+    /// `[T; N]` on stable Rust, without `generic_const_exprs`.
     type Array<T: Copy + Default>: Copy + Default + AsRef<[T]> + AsMut<[T]>;
 }
 

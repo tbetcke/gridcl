@@ -1,8 +1,12 @@
 //! Test-only stand-in for gridcl's `Mesh` (docs/design.md, Listings B3 and B4).
 //!
 //! Names, generic parameters and impl bounds follow the listings; return types are simplified.
-//! Nothing here is executed: the cases only type-check calls. Editing this file shifts the line
-//! numbers in the `.stderr` baselines, which must then be regenerated and reviewed.
+//! Nothing here is executed: the cases only type-check calls. The `.stderr` baselines quote the
+//! impl headers `impl<F, TD, GD, C> Mesh<F, TD, GD, C>`, the bound lines
+//! `TD: TopoDim + Codim1<GD>,` and `TD::Lower: TopoDim + EmbeddedIn<GD>,` and the line
+//! `pub fn new(cell: TD::Cell) -> Self {`, and `pub struct D0;` and `pub struct D3;` of
+//! src/dim.rs (all without line numbers): editing any of them means regenerating and reviewing
+//! the baselines.
 #![allow(dead_code, unused)]
 
 use core::marker::PhantomData;

@@ -18,35 +18,50 @@ use crate::dim::{D1, D2, D3, Dim};
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CellType {
+    /// A point (dimension 0); in no cell family, so every conversion to one fails.
     Point,
+    /// An interval (dimension 1).
     Interval,
+    /// A triangle (dimension 2).
     Triangle,
+    /// A quadrilateral (dimension 2).
     Quadrilateral,
+    /// A tetrahedron (dimension 3).
     Tetrahedron,
+    /// A hexahedron (dimension 3).
     Hexahedron,
+    /// A triangular prism (dimension 3).
     Prism,
+    /// A square-based pyramid (dimension 3).
     Pyramid,
 }
 
 /// The cell types of topological dimension 1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell1 {
+    /// An interval.
     Interval,
 }
 
 /// The cell types of topological dimension 2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell2 {
+    /// A triangle.
     Triangle,
+    /// A quadrilateral.
     Quadrilateral,
 }
 
 /// The cell types of topological dimension 3.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell3 {
+    /// A tetrahedron.
     Tetrahedron,
+    /// A hexahedron.
     Hexahedron,
+    /// A triangular prism.
     Prism,
+    /// A square-based pyramid.
     Pyramid,
 }
 
@@ -62,7 +77,9 @@ pub enum Cell3 {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WrongCellDim {
+    /// The cell type that was given.
     pub found: CellType,
+    /// The topological dimension the target cell family requires.
     pub expected_tdim: usize,
 }
 
