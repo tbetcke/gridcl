@@ -799,12 +799,12 @@ The supported Metal path is wgpu with MSL. The native Metal runtime is optional 
 
 ### CUDA toolkit and driver
 
-CubeCL compiles each kernel to PTX with NVRTC from the installed CUDA toolkit, and the driver JIT-compiles that PTX when it loads the module. Two rules follow:
+CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; feature `cuda`, the default), choosing the PTX ISA version from the node's driver, and the driver JIT-compiles that PTX when it loads the module. The alternative backend `cuda-cpp` compiles CUDA C++ with NVRTC from the toolkit; gridcl uses it only for diagnosis (env-check) (ADR-0001). Two rules follow:
 
-- **No CUDA 13 on V100.** CUDA 13 dropped Volta (sm_70), so V100 jobs use a CUDA 12.x toolkit. A100 (sm_80) and GH200 (sm_90, compiled as `sm_90a`) may use CUDA 12 or 13.
-- **Toolkit no newer than the driver.** The driver must understand the PTX the toolkit emits, so the toolkit must not be newer than the CUDA version the node's driver reports in `nvidia-smi`. Otherwise module loading fails with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
+- **No CUDA 13 on V100.** CUDA 13 dropped Volta (sm_70), cudarc takes the CUDA version from the toolkit at build time, and the V100 nodes' driver supports CUDA 12.4, so V100 jobs use a CUDA 12.x toolkit. A100 (sm_80) and GH200 (sm_90, compiled as `sm_90a`) may use CUDA 12 or 13.
+- **Toolkit no newer than the driver (`cuda-cpp` only).** On the NVRTC path the driver must understand the PTX the toolkit emits, so the toolkit must not be newer than the CUDA version the node's driver reports in `nvidia-smi`. Otherwise module loading fails with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
 
-`CUDA_PATH` must point at the toolkit, because CubeCL passes its include directory to NVRTC. The env-check probe of milestone E0 records the toolkit and driver versions on every target.
+`CUDA_PATH` and the toolkit module are needed at build time, because cudarc reads the CUDA version from `nvcc`; at run time only `cuda-cpp` (NVRTC) needs them. The env-check probe of milestone E0 records the toolkit and driver versions on every target.
 
 ### Precision policy
 
@@ -1747,7 +1747,8 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | Node-ordering mistakes in I/O; VTK's legacy renumbering of higher-order hexahedra | Generated orderings with coordinate matching; Gmsh-written fixtures; VTU version 2.2; checks through VTK's own reader. |
 | Generic bounds spreading through downstream crates | `DeviceGrid` and the type aliases; minimal struct bounds; cell type and degree stay runtime. |
 | Unmaintained dependencies | hdf5-metno instead of hdf5; mshio as a test oracle only; coupe removed. |
-| CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit no newer than the driver's CUDA version; env-check records both on every target. |
+| CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit; CubeCL's default LLVM path chooses the PTX version for the node's driver, and the NVRTC path (`cuda-cpp`) needs a toolkit no newer than the driver's CUDA version (ADR-0001); env-check records both on every target. |
+| CubeCL's LLVM NVPTX backend advertises fewer device features than NVRTC (MMA) | gridcl uses no tensor-core MMA; env-check runs both backends on every remote target (ADR-0001). |
 | Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; turnaround measured in E0; Locust (no queue) as the routine CUDA target and the V100 at every review and as the fallback (ADR-0006); Locust runs never block a milestone. |
 | Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. The prebuilt bundle needs glibc ≥ 2.34; on Myriad the same LLVM version is built with Spack and linked with LLD. |
 | Spack-built LLVM relies on undocumented bundler internals (sentinel file, directory name, `llvm-config`) | Rebuild and re-run env-check on Myriad with every CubeCL upgrade; Apptainer image as the fallback (ADR-0004). |

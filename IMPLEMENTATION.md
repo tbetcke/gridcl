@@ -198,7 +198,7 @@ Merge them into main one at a time, in dependency order. If a branch falls behin
 | Too many permission prompts | Add allow rules to `.claude/settings.local.json` (personal) or `.claude/settings.json` (shared) |
 | A test needs a tool you do not have | The test-runner reports it as unavailable; CI or a remote target covers it |
 | A remote run hangs at SSH or asks for a password | The shared connection is closed or the VPN is down: run `ssh myriad true` in a terminal |
-| `CUDA_ERROR_UNSUPPORTED_PTX_VERSION` on a remote target | The CUDA toolkit is newer than the node's driver; use the toolkit recorded in `docs/dev-environment.md` |
-| A V100 job fails to compile for `sm_70` | A CUDA 13 toolkit was loaded; V100 jobs need CUDA 12.x |
+| `CUDA_ERROR_UNSUPPORTED_PTX_VERSION` on a remote target | Only with `cuda-cpp` (NVRTC): the CUDA toolkit is newer than the node's driver; use the toolkit recorded in `docs/dev-environment.md` (ADR-0001) |
+| A V100 build or load failure after loading a CUDA 13 toolkit | V100 jobs need CUDA 12.x |
 | Remote jobs left in the queue | `scripts/hpc/status.sh`, then `scripts/hpc/cancel.sh <job id>` |
 | The plan and the code disagree | The plan's Deviations log and the ADRs explain why; if they do not, ask the design-reviewer to compare them |

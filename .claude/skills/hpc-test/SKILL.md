@@ -69,7 +69,7 @@ read them only as far as needed to locate a failure.
 | Symptom | Meaning and action |
 | --- | --- |
 | SSH asks for a password or times out | The shared connection is closed or the VPN is down. Ask the user to run `ssh myriad true` (or `ssh locust true`); do not retry more than twice. |
-| `CUDA_ERROR_UNSUPPORTED_PTX_VERSION` | The CUDA toolkit is newer than the node's driver. Use the toolkit recorded in docs/dev-environment.md. |
-| A V100 compile error mentioning `sm_70` | A CUDA 13 toolkit was loaded on a V100 job. Use CUDA 12.x. |
+| `CUDA_ERROR_UNSUPPORTED_PTX_VERSION` | Only with `cuda-cpp` (NVRTC; the default `cuda` path picks the PTX version for the driver, ADR-0001): the CUDA toolkit is newer than the node's driver. Use the toolkit recorded in docs/dev-environment.md. |
+| A V100 build or load failure after loading a CUDA 13 toolkit | CUDA 13 dropped sm_70. Use CUDA 12.x. |
 | Exit status 124 | The run exceeded `--max-wait` and was deleted. Report it; resubmit only if the queue was the cause. |
 | Locust unavailable, or its GPU occupied by another user | Run on `myriad-v100` instead and say why; Locust runs never block a milestone. |
