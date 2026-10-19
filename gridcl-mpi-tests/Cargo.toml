@@ -8,11 +8,12 @@ license.workspace = true
 publish = false
 
 [features]
-# T1 adds "gridcl/mpi". The direct mpi dependency is temporary: the smoke test switches to
-# CommExt::sum once gridcl's Mpi exists (docs/plans/M0.md, question 6).
-mpi = ["dep:mpi"]
+# The direct mpi dependency is temporary: the smoke test switches to CommExt::sum once gridcl's
+# Mpi exists (docs/plans/M0.md, question 6).
+mpi = ["gridcl/mpi", "dep:mpi"]
 
 [dependencies]
+gridcl = { path = "../gridcl" }
 gridcl-testing = { path = "../gridcl-testing" }
 mpi = { workspace = true, optional = true }
 

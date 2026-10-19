@@ -1872,26 +1872,114 @@ dependencies = [
 ]
 
 [[package]]
+name = "gridcl"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "gridcl-device",
+ "gridcl-dims",
+ "gridcl-geometry",
+ "gridcl-io",
+ "gridcl-parallel",
+ "gridcl-partition",
+ "gridcl-refcell",
+ "gridcl-topology",
+]
+
+[[package]]
+name = "gridcl-bench"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "gridcl",
+ "gridcl-testing",
+]
+
+[[package]]
+name = "gridcl-device"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "cubecl-runtime",
+]
+
+[[package]]
 name = "gridcl-dims"
 version = "0.1.0"
+
+[[package]]
+name = "gridcl-geometry"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "gridcl-device",
+ "gridcl-dims",
+ "gridcl-parallel",
+ "gridcl-refcell",
+ "gridcl-topology",
+]
+
+[[package]]
+name = "gridcl-io"
+version = "0.1.0"
+dependencies = [
+ "gridcl-geometry",
+ "gridcl-parallel",
+ "gridcl-partition",
+ "gridcl-topology",
+]
 
 [[package]]
 name = "gridcl-mpi-tests"
 version = "0.1.0"
 dependencies = [
+ "gridcl",
  "gridcl-testing",
  "mpi",
 ]
 
 [[package]]
+name = "gridcl-parallel"
+version = "0.1.0"
+dependencies = [
+ "gridcl-device",
+ "mpi",
+]
+
+[[package]]
+name = "gridcl-partition"
+version = "0.1.0"
+dependencies = [
+ "gridcl-parallel",
+ "parmetis-sys",
+ "ptscotch-sys",
+]
+
+[[package]]
 name = "gridcl-refcell"
 version = "0.1.0"
+dependencies = [
+ "gridcl-dims",
+ "serde_json",
+]
 
 [[package]]
 name = "gridcl-testing"
 version = "0.1.0"
 dependencies = [
  "cubecl",
+ "gridcl",
+]
+
+[[package]]
+name = "gridcl-topology"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "gridcl-device",
+ "gridcl-dims",
+ "gridcl-parallel",
+ "gridcl-refcell",
 ]
 
 [[package]]
@@ -2989,6 +3077,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "parmetis-sys"
+version = "0.1.0"
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3221,6 +3313,10 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "ptscotch-sys"
+version = "0.1.0"
 
 [[package]]
 name = "quote"

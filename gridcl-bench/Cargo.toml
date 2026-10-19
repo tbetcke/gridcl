@@ -1,0 +1,24 @@
+[package]
+name = "gridcl-bench"
+description = "Benchmarks of gridcl kernels and end-to-end throughput"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = ["cpu"]
+# Runtime features, as in gridcl-testing.
+cpu = ["cubecl/cpu", "gridcl-testing/cpu"]
+cuda = ["cubecl/cuda", "gridcl-testing/cuda"]
+hip = ["cubecl/hip", "gridcl-testing/hip"]
+vulkan = ["cubecl/vulkan", "gridcl-testing/vulkan"]
+metal = ["cubecl/metal", "gridcl-testing/metal"]
+metal-native = ["cubecl/metal-native", "gridcl-testing/metal-native"]
+wgpu = ["cubecl/wgpu", "gridcl-testing/wgpu"]
+
+[dependencies]
+cubecl.workspace = true
+gridcl = { path = "../gridcl" }
+gridcl-testing = { path = "../gridcl-testing", default-features = false }

@@ -1,0 +1,17 @@
+[package]
+name = "gridcl-io"
+description = "Gmsh and VTK input and output of gridcl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# VTKHDF output; declared without hdf5-metno until it is needed (docs/plans/M0.md, question 4).
+hdf5 = []
+
+[dependencies]
+gridcl-geometry = { path = "../gridcl-geometry" }
+gridcl-parallel = { path = "../gridcl-parallel" }
+gridcl-partition = { path = "../gridcl-partition" }
+gridcl-topology = { path = "../gridcl-topology" }

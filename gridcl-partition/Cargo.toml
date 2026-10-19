@@ -1,0 +1,19 @@
+[package]
+name = "gridcl-partition"
+description = "Distributed graphs and mesh partitioners of gridcl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+ptscotch = ["dep:ptscotch-sys"]
+parmetis = ["dep:parmetis-sys"]
+# Declared without dependencies until M7 (docs/plans/M0.md, question 4).
+metis = []
+scotch = []
+
+[dependencies]
+gridcl-parallel = { path = "../gridcl-parallel" }
+parmetis-sys = { path = "../parmetis-sys", optional = true }
+ptscotch-sys = { path = "../ptscotch-sys", optional = true }

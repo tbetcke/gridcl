@@ -1,6 +1,21 @@
 [workspace]
 resolver = "3"
-members = ["gridcl-dims", "gridcl-refcell", "gridcl-testing", "gridcl-mpi-tests"]
+members = [
+    "gridcl-dims",
+    "gridcl-refcell",
+    "gridcl-device",
+    "gridcl-parallel",
+    "gridcl-topology",
+    "gridcl-geometry",
+    "gridcl-partition",
+    "gridcl-io",
+    "gridcl",
+    "ptscotch-sys",
+    "parmetis-sys",
+    "gridcl-testing",
+    "gridcl-mpi-tests",
+    "gridcl-bench",
+]
 # Outside the workspace (docs/design.md, "Workspace layout", dependency rule 6).
 exclude = ["conformance", "tools/env-check"]
 
@@ -12,4 +27,6 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 cubecl = "=0.11.0"
+cubecl-runtime = "=0.11.0"
 mpi = { version = "=0.8.2", default-features = false }
+serde_json = "1"

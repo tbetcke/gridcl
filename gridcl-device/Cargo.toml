@@ -1,0 +1,16 @@
+[package]
+name = "gridcl-device"
+description = "Device buffers, limits, launch plans and primitives of gridcl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# GPU-aware MPI on CUDA: device pointers of CUDA buffers. The one library feature that enables
+# a cubecl runtime (docs/design.md, "Dependency rules" 4).
+gpu-aware-cuda = ["cubecl/cuda", "dep:cubecl-runtime"]
+
+[dependencies]
+cubecl.workspace = true
+cubecl-runtime = { workspace = true, optional = true }
