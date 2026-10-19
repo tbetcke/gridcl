@@ -220,7 +220,17 @@ gridcl_job_main() {
         XDG_CACHE_HOME=$TMPDIR/gridcl-cache/xdg
         export CUDA_CACHE_PATH XDG_CACHE_HOME
     fi
-    echo "kernel caches: CUDA_CACHE_PATH=${CUDA_CACHE_PATH:-default} XDG_CACHE_HOME=${XDG_CACHE_HOME:-default}" >>"$results/prologue.txt"
+    # With a workspace Cargo.toml, CubeCL 0.11 keeps its database in <tree>/target/environment
+    # (myriadfs). No environment variable moves it; a cubecl.toml does, and the innermost one
+    # on the walk up from the working directory wins. path = "global" puts the database in
+    # $XDG_CACHE_HOME/cubecl. The content is the same for every job, so jobs sharing the tree
+    # (V100 and A100) cannot point each other at another node's TMPDIR. /cubecl.toml is
+    # git-ignored, so the sync neither copies nor deletes it.
+    # shellcheck disable=SC2016 # $XDG_CACHE_HOME is meant literally in the comment line
+    printf '%s\n' '# Written by scripts/hpc/jobs/common.sh: CubeCL database in $XDG_CACHE_HOME/cubecl.' \
+        '[environment]' 'path = "global"' >"$GRIDCL_HPC_TREE/cubecl.toml"
+    echo "kernel caches: CUDA_CACHE_PATH=${CUDA_CACHE_PATH:-default} XDG_CACHE_HOME=${XDG_CACHE_HOME:-default}" \
+        "cubecl database=${XDG_CACHE_HOME:-$HOME/.cache}/cubecl (cubecl.toml)" >>"$results/prologue.txt"
     gridcl_job_prologue >>"$results/prologue.txt" 2>&1 </dev/null
 
     : >"$log"

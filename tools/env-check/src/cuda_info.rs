@@ -158,7 +158,9 @@ fn evaluate(
         (Some(toolkit), Some(driver)) => toolkit_not_newer(toolkit, driver),
         _ => None,
     };
-    if toolkit_not_newer_than_driver == Some(false) {
+    // Only NVRTC's PTX must be understood by the driver; the LLVM backend picks the PTX ISA
+    // version from the driver itself (ADR-0001), so there the comparison is recorded only.
+    if compiler == CudaCompiler::Nvrtc && toolkit_not_newer_than_driver == Some(false) {
         problems.push(format!(
             "CUDA toolkit {} is newer than the driver's CUDA {}",
             toolkit_version.as_deref().unwrap_or("?"),
@@ -381,15 +383,41 @@ Build cuda_12.2.r12.2/compiler.33191640_0
             !v100(Some("13.0"), None, Some(12)).passed,
             "CUDA 13 on V100"
         );
-        assert!(
-            !v100(Some("12.6"), None, None).passed,
-            "toolkit newer than the driver"
+        let newer = v100(Some("12.6"), None, None);
+        assert!(newer.passed, "LLVM path: {:?}", newer.problems);
+        assert_eq!(
+            newer.toolkit_not_newer_than_driver,
+            Some(false),
+            "still recorded"
         );
         assert!(
             !v100(None, None, Some(12)).passed,
             "expected major without a toolkit"
         );
         assert!(v100(None, None, None).passed, "LLVM path without a toolkit");
+    }
+
+    #[test]
+    fn toolkit_newer_than_the_driver_fails_only_with_nvrtc() {
+        let run = |compiler| {
+            evaluate(
+                compiler,
+                &["ptx_sm70".to_string()],
+                Some("/opt/cuda".to_string()),
+                Some(("12.6.20241114".to_string(), "version.json".to_string())),
+                Some(("550.54.15".to_string(), "12.4".to_string())),
+                vec!["7.0".to_string()],
+                Some(70),
+                Some(12),
+            )
+        };
+        let nvrtc = run(CudaCompiler::Nvrtc);
+        assert!(!nvrtc.passed);
+        assert_eq!(nvrtc.problems.len(), 1, "{:?}", nvrtc.problems);
+        assert!(nvrtc.problems[0].contains("newer than the driver"));
+        let llvm = run(CudaCompiler::Llvm);
+        assert!(llvm.passed, "{:?}", llvm.problems);
+        assert_eq!(llvm.toolkit_not_newer_than_driver, Some(false));
     }
 
     #[test]
