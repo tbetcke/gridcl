@@ -12,7 +12,7 @@ Personal details (user ids, host names that are not public, project codes) never
 | Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240), 192 GB RAM, 2 × V100 (compute capability 7.0) | SGE: `-l gpu=N` with `-ac allow=EF` | CUDA at milestone reviews, multi-GPU tests and as the fallback (ADR-0006); CPU benchmarks on AVX-512 |
 | Myriad A100 | L nodes: 36 cores, 192 GB RAM, 4 × A100 40 GB (compute capability 8.0) | SGE: `-l gpu=N` with `-ac allow=L` | second CUDA architecture; when required (no CUDA 13: Myriad's driver supports CUDA 12.4) |
 | Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU, Hopper GPU (compute capability 9.0) | UCL ARC experimental system; SSH to the node itself (alias `locust`, keys); open multi-user node without a scheduler (runner kind `direct`) | routine CUDA platform: after every task that changes kernels (ADR-0006); aarch64 host and Hopper GPU |
-| Hosted CI | Linux x86-64 runners *(provider to be chosen)* | automatic | CPU runtime, Vulkan (software), MPICH and Open MPI, conformance |
+| Hosted CI | GitHub Actions, `ubuntu-24.04` x86-64 runners | automatic | CPU runtime, Vulkan (software), MPICH and Open MPI, conformance |
 
 Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unless a test needs the larger memory.
 
@@ -154,6 +154,36 @@ Re-run env-check on a target after its maintenance window or a module change, an
 - On Metal (wgpu MSL), `identity.fingerprint` is `spirv_0_0`: CubeCL 0.11 names every wgpu fingerprint `spirv_{vendor}_{device}`, whatever the shader language.
 - Claude Code's Bash sandbox blocks Metal and `sysctl`: inside it, env-check finds no Metal device and records the CPU model and SIMD flags as unknown. Metal runs and the env-check host record need a command run outside the sandbox (`/sandbox` manages this).
 
+## Hosted CI
+
+GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu-24.04`, the toolchain of `rust-toolchain.toml`, and caches the cargo registry, `target/` and, where the CPU runtime builds, its LLVM bundle in `$XDG_DATA_HOME/tracel`. Actions are pinned by commit SHA.
+
+| Workflow | Jobs | Trigger | System packages |
+| --- | --- | --- | --- |
+| `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push and pull request; manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools` |
+| `.github/workflows/conformance.yml` | conformance | nightly; pushes touching `conformance/` or `gridcl-refcell/`; manual | `libopenblas-dev` |
+| `.github/workflows/ptscotch.yml` | ptscotch (skeleton until M7) | nightly; pushes touching `gridcl-partition/` or `ptscotch-sys/`; manual | `libptscotch-dev` |
+
+## Test commands
+
+Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
+
+| Purpose | Command |
+| --- | --- |
+| workspace, CPU runtime | `cargo test --workspace` |
+| Metal (M3 Max, unsandboxed) | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` |
+| Vulkan (hosted CI) | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` |
+| CUDA (the runner sets `GRIDCL_TEST_DEVICE=cuda`) | `scripts/hpc/remote-test.sh <target> -- cargo test --release --workspace --features gridcl-testing/cuda` |
+| CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
+| MPI | `scripts/mpi-test.sh 1 2 3 4` |
+| conformance | `cargo test --manifest-path conformance/Cargo.toml` |
+| dependency check | `scripts/check-workspace-deps.sh` |
+| lint (hosted cpu job) | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps` |
+
+`scripts/hpc/remote-test.sh` runs everything after `--` as one shell command line (`bash -c`). Pass a compound command as one quoted argument, `-- 'A && B'`, not as `-- bash -c 'A && B'`.
+
+`scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`.
+
 ## Change history
 
 | Date | Change |
@@ -164,3 +194,4 @@ Re-run env-check on a target after its maintenance window or a module change, an
 | 2026-10-18 | Locust column and reference (E0 T9): acceptance, environment on the data disk, node-load results. |
 | 2026-10-19 | Myriad A100 column (E0 T8); target roles after ADR-0006. |
 | 2026-10-19 | Record closed (E0 T10): no open E0 fields; the hosted CI provider is chosen in M0. |
+| 2026-10-19 | M0: hosted CI on GitHub Actions, test commands, Locust doctest linker (`RUSTDOCFLAGS`), CubeCL's database under `$TMPDIR` via `cubecl.toml`. |
