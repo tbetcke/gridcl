@@ -196,7 +196,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
   - After: T1, T3 (GLL points)
   - Parallel with: –
 
-- [ ] **T5 Orthonormal polynomial sets**
+- [x] **T5 Orthonormal polynomial sets**
   - Goal: orthonormal sets with first derivatives on intervals (Legendre), quadrilaterals and
     hexahedra (tensor Legendre), triangles and tetrahedra (Dubiner) and prisms (Dubiner ×
     Legendre), as in "Tabulation and quadrature".
@@ -350,6 +350,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T3 | `gauss_rule` points are in tensor order of the collapsed coordinates, first coordinate fastest, with degree/2 + 1 points per direction (documented on `gauss_rule`). | The design gives no point order; a choice, not an API change. | – |
 | 2026-10-19 | T3 | `gll_points` rounds each lower-half point to 1 − fl(1 − t) before mirroring (shift ≤ 1.1e-16), so the points are exactly symmetric. | Exact symmetry; `points_match_ndelement` (GLL, 1e-14) confirms it in T4. | – |
 | 2026-10-19 | T3 | Done by a worktree subagent and merged with `--no-ff` (b060e45); the task was ticked in a separate commit after the merge, as the parallel-task procedure requires. | Parallel with T2. | – |
+| 2026-10-19 | T5 | The span test checks Parseval (‖m‖² = Σ (m, φ_k)² for every monomial of the space, plus the dimension) instead of computing the rank of the monomial Vandermonde. | Equivalent for an orthonormal set and needs no rank-revealing factorisation. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
