@@ -59,14 +59,57 @@ pub fn gmsh_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCe
 
 /// The map from VTK's Lagrange node order to the internal order for `cell` of degree `degree`.
 ///
+/// Generated for any p ≥ 1 from VTK's index functions (VTK 9.7.1,
+/// `Common/DataModel/vtkHigherOrder*.cxx`): vertices, then edges and faces with VTK's own
+/// directions, then the interior; triangle and tetrahedron interiors are recursive, the
+/// others lexicographic (the triangle faces and layers of a prism too). The pyramid has only
+/// the linear VTK pyramid (A.8), and the point cell gives `[0]`.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_dims::CellType;
+/// use gridcl_refcell::{RefCellError, vtk_to_internal};
+///
+/// // A.9: VTK's quadrilateral runs counter-clockwise, then the edges, then the interior.
+/// let map = vtk_to_internal(CellType::Quadrilateral, 2).unwrap();
+/// assert_eq!(map, [0, 1, 3, 2, 4, 6, 7, 5, 8]);
+///
+/// // Direction: entry k is the internal index of the file's k-th node.
+/// let file: Vec<usize> = (0..9).collect();
+/// let mut internal = [0; 9];
+/// for (k, &i) in map.iter().enumerate() {
+///     internal[i] = file[k];
+/// }
+/// assert_eq!(internal, [0, 1, 3, 2, 4, 7, 5, 6, 8]);
+///
+/// // VTK has no usable Lagrange pyramid (A.8).
+/// assert_eq!(
+///     vtk_to_internal(CellType::Pyramid, 2),
+///     Err(RefCellError::NotInFormat { format: "VTK", cell: CellType::Pyramid, degree: 2 })
+/// );
+/// ```
+///
 /// # Errors
 ///
 /// - [`RefCellError::UnsupportedDegree`] if `degree == 0`;
 /// - [`RefCellError::NotInFormat`] for pyramids of degree 2 or more (A.8).
-// T9 stub: the allowance goes with the body.
-#[allow(unused_variables)]
 pub fn vtk_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCellError> {
-    todo!()
+    if degree == 0 {
+        return Err(RefCellError::UnsupportedDegree { cell, degree });
+    }
+    if cell == CellType::Pyramid && degree >= 2 {
+        return Err(RefCellError::NotInFormat {
+            format: "VTK",
+            cell,
+            degree,
+        });
+    }
+    Ok(match_lattice(
+        cell,
+        degree,
+        &vtk::lattice_points(cell, degree),
+    ))
 }
 
 /// The internal index of each file node: entry k is the index in
@@ -152,13 +195,24 @@ mod tests {
         &[0, 1, 3, 2, 4],
     ];
 
+    /// A.9's vertex rows (VTK → internal), indexed like `CELLS`.
+    const VTK_VERTEX_MAPS: [&[usize]; 8] = [
+        &[0],
+        &[0, 1],
+        &[0, 1, 2],
+        &[0, 1, 3, 2],
+        &[0, 1, 2, 3],
+        &[0, 1, 3, 2, 4, 5, 7, 6],
+        &[0, 1, 2, 3, 4, 5],
+        &[0, 1, 3, 2, 4],
+    ];
+
     #[test]
     fn degree_zero_is_rejected() {
         for cell in CELLS {
-            assert_eq!(
-                gmsh_to_internal(cell, 0),
-                Err(RefCellError::UnsupportedDegree { cell, degree: 0 })
-            );
+            let err = Err(RefCellError::UnsupportedDegree { cell, degree: 0 });
+            assert_eq!(gmsh_to_internal(cell, 0), err);
+            assert_eq!(vtk_to_internal(cell, 0), err);
         }
     }
 
@@ -166,6 +220,23 @@ mod tests {
     fn point_cell_has_one_node() {
         for degree in 1..=4 {
             assert_eq!(gmsh_to_internal(Point, degree).unwrap(), [0]);
+            assert_eq!(vtk_to_internal(Point, degree).unwrap(), [0]);
+        }
+    }
+
+    /// A.8: VTK has only the linear pyramid.
+    #[test]
+    fn vtk_has_only_the_linear_pyramid() {
+        assert_eq!(vtk_to_internal(Pyramid, 1).unwrap(), [0, 1, 3, 2, 4]);
+        for degree in 2..=5 {
+            assert_eq!(
+                vtk_to_internal(Pyramid, degree),
+                Err(RefCellError::NotInFormat {
+                    format: "VTK",
+                    cell: Pyramid,
+                    degree
+                })
+            );
         }
     }
 
@@ -205,6 +276,20 @@ mod tests {
             sorted.sort_unstable();
             prop_assert_eq!(sorted, (0..n).collect::<Vec<_>>());
             prop_assert_eq!(&map[..GMSH_VERTEX_MAPS[c].len()], GMSH_VERTEX_MAPS[c]);
+        }
+
+        /// Every VTK map (pyramids p = 1 only) is a bijection onto 0..N that starts with A.9's
+        /// vertex map.
+        #[test]
+        fn vtk_maps_are_permutations(c in 0..CELLS.len(), degree in 1u32..=6) {
+            let cell = CELLS[c];
+            let degree = if cell == Pyramid { 1 } else { degree };
+            let map = vtk_to_internal(cell, degree).unwrap();
+            let n = num_lagrange_nodes(cell, degree);
+            let mut sorted = map.clone();
+            sorted.sort_unstable();
+            prop_assert_eq!(sorted, (0..n).collect::<Vec<_>>());
+            prop_assert_eq!(&map[..VTK_VERTEX_MAPS[c].len()], VTK_VERTEX_MAPS[c]);
         }
     }
 }
