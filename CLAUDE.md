@@ -2,7 +2,7 @@
 
 - Design reference: docs/design.md (gridcl Design B, revised design, October 2026).
   Public types in "Architecture" and "API walkthrough" change only via an ADR in docs/adr/.
-- Toolchain: stable Rust 1.95, pinned in rust-toolchain.toml.
+- Toolchain: stable Rust 1.99, pinned in rust-toolchain.toml.
 - CubeCL: cubecl = "=0.11.0" in [workspace.dependencies].
   - Crates that define or launch kernels may depend on cubecl without runtime features.
   - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
@@ -77,13 +77,18 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   on a login node, and never submit jobs with hand-written `qsub` or `ssh` commands. The
   exception is milestone E0, while the runner is being built: then each such command needs the
   user's approval.
-- Myriad V100 (`myriad-v100`) is the main CUDA platform: run it after every task that changes
-  kernels and at every milestone review.
-- Myriad A100 (`myriad-a100`) and Locust (`locust`) only when required: the milestone reviews
-  the design lists, architecture-dependent results, CUDA-version- or architecture-specific
-  changes, benchmarks, or when the user asks. Say why when you schedule them.
+- Locust (`locust`) is the routine CUDA platform: run it after every task that changes kernels,
+  and at milestone reviews when it is available (ADR-0006).
+- Myriad V100 (`myriad-v100`): at every milestone review, for multi-GPU and GPU-aware MPI tests
+  (`--gpus 2`), and as the fallback when Locust is unreachable or a run fails because another
+  user occupies its GPU. Say why when you fall back.
+- Myriad A100 (`myriad-a100`) only when required: the milestone reviews the design lists,
+  architecture-dependent results, CUDA-version- or architecture-specific changes, benchmarks,
+  or when the user asks. Say why when you schedule it.
 - CPU benchmarks on Myriad request the whole node (`--cores 36`); never draw SIMD conclusions
   from a node shared with other jobs.
+- Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
+  from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).
 - At most two remote jobs at a time. Cancel jobs you no longer need; leave none queued at the
   end of a session.
 - Never put user ids, private host names, project codes or credentials in committed files; they

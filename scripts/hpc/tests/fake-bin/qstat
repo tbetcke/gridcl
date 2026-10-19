@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Fake SGE qstat for scripts/hpc/tests: lists the jobs in $FAKE_STATE/sge/jobs/ in SGE's
+# format (nothing at all when there are none); `qstat -j <id>` exits 1 for an unknown job.
+# `-u <user>` is accepted and ignored.
+set -u
+: "${FAKE_STATE:?fake qstat: FAKE_STATE is not set}"
+jobs=$FAKE_STATE/sge/jobs
+mkdir -p "$jobs"
+
+if [ "${1:-}" = -j ]; then
+    id=${2:?fake qstat: -j needs a job id}
+    if [ -d "$jobs/$id" ]; then
+        echo "=============================================================="
+        echo "job_number:                 $id"
+        echo "job_name:                   $(cat "$jobs/$id/name")"
+        echo "owner:                      ${USER:-user}"
+        exit 0
+    fi
+    echo "Following jobs do not exist: " >&2
+    echo "$id" >&2
+    exit 1
+fi
+
+# shellcheck disable=SC2012 # job ids are numbers
+ids=$(ls "$jobs" | sort -n)
+[ -n "$ids" ] || exit 0
+printf '%-7s %-7s %-10s %-12s %-5s %-19s %-30s %5s\n' job-ID prior name user state \
+    "submit/start at" queue slots
+printf -- '-%.0s' $(seq 1 100)
+printf '\n'
+for id in $ids; do
+    printf '%7s %-7s %-10.10s %-12s %-5s %-19s %-30s %5s\n' "$id" 0.50000 \
+        "$(cat "$jobs/$id/name" 2>/dev/null)" "${USER:-user}" \
+        "$(cat "$jobs/$id/state" 2>/dev/null)" "$(cat "$jobs/$id/submitted" 2>/dev/null)" "" 1
+done

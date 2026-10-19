@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Fake SGE qsub for scripts/hpc/tests. `qsub [-terse] [options] script` queues the
+# script as job <id> in $FAKE_STATE/sge/jobs/<id>/ and keeps a copy in
+# $FAKE_STATE/sge/submitted/<id>.sh. The job then runs in the background (after
+# FAKE_SGE_QUEUE_DELAY seconds) unless FAKE_SGE_HOLD is set, in which case it stays
+# queued until qdel. A running job gets JOB_ID and NSLOTS (from `#$ -pe <pe> N`), starts
+# in $HOME, or in the directory of `#$ -wd`, and its output goes to $FAKE_STATE/sge/out/.
+set -u
+: "${FAKE_STATE:?fake qsub: FAKE_STATE is not set}"
+sge=$FAKE_STATE/sge
+mkdir -p "$sge/jobs" "$sge/submitted" "$sge/out"
+
+terse=""
+script=""
+for arg in "$@"; do
+    case $arg in
+        -terse) terse=1 ;;
+        *) script=$arg ;; # the script is the last argument
+    esac
+done
+
+last=$(cat "$sge/counter" 2>/dev/null || echo 1000)
+id=$((last + 1))
+echo "$id" >"$sge/counter"
+if [ -z "$script" ] || [ "$script" = - ]; then
+    cat >"$sge/submitted/$id.sh"
+else
+    cp "$script" "$sge/submitted/$id.sh" || exit 1
+fi
+job=$sge/submitted/$id.sh
+
+name=$(sed -n 's/^#\$ -N //p' "$job" | head -n 1)
+[ -n "$name" ] || name=$(basename "${script:-STDIN}")
+slots=$(sed -n 's/^#\$ -pe [^ ]* \([0-9][0-9]*\).*/\1/p' "$job" | head -n 1)
+workdir=$(sed -n 's/^#\$ -wd //p' "$job" | head -n 1)
+
+mkdir -p "$sge/jobs/$id"
+echo "$name" >"$sge/jobs/$id/name"
+echo qw >"$sge/jobs/$id/state"
+date '+%m/%d/%Y %H:%M:%S' >"$sge/jobs/$id/submitted"
+
+if [ -z "${FAKE_SGE_HOLD:-}" ]; then
+    (
+        sleep "${FAKE_SGE_QUEUE_DELAY:-0}"
+        [ -d "$sge/jobs/$id" ] || exit 0
+        echo r >"$sge/jobs/$id/state"
+        cd "${workdir:-$HOME}" || exit 1
+        JOB_ID=$id JOB_NAME=$name NSLOTS=${slots:-1} bash "$job" >"$sge/out/$id.o" 2>&1
+        echo "$?" >"$sge/out/$id.status"
+        rm -rf "${sge:?}/jobs/$id"
+    ) </dev/null >/dev/null 2>&1 &
+    echo "$!" >"$sge/jobs/$id/pid"
+fi
+
+if [ -n "$terse" ]; then
+    echo "$id"
+else
+    echo "Your job $id (\"$name\") has been submitted"
+fi

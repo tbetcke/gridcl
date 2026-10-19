@@ -34,7 +34,7 @@ The requirements are unchanged from the draft, apart from the development target
 - **Device residency:** all large mesh arrays live on the compute device. The host keeps only metadata and communication bookkeeping.
 - **Backends:** CUDA, HIP, Vulkan and Metal (through wgpu), and the CubeCL CPU runtime. f64 is used where the device supports it; f32 must work everywhere.
 - **CPU performance:** on the CubeCL CPU runtime, kernels use the host's SIMD units through CubeCL vectors where benchmarks show a gain. The same kernel source serves CPUs and GPUs.
-- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Myriad's V100 nodes as the main CUDA platform, and Myriad's A100 nodes and UCL Locust (NVIDIA Grace Hopper GH200) for runs scheduled when required. See "Development environment and test targets".
+- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Locust (NVIDIA Grace Hopper GH200) as the routine CUDA platform, UCL Myriad's V100 nodes at milestone reviews, for multi-GPU tests and as the fallback, and Myriad's A100 nodes for runs scheduled when required (ADR-0006). See "Development environment and test targets".
 - **Distribution:** MPI-distributed meshes with ownership, ghost layers and parallel partitioning. PT-Scotch is the production default; other partitioners are pluggable.
 - **High order:** geometry of arbitrary polynomial degree, with sub-entity orientation information for later high-order FEM and BEM.
 - **I/O:** Gmsh MSH 4.1 import and export, and VTK export (VTU/PVTU, VTKHDF) including VTK Lagrange cells.
@@ -51,7 +51,7 @@ The requirements are unchanged from the draft, apart from the development target
 7. Canonical orientation is keyed on origin vertex ids (decided in review, Q1).
 8. wgpu and Metal are real targets (Q2).
 9. The CI default partitioner is the built-in block partitioner plus vendored METIS on rank 0; PT-Scotch runs in its own CI job (Q3).
-10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Myriad V100 is the main CUDA platform; Myriad A100 and Locust are used only when required.
+10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Locust (GH200) is the routine CUDA platform; Myriad V100 runs at milestone reviews, for multi-GPU tests and as the fallback; Myriad A100 when required (ADR-0006).
 11. SIMD is written in CubeCL kernels with `Vector<F, N>`, never with intrinsics or `std::simd` on the host. Vector sizes per kernel family and device class come from benchmarks (M3s); until then every kernel runs at vector size 1.
 
 ### Out of scope
@@ -788,7 +788,7 @@ The backend is chosen at run time through `cubecl::Device`, and no gridcl type c
 | Backend | cubecl feature | Device | f64 | u64 arithmetic | Float atomic add | GPU-aware MPI | Tested on |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CPU runtime | `cpu` | `Device::cpu()` | yes | yes | f32, f64 | no | M3 Max on every change; hosted Linux CI |
-| CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | yes (`gpu-aware-cuda`) | Myriad V100 (main); Myriad A100 and Locust when required |
+| CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | yes (`gpu-aware-cuda`) | Locust (routine); Myriad V100 (reviews, multi-GPU); Myriad A100 when required |
 | HIP/ROCm | `hip` | `Device::rocm(i)` | yes | yes | f32 | planned (`gpu-aware-hip`) | manual |
 | Vulkan via wgpu (SPIR-V) | `vulkan` | `Device::vulkan(kind)` | if the adapter has shaderFloat64 | if the adapter has shaderInt64 | f32 if supported | no | hosted Linux CI (software Vulkan) |
 | Metal via wgpu (MSL) | `metal` | `Device::metal_msl(kind)` | no | yes | f32 only | no | M3 Max on every change |
@@ -799,12 +799,12 @@ The supported Metal path is wgpu with MSL. The native Metal runtime is optional 
 
 ### CUDA toolkit and driver
 
-CubeCL compiles each kernel to PTX with NVRTC from the installed CUDA toolkit, and the driver JIT-compiles that PTX when it loads the module. Two rules follow:
+CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; feature `cuda`, the default), choosing the PTX ISA version from the node's driver, and the driver JIT-compiles that PTX when it loads the module. The alternative backend `cuda-cpp` compiles CUDA C++ with NVRTC from the toolkit; gridcl uses it only for diagnosis (env-check) (ADR-0001). Two rules follow:
 
-- **No CUDA 13 on V100.** CUDA 13 dropped Volta (sm_70), so V100 jobs use a CUDA 12.x toolkit. A100 (sm_80) and GH200 (sm_90, compiled as `sm_90a`) may use CUDA 12 or 13.
-- **Toolkit no newer than the driver.** The driver must understand the PTX the toolkit emits, so the toolkit must not be newer than the CUDA version the node's driver reports in `nvidia-smi`. Otherwise module loading fails with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
+- **No CUDA 13 on V100.** CUDA 13 dropped Volta (sm_70), cudarc takes the CUDA version from the toolkit at build time, and the V100 nodes' driver supports CUDA 12.4, so V100 jobs use a CUDA 12.x toolkit. A100 (sm_80) and GH200 (sm_90, compiled as `sm_90a`) may use CUDA 12 or 13.
+- **Toolkit no newer than the driver (`cuda-cpp` only).** On the NVRTC path the driver must understand the PTX the toolkit emits, so the toolkit must not be newer than the CUDA version the node's driver reports in `nvidia-smi`. Otherwise module loading fails with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
 
-`CUDA_PATH` must point at the toolkit, because CubeCL passes its include directory to NVRTC. The env-check probe of milestone E0 records the toolkit and driver versions on every target.
+`CUDA_PATH` and the toolkit module are needed at build time, because cudarc reads the CUDA version from `nvcc`; at run time only `cuda-cpp` (NVRTC) needs them. The env-check probe of milestone E0 records the toolkit and driver versions on every target.
 
 ### Precision policy
 
@@ -978,7 +978,7 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 - **What it runs:** every candidate family at every vector size the device offers, at QuadField tile widths 1, 4 and 16 for geometry kernels, and on CPUs at block sizes of 4, 16 and 64 KiB. Sizes are 10^5, 10^6 and 10^7 items, in f32, f64 and u32 as the family requires.
 - **What it reports:** the median of ten timed runs after a warm-up launch that absorbs JIT compilation, the effective bandwidth relative to a copy kernel on the same device, and the compile time per vector size. Results are written as JSON.
 - **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and a Myriad V100 node (CPU runtime on its AVX-512 Xeon as CpuSimd512, and CUDA). Locust (Grace CPU with 72 cores, and H100) and a Myriad A100 node are added when available. CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
-- **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
+- **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
 - **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width and CPU block size follow the same rule.
 - **Record:** the choices go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
 
@@ -1336,9 +1336,9 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 | --- | --- | --- |
 | M3 Max, local (macOS, arm64) | CubeCL CPU runtime in f32 and f64; Metal via wgpu in f32; MPI | every change |
 | Hosted CI, Linux x86-64 | CPU runtime in f32 and f64; Vulkan (software driver) in f32, plus f64 if supported; MPI under MPICH and Open MPI | every push |
-| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | after every task that changes kernels; every milestone review |
+| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | every milestone review; multi-GPU and GPU-aware tests; fallback when Locust is unavailable |
 | Myriad A100 (sm_80) | CUDA in f32 and f64 | when required (see "Development environment and test targets") |
-| Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | when required |
+| Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | after every task that changes kernels; milestone reviews when available |
 | Myriad node with a CUDA-aware MPI | GPU-aware halo exchange | from M10 |
 
 - **Tolerances.** Quantities that are exact in exact arithmetic (unit volume, polynomial reproduction) are checked to 10^−12 relative in f64 and 10^−5 in f32. f32 results are also compared with f64 results to 10^−5 relative. Convergence rates are tested in f64 only.
@@ -1377,20 +1377,20 @@ Claude Code runs on the M3 Max and tests there on every change. CUDA work runs o
 | Target | Hardware | Access | Role |
 | --- | --- | --- | --- |
 | M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
-| Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240, AVX-512) and 2 × V100 (sm_70) each | SGE batch jobs: `-l gpu=N` with `-ac allow=EF` | main CUDA development platform; most nodes; CPU benchmarks on AVX-512 |
+| Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240, AVX-512) and 2 × V100 (sm_70) each | SGE batch jobs: `-l gpu=N` with `-ac allow=EF` | CUDA at milestone reviews, multi-GPU tests and fallback; oldest supported architecture; CPU benchmarks on AVX-512 |
 | Myriad A100 | L nodes: 36 cores and 4 × A100 40 GB (sm_80) each | SGE batch jobs: `-l gpu=N` with `-ac allow=L` | second CUDA architecture and CUDA 13; scheduled when required |
-| Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU and Hopper GPU (sm_90) | UCL ARC experimental system; access method recorded in E0 | aarch64 host and Hopper GPU; scheduled when required |
+| Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU and Hopper GPU (sm_90) | UCL ARC experimental system; SSH to the node, no scheduler (recorded in E0) | routine CUDA platform; aarch64 host and Hopper GPU |
 | Hosted CI | Linux x86-64 runners | automatic | CPU runtime, Vulkan, both MPI flavours, conformance |
 
-**When A100 and Locust runs are required.** Myriad V100 is the default for every CUDA run. Claude schedules A100 or Locust runs only:
+**When the V100 and A100 run.** Locust is the default for CUDA runs: Claude runs the CUDA tests there after every task that changes kernels, and at milestone reviews when it is available (ADR-0006). Myriad V100 runs at every milestone review, for multi-GPU and GPU-aware MPI tests (`--gpus 2`; Locust has one GPU), and as the fallback when Locust is unreachable or a run fails because another user occupies its GPU; the run report says why. Claude schedules A100 runs only:
 
-- for the milestone reviews of M2, M3, M6, M9 and M10 (A100) and of M2, M3 and M10 (Locust);
-- to compare, when a V100 failure or result looks architecture-dependent;
+- for the milestone reviews of M2, M3, M6, M9 and M10;
+- to compare, when a Locust or V100 failure or result looks architecture-dependent;
 - when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device or the GPU-aware transport;
 - for benchmarks;
 - when the user asks.
 
-Locust is an experimental system, so its runs are kept short and never block a milestone when it is unavailable.
+Locust is an experimental system, so its runs are kept short, build with at most half of the node's cores, and never block a milestone when it is unavailable. It is an open multi-user node without a scheduler, so other users' work can share its CPU and GPU at any time.
 
 **Remote-test runner.** Claude and developers run remote tests with one command from the M3 Max:
 
@@ -1401,10 +1401,10 @@ targets: myriad-v100 | myriad-a100 | locust
 
 1. **Configuration.** It reads `scripts/hpc/targets.env`, which is personal and git-ignored and is created from the committed `targets.example.env`. The file holds the SSH host aliases, the remote base directory, the module lines, `CUDA_PATH` and the scheduler kind (`sge` or `direct`).
 2. **Sync.** It copies the working tree to `<base>/<branch>/` with rsync, respecting `.gitignore`, and records the commit and a dirty flag.
-3. **Fetch.** It fetches crates on the login node, and the CPU runtime's LLVM bundle when needed, because compute nodes may have no internet access. Jobs run with `CARGO_NET_OFFLINE=true`.
-4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`.
+3. **Fetch.** It fetches crates on the login node, and the LLVM bundle when needed — on Myriad, whose RHEL 7 is too old for the prebuilt bundle, a Spack-built LLVM of the same version in the bundler's layout — because compute nodes have no internet access. Jobs run with `CARGO_NET_OFFLINE=true`.
+4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`. On direct targets the job also records a node-load snapshot immediately before and after the command: GPU utilisation and memory use, the GPU compute processes and their owners, the 1-minute load average (recorded only), and the CPU share of other users' processes over 5 s. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, and other users' processes use less than one core in total.
 5. **Wait.** It polls the scheduler for up to `--max-wait` (default 3 hours, queue time included). On timeout it deletes the job and exits with status 124.
-6. **Report.** It copies the results to `target/hpc/<target>/<job id>/`, prints a summary of at most 40 lines with the first failure first, and exits with the command's exit status.
+6. **Report.** It copies the results to `target/hpc/<target>/<job id>/`, prints a summary of at most 40 lines with the first failure first (on direct targets including a `node load:` line, `idle` or `busy` with the reason, for both snapshots), and exits with the command's exit status.
 
 `--cores` requests CPU cores for the job (all 36 for CPU benchmarks); the job script maps it to the scheduler request recorded in E0. `scripts/hpc/status.sh` lists the user's remote jobs and `scripts/hpc/cancel.sh <job id>` deletes one. At most two remote jobs run at a time.
 
@@ -1414,6 +1414,7 @@ targets: myriad-v100 | myriad-a100 | locust
 - Login nodes are for managing files, compiling and short tests (under 15 minutes); everything else runs as a job.
 - MPI jobs that use GPUs run within a single node. Multi-rank GPU tests therefore use the 2 V100s of an E or F node or the 4 A100s of an L node.
 - Home is also scratch, with a 1 TB quota. The runner keeps one tree per branch and removes the trees of merged branches.
+- Myriad runs RHEL 7.9 (glibc 2.17), older than CubeCL's prebuilt LLVM bundle allows (glibc ≥ 2.34). The same LLVM version is built with Spack (`scripts/hpc/spack/`, a CPU batch job) and linked with LLD; it is rebuilt when the bundler version changes (ADR-0004).
 
 ## Workspace layout
 
@@ -1462,9 +1463,9 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `GRIDCL_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
 | ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to gridcl-partition; nightly |
 | conformance | hosted Linux with OpenBLAS, or the M3 Max with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
-| cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | after every task that changes kernels; every milestone review |
+| cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | every milestone review; multi-GPU; fallback |
 | cuda-a100 | Myriad L node through `scripts/hpc` | as cuda-v100, with the newest toolkit the driver supports | when required |
-| gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | when required |
+| gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | after every task that changes kernels |
 | gpu-aware | Myriad node with a CUDA-aware MPI, through `scripts/hpc` | host-staged vs GPU-aware halo exchange | from M10, at every milestone review |
 
 The hosted CI provider is not fixed. Without one, the M3 Max covers the cpu, MPI and conformance jobs, and Vulkan runs are skipped.
@@ -1495,7 +1496,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Scope:**
 
 - the targets of "Development environment and test targets": the M3 Max, the Myriad V100 and A100 nodes, and Locust;
-- `rust-toolchain.toml` with Rust 1.95 at the repository root, and a `.gitignore` that covers build output, `target/hpc/` and `scripts/hpc/targets.env`;
+- `rust-toolchain.toml` with Rust 1.99 at the repository root, and a `.gitignore` that covers build output, `target/hpc/` and `scripts/hpc/targets.env`;
 - `tools/env-check/`, a standalone crate outside the future workspace. For each runtime compiled in (`cpu`, `metal`, `cuda`) it:
     - opens the device and records its name and properties (f64 and u64 support, `max_page_size`, `max_bindings`, `max_cube_count`, plane sizes, `load_width`, `vector_register_count`, `max_units_per_cube`, and `io_optimized_vector_sizes` for f32 and f64);
     - runs an element-wise add over 10^7 elements in f32 and, where supported, f64, at vector size 1 and at the widest size the device offers, with `calculate_cube_count_elemwise`;
@@ -1527,7 +1528,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M0 Workspace and CI
 
-**Scope:** the workspace of "Workspace layout" as skeleton crates; `rust-toolchain.toml` with Rust 1.95; `cubecl = "=0.11.0"` in `[workspace.dependencies]`; gridcl-testing with `test_client()`; the gridcl-mpi-tests skeleton; the hosted CI jobs cpu, mpi-mpich, mpi-openmpi and vulkan, plus skeletons for the conformance and ptscotch jobs. gridcl-testing selects the device from `GRIDCL_TEST_DEVICE` both locally and inside `scripts/hpc` jobs.
+**Scope:** the workspace of "Workspace layout" as skeleton crates; `rust-toolchain.toml` with Rust 1.99; `cubecl = "=0.11.0"` in `[workspace.dependencies]`; gridcl-testing with `test_client()`; the gridcl-mpi-tests skeleton; the hosted CI jobs cpu, mpi-mpich, mpi-openmpi and vulkan, plus skeletons for the conformance and ptscotch jobs. gridcl-testing selects the device from `GRIDCL_TEST_DEVICE` both locally and inside `scripts/hpc` jobs.
 
 **Acceptance:**
 
@@ -1740,15 +1741,17 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Host-staged transport stays the default. GPU-aware path behind a feature, with an integration test on a CUDA-aware MPI runner. Keep `CudaAllocator::Sync`. Re-check on every CubeCL upgrade. |
 | MPI flavour differences: `MPI_Comm` is a pointer in Open MPI and an integer in MPICH | `Mpi` holds the communicator in an `Rc` and is not `Send` under either; `Comm` requires neither `Send` nor `Sync`; CI runs both MPICH and Open MPI. |
 | rsmpi lacks neighbourhood collectives; no Rust bindings exist for PT-Scotch's distributed API or for ParMETIS | Own wrappers over `mpi::ffi`; own ptscotch-sys and parmetis-sys with width probing; vendored METIS as the dependency-free fallback; dedicated CI image; check the ParMETIS licence. |
-| Rust 1.95 MSRV is declared only in CubeCL's workspace, not in its published manifests | Pin the toolchain in `rust-toolchain.toml`; CI images with Rust ≥ 1.95. |
+| Rust 1.95 MSRV is declared only in CubeCL's workspace, not in its published manifests | Pin the toolchain (Rust 1.99) in `rust-toolchain.toml`; CI images with that toolchain. |
 | Pyramid geometry: Gmsh's high-order pyramid basis may differ from the DefElement space inside the cell | Use the DefElement Lagrange pyramid space; validate face traces against Gmsh fixtures; treat pyramids with p > 2 as experimental. |
 | ndelement's current numbering is unreleased; ndelement has no prism or pyramid elements | Pin commit f8cbffe in gridcl-conformance only. The nightly job and every pin bump re-check the conventions, and a failure forces an explicit decision. Prisms and pyramids are checked against DOLFINx's Gmsh maps and Gmsh fixtures. |
 | Node-ordering mistakes in I/O; VTK's legacy renumbering of higher-order hexahedra | Generated orderings with coordinate matching; Gmsh-written fixtures; VTU version 2.2; checks through VTK's own reader. |
 | Generic bounds spreading through downstream crates | `DeviceGrid` and the type aliases; minimal struct bounds; cell type and degree stay runtime. |
 | Unmaintained dependencies | hdf5-metno instead of hdf5; mshio as a test oracle only; coupe removed. |
-| CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit no newer than the driver's CUDA version; env-check records both on every target. |
-| Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; V100 (most nodes) as the default; turnaround measured in E0; Locust runs never block a milestone. |
-| Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. |
+| CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit; CubeCL's default LLVM path chooses the PTX version for the node's driver, and the NVRTC path (`cuda-cpp`) needs a toolkit no newer than the driver's CUDA version (ADR-0001); env-check records both on every target. |
+| CubeCL's LLVM NVPTX backend advertises fewer device features than NVRTC (MMA) | gridcl uses no tensor-core MMA; env-check runs both backends on every remote target (ADR-0001). |
+| Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; turnaround measured in E0; Locust (no queue) as the routine CUDA target and the V100 at every review and as the fallback (ADR-0006); Locust runs never block a milestone. |
+| Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. The prebuilt bundle needs glibc ≥ 2.34; on Myriad the same LLVM version is built with Spack and linked with LLD. |
+| Spack-built LLVM relies on undocumented bundler internals (sentinel file, directory name, `llvm-config`) | Rebuild and re-run env-check on Myriad with every CubeCL upgrade; Apptainer image as the fallback (ADR-0004). |
 | SIMD gains depend on kernel and hardware, and each vector size is a separate JIT compilation | Benchmark-driven policy (M3s) with scalar defaults; one vector size per kernel family and device class at run time; compile time recorded. |
 | Wider vectors raise register pressure and padding memory | Register-aware sizes from `vector_sizes_in_registers`; padding of at most 15 elements per buffer and 15 cells per block. |
 | CubeCL's vector API may change between releases | Pinned at `=0.11.0`; vector handling confined to `LaunchPlan`, `DeviceBuffer::vector_arg` and the kernels of the candidate list. |
@@ -1765,7 +1768,7 @@ Convert this document to `docs/design.md` in the repository, add the working agr
 
 - Design reference: docs/design.md (gridcl Design B, revised design, October 2026).
   Public types in "Architecture" and "API walkthrough" change only via an ADR in docs/adr/.
-- Toolchain: stable Rust 1.95, pinned in rust-toolchain.toml.
+- Toolchain: stable Rust 1.99, pinned in rust-toolchain.toml.
 - CubeCL: cubecl = "=0.11.0" in [workspace.dependencies].
   - Crates that define or launch kernels may depend on cubecl without runtime features.
   - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
@@ -2146,7 +2149,7 @@ All 44 findings of the consolidated design review are addressed. The table gives
 **Revision 2 (17 October 2026): development environment.**
 
 - New milestone E0 (development environment), before M0.
-- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Myriad V100 (main CUDA platform), Myriad A100 and Locust (when required), and hosted CI for Linux CPU, Vulkan and MPI.
+- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Locust (routine CUDA platform), Myriad V100 (milestone reviews, multi-GPU, fallback), Myriad A100 (when required), and hosted CI for Linux CPU, Vulkan and MPI.
 - CUDA toolkit and driver rules for V100 and for the driver's PTX JIT.
 - The remote-test runner `scripts/hpc/remote-test.sh` and the probe `tools/env-check/`.
 - Updated: requirements, fixed decisions, supported backends, testing targets, workspace layout, CI matrix, the M0, M7, M8 and M10 acceptance tests, and the risks.

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake cargo of the remote nodes (scripts/hpc/tests): logs its arguments with
+# CARGO_NET_OFFLINE and CARGO_TARGET_DIR to $FAKE_STATE/cargo.log and succeeds. `cargo tree`
+# shows cubecl-llvm only when a feature option is given, as for env-check (default = []).
+set -u
+printf 'offline=%s target_dir=%s args=%s\n' "${CARGO_NET_OFFLINE:-}" "${CARGO_TARGET_DIR:-}" \
+    "$*" >>"${FAKE_STATE:?}/cargo.log"
+case ${1:-} in
+    --version) echo "cargo 1.99.1 (fake)" ;;
+    tree)
+        case " $* " in
+            *" --features "* | *" --all-features "*) echo "cubecl-llvm v0.11.0 (fake)" ;;
+        esac
+        ;;
+esac
+exit 0

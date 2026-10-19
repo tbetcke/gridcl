@@ -1,0 +1,2 @@
+# Follow the files the scripts source, as shellcheck -x does.
+external-sources=true
