@@ -224,7 +224,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
     P_i(ξ) P_j(η) (1−z)^max(i,j) P_k^(2max(i,j)+2, 0)(2z−1), max(i,j) + k ≤ p, normalised. It
     spans exactly A.5's set and is orthogonal on the pyramid; the apex is handled by the limit.
 
-- [ ] **T7 Dense LU and Lagrange tabulation**
+- [x] **T7 Dense LU and Lagrange tabulation**
   - Goal: gridcl-refcell's own dense LU with partial pivoting, and `LagrangeElement`: the
     generalised Vandermonde of the orthonormal set at the nodes, solved with it; values and
     first derivatives at arbitrary points.
@@ -352,6 +352,8 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T3 | Done by a worktree subagent and merged with `--no-ff` (b060e45); the task was ticked in a separate commit after the merge, as the parallel-task procedure requires. | Parallel with T2. | – |
 | 2026-10-19 | T5 | The span test checks Parseval (‖m‖² = Σ (m, φ_k)² for every monomial of the space, plus the dimension) instead of computing the rank of the monomial Vandermonde. | Equivalent for an orthonormal set and needs no rank-revealing factorisation. | – |
 | 2026-10-19 | T6 | At the apex the rational pyramid functions (min(i, j) ≥ 1) return their limit along the axis x = y = s/2: value and first derivatives 0. Unit test `apex_is_the_axis_limit`. | Their derivatives have no limit over all directions; the plan said only "the apex is handled by the limit". | – |
+| 2026-10-19 | T7 | Root `Cargo.toml` gets `[profile.dev.package.gridcl-refcell] opt-level = 3` (debug assertions and overflow checks stay on). | Unoptimised, `tests/tabulation.rs` took 80 s (729 × 729 Vandermonde systems for hexahedra, p = 8); with it 7 s. | – |
+| 2026-10-19 | T7 | Achieved p = 8 errors (partition of unity = reproduction, max over test points): hexahedron equispaced 5.6e-13, prism 1.2e-13, pyramid 4.6e-14, hexahedron GLL 6.0e-14, all others ≤ 2.5e-14. All within 1e-12, so no ADR; the equispaced hexahedron keeps a margin of only about 2. | Recorded per T7's risk note. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review

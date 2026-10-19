@@ -13,9 +13,6 @@
 //! polynomials in (x, s); nothing is divided by a collapsed coordinate, so values and
 //! derivatives are exact up to rounding at the collapsed vertices too.
 
-// Called by LagrangeElement from T7 on (docs/plans/M1b.md); removed then.
-#![cfg_attr(not(test), allow(dead_code))]
-
 mod pyramid;
 
 use gridcl_dims::CellType;
