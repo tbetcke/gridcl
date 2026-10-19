@@ -192,4 +192,46 @@ Resolve every row before Status becomes approved.
 
 ## Review
 
-<Filled by /review-milestone.>
+Reviewed 2026-10-19 at 6f27b59 (design-reviewer on `main...HEAD`, test-runner on every target);
+the review fixes are in d0c6361.
+
+**Findings (design-reviewer).** No blockers, no majors, no ADR needed. Listings B1 and B2 match
+exactly, with no extra public API; the stub repeats Listing B4's impl bounds verbatim; every
+acceptance bullet is covered. Three minors, all fixed in d0c6361 at the maintainer's choice:
+
+| # | Finding | Resolution |
+| --- | --- | --- |
+| 1 | `tests/cell_type.rs` comment and the T0 Deviations row claimed `lists_are_complete` catches a variant missing from a list; it only checks order and uniqueness (the exhaustive `match` catches new variants by breaking the build). | Comment and Deviations row reworded; no test change. |
+| 2 | `tests/ui/stub/mesh.rs` header said editing shifts baseline line numbers; the baselines quote line text without numbers. | Header names the quoted lines (impl headers, bound lines, `CellBlock::new`, `pub struct D0;`/`D3;`). |
+| 3 | Rustdoc: plain-text `Dim::Lower`/`Dim::Array` docs; undocumented `CellType`/`CellN` variants and `WrongCellDim` fields. | Code spans and an intra-doc link; one-line docs for the variants and fields. Doc comments only. |
+
+**Acceptance coverage.** Checked row by row against the coverage table: the six trybuild cases
+and the four `cell_type` tests exist and assert the design's bullets (E0599 with `D3: Codim1<D3>`;
+E0308 expected `Cell2`, found `Cell3`; E0599 with `D0: TopoDim` and `D0: EmbeddedIn<D2>`/`<D3>`;
+the three pass cases with annotated result types; round trips for every cell and `WrongCellDim`
+for every wrong pair). None is ignored or skipped on any target.
+
+**Test evidence.**
+
+| Target / backend | Command | Job | Result |
+| --- | --- | --- | --- |
+| M3 Max lint | `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps`; `scripts/check-workspace-deps.sh` | – | pass (6f27b59 and d0c6361) |
+| M3 Max CPU runtime | `cargo test --workspace` | – | pass, 0 ignored; gridcl-dims: 4 unit, 4 `cell_type`, `compile::ui` (6 cases), 3 doctests + 3 `compile_fail` doctests (6f27b59; gridcl-dims rerun at d0c6361) |
+| M3 Max Metal | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` | – | pass, 0 ignored (6f27b59 and d0c6361) |
+| Myriad V100 (CUDA) | `scripts/hpc/remote-test.sh` with `cargo test --release --workspace --features gridcl-testing/cuda` | 194336 | pass, same counts; trybuild nested build ok |
+| Locust GH200 (CUDA) | same | 20261019214550-3713607 | pass, same counts; `node load:` busy before and after (another user's GPU process): correctness only, no timings used (ADR-0002) |
+| Hosted CI (cpu, vulkan, mpi-mpich, mpi-openmpi) | CI workflow | run 39316539696 (at 66482df) | pass; reruns on the PR |
+
+**Not run.** MPI (scripts/mpi-test.sh): M1a does not touch gridcl-parallel or later crates.
+Conformance: gridcl-refcell and conformance/ unchanged. Myriad A100: not required for M1a
+("Development environment and test targets"). No target was unavailable. No remote jobs left
+queued.
+
+**Follow-ups for later milestones.**
+- M3: move the compile tests to gridcl when the real `Mesh` replaces the stub (trybuild then
+  rebuilds cubecl in `target/tests/trybuild` on every target); decide whether the real
+  `CellBlock` gets a `new` (else the E0308 case uses a struct literal) (questions 2 and 3).
+- M3: `GridError` wraps `WrongCellDim`; an ADR if `Display`/`std::error::Error` is needed
+  earlier (question 5).
+- Any milestone: rustc updates within 1.99.x may change the `.stderr` wording; compare `rustc -V`
+  first (ADR-0003).
