@@ -167,7 +167,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
   - After: T1
   - Parallel with: T3
 
-- [ ] **T3 Point rules and quadrature**
+- [x] **T3 Point rules and quadrature**
   - Goal: Gauss–Jacobi and GLL points by Newton iteration, and `gauss_rule` on every cell as in
     "Tabulation and quadrature".
   - Crates/files: `gridcl-refcell/src/jacobi.rs`, `src/quadrature.rs`.
@@ -347,6 +347,9 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T0 | gridcl-conformance gets a `gridcl-dims` path dependency and, in `src/lib.rs`, `CELLS` and `reference_cell_type` (gridcl → ndelement cell type), shared by the tests and T10's exporter. | The tests need `CellType`, which gridcl-refcell does not re-export. | – |
 | 2026-10-19 | T0 | The stub modules carry `#![allow(unused_variables)]`, removed by the task that fills each one in; `polynomials.rs` and `node_maps.rs` declare their submodules instead of being empty. | `todo!()` bodies leave the parameters unused; empty parents could not hold `pyramid.rs`, `gmsh.rs` and `vtk.rs`. | – |
 | 2026-10-19 | T1 | `tdim`, `vertices`, `sub_entities`, `sub_entity_types` and `num_sub_entities` are `pub const fn`, not `pub fn`; `generator.rs` is `#![cfg(test)]`. | Usable in `const` and `comptime!` contexts ("Reference cells and conventions"); the generator is only used by the test that checks the tables. | – |
+| 2026-10-19 | T3 | `gauss_rule` points are in tensor order of the collapsed coordinates, first coordinate fastest, with degree/2 + 1 points per direction (documented on `gauss_rule`). | The design gives no point order; a choice, not an API change. | – |
+| 2026-10-19 | T3 | `gll_points` rounds each lower-half point to 1 − fl(1 − t) before mirroring (shift ≤ 1.1e-16), so the points are exactly symmetric. | Exact symmetry; `points_match_ndelement` (GLL, 1e-14) confirms it in T4. | – |
+| 2026-10-19 | T3 | Done by a worktree subagent and merged with `--no-ff` (b060e45); the task was ticked in a separate commit after the merge, as the parallel-task procedure requires. | Parallel with T2. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
