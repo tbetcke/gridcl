@@ -242,7 +242,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
     p = 10"). If p = 8 misses 1e-12 on any cell, record the achieved error, stop and draft an
     ADR (the tolerance is an acceptance criterion).
 
-- [ ] **T8 Gmsh permutation generator (A.9)**
+- [x] **T8 Gmsh permutation generator (A.9)**
   - Goal: `gmsh_to_internal` for any p ≥ 1, generated from Gmsh's recursive rule and matched to
     `lagrange_points` by coordinates ("High-order node orderings").
   - Crates/files: `gridcl-refcell/src/node_maps.rs` (`gmsh_to_internal`, shared coordinate
@@ -354,6 +354,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T6 | At the apex the rational pyramid functions (min(i, j) ≥ 1) return their limit along the axis x = y = s/2: value and first derivatives 0. Unit test `apex_is_the_axis_limit`. | Their derivatives have no limit over all directions; the plan said only "the apex is handled by the limit". | – |
 | 2026-10-19 | T7 | Root `Cargo.toml` gets `[profile.dev.package.gridcl-refcell] opt-level = 3` (debug assertions and overflow checks stay on). | Unoptimised, `tests/tabulation.rs` took 80 s (729 × 729 Vandermonde systems for hexahedra, p = 8); with it 7 s. | – |
 | 2026-10-19 | T7 | Achieved p = 8 errors (partition of unity = reproduction, max over test points): hexahedron equispaced 5.6e-13, prism 1.2e-13, pyramid 4.6e-14, hexahedron GLL 6.0e-14, all others ≤ 2.5e-14. All within 1e-12, so no ADR; the equispaced hexahedron keeps a margin of only about 2. | Recorded per T7's risk note. | – |
+| 2026-10-19 | T8 | Gmsh rules ported from Gmsh 4.15.2 (tag `gmsh_4_15_2`): `pointsGenerators.cpp` and the `M*.h` edge/face tables, cited in `node_maps/gmsh.rs`. The prism interior is Gmsh's non-recursive triangle(p−3) × line(p−2) rule; pyramid lattices map as (m0, m1, p − m2). Cross-checked in scratch against the gmsh 4.15.2 Python wheel for 68 (cell, p) pairs (up to p = 10 / 9 / 8). The shared lattice matcher `match_lattice` is private to `node_maps`. | Done by a worktree subagent, merged with `--no-ff`, ticked after the merge (parallel with T5–T7). | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
