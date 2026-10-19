@@ -360,8 +360,75 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T10 | `orientation.json` and `lagrange_points.json` are written compact (409 kB and 16 kB); `sources.json` reads ndelement's commit from conformance/Cargo.lock and records repository, ref and commit for each source. | Deterministic output that follows the pin; a re-export is byte-identical. | – |
 | 2026-10-19 | finish | Finish run: workspace tests, clippy, doc, fmt and Metal pass on the M3 Max; conformance passes; Locust CUDA (`cargo test --release --workspace --features gridcl-testing/cuda`, job 20261019233247-3771866, 09d8b9c, clean tree) passes. Myriad V100 not run: both submissions failed because Myriad's SGE qmaster refused connections (util01, port 6444); nothing queued. The V100 run moves to the milestone review. | Remote scheduler outage; CLAUDE.md allows two attempts. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
+| 2026-10-19 | T4 | `lagrange_entity_nodes` panics for `degree == 0` (documented under `# Panics`) instead of returning `UnsupportedDegree` (question 9). | It returns a plain `Range<usize>`, as planned; recorded at the review (minor 3). | – |
+| 2026-10-19 | review | Myriad V100 not run at the review either: both submissions failed at `qsub` (SGE qmaster on util01, port 6444, refused connections). The maintainer decided to record it as unavailable and continue. | Remote scheduler outage; two attempts, as CLAUDE.md allows. | – |
 
 ## Review
 
-<Filled by /review-milestone.>
+Reviewed 2026-10-19 at 5cfad14 (design-reviewer on `main...HEAD`, test-runner on every target).
+The review fixes and ADR-0008 are in 213feb0..3b2d465. The design-reviewer re-reviewed
+5cfad14..0f957a5 (no blockers, no majors), and the local suite was rerun at 0f957a5. 3b2d465
+changes only rustdoc; `cargo doc` and the doctests were run on it.
 
+**Findings (design-reviewer).** No blockers. Every acceptance bullet is covered with the design's
+numbers, ranges and tolerances. The reviewer recomputed the A.11 conversion of the DOLFINx tet20
+array and checked the pyramid closed form by hand. The public API matches the planned API and
+Listings B3 and B5. gridcl-refcell depends only on gridcl-dims; ndelement is pinned by `rev`
+without `version =`; there is no `unsafe`. The Deviations log was complete apart from minor 3.
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| 1 | Major | Myriad V100 review run outstanding (CLAUDE.md, "Development environment and test targets"). | Both attempts failed at `qsub` (SGE qmaster refused connections). Recorded as unavailable at the maintainer's decision (Deviations log). |
+| 2 | Major | "High-order node orderings" says VTK "triangle interiors are recursive, others lexicographic", but VTK's wedge orders its triangular faces and triangle layers lexicographically, as T9 implements. The planned VTK P3 prism check cannot tell the two orders apart (they first differ at p = 5). | ADR-0008 (213feb0, 016291a). The maintainer accepted it and extended the check to p = 3, 5 and 6. Applied to docs/design.md in ae5eb2c (four sentences; no API change). Question 14. |
+| 3 | Minor | `lagrange_entity_nodes` panics at p = 0, but question 9 promises `UnsupportedDegree`; the deviation was not logged. | Deviations-log row (T4). |
+| 4 | Minor | A.9's "Interval (any): identity" row was tested only for p ≤ 2. | `node_maps::interval_maps_are_identity`, p = 1..=10, Gmsh and VTK (438fcf4). |
+| 5 | Minor | `fixtures::lagrange_points_match_fixture` checked only the number of cells, so a fixture missing families or degrees would pass. | The test now asserts the five cells, the families of each cell (GLL on the tensor cells only) and degrees 1..=4 (438fcf4). |
+| 6 | Minor | The conformance workflow did not trigger on `gridcl-dims/` (a conformance dependency since T0), and nothing detects stale fixtures. | `gridcl-dims/**` added to the path filter, plus a step that re-exports the fixtures and runs `git diff --exit-code` (0f957a5). ndelement's GLL points come from `quadraturerules`' tabulated constants, so the export is platform-independent. |
+| 7 | Minor | The equispaced hexahedron at p = 8 reaches 5.6e-13 against the 1e-12 tolerance, and has been checked only on aarch64. | Follow-up: confirm in the hosted x86-64 cpu job on the PR. |
+| 8 | Minor | The Newton iterations in `jacobi.rs` silently accepted the last iterate after `MAX_NEWTON_STEPS`. | Both loops assert convergence, naming node, m and α; new test `gauss_jacobi_newton_converges_for_large_m` (m ≤ 60) (a7c1f29). Re-review: the resulting panics of `gauss_rule` and `lagrange_points` are documented under `# Panics` (3b2d465). |
+| 9 | Minor | At the pyramid apex the first derivatives of the rational basis functions follow the axis-limit convention (T6); they have no limit over all directions. | Follow-up for M3 (below). Quadrature points are interior, so the quadrature path is unaffected. |
+| 10 | Minor (re-review) | ADR-0008's consequence "M5, which must accept this ADR before its plan is approved" is stale now that the ADR is accepted. M5's roadmap acceptance list does not name the VTK prism check, which appears only in "High-order node orderings / Checks". | Follow-up for M5 (below). The ADR text is left as accepted. |
+
+**Acceptance coverage.** I checked every row of the coverage table myself:
+- `node_counts_match_a4`: the eight cells, p = 1..=10, against A.4's formulas and `lagrange_points`.
+- `partition_of_unity` and `reproduces_own_space`: seven cells equispaced plus GLL on the tensor cells, p ≤ 8, at the points of `gauss_rule(2p)` and at the nodes, 1e-12 (question 10). The pyramid space follows Definition 9.
+- `integrates_monomials`: seven cells, degrees 0..=20, closed forms, 1e-13 relative; rationomials on pyramids (question 11).
+- `sub_entities_match_ndelement` and `tables_match_fixture`: all eight cells, every dimension.
+- `bits_match_compute_orientation`: 10 000 splitmix64 numberings per cell with D_TOP ≥ 2. `orientation_matches_fixture` covers every permutation.
+- `points_match_ndelement` and `lagrange_points_match_fixture`: five cells, p ≤ 4, equispaced and GLL, 1e-14.
+- `gmsh_reproduces_a9` and `vtk_reproduces_a9`: every A.9 row as a literal, matching docs/design.md; VTK pyramid 14 gives `Err(NotInFormat)`.
+- `gmsh_p3_matches_dolfinx`: tet20 after A.11; quad16, hex64, prism40 and pyramid30 unchanged.
+- `scripts/check-workspace-deps.sh`: pass.
+
+No test is ignored or skipped on any target that ran.
+
+**Test evidence.**
+
+| Target / backend | Command | Job | Result |
+| --- | --- | --- | --- |
+| M3 Max lint | `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps`; `scripts/check-workspace-deps.sh` | – | pass at 5cfad14 and 0f957a5 ("ok (432 crates, none forbidden)"); fmt, clippy and doc for gridcl-refcell also at 3b2d465 |
+| M3 Max CPU runtime | `cargo test --workspace` | – | pass, 0 ignored. At 5cfad14, gridcl-refcell: 67 unit, 3 fixtures, 1 node_counts, 3 node_maps, 1 quadrature, 2 tabulation, 14 doctests. At 0f957a5: 118 tests in the workspace (gridcl-refcell 68 unit, 4 node_maps). Doctests also at 3b2d465 |
+| M3 Max Metal | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` (unsandboxed) | – | pass, 0 ignored, same counts as CPU, at 5cfad14 and 0f957a5 |
+| Conformance (M3 Max, Accelerate) | `cargo test --manifest-path conformance/Cargo.toml`; `cargo clippy --manifest-path conformance/Cargo.toml --all-targets -- -D warnings`; `cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures && git diff --exit-code gridcl-refcell/tests/fixtures` | – | pass at 5cfad14 and 0f957a5. 4 tests (`sub_entities_match_ndelement`, `bits_match_compute_orientation`, `points_match_ndelement`, `vtk_matches_ndelement`); re-export unchanged |
+| Locust GH200 (CUDA) | `scripts/hpc/remote-test.sh locust` with `cargo test --release --workspace --features gridcl-testing/cuda` | 20261019233829-3787419 (5cfad14) | pass (exit 0, first failure: none). `node load:` busy before and after (another user's process at 100% GPU): correctness only, no timings used (ADR-0002). Also passed at the finish run, job 20261019233247-3771866 (09d8b9c) |
+| Myriad V100 (CUDA) | `scripts/hpc/remote-test.sh myriad-v100` with the same command | – | **unavailable**: `qsub` failed on both attempts with "unable to send message to qmaster using port 6444 on host util01" (SSH and sync worked). Same failure at the finish run. Recorded at the maintainer's decision |
+| Hosted CI (cpu, vulkan; conformance with OpenBLAS) | CI and conformance workflows | – | not yet run: the branch has not been pushed. Runs on the PR |
+
+**Not run.** MPI: M1b does not touch gridcl-parallel or later crates. Myriad A100: not required
+for M1b ("Development environment and test targets"). Myriad V100: unavailable (above). No remote
+jobs are left queued.
+
+**Follow-ups for later milestones.**
+- PR: confirm in the hosted x86-64 cpu job that `tabulation::reproduces_own_space` passes for
+  the equispaced hexahedron at p = 8 (5.6e-13 on aarch64; minor 7). Confirm that the conformance
+  job's new stale-fixture step passes with OpenBLAS.
+- Next milestone review: run Myriad V100 when its scheduler is back.
+- M3: gridcl-geometry maps `RefCellError::UnsupportedNodeFamily` onto
+  `GridError::UnsupportedNodeFamily` with `map_err` (question 3). Reference facet normals and the
+  A.6 storage slots (question 8). Geometry must not rely on Jacobians at the pyramid apex node,
+  where the derivatives are an axis-limit convention (T6; minor 9). Add this as an M3 open
+  question.
+- M4/M5: A.7/A.8 type tables and Gmsh-file fixtures (question 8).
+- M5: list ADR-0008 and "High-order node orderings / Checks" under the plan's design sections.
+  Check VTK prisms at p = 3, 5 and 6 against VTK-written fixtures. M5's roadmap acceptance list
+  does not name this check; moving it there would need its own ADR (minor 10).
