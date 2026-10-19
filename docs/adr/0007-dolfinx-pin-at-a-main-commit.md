@@ -1,6 +1,6 @@
 # ADR-0007: Pin DOLFINx at a main commit for the Gmsh P3 acceptance arrays
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-19
 - **Raised in:** M1b T0 (plan question 7)
 - **Design sections affected:** none in wording; the pin that A.10 ("Sources and conformance setup") and "High-order node orderings" leave open, and docs/plans/M1b.md question 7
@@ -43,4 +43,4 @@ Option 2. The design asks only for pinned commits, and pinning a main commit is 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-19 (option 2), without conditions.
