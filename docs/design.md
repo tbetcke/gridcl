@@ -1309,13 +1309,13 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 
 - **Generated, not hand-written.** Each format's ordering is generated from its documented recursive rule, the reference points are computed, and the permutation to the internal layout is derived by coordinate matching.
     - Gmsh: vertices, then edge interiors, then face interiors recursively as lower-order elements, then the volume interior.
-    - VTK: vertices, edges and faces with VTK's own edge directions, then the interior; triangle interiors are recursive, others lexicographic.
+    - VTK: vertices, edges and faces with VTK's own edge directions, then the interior; VTK triangle cells and tetrahedron faces and interiors are recursive; quadrilateral, hexahedron and wedge faces and interiors, including the wedge's triangular faces and triangle layers, are lexicographic.
 - **Direction convention (A.9):** entry k of a map is the internal index of the file's k-th node, `internal[map[k]] = file[k]`. DOLFINx's arrays use the same direction even though its docstring states the inverse. DOLFINx's triangle and tetrahedron arrays use Basix numbering; convert them with A.11.
 - **Checks:**
     - reproduce A.9 for p ≤ 2;
     - reproduce DOLFINx's Gmsh P3 tables: the 20-node tetrahedron after A.11 conversion, and the 16-node quadrilateral, 64-node hexahedron, 40-node prism and 30-node pyramid unchanged;
     - agree with files written by a pinned Gmsh version;
-    - check VTK P3 prisms against VTK-written fixtures, since DOLFINx has no 40-node VTK wedge map.
+    - check VTK prisms at p = 3, 5 and 6 against VTK-written fixtures, since DOLFINx has no VTK wedge map above p = 2 and the wedge's triangular faces first differ from the recursive order at p = 5 (one level of recursion) and p = 6 (two levels).
 
 ## Tags, regions and submeshes
 
@@ -1890,7 +1890,7 @@ The pyramid count equals the dimension of DefElement's Lagrange pyramid space (A
 
 - **Blocks:** all vertices in vertex order, then the interior nodes of each edge in edge order (A.2), then those of each face in face order (A.3), then the cell interior.
 - **Inside an edge:** from the edge's first listed vertex towards its second.
-- **Inside a triangle (face or cell):** with v0, v1, v2 the first three listed vertices, the points are v0 + (i0/p)(v1 − v0) + (i1/p)(v2 − v0), with i0, i1 ≥ 1 and i0 + i1 ≤ p−1. The loop has i1 outer and i0 inner: lexicographic, first face coordinate fastest. VTK orders triangle interiors recursively instead; the I/O maps handle this.
+- **Inside a triangle (face or cell):** with v0, v1, v2 the first three listed vertices, the points are v0 + (i0/p)(v1 − v0) + (i1/p)(v2 − v0), with i0, i1 ≥ 1 and i0 + i1 ≤ p−1. The loop has i1 outer and i0 inner: lexicographic, first face coordinate fastest. VTK orders the interiors of triangle cells and tetrahedron faces recursively instead (its wedge's triangular faces are lexicographic); the I/O maps handle this.
 - **Inside a quadrilateral face:** the same construction on the tensor grid, first face coordinate fastest.
 - **Tetrahedron interior:** v0 + (i0/p)(v1−v0) + (i1/p)(v2−v0) + (i2/p)(v3−v0), with all indices ≥ 1 and i0 + i1 + i2 ≤ p−1; i2 outermost, i0 innermost.
 - **Hexahedron interior:** the tensor grid along the axes v1−v0, v2−v0, v4−v0, first coordinate fastest.
@@ -1994,7 +1994,7 @@ Entry k is the internal (DefElement-order) node index of the file's k-th node: `
 | Pyramid (5) | 0 1 3 2 4 | 0 1 3 2 4 |
 | Pyramid (14) | 0 1 3 2 4 5 6 7 8 9 10 12 11 13 | not written (A.8) |
 
-Higher degrees are generated from each format's rules ("High-order node orderings"). As acceptance tests, the generator must reproduce DOLFINx's Gmsh P3 tables: the 20-node tetrahedron after the A.11 conversion, and the 16-node quadrilateral, 64-node hexahedron, 40-node prism and 30-node pyramid unchanged. VTK P3 prisms are checked against VTK-written fixtures.
+Higher degrees are generated from each format's rules ("High-order node orderings"). As acceptance tests, the generator must reproduce DOLFINx's Gmsh P3 tables: the 20-node tetrahedron after the A.11 conversion, and the 16-node quadrilateral, 64-node hexahedron, 40-node prism and 30-node pyramid unchanged. VTK prisms of degrees 3, 5 and 6 are checked against VTK-written fixtures.
 
 ### A.10 Sources and conformance setup
 

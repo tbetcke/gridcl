@@ -1,6 +1,6 @@
 # ADR-0008: VTK Lagrange wedge: triangular faces and triangle layers are lexicographic
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-19
 - **Raised in:** M1b T9 (Deviations log), confirmed at the M1b review
 - **Design sections affected:** "High-order node orderings" (the VTK bullet and the "Checks" list); A.5 "Inside a triangle (face or cell)"; A.9, last paragraph
@@ -49,4 +49,4 @@ Option 2. The code follows VTK and is already correct. The design should say so,
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-19 (option 2), with the VTK prism check extended to p = 6. Applied to docs/design.md in the M1b review.
