@@ -122,7 +122,14 @@ for n in "${ranks[@]}"; do
             reason="exit status $status"
             [[ $status -eq 124 || $status -eq 137 ]] && reason="time limit of $time_limit s exceeded"
             printf 'FAIL  ranks=%-2s %s (%d s, %s; log %s)\n' "$n" "$name" "$elapsed" "$reason" "$log"
-            tail -n 20 "$log" | sed 's/^/      /'
+            # The panic message comes first and a backtrace last; show both ends.
+            if [[ $(wc -l <"$log") -le 80 ]]; then
+                sed 's/^/      /' "$log"
+            else
+                head -n 50 "$log" | sed 's/^/      /'
+                echo "      [...]"
+                tail -n 30 "$log" | sed 's/^/      /'
+            fi
         fi
     done
 done
