@@ -4,6 +4,8 @@
 #
 # Usage: scripts/check-workspace-deps.sh [CARGO-TREE-ARGS...]
 #   Extra arguments go to `cargo tree`; for example `--features gridcl-mpi-tests/mpi` must fail.
+#
+# Exit status: 0 if no forbidden crate is found, 3 if one is, anything else on an error.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -19,6 +21,6 @@ if [[ -n "$found" ]]; then
     while IFS= read -r crate; do
         echo "  $crate" >&2
     done <<<"$found"
-    exit 1
+    exit 3
 fi
 echo "check-workspace-deps: ok ($(wc -l <<<"$crates" | tr -d ' ') crates, none forbidden)"

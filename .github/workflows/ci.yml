@@ -47,8 +47,11 @@ jobs:
         env:
           RUSTDOCFLAGS: -Dwarnings
       - run: scripts/check-workspace-deps.sh
-      # Negative check: the script must still see MPI when a feature pulls it in.
-      - run: "! scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi"
+      # Negative check: the script must still find MPI (exit 3) when a feature pulls it in.
+      - run: |
+          rc=0
+          scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
+          test "$rc" -eq 3
 
   mpi:
     name: mpi-${{ matrix.mpi }}
