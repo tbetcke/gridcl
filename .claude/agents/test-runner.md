@@ -18,8 +18,11 @@ Run exactly the commands the delegating prompt asks for. When it only names a sc
 | workspace | `cargo test --workspace` |
 | backend metal (local) | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` |
 | backend vulkan | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` (hosted CI; usually unavailable on the M3 Max) |
-| CUDA on target T | `scripts/hpc/remote-test.sh T -- cargo test --workspace --features gridcl-testing/cuda` |
+| CUDA on target T | `scripts/hpc/remote-test.sh T -- cargo test --release --workspace --features gridcl-testing/cuda` |
+| CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
+| MPI on CUDA (Myriad V100) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
+| dependency check | `scripts/check-workspace-deps.sh` |
 | vector sizes | `GRIDCL_VECTOR_SIZE=scalar cargo test --workspace` and `GRIDCL_VECTOR_SIZE=widest cargo test --workspace` |
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
 | lint | `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` |
@@ -28,8 +31,8 @@ For CUDA, T is `locust` (ADR-0006) unless the delegating prompt names `myriad-v1
 Before M0, the CUDA command is `cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda`.
 Remote runs can wait in a queue; let them finish (the runner enforces its own time limit).
 
-Milestone M0 fixes the exact backend and MPI commands. If `docs/plans/M0.md` or the repository
-README records different ones, use those.
+Milestone M0 fixed the exact backend and MPI commands in `docs/dev-environment.md`,
+"Test commands". If that section records different ones, use those.
 
 Before a backend run, check that the backend is usable on this machine (for example, that
 `GRIDCL_TEST_DEVICE=B` tests do not fail with `DeviceUnavailable`). If it is not, report

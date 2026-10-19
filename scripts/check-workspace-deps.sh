@@ -8,7 +8,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-forbidden='^(ndelement|.*blas.*|.*lapack.*|accelerate-src|mpi|mpi-sys)$'
+forbidden='^(ndelement|.*(blas|lapack|mkl|netlib).*|accelerate-src|mpi(-.*)?)$'
 
 crates=$(cargo tree --workspace --target all -e normal,build,dev --prefix none --format '{p}' "$@" |
     awk '{ print $1 }' | sort -u)

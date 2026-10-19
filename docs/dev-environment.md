@@ -183,7 +183,7 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 
 `scripts/hpc/remote-test.sh` runs everything after `--` as one shell command line (`bash -c`). Pass a compound command as one quoted argument, `-- 'A && B'`, not as `-- bash -c 'A && B'`.
 
-`scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`. A `GRIDCL_TEST_DEVICE` other than `cpu` adds the gridcl-testing feature of the same name to the build, so inside `scripts/hpc` jobs the ranks open CUDA. Every rank opens `Device::cuda(0)` for now; choosing the node-local GPU per rank (`local_gpu_index` in the API walkthrough) is a follow-up.
+`scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`. A `GRIDCL_TEST_DEVICE` other than `cpu` adds the gridcl-testing feature of the same name to the build, so inside `scripts/hpc` jobs the ranks open CUDA. The build uses the debug profile. Every rank opens `Device::cuda(0)` for now; choosing the node-local GPU per rank (`local_gpu_index` in the API walkthrough) is a follow-up.
 
 ## Change history
 

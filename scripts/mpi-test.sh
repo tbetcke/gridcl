@@ -31,6 +31,7 @@ elif [[ -n "${GRIDCL_RANKS:-}" ]]; then
 else
     ranks=(1 2 3 4)
 fi
+[[ ${#ranks[@]} -gt 0 ]] || die "no rank counts given"
 for n in "${ranks[@]}"; do
     [[ "$n" =~ ^[1-9][0-9]*$ ]] || die "rank count '$n' is not a positive integer"
 done
@@ -73,7 +74,8 @@ if [[ -n "${GRIDCL_MPIRUN_FLAGS:-}" ]]; then
     mpirun_flags+=("${extra[@]}")
 fi
 
-# The device every rank opens must be linked into the test executables.
+# The device every rank opens must be linked into the test executables. The backends are
+# gridcl-testing's runtime features (gridcl-testing/Cargo.toml, TestBackend::ALL).
 features=mpi
 case ${GRIDCL_TEST_DEVICE:-} in
     "" | cpu) ;;
