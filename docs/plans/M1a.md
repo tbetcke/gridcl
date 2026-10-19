@@ -108,7 +108,7 @@ no device code.
   - After: T0
   - Parallel with: T1
 
-- [ ] **T3 Compile-fail baselines**
+- [x] **T3 Compile-fail baselines**
   - Goal: the `.stderr` files of the three fail cases, generated and reviewed.
   - Crates/files: `gridcl-dims/tests/ui/fail/*.stderr`.
   - Public API added or changed: none.
@@ -187,6 +187,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T0 | Root `.gitignore` ignores `/gridcl*/wip/`. | trybuild writes pending `.stderr` files to `gridcl-dims/wip/` (outside `target/`); it adds its own `*` `.gitignore` there, the root entry is a second guard. | – |
 | 2026-10-19 | T0 | The `#[path]` include works; trybuild prints locations in the stub and in `src/` without line numbers (`tests/ui/fail/../stub/mesh.rs`, `src/dim.rs`). | Observation: T3's baselines depend on the text of the bound lines, not on their line numbers. | – |
 | 2026-10-19 | T1 | The `compile_fail` doctests carry `E0277`, but stable rustdoc does not check error codes; each snippet was compiled against the crate with `rustc` and fails with E0277 for the intended bound (`D4: Sealed`, `D3: Codim1<D3>`, `D0: TopoDim`). The `D0: TopoDim` doctest sits on `D0` in `dim.rs`, so T1 stays out of `cell.rs`. | Make sure the doctests fail for the right reason. | – |
+| 2026-10-19 | T3 | Baseline review (rustc 1.99.1): `volume_normals` E0599 on `Mesh<f64, D3, D3>`, unsatisfied `D3: Codim1<D3>`; `cell_block_wrong_dim` E0308, expected `Cell2`, found `Cell3`; `curve_boundary` E0599 on `Mesh<f64, D1, D2>` and `Mesh<f64, D1, D3>`, unsatisfied `D0: TopoDim` and `D0: EmbeddedIn<D2>` / `<D3>`. Codes and bounds as expected. Wording differs from Listing B10: "exists for reference `&Mesh<…>`" instead of "for struct", and rustc qualifies some paths (`stub::Mesh`, `gridcl_dims::D1`). Paths are relative, the stub and `src/dim.rs` appear without line numbers, no warnings, no machine-specific text. | Listing B10 shows codes and bounds, not rustc's exact text. | – |
 
 ## Review
 
