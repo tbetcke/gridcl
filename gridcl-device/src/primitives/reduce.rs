@@ -205,8 +205,10 @@ pub fn reduce<T: DeviceScalar>(x: &DeviceBuffer<T>, op: ReduceOp) -> Result<Devi
     }
 }
 
-/// One level: the partials of `x` under `plan`, one per cube.
-fn launch_reduce<T: DeviceScalar>(
+/// One level: the partials of `x` under `plan`, one per cube. The plan may cover more vectors
+/// than `x` holds (the exclusive scan plans over `len + 1` items); vectors past `x.len()` are
+/// never read.
+pub(crate) fn launch_reduce<T: DeviceScalar>(
     x: &DeviceBuffer<T>,
     partials: &DeviceBuffer<T>,
     plan: &LaunchPlan,
@@ -217,8 +219,8 @@ fn launch_reduce<T: DeviceScalar>(
     let len = u32::try_from(x.len()).map_err(|_| GridError::TooLarge)?;
     let cube_dim = plan.cube_dim.num_elems();
     debug_assert_bindings(client, 2);
-    // SAFETY: `x` holds `padded_len() >= num_vectors · n` elements (the plan's num_vectors is
-    // pad_len(len) / n), and the kernel reads only vectors below num_vectors. `partials` has
+    // SAFETY: the kernel reads vector v only if v · n < len; `x` holds `padded_len()`
+    // elements, a multiple of n that is at least len, so v + 1 vectors fit. `partials` has
     // `num_cubes` elements, and each cube writes only partials[CUBE_POS]. The shared array
     // has cube_dim entries, indexed by UNIT_POS < cube_dim.
     unsafe {
