@@ -1,6 +1,6 @@
 # ADR-0008: `LaunchPlan` is not `Copy`, and it computes its own cube count
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-19
 - **Raised in:** M2 T0 (stubs for Listing S2)
 - **Design sections affected:**
@@ -111,4 +111,4 @@ the live client to gridcl-device's own function over the properties it reads.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-19: option 3, without conditions. Applied to docs/design.md on the same day (Listing S2 and its "GPUs" bullet, the paragraph after Listing B5, "Device limits", and the device-limits row of "Risks and mitigations").

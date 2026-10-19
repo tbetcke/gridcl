@@ -450,7 +450,7 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = 
 }
 ```
 
-`LaunchPlan` takes the cube count from `calculate_cube_count_elemwise`, which spreads cubes across the device's maximum cube count in each dimension, so no launch exceeds the 65 535-per-dimension limit of WebGPU-class devices. On CPUs it gives each thread contiguous blocks of cell vectors. With vector size 1 the same source is the scalar kernel, so the policy can switch sizes without a second implementation. Chunking keeps every buffer within the device's maximum allocation (see "Device limits").
+`LaunchPlan` computes the cube count itself: it fills x up to the device's maximum, then y, then z, so no launch exceeds the 65 535-per-dimension limit of WebGPU-class devices (ADR-0008). On CPUs it gives each thread contiguous blocks of cell vectors. With vector size 1 the same source is the scalar kernel, so the policy can switch sizes without a second implementation. Chunking keeps every buffer within the device's maximum allocation (see "Device limits").
 
 ### Runtime erasure for I/O
 
@@ -825,7 +825,7 @@ CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; featur
 - **Largest allocation:** `client.properties().memory.max_page_size`. Every `DeviceBuffer` constructor checks it. Per-rank topology and geometry arrays must fit in one allocation each; otherwise mesh creation fails with `GridError::AllocationTooLarge`, and the mesh must be spread over more ranks. Fields at quadrature points and E-vectors are stored in chunks of whole cell tiles (`QuadField`), sized from this limit.
 - **Buffers per kernel:** `hardware.max_bindings`. Library kernels use at most six buffers, which fits WebGPU-class devices; id pairs are interleaved in one buffer for this reason. A debug assertion checks each launch.
 - **Shared memory:** `hardware.max_shared_memory_size`. Primitives size their tiles from it and assume at least 16 KiB.
-- **Cube count:** computed by `calculate_cube_count_elemwise`, which respects `hardware.max_cube_count`. Element counts are multiplied in usize with overflow checks.
+- **Cube count:** computed by `LaunchPlan`, which respects `hardware.max_cube_count`; `TooLarge` if no launch fits (ADR-0008). Element counts are multiplied in usize with overflow checks.
 - **Units per cube:** `hardware.max_units_per_cube` and `max_cube_dim`. On the CPU runtime both equal the number of hardware threads. Every launch takes its shape from `LaunchPlan`, which respects them (see "Vectorization and CPU execution").
 - **Plane size:** read from `hardware.plane_size_min` and `plane_size_max`, never assumed to be 32. Every algorithm must also be correct with plane size 1, as on the CPU runtime.
 
@@ -996,8 +996,8 @@ impl VectorPolicy {
     pub fn quad_tile(&self) -> usize;
 }
 
-/// Shape of one launch on the current device.
-#[derive(Clone, Copy, Debug)]
+/// Shape of one launch on the current device. Not Copy: CubeCount is not Copy in CubeCL 0.11.
+#[derive(Clone, Debug)]
 pub struct LaunchPlan {
     pub cube_count: CubeCount,
     pub cube_dim: CubeDim,
@@ -1033,7 +1033,7 @@ pub mod testing {
 ```
 
 - **Vector size:** the largest power of two not above the policy's size, `max_vector`, and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
-- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from `calculate_cube_count_elemwise` over the vectors.
+- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0008).
 - **CPUs:** `cube_dim` equals `max_units_per_cube`, one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
@@ -1849,7 +1849,7 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | --- | --- |
 | CubeCL API churn (alpha, breaking minor releases) | Pin `=0.11.0`. Keep runtime types in gridcl-device. Upgrade as a dedicated milestone, with the kernel test suite as safety net. |
 | Backend capability gaps: no f64 on Metal; f64 and u64 adapter-dependent on Vulkan and WGSL; no 64-bit or float min/max atomics on Metal | f32 is first-class; sort keys are u32 words; kernels use no 64-bit or float atomics; capabilities are checked at mesh creation; CI runs on Vulkan and Metal. |
-| Device limits: allocation size, buffers per kernel, workgroups per dimension, shared memory | Query `Client::properties`; chunk fields by cells; check per-rank array sizes at creation; use `calculate_cube_count_elemwise`; keep kernels to six buffers. |
+| Device limits: allocation size, buffers per kernel, workgroups per dimension, shared memory | Query `Client::properties`; chunk fields by cells; check per-rank array sizes at creation; use `LaunchPlan`; keep kernels to six buffers. |
 | No device-wide sort or scan in CubeCL; no forward-progress guarantee on Vulkan and Metal | Implement reduce-then-scan and LSD radix sort in gridcl-device; check CubeK first; benchmark in M2, because topology creation depends on them. |
 | f32 accuracy for curved high-order geometry | Tabulate in f64 on the host; store coordinates relative to the global origin; finish reductions in f64; test f32 against f64. |
 | GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Host-staged transport stays the default. GPU-aware path behind a feature, with an integration test on a CUDA-aware MPI runner. Keep `CudaAllocator::Sync`. Re-check on every CubeCL upgrade. |
