@@ -108,8 +108,6 @@ pub(crate) fn gauss_jacobi(m: usize, alpha: f64) -> (Vec<f64>, Vec<f64>) {
 /// # Panics
 ///
 /// If `m` < 2.
-// Used by the GLL Lagrange layouts (M1b T4).
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn gll_points(m: usize) -> Vec<f64> {
     assert!(m >= 2, "GLL points need at least the two endpoints");
     let n = m - 1;

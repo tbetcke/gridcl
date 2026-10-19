@@ -181,7 +181,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
   - Parallel with: T1, T2 (disjoint files)
   - Risks / notes: pyramids use Gauss–Jacobi(2, 0) in z under the collapse of question 11.
 
-- [ ] **T4 Lagrange layouts (A.4, A.5)**
+- [x] **T4 Lagrange layouts (A.4, A.5)**
   - Goal: node counts and node coordinates in internal order for any p ≥ 1, equispaced on every
     cell and GLL on intervals, quadrilaterals and hexahedra.
   - Crates/files: `gridcl-refcell/src/lagrange.rs`.
