@@ -1,6 +1,6 @@
 # M1a Type layer — plan
 
-- **Status:** implemented
+- **Status:** done
 - **Branch:** tbetcke/tbetcke-m1a-type-layer (question 1)
 - **Base commit:** ad44333511adf48990520db36477b833522a8e67
 - **Design sections:** "Implementation roadmap / M1a Type layer (gridcl-dims)"; "Architecture" (intro); "Dimension markers" (Listing B1); "Cell families per topological dimension" (Listing B2); "Mesh type" (Listing B3, for the stub); "Methods that exist only where they make sense" (Listing B4, impl bounds for the stub); "Errors the compiler catches" (Listing B10); "Testing and validation" (targets table, compile-fail tests); "Workspace layout" (crate table); "Development environment and test targets"
