@@ -1,0 +1,22 @@
+[package]
+name = "gridcl-testing"
+description = "Test support for gridcl: the test device, test meshes and tolerances"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = ["cpu"]
+# Runtime features, each the cubecl feature of the same name (docs/design.md, "Cargo features").
+cpu = ["cubecl/cpu"]
+cuda = ["cubecl/cuda"]
+hip = ["cubecl/hip"]
+vulkan = ["cubecl/vulkan"]
+metal = ["cubecl/metal"]
+metal-native = ["cubecl/metal-native"]
+wgpu = ["cubecl/wgpu"]
+
+[dependencies]
+cubecl.workspace = true
