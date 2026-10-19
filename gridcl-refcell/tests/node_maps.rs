@@ -82,6 +82,18 @@ fn vtk_reproduces_a9() {
     );
 }
 
+/// A.9's "Interval (any): identity" row, beyond the p ≤ 2 literals above.
+#[test]
+fn interval_maps_are_identity() {
+    for degree in 1..=10 {
+        let identity: Vec<usize> = (0..=degree as usize).collect();
+        let gmsh = gmsh_to_internal(CellType::Interval, degree).unwrap();
+        assert_eq!(gmsh, identity, "Gmsh, p = {degree}");
+        let vtk = vtk_to_internal(CellType::Interval, degree).unwrap();
+        assert_eq!(vtk, identity, "VTK, p = {degree}");
+    }
+}
+
 // DOLFINx `cpp/dolfinx/io/cells.cpp`, functions gmsh_tetrahedron, gmsh_quadrilateral,
 // gmsh_hexahedron, gmsh_prism and gmsh_pyramid, at main
 // be8352e677303b686d6862b70923bab086b279ff (2026-10-19; the P3 hexahedron, prism and pyramid

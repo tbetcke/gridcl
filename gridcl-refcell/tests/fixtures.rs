@@ -133,10 +133,44 @@ fn orientation_matches_fixture() {
 fn lagrange_points_match_fixture() {
     let fixture = fixture("lagrange_points.json");
     let cells = fixture.as_object().unwrap();
-    assert_eq!(cells.len(), 5);
+    // The fixture covers what `points_match_ndelement` checks: five cells, p = 1..=4,
+    // equispaced and, on the tensor cells, GLL.
+    let mut names: Vec<&str> = cells.keys().map(String::as_str).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "Hexahedron",
+            "Interval",
+            "Quadrilateral",
+            "Tetrahedron",
+            "Triangle"
+        ]
+    );
     for (name, families) in cells {
         let c = cell(name);
-        for (family_name, degrees) in families.as_object().unwrap() {
+        let families = families.as_object().unwrap();
+        let tensor = matches!(
+            c,
+            CellType::Interval | CellType::Quadrilateral | CellType::Hexahedron
+        );
+        let mut family_names: Vec<&str> = families.keys().map(String::as_str).collect();
+        family_names.sort_unstable();
+        let want: &[&str] = if tensor {
+            &["Equispaced", "Gll"]
+        } else {
+            &["Equispaced"]
+        };
+        assert_eq!(family_names, want, "node families of {name}");
+        for (family_name, degrees) in families {
+            let mut ps: Vec<u32> = degrees
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(|d| d.parse().unwrap())
+                .collect();
+            ps.sort_unstable();
+            assert_eq!(ps, [1, 2, 3, 4], "degrees of {name} {family_name}");
             let family = match family_name.as_str() {
                 "Equispaced" => NodeFamily::Equispaced,
                 "Gll" => NodeFamily::Gll,
