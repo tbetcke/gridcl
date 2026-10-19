@@ -257,7 +257,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
   - Risks / notes: Gmsh's edge and face lists and directions come from Gmsh's sources, cited in
     the module docs; equispaced nodes are matched on the integer lattice p·x, so no tolerance.
 
-- [ ] **T9 VTK permutation generator (A.9)**
+- [x] **T9 VTK permutation generator (A.9)**
   - Goal: `vtk_to_internal` for any p ≥ 1 (pyramids p = 1 only, A.8), from VTK's rules.
   - Crates/files: `gridcl-refcell/src/node_maps/vtk.rs`, `vtk_to_internal` in
     `src/node_maps.rs`; `conformance/tests/vtk.rs`.
@@ -355,6 +355,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T7 | Root `Cargo.toml` gets `[profile.dev.package.gridcl-refcell] opt-level = 3` (debug assertions and overflow checks stay on). | Unoptimised, `tests/tabulation.rs` took 80 s (729 × 729 Vandermonde systems for hexahedra, p = 8); with it 7 s. | – |
 | 2026-10-19 | T7 | Achieved p = 8 errors (partition of unity = reproduction, max over test points): hexahedron equispaced 5.6e-13, prism 1.2e-13, pyramid 4.6e-14, hexahedron GLL 6.0e-14, all others ≤ 2.5e-14. All within 1e-12, so no ADR; the equispaced hexahedron keeps a margin of only about 2. | Recorded per T7's risk note. | – |
 | 2026-10-19 | T8 | Gmsh rules ported from Gmsh 4.15.2 (tag `gmsh_4_15_2`): `pointsGenerators.cpp` and the `M*.h` edge/face tables, cited in `node_maps/gmsh.rs`. The prism interior is Gmsh's non-recursive triangle(p−3) × line(p−2) rule; pyramid lattices map as (m0, m1, p − m2). Cross-checked in scratch against the gmsh 4.15.2 Python wheel for 68 (cell, p) pairs (up to p = 10 / 9 / 8). The shared lattice matcher `match_lattice` is private to `node_maps`. | Done by a worktree subagent, merged with `--no-ff`, ticked after the merge (parallel with T5–T7). | – |
+| 2026-10-19 | T9 | VTK rules ported from VTK v9.7.1 (`vtkHigherOrder{Triangle,Quadrilateral,Tetra,Hexahedron,Wedge,Curve}.cxx`, `vtkHigherOrderInterpolation.cxx`), VTK 9 hexahedron numbering (XML ≥ 2.2). VTK's wedge orders its triangle faces and interior triangle layers lexicographically, not recursively; prism p ≥ 3 checked against VTK's independent `AppendWedgeCollocationPoints` (p ≤ 9) and DOLFINx `vtk_wedge` (p ≤ 2). Done by a worktree subagent, merged with `--no-ff`, ticked after the merge. | "High-order node orderings" says "triangle interiors are recursive, others lexicographic"; true for VTK triangles and tetrahedra, not for prism faces. Design-wording clarification for the review (candidate ADR, no API change). | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
