@@ -94,7 +94,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
 
 ## Tasks
 
-- [ ] **T0 Acceptance tests (failing)**
+- [x] **T0 Acceptance tests (failing)**
   - Goal: every M1b acceptance bullet as an automated test.
   - Crates/files:
     - root `Cargo.toml`: `proptest = "1"` in `[workspace.dependencies]`; `Cargo.lock`;
@@ -344,6 +344,8 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | plan | gridcl-refcell gets a `proptest` dev-dependency, not in the crate table. | Property tests for node-ordering permutations (question 6). | – |
 | 2026-10-19 | plan | Reference facet normals and A.6 storage slots deferred to M3; A.7/A.8 tables, Gmsh-file and VTK P3 prism fixtures to M4/M5. | Not in M1b's scope or acceptance (question 8). | – |
 | 2026-10-19 | T0 | DOLFINx pinned at main be8352e677303b686d6862b70923bab086b279ff, not the latest release tag (question 7); Basix v0.11.0 and Symfem v2025.12.0 stay release tags. | v0.11.0.post0 lacks hex64, prism40 and pyramid30 (question 13). | ADR-0007 |
+| 2026-10-19 | T0 | gridcl-conformance gets a `gridcl-dims` path dependency and, in `src/lib.rs`, `CELLS` and `reference_cell_type` (gridcl → ndelement cell type), shared by the tests and T10's exporter. | The tests need `CellType`, which gridcl-refcell does not re-export. | – |
+| 2026-10-19 | T0 | The stub modules carry `#![allow(unused_variables)]`, removed by the task that fills each one in; `polynomials.rs` and `node_maps.rs` declare their submodules instead of being empty. | `todo!()` bodies leave the parameters unused; empty parents could not hold `pyramid.rs`, `gmsh.rs` and `vtk.rs`. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review

@@ -20,3 +20,32 @@ extern crate blas_src;
 extern crate lapack_src;
 #[cfg(target_os = "linux")]
 extern crate openblas_src;
+
+use gridcl_dims::CellType;
+use ndelement::types::ReferenceCellType;
+
+/// The eight cell types, in `CellType` order.
+pub const CELLS: [CellType; 8] = [
+    CellType::Point,
+    CellType::Interval,
+    CellType::Triangle,
+    CellType::Quadrilateral,
+    CellType::Tetrahedron,
+    CellType::Hexahedron,
+    CellType::Prism,
+    CellType::Pyramid,
+];
+
+/// ndelement's cell type for a gridcl cell type.
+pub fn reference_cell_type(cell: CellType) -> ReferenceCellType {
+    match cell {
+        CellType::Point => ReferenceCellType::Point,
+        CellType::Interval => ReferenceCellType::Interval,
+        CellType::Triangle => ReferenceCellType::Triangle,
+        CellType::Quadrilateral => ReferenceCellType::Quadrilateral,
+        CellType::Tetrahedron => ReferenceCellType::Tetrahedron,
+        CellType::Hexahedron => ReferenceCellType::Hexahedron,
+        CellType::Prism => ReferenceCellType::Prism,
+        CellType::Pyramid => ReferenceCellType::Pyramid,
+    }
+}
