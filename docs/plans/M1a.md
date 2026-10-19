@@ -78,7 +78,7 @@ no device code.
     - with no `.stderr`, trybuild writes a `wip/` copy: check where it lands and make sure it is
       never committed (`.gitignore` if it is outside `target/`).
 
-- [ ] **T1 Dimension pairs (Listing B1)**
+- [x] **T1 Dimension pairs (Listing B1)**
   - Goal: the six `EmbeddedIn` pairs and the `Codim0`/`Codim1` impls, with rustdoc.
   - Crates/files: `gridcl-dims/src/dim.rs`.
   - Public API added or changed: `impl EmbeddedIn<GD> for TD` for the six pairs, `impl Codim0`
@@ -186,6 +186,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T0 | `tests/cell_type.rs` has a fourth test, `lists_are_complete`, which checks the variant lists against the exhaustive `match` helpers. | The exhaustive `match` alone does not catch a variant missing from a list. | – |
 | 2026-10-19 | T0 | Root `.gitignore` ignores `/gridcl*/wip/`. | trybuild writes pending `.stderr` files to `gridcl-dims/wip/` (outside `target/`); it adds its own `*` `.gitignore` there, the root entry is a second guard. | – |
 | 2026-10-19 | T0 | The `#[path]` include works; trybuild prints locations in the stub and in `src/` without line numbers (`tests/ui/fail/../stub/mesh.rs`, `src/dim.rs`). | Observation: T3's baselines depend on the text of the bound lines, not on their line numbers. | – |
+| 2026-10-19 | T1 | The `compile_fail` doctests carry `E0277`, but stable rustdoc does not check error codes; each snippet was compiled against the crate with `rustc` and fails with E0277 for the intended bound (`D4: Sealed`, `D3: Codim1<D3>`, `D0: TopoDim`). The `D0: TopoDim` doctest sits on `D0` in `dim.rs`, so T1 stays out of `cell.rs`. | Make sure the doctests fail for the right reason. | – |
 
 ## Review
 
