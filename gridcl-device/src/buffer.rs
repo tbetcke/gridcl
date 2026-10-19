@@ -5,6 +5,7 @@ use core::marker::PhantomData;
 use cubecl::prelude::*;
 use cubecl::server::Handle;
 
+use crate::primitives::launch_fill;
 use crate::{GridError, Result, testing};
 
 /// Every allocation is padded to a multiple of `VECTOR_PAD` elements, the widest vector size
@@ -88,9 +89,23 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Ok(Self::new(client.empty(bytes), len, padded, client))
     }
 
-    /// `len` zeros, padding included (uninit and the fill kernel).
-    pub fn zeros(_client: &Client, _len: usize) -> Result<Self> {
-        todo!()
+    /// `len` zeros, padding included (uninit and the fill kernel, over u32 words).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::DeviceBuffer;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let z = DeviceBuffer::<f32>::zeros(&client, 3).unwrap();
+    /// assert_eq!(z.to_host().unwrap(), vec![0.0; 3]);
+    /// ```
+    pub fn zeros(client: &Client, len: usize) -> Result<Self> {
+        let buffer = Self::uninit(client, len)?;
+        // `padded` is a multiple of 16, so the allocation is a whole number of u32 words.
+        let words = buffer.padded * size_of::<T>() / size_of::<u32>();
+        launch_fill::<u32>(client, &buffer.handle, words, 0)?;
+        Ok(buffer)
     }
 
     /// A second view of the same allocation; aliasing is explicit.
@@ -109,9 +124,24 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Self::new(self.handle.clone(), self.len, self.padded, &self.client)
     }
 
-    /// An independent copy, made by the copy kernel.
+    /// An independent copy, made by the copy kernel (CubeCL 0.11 has no same-device copy). As
+    /// for [`copy`](crate::copy), `size_of::<T>()` must be a multiple of 4.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::DeviceBuffer;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let a = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
+    /// let b = a.deep_clone().unwrap();
+    /// drop(a);
+    /// assert_eq!(b.to_host().unwrap(), vec![1, 2, 3]);
+    /// ```
     pub fn deep_clone(&self) -> Result<Self> {
-        todo!()
+        let mut clone = Self::uninit(&self.client, self.len)?;
+        crate::copy(self, &mut clone)?;
+        Ok(clone)
     }
 
     /// The logical length in elements, not bytes.

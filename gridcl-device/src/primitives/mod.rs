@@ -19,6 +19,7 @@ mod unique;
 
 pub use copy::copy;
 pub use fill::fill;
+pub(crate) use fill::launch_fill;
 pub use gather::{gather, scatter};
 pub use histogram::histogram;
 pub use radix_sort::radix_sort;
@@ -29,7 +30,9 @@ pub use sort_keys::SortKeys;
 pub use unique::{Runs, Unique, run_length, unique_by_key};
 
 mod sealed {
-    pub trait Sealed {}
+    /// Seals `DeviceScalar`. Its supertraits are the launch bounds the kernels need, which
+    /// `DeviceScalar` thereby implies without naming them in its public declaration.
+    pub trait Sealed: cubecl::frontend::LaunchArg<RuntimeArg = Self> {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for i32 {}

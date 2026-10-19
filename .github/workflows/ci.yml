@@ -117,6 +117,8 @@ jobs:
             target
           key: ${{ runner.os }}-vulkan-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
           restore-keys: ${{ runner.os }}-vulkan-
-      - run: cargo test --workspace --features gridcl-testing/vulkan -- --nocapture
+      # Release build: the primitives' property tests are too slow on lavapipe in a debug
+      # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
+      - run: cargo test --release --workspace --features gridcl-testing/vulkan -- --nocapture
         env:
           GRIDCL_TEST_DEVICE: vulkan
