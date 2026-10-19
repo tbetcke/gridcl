@@ -3,6 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-19
 - **Raised in:** M2 planning (docs/plans/M2.md, questions 2–6 and 11–13)
+- **Amended:** 2026-10-19, after the maintainer's review: the `testing` module behind a Cargo feature; debug-build index checks in gather and scatter; the n + 1 convention of `exclusive_scan` documented in its rustdoc.
 - **Design sections affected:**
   - "Device model and backends": Listing S1, "Data layouts and index widths", "Device primitives";
   - "Vectorization and CPU execution": Listing S2 (launch plans), "Padding and tiles", "Where vectors apply";
@@ -123,13 +124,15 @@ The module is re-exported at the crate root. In the signatures below, buffers ar
   - Offsets are clamped to `[0, values.len()]`, and a decreasing pair gives an empty segment.
 - **Scans:** `inclusive_scan<T: DeviceScalar>(x) -> Result<DeviceBuffer<T>>` and `exclusive_scan<T: DeviceScalar>(x) -> Result<DeviceBuffer<T>>`.
   - Both compute sums.
-  - The exclusive scan returns n + 1 elements, the last being the total, so that its output can serve as CSR offsets.
+  - The exclusive scan returns n + 1 elements, the last being the total, so that its output can serve as CSR offsets. This differs from the usual length-n exclusive scan, so the rustdoc of `exclusive_scan` states it in its first paragraph and shows it in its example.
 - **Gather:** `gather<T: DeviceScalar>(src, idx: &DeviceBuffer<u32>) -> Result<DeviceBuffer<T>>`, so that `out[i] = src[idx[i]]`.
   - An index ≥ `src.len()` yields 0 through an arithmetic mask; the read address is clamped, so it is never out of bounds.
   - An empty `src` gives zeros without reading.
+  - Debug builds check the indices: one `reduce(idx, Max)` is read back, and an index ≥ `src.len()` panics with its value. Release builds keep only the mask.
 - **Scatter:** `scatter<T: DeviceScalar>(src, idx, dst: &mut DeviceBuffer<T>) -> Result<()>`, so that `dst[idx[i]] = src[i]`.
   - Out-of-range writes are dropped.
   - Distinct indices are a documented precondition. Duplicates are memory-safe, but they leave the result unspecified and not deterministic.
+  - Debug builds check the precondition: `histogram(idx, dst.len())` and one `reduce(…, Max)` are read back, and a count above 1 panics. Release builds do not check.
 - **Histogram:** `histogram(values: &DeviceBuffer<u32>, num_bins: u32) -> Result<DeviceBuffer<u32>>`. Values ≥ `num_bins` are not counted.
 - **Sort keys:** `SortKeys` holds `len` keys of `num_words` ∈ 1..=4 u32 words in one buffer.
   - **Layout.** Planar and word-major: word w of key i is at `w · pad_len(len) + i`. Each plane is padded to `VECTOR_PAD`, so the lanes of a vector are independent keys.
@@ -145,7 +148,7 @@ The module is re-exported at the crate root. In the signatures below, buffers ar
 
 ### gridcl-device: rules for every primitive
 
-- **Data-dependent sizes.** Run-length and unique-by-key read their count with one blocking 4-byte `read_one`, and return exactly sized buffers. This is an explicit read in the sense of CLAUDE.md's host-copy rule, and their rustdoc says so. No other primitive reads from the device.
+- **Data-dependent sizes.** Run-length and unique-by-key read their count with one blocking 4-byte `read_one`, and return exactly sized buffers. This is an explicit read in the sense of CLAUDE.md's host-copy rule, and their rustdoc says so. Apart from the debug-build index checks of gather and scatter, no other primitive reads from the device.
 - **One partition per primitive.** A primitive with several kernels computes one `LaunchPlan`: for the `KernelKind` of its vectorized phase, or for its first phase if none is vectorized.
   - **Ranges.** Every kernel of that primitive takes its scalar ranges from this plan: a unit owns `items_per_unit · vector_size` consecutive items, and a cube owns `cube_dim` times as many. Scalar phases launch with the same cube count and cube dimension.
   - **Recursive levels** (the partials of reduce and the tile sums of scan) use one new `LaunchPlan::elementwise` per level, until one cube remains.
@@ -165,13 +168,16 @@ The module is re-exported at the crate root. In the signatures below, buffers ar
 
 ### gridcl-device: test hooks
 
-A public module, `gridcl_device::testing`, holds scoped overrides. They are thread-local, because
-gridcl runs one host thread per mesh ("Streams and threading").
+The module `gridcl_device::testing` holds scoped overrides. It exists only with gridcl-device's
+Cargo feature `testing`, which is off by default and documented as not part of the stable API.
+gridcl-testing turns it on, so it is on for every test in the workspace and invisible to
+downstream users who do not ask for it. The overrides are thread-local, because gridcl runs one
+host thread per mesh ("Streams and threading").
 
 - **`with_properties`.** `with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R` replaces the properties that gridcl-device reads (limits, device class, vector sizes) for buffers and plans made inside `f`. Tests clone `client.properties()` and modify it.
 - **`with_vector_size` and `with_quad_tile`.** `with_vector_size<R>(v: VectorSizeOverride, f) -> R` and `with_quad_tile<R>(tile: usize, f) -> R`.
 - **`record_plans`.** `record_plans<R>(f) -> (R, Vec<(KernelKind, LaunchPlan)>)` returns the plans made inside `f`, so that a test can assert the vector size it ran at.
-- **`VectorSizeOverride`.** `pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }` is also what `GRIDCL_VECTOR_SIZE` parses into.
+- **`VectorSizeOverride`.** `pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }` is also what `GRIDCL_VECTOR_SIZE` parses into. It lives next to `VectorPolicy`, outside the `testing` module, because the environment variable works without the feature.
   - `Widest` is the first entry of `io_optimized_vector_sizes(elem_bytes)`.
   - `Fixed(n)` and `Widest` skip the register budget, but stay clamped by `max_vector`, the data layout.
   - `Policy` applies the full rule of Listing S2.
@@ -190,7 +196,7 @@ gridcl runs one host thread per mesh ("Streams and threading").
 
 ### Dependencies
 
-- gridcl-testing gets a dev-dependency on gridcl-device, for the `LaunchPlan` of M0's add test.
+- gridcl-testing gets a dependency on gridcl-device with the feature `testing`. It enables the test hooks for the workspace's tests and gives M0's add test its `LaunchPlan`.
 - gridcl-bench gets a dependency on gridcl-device, for the throughput record.
 - New workspace dependencies:
   - `proptest` (dev-dependency of gridcl-device);
@@ -233,15 +239,16 @@ gridcl runs one host thread per mesh ("Streams and threading").
   - **References** at the `Mesh` field comment, `DeviceGrid::comm` and the generic-algorithm example say S2c.
   - **"Testing and validation":** vector-size invariance is "forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`".
   - **Crate table:**
-    - gridcl-testing gains "dev: gridcl-device";
+    - gridcl-testing gains "gridcl-device (feature `testing`)";
+    - gridcl-device gains the feature `testing` (in "Cargo features", as a test-support feature that is not a library feature);
     - gridcl-bench gains gridcl-device;
     - gridcl-device gains toml, and dev proptest;
     - gridcl-parallel gains bytemuck.
   - **"Handing this design to Claude Code"** (the CLAUDE.md listing) and CLAUDE.md:
     - "no cross-lane operations except fixed-order reductions and fixed-order in-vector prefixes";
-    - "Host<->device copies in library code only for I/O, explicit to_host()/read_node(), the count read of run-length and unique-by-key, and the host-staged halo exchange".
+    - "Host<->device copies in library code only for I/O, explicit to_host()/read_node(), the count read of run-length and unique-by-key, the debug-build index checks of gather and scatter, and the host-staged halo exchange".
 - **Public API changes:**
-  - **Additions:** `GridError`'s home and M2 variants, `DeviceScalar`, the `primitives` module and its result types, `SortKeys`, `DeviceClass::for_client`, `VectorSizeOverride`, `gridcl_device::testing`, `IndexMap::new` and its accessors, and `Neighbourhood`.
+  - **Additions:** `GridError`'s home and M2 variants, `DeviceScalar`, the `primitives` module and its result types, `SortKeys`, `DeviceClass::for_client`, `VectorSizeOverride`, `gridcl_device::testing` (feature `testing`), `IndexMap::new` and its accessors, and `Neighbourhood`.
   - **Relocation:** `ReduceOp` moves to gridcl-device, with a re-export at its old path.
   - **No changes** to existing signatures.
 - **Acceptance tests affected:** none change. The M2 tests use `testing::with_properties` for "injected" properties and limits, and `testing::with_vector_size` with `record_plans` for the vector-size sweep.
