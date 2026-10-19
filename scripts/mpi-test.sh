@@ -39,7 +39,6 @@ time_limit=${GRIDCL_MPI_TEST_TIMEOUT:-600}
 [[ "$time_limit" =~ ^[1-9][0-9]*$ ]] || die "GRIDCL_MPI_TEST_TIMEOUT '$time_limit' is not a positive integer"
 
 command -v mpirun >/dev/null || die "mpirun not found"
-command -v jq >/dev/null || die "jq not found"
 timeout_cmd=()
 if command -v timeout >/dev/null; then
     timeout_cmd=(timeout --kill-after=10 "$time_limit")
@@ -84,7 +83,9 @@ case ${GRIDCL_TEST_DEVICE:-} in
     *) die "GRIDCL_TEST_DEVICE '$GRIDCL_TEST_DEVICE' is not a gridcl-testing backend" ;;
 esac
 
-# One build; the [[test]] executables come from cargo's JSON messages.
+# One build; the [[test]] executables come from cargo's JSON messages. Each message is one
+# compact object per line, and a target object holds no nested object, so sed suffices (jq is
+# not installed on the Myriad compute nodes).
 logs=target/mpi-test
 mkdir -p "$logs"
 build_json=$logs/build.json
@@ -94,9 +95,10 @@ fi
 tests=()
 while IFS= read -r line; do
     tests+=("$line")
-done < <(jq -r 'select(.reason == "compiler-artifact" and .profile.test
-                       and (.target.kind | index("test")) and .executable != null)
-                | "\(.target.name) \(.executable)"' "$build_json" | sort -u)
+done < <(grep -F '"reason":"compiler-artifact"' "$build_json" |
+    grep -F '"kind":["test"]' |
+    sed -n -E 's/.*"target":\{[^}]*"name":"([^"]*)".*"executable":"([^"]*)".*/\1 \2/p' |
+    sort -u)
 [[ ${#tests[@]} -gt 0 ]] || die "no gridcl-mpi-tests targets were built"
 
 echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), features $features, time limit ${time_limit} s"
