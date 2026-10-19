@@ -3,6 +3,10 @@ name = "gridcl-conformance"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "export-fixtures"
+path = "src/bin/export_fixtures.rs"
+
 # Outside the gridcl workspace, with its own Cargo.lock (docs/design.md, A.10).
 [workspace]
 

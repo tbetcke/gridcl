@@ -10,8 +10,8 @@
 //! - ndelement is a git dependency at a fixed `rev`. Never add `version =` to it, and never add
 //!   ndelement to a library crate of the workspace.
 //! - After a pin bump, run `cargo test --manifest-path conformance/Cargo.toml` and re-export the
-//!   fixtures with `cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures`
-//!   (from M1b), then commit `gridcl-refcell/tests/fixtures/` with the new pin.
+//!   fixtures with `cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures`,
+//!   then commit `gridcl-refcell/tests/fixtures/` with the new pin.
 //! - A failure after a bump means the convention moved. It calls for an explicit decision:
 //!   follow the change (update gridcl-refcell and the fixtures) or keep the old pin.
 

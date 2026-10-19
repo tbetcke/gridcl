@@ -1,0 +1,22 @@
+{
+  "basix": {
+    "commit": "8ba83f732cd9d83cec643fa9059d49afb4482485",
+    "ref": "v0.11.0",
+    "repository": "https://github.com/FEniCS/basix"
+  },
+  "dolfinx": {
+    "commit": "be8352e677303b686d6862b70923bab086b279ff",
+    "ref": "main",
+    "repository": "https://github.com/FEniCS/dolfinx"
+  },
+  "ndelement": {
+    "commit": "f8cbffea7796b968f4cb6327e016e440380a2222",
+    "ref": "main",
+    "repository": "https://codeberg.org/nd-project/nd"
+  },
+  "symfem": {
+    "commit": "c37ffd6951a7fddd99353335fd5a511efdcf18fc",
+    "ref": "v2025.12.0",
+    "repository": "https://github.com/mscroggs/symfem"
+  }
+}

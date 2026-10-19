@@ -269,7 +269,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
   - After: T8 (shared `node_maps.rs`)
   - Parallel with: T5, T6
 
-- [ ] **T10 Fixture export and workspace fixture tests**
+- [x] **T10 Fixture export and workspace fixture tests**
   - Goal: the `export-fixtures` binary of A.10, the committed fixtures, and gridcl-refcell tests
     that check tables, orientation bits and point sets against them without ndelement.
   - Crates/files: `conformance/Cargo.toml` (`[[bin]] name = "export-fixtures"`, path
@@ -356,6 +356,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T7 | Achieved p = 8 errors (partition of unity = reproduction, max over test points): hexahedron equispaced 5.6e-13, prism 1.2e-13, pyramid 4.6e-14, hexahedron GLL 6.0e-14, all others ≤ 2.5e-14. All within 1e-12, so no ADR; the equispaced hexahedron keeps a margin of only about 2. | Recorded per T7's risk note. | – |
 | 2026-10-19 | T8 | Gmsh rules ported from Gmsh 4.15.2 (tag `gmsh_4_15_2`): `pointsGenerators.cpp` and the `M*.h` edge/face tables, cited in `node_maps/gmsh.rs`. The prism interior is Gmsh's non-recursive triangle(p−3) × line(p−2) rule; pyramid lattices map as (m0, m1, p − m2). Cross-checked in scratch against the gmsh 4.15.2 Python wheel for 68 (cell, p) pairs (up to p = 10 / 9 / 8). The shared lattice matcher `match_lattice` is private to `node_maps`. | Done by a worktree subagent, merged with `--no-ff`, ticked after the merge (parallel with T5–T7). | – |
 | 2026-10-19 | T9 | VTK rules ported from VTK v9.7.1 (`vtkHigherOrder{Triangle,Quadrilateral,Tetra,Hexahedron,Wedge,Curve}.cxx`, `vtkHigherOrderInterpolation.cxx`), VTK 9 hexahedron numbering (XML ≥ 2.2). VTK's wedge orders its triangle faces and interior triangle layers lexicographically, not recursively; prism p ≥ 3 checked against VTK's independent `AppendWedgeCollocationPoints` (p ≤ 9) and DOLFINx `vtk_wedge` (p ≤ 2). Done by a worktree subagent, merged with `--no-ff`, ticked after the merge. | "High-order node orderings" says "triangle interiors are recursive, others lexicographic"; true for VTK triangles and tetrahedra, not for prism faces. Design-wording clarification for the review (candidate ADR, no API change). | – |
+| 2026-10-19 | T10 | `orientation.json` and `lagrange_points.json` are written compact (409 kB and 16 kB); `sources.json` reads ndelement's commit from conformance/Cargo.lock and records repository, ref and commit for each source. | Deterministic output that follows the pin; a re-export is byte-identical. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
