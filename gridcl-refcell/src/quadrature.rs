@@ -52,6 +52,11 @@ pub struct QuadratureRule {
 /// // The weights sum to the area 1/2.
 /// assert!((rule.weights.iter().sum::<f64>() - 0.5).abs() < 1e-15);
 /// ```
+///
+/// # Panics
+///
+/// If the Newton iteration for a Gauss–Jacobi node does not converge (tested for up to 60
+/// points per direction, `degree` ≤ 119).
 pub fn gauss_rule(cell: CellType, degree: u32) -> QuadratureRule {
     // m points are exact to degree 2m − 1 ≥ degree in every collapsed direction.
     let m = degree as usize / 2 + 1;

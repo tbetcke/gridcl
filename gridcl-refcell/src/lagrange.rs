@@ -135,6 +135,10 @@ fn block_size(entity: CellType, degree: u32) -> usize {
 /// - [`RefCellError::UnsupportedDegree`] if `degree == 0`;
 /// - [`RefCellError::UnsupportedNodeFamily`] for GLL on a cell other than an interval,
 ///   quadrilateral or hexahedron.
+///
+/// # Panics
+///
+/// If the Newton iteration for a GLL point does not converge (tested for `degree` ≤ 39).
 pub fn lagrange_points(
     cell: CellType,
     degree: u32,
