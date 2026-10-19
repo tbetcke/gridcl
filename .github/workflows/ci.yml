@@ -1,0 +1,122 @@
+# Hosted CI jobs of docs/design.md, "CI matrix": cpu, mpi-mpich, mpi-openmpi and vulkan.
+# The commands are the ones docs/dev-environment.md, "Test commands", records.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # The CPU runtime's build script downloads its LLVM bundle to $XDG_DATA_HOME/tracel.
+  XDG_DATA_HOME: /home/runner/.local/share
+
+jobs:
+  cpu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal --component rustfmt,clippy
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.local/share/tracel
+            target
+          key: ${{ runner.os }}-cpu-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cpu-
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+      - run: scripts/check-workspace-deps.sh
+      # Negative check: the script must still find MPI (exit 3) when a feature pulls it in.
+      - run: |
+          rc=0
+          scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
+          test "$rc" -eq 3
+
+  mpi:
+    name: mpi-${{ matrix.mpi }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mpi: mpich
+            packages: mpich libmpich-dev
+          - mpi: openmpi
+            packages: openmpi-bin libopenmpi-dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: MPI and libclang (rsmpi's bindgen)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ matrix.packages }} libclang-dev
+          mpirun --version
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal --component clippy
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.local/share/tracel
+            target
+          key: ${{ runner.os }}-mpi-${{ matrix.mpi }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-mpi-${{ matrix.mpi }}-
+      - run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
+      - run: scripts/mpi-test.sh 1 2 3 4
+        env:
+          # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
+          # (ibv_create_srq: Operation not supported), so MPI_Init fails.
+          UCX_TLS: self,sm,tcp
+
+  vulkan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Software Vulkan (Mesa lavapipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers vulkan-tools
+          vulkaninfo --summary
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.local/share/tracel
+            target
+          key: ${{ runner.os }}-vulkan-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-vulkan-
+      - run: cargo test --workspace --features gridcl-testing/vulkan -- --nocapture
+        env:
+          GRIDCL_TEST_DEVICE: vulkan

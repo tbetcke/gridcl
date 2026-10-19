@@ -1,0 +1,45 @@
+# gridcl-conformance against ndelement at the pinned commit (docs/design.md, A.10).
+# Nightly, on changes to conformance/ or gridcl-refcell/, and by hand.
+name: conformance
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    paths:
+      - "conformance/**"
+      - "gridcl-refcell/**"
+      - ".github/workflows/conformance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: OpenBLAS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopenblas-dev
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            conformance/target
+          key: ${{ runner.os }}-conformance-${{ hashFiles('rust-toolchain.toml', 'conformance/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-conformance-
+      - run: cargo test --manifest-path conformance/Cargo.toml

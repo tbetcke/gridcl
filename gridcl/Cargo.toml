@@ -1,0 +1,28 @@
+[package]
+name = "gridcl"
+description = "Distributed unstructured meshes on GPUs and CPUs through CubeCL"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Library features, forwarded to the crates concerned (docs/design.md, "Cargo features").
+mpi = ["gridcl-parallel/mpi"]
+ptscotch = ["gridcl-partition/ptscotch"]
+parmetis = ["gridcl-partition/parmetis"]
+metis = ["gridcl-partition/metis"]
+scotch = ["gridcl-partition/scotch"]
+hdf5 = ["gridcl-io/hdf5"]
+gpu-aware-cuda = ["gridcl-device/gpu-aware-cuda"]
+
+[dependencies]
+cubecl.workspace = true
+gridcl-device = { path = "../gridcl-device" }
+gridcl-dims = { path = "../gridcl-dims" }
+gridcl-geometry = { path = "../gridcl-geometry" }
+gridcl-io = { path = "../gridcl-io" }
+gridcl-parallel = { path = "../gridcl-parallel" }
+gridcl-partition = { path = "../gridcl-partition" }
+gridcl-refcell = { path = "../gridcl-refcell" }
+gridcl-topology = { path = "../gridcl-topology" }

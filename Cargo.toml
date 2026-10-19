@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+members = [
+    "gridcl-dims",
+    "gridcl-refcell",
+    "gridcl-device",
+    "gridcl-parallel",
+    "gridcl-topology",
+    "gridcl-geometry",
+    "gridcl-partition",
+    "gridcl-io",
+    "gridcl",
+    "ptscotch-sys",
+    "parmetis-sys",
+    "gridcl-testing",
+    "gridcl-mpi-tests",
+    "gridcl-bench",
+]
+# Outside the workspace (docs/design.md, "Workspace layout", dependency rule 6).
+exclude = ["conformance", "tools/env-check"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+cubecl = "=0.11.0"
+cubecl-runtime = "=0.11.0"
+mpi = { version = "=0.8.2", default-features = false }
+serde_json = "1"
+
+# buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
+# some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback
+# aborts the process (docs/plans/M0.md, Deviations log and Follow-ups). The release profile has no checks already.
+[profile.dev.package.buildid]
+overflow-checks = false

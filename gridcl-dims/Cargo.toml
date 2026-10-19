@@ -1,0 +1,9 @@
+[package]
+name = "gridcl-dims"
+description = "Dimension markers, cell families and the TopoDim trait of gridcl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]

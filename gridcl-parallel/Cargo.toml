@@ -1,0 +1,14 @@
+[package]
+name = "gridcl-parallel"
+description = "Communicators, IndexMap, Scatterer and neighbourhood exchange of gridcl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+mpi = ["dep:mpi"]
+
+[dependencies]
+gridcl-device = { path = "../gridcl-device" }
+mpi = { workspace = true, optional = true }

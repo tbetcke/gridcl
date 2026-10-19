@@ -38,7 +38,7 @@ orig_path=$PATH
 
 SGE_CASES="usage missing_targets_env job_script_sge_lines exit_status_passthrough
 failing_command_first_error summary_header_and_length max_wait_deletes_job results_copied
-results_survive_resync busy_tree_refused"
+results_survive_resync busy_tree_refused cubecl_toml_written"
 DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
 
@@ -418,6 +418,24 @@ case_results_survive_resync() {
     expect_exists "$TREE/results/$id1" "results of the first job survive the second sync"
     grep -rq first-run "$TREE/results/$id1" 2>/dev/null || fail "first job's output lost"
     expect_absent "$TREE/extra.txt" "deleted file removed from the tree"
+}
+
+case_cubecl_toml_written() {
+    # A local cubecl.toml is git-ignored: the sync neither copies nor deletes the job's own.
+    echo 'local = "not synced"' >"$LOCAL/cubecl.toml"
+    rt myriad-v100 -- 'echo first'
+    expect_status 0 "first run"
+    local id
+    id=$(job_id)
+    expect_line "$TREE/cubecl.toml" '[environment]' "cubecl.toml written by the job"
+    expect_line "$TREE/cubecl.toml" 'path = "global"' "database path follows XDG_CACHE_HOME"
+    expect_no_grep "$TREE/cubecl.toml" 'not synced' "local cubecl.toml not synced"
+    expect_grep "$TREE/results/$id/prologue.txt" '^kernel caches: .*XDG_CACHE_HOME=.*/gridcl-cache/xdg .*cubecl database=.*/gridcl-cache/xdg/cubecl' \
+        "prologue records the database location"
+    commit_file second.txt second
+    rt myriad-v100 -- 'test -f cubecl.toml && echo still-there'
+    expect_status 0 "second run"
+    grep -rq still-there "$TREE/results/$(job_id)" 2>/dev/null || fail "cubecl.toml deleted by the resync"
 }
 
 case_busy_tree_refused() {

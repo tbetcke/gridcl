@@ -1,0 +1,13 @@
+[package]
+name = "gridcl-refcell"
+description = "Reference cells, sub-entity tables, Lagrange layouts and quadrature of gridcl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gridcl-dims = { path = "../gridcl-dims" }
+
+[dev-dependencies]
+serde_json.workspace = true

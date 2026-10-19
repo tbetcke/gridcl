@@ -12,7 +12,7 @@ Personal details (user ids, host names that are not public, project codes) never
 | Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240), 192 GB RAM, 2 × V100 (compute capability 7.0) | SGE: `-l gpu=N` with `-ac allow=EF` | CUDA at milestone reviews, multi-GPU tests and as the fallback (ADR-0006); CPU benchmarks on AVX-512 |
 | Myriad A100 | L nodes: 36 cores, 192 GB RAM, 4 × A100 40 GB (compute capability 8.0) | SGE: `-l gpu=N` with `-ac allow=L` | second CUDA architecture; when required (no CUDA 13: Myriad's driver supports CUDA 12.4) |
 | Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU, Hopper GPU (compute capability 9.0) | UCL ARC experimental system; SSH to the node itself (alias `locust`, keys); open multi-user node without a scheduler (runner kind `direct`) | routine CUDA platform: after every task that changes kernels (ADR-0006); aarch64 host and Hopper GPU |
-| Hosted CI | Linux x86-64 runners *(provider to be chosen)* | automatic | CPU runtime, Vulkan (software), MPICH and Open MPI, conformance |
+| Hosted CI | GitHub Actions, `ubuntu-24.04` x86-64 runners | automatic | CPU runtime, Vulkan (software), MPICH and Open MPI, conformance |
 
 Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unless a test needs the larger memory.
 
@@ -94,7 +94,7 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 - **Fetch step:** `cargo fetch`, then `cargo check` with the command's features on the login node, which runs the build scripts; jobs build offline in their own target directory. With `XDG_DATA_HOME` set as below, the LLVM bundle comes from the Spack build and nothing is downloaded.
 - **Filesystem:** writing many small files into home (myriadfs) from a compute node is very slow: Spack's install of LLVM's headers took over two hours, against about 20 min for compiling LLVM on node-local disk.
 - **Smoke run:** `remote-test.sh myriad-v100 --cores 8 -- cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda` passed on 2026-10-18 (job 172549): `ptx_sm70`, CUDA 12.2 toolkit ≤ driver 12.4, compiler path `llvm`, f32, f64 and histogram checks pass. Queue wait 450 s, build 1829 s on 8 cores from a clean target directory, command 396 s. The checks took 26–147 s each because the kernel caches were new and on myriadfs; see "Kernel caches".
-- **Kernel caches (E0 T7, jobs 175329 and 175391):** on myriadfs, a new entry in the CUDA driver's JIT cache (`~/.nv/ComputeCache`) costs about 2 min per kernel, and creating CubeCL's cache database (`~/.cache/cubecl`, CubeCL's fallback when no `Cargo.toml` lies above the working directory) about 3 min. With both on the job's node-local `$TMPDIR` (a 10 GB tmpfs), env-check takes 1.9 s, the same as with the JIT cache disabled. The job script therefore sets `CUDA_CACHE_PATH` and `XDG_CACHE_HOME` below `$TMPDIR` and records them in the prologue (`kernel caches:`). Once the repository has a workspace `Cargo.toml` (M0), CubeCL 0.11 keeps its database in `<tree>/target/environment` instead, which is on myriadfs again; M0 has to check where it goes.
+- **Kernel caches (E0 T7, jobs 175329 and 175391):** on myriadfs, a new entry in the CUDA driver's JIT cache (`~/.nv/ComputeCache`) costs about 2 min per kernel, and creating CubeCL's cache database (`~/.cache/cubecl`, CubeCL's fallback when no `Cargo.toml` lies above the working directory) about 3 min. With both on the job's node-local `$TMPDIR` (a 10 GB tmpfs), env-check takes 1.9 s, the same as with the JIT cache disabled. The job script therefore sets `CUDA_CACHE_PATH` and `XDG_CACHE_HOME` below `$TMPDIR` and records them in the prologue (`kernel caches:`). Once the repository has a workspace `Cargo.toml` (M0), CubeCL 0.11 keeps its database in `<outermost Cargo.toml dir>/target/environment` instead, which is on myriadfs again (for env-check too, whose manifest lies inside the tree). No environment variable moves it; a `cubecl.toml` does, and the innermost one on the walk up from the working directory wins. Every job therefore writes `<tree>/cubecl.toml` with `[environment] path = "global"`, which puts the database in `$XDG_CACHE_HOME/cubecl`, below `$TMPDIR`; the prologue records it (`cubecl database=`). The file's content is the same for every job, so V100 and A100 jobs sharing a tree cannot point each other at another node's `$TMPDIR`. `/cubecl.toml` is git-ignored, so the sync neither copies nor deletes it (M0 T6).
 - **MPI:** the Open MPI 4.0.5 module built with GCC 10 needs `numactl/2.0.12`, `binutils/2.36.1/gnu-10.2.0` and `ucx/1.9.0/gnu-10.2.0`. rsmpi's bindgen needs libclang; the only one on Myriad is LLVM 8 (`llvm/8.0.0/gnu-4.9.2`), which the module lines pass with `LIBCLANG_PATH` and `CLANG_PATH` without loading that module, whose `bin/` and `LIBRARY_PATH` would come before the Spack-built LLVM. bindgen 0.72 asks for libclang 9 or newer, but the bindings it generates with libclang 8 work for env-check. This Open MPI is not CUDA-aware (relevant for M10).
 - **Acceptance (E0 T7, 2026-10-18):** `scripts/hpc/acceptance.sh myriad-v100` passed in two runs from the same sources: `gpus2` (job 175401), then `turnaround nvrtc fail max-wait` (jobs 175462–175496). The failing command exited 3 and its error was the summary's first failure. The `--max-wait 00:02:00` run was deleted while still queued, with exit status 124. `status.sh` was empty afterwards.
 - **A100 acceptance (E0 T8, 2026-10-18 and 19):** `scripts/hpc/acceptance.sh myriad-a100` passed in two runs from the same env-check sources, after one warm-up job that built the A100 target directory (job 177336, 8 cores): `turnaround nvrtc fail max-wait` (jobs 177590–186144), then `gpus2` (job 186145), whose first attempt (job 178649) was deleted after its 4 h `--max-wait` in the queue. The L nodes run the same system, driver (550.127.05) and module lines as the E nodes, with Xeon Gold 6240 CPUs. `status.sh` was empty afterwards.
@@ -118,7 +118,7 @@ Checked by E0 T9 on 2026-10-18.
 - **Access:** SSH to the node itself (alias `locust`), with keys; non-interactive commands work through the shared connection. There is no scheduler: the runner's `direct` kind starts each job detached under `timeout` and tracks it with a pid file on the node. The node is shared and interactive.
 - **Storage:** the home directory's quota is shared, so nothing goes there. Everything lives in the user's directory on the data disk, `/data/<user id>`, and the runner's trees are in `/data/<user id>/gridcl-hpc` (`LOCUST_BASE`). `/data` had 179 GB free (91% used).
 - **Environment:** Locust has no site modules. The jobs reuse a Spack environment that the maintainer built there for another project (Spack 1.2.2: CUDA 12.6.3 and Open MPI 5.0.10, with the system GCC 11.4.1 and clang/libclang 17.0.6), that project's rustup and cargo homes and the downloaded `tracel-llvm` bundle 23.1.0-3 for aarch64; RHEL 9's glibc is new enough for the bundle, so no Spack-built LLVM is needed (unlike Myriad, ADR-0004). LOCUST_LOGIN_MODULES and LOCUST_MODULES in `targets.env` are the same lines: they point `HOME`, the XDG directories, `TMPDIR`, `CUDA_CACHE_PATH`, `CARGO_HOME` and `RUSTUP_HOME` at the data disk; unset `RUSTUP_TOOLCHAIN` (the other project pins Rust 1.99.0, and `rust-toolchain.toml` must decide); put cargo and the Spack view on `PATH` and `LD_LIBRARY_PATH`; export `CUDARC_CUDA_VERSION=12060`, `LIBCLANG_PATH=/usr/lib64` and `CARGO_BUILD_JOBS=32` (half of the shared node); keep Open MPI's shared-memory backing files in `TMPDIR`; and set the linker below. `CUDA_PATH` is the Spack view. If that Spack environment changes, re-run `scripts/hpc/acceptance.sh locust`.
-- **Linker:** with the system's GNU ld 2.35.2, binaries that link CubeCL's LLVM fail with undefined `LLVMOrc*` symbols (archive order, as on Myriad). `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS` links with the toolchain's `rust-lld` through rustup's `gcc-ld` wrapper of the `1.99` toolchain; change the toolchain name there when `rust-toolchain.toml` changes.
+- **Linker:** with the system's GNU ld 2.35.2, binaries that link CubeCL's LLVM fail with undefined `LLVMOrc*` symbols (archive order, as on Myriad). `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS` links with the toolchain's `rust-lld` through rustup's `gcc-ld` wrapper of the `1.99` toolchain; change the toolchain name there when `rust-toolchain.toml` changes. `RUSTDOCFLAGS` repeats the same flags, because rustdoc ignores the target's `RUSTFLAGS` and doctests otherwise link with GNU ld and fail in the same way (M0 T2).
 - **GPU:** one GH200, so `--gpus 1` is the maximum; the 2-rank MPI test runs both ranks on GPU 0. The driver's JIT cache and CubeCL's cache database go below `TMPDIR` on the data disk (`kernel caches:` in the prologue).
 - **Acceptance:** `scripts/hpc/acceptance.sh locust` passed every step (jobs 20261018214145-3501138 to 20261018214423-3506568). The failing command exited 3 and its error was the summary's first failure; the `--max-wait 00:02:00` run was stopped on the node after 120 s, with exit status 124. The final `status.sh` check listed only the Myriad A100 job of T8, which was running at the same time; nothing was left on Locust.
 - **Node load (ADR-0002):** both snapshots were `idle` only for the third turnaround run and the NVRTC run. Every other run was `busy` because of the 1-minute load average alone (2.1 to 5.1), left over from this runner's preceding build or job; other users' processes used at most 0.7 cores and no other process used the GPU. That rule counted the runner's own earlier work; since ADR-0005 the load average is recorded only, and the idle rule looks at other users' CPU use (sampled over 5 s) and the GPU.
@@ -154,6 +154,37 @@ Re-run env-check on a target after its maintenance window or a module change, an
 - On Metal (wgpu MSL), `identity.fingerprint` is `spirv_0_0`: CubeCL 0.11 names every wgpu fingerprint `spirv_{vendor}_{device}`, whatever the shader language.
 - Claude Code's Bash sandbox blocks Metal and `sysctl`: inside it, env-check finds no Metal device and records the CPU model and SIMD flags as unknown. Metal runs and the env-check host record need a command run outside the sandbox (`/sandbox` manages this).
 
+## Hosted CI
+
+GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu-24.04`, the toolchain of `rust-toolchain.toml`, and caches the cargo registry, `target/` and, where the CPU runtime builds, its LLVM bundle in `$XDG_DATA_HOME/tracel`. Actions are pinned by commit SHA.
+
+| Workflow | Jobs | Trigger | System packages |
+| --- | --- | --- | --- |
+| `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push and pull request; manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools` |
+| `.github/workflows/conformance.yml` | conformance | nightly; pushes touching `conformance/` or `gridcl-refcell/`; manual | `libopenblas-dev` |
+| `.github/workflows/ptscotch.yml` | ptscotch (skeleton until M7) | nightly; pushes touching `gridcl-partition/` or `ptscotch-sys/`; manual | `libptscotch-dev` |
+
+## Test commands
+
+Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
+
+| Purpose | Command |
+| --- | --- |
+| workspace, CPU runtime | `cargo test --workspace` |
+| Metal (M3 Max, unsandboxed) | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` |
+| Vulkan (hosted CI) | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` |
+| CUDA (the runner sets `GRIDCL_TEST_DEVICE=cuda`) | `scripts/hpc/remote-test.sh <target> -- cargo test --release --workspace --features gridcl-testing/cuda` |
+| CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
+| MPI | `scripts/mpi-test.sh 1 2 3 4` |
+| MPI on CUDA (Myriad V100; both ranks use GPU 0 until per-rank selection) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
+| conformance | `cargo test --manifest-path conformance/Cargo.toml` |
+| dependency check | `scripts/check-workspace-deps.sh` |
+| lint (hosted cpu job) | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps` |
+
+`scripts/hpc/remote-test.sh` runs everything after `--` as one shell command line (`bash -c`). Pass a compound command as one quoted argument, `-- 'A && B'`, not as `-- bash -c 'A && B'`.
+
+`scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`. A `GRIDCL_TEST_DEVICE` other than `cpu` adds the gridcl-testing feature of the same name to the build, so inside `scripts/hpc` jobs the ranks open CUDA. The build uses the debug profile; on Myriad debug builds rely on the root `Cargo.toml`'s `[profile.dev.package.buildid]` override (buildid 1.0.5 otherwise aborts on an overflow), which separate cargo roots such as env-check and conformance do not inherit. Every rank opens `Device::cuda(0)` for now; choosing the node-local GPU per rank (`local_gpu_index` in the API walkthrough) is a follow-up.
+
 ## Change history
 
 | Date | Change |
@@ -164,3 +195,5 @@ Re-run env-check on a target after its maintenance window or a module change, an
 | 2026-10-18 | Locust column and reference (E0 T9): acceptance, environment on the data disk, node-load results. |
 | 2026-10-19 | Myriad A100 column (E0 T8); target roles after ADR-0006. |
 | 2026-10-19 | Record closed (E0 T10): no open E0 fields; the hosted CI provider is chosen in M0. |
+| 2026-10-19 | M0: hosted CI on GitHub Actions, test commands, Locust doctest linker (`RUSTDOCFLAGS`), CubeCL's database under `$TMPDIR` via `cubecl.toml`. |
+| 2026-10-19 | M0 review: MPI on CUDA row (Myriad V100); `mpi-test.sh` links the `GRIDCL_TEST_DEVICE` backend and needs no `jq`; debug profile and the buildid overflow override. |

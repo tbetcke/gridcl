@@ -1,0 +1,23 @@
+[package]
+name = "gridcl-mpi-tests"
+description = "MPI integration tests of gridcl, run by scripts/mpi-test.sh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+# The direct mpi dependency is temporary: the smoke test switches to CommExt::sum once gridcl's
+# Mpi exists (docs/plans/M0.md, question 6).
+mpi = ["gridcl/mpi", "dep:mpi"]
+
+[dependencies]
+gridcl = { path = "../gridcl" }
+gridcl-testing = { path = "../gridcl-testing" }
+mpi = { workspace = true, optional = true }
+
+[[test]]
+name = "allreduce_smoke"
+harness = false
+required-features = ["mpi"]
