@@ -2,4 +2,22 @@
 //! device primitives, pack/unpack kernels and GPU-aware pointer access.
 //!
 //! The only gridcl crate that uses CubeCL runtime types (docs/design.md, "Dependency rules" 3).
-//! Milestone M2 fills it in.
+
+mod buffer;
+mod error;
+mod plan;
+mod policy;
+mod precision;
+pub mod primitives;
+
+#[cfg(feature = "testing")]
+pub mod testing;
+#[cfg(not(feature = "testing"))]
+mod testing;
+
+pub use buffer::{DeviceBuffer, DeviceCsr, DeviceStrided, VECTOR_PAD};
+pub use error::{GridError, Result};
+pub use plan::LaunchPlan;
+pub use policy::{DeviceClass, KernelKind, VectorPolicy, VectorSizeOverride};
+pub use precision::{Real, check_precision};
+pub use primitives::*;

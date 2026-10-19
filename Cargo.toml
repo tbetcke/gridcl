@@ -30,6 +30,9 @@ cubecl = "=0.11.0"
 cubecl-runtime = "=0.11.0"
 mpi = { version = "=0.8.2", default-features = false }
 serde_json = "1"
+bytemuck = "1"
+proptest = "1"
+toml = "1"
 
 # buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
 # some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback

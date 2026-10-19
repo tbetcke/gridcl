@@ -10,7 +10,15 @@ license.workspace = true
 # GPU-aware MPI on CUDA: device pointers of CUDA buffers. The one library feature that enables
 # a cubecl runtime (docs/design.md, "Dependency rules" 4).
 gpu-aware-cuda = ["cubecl/cuda", "dep:cubecl-runtime"]
+# Test support, not part of the stable API: the scoped overrides of `gridcl_device::testing`.
+# gridcl-testing turns it on for every workspace test (docs/design.md, "Cargo features").
+testing = []
 
 [dependencies]
 cubecl.workspace = true
 cubecl-runtime = { workspace = true, optional = true }
+toml.workspace = true
+
+[dev-dependencies]
+gridcl-testing = { path = "../gridcl-testing" }
+proptest.workspace = true
