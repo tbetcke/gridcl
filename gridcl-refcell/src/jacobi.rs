@@ -62,7 +62,8 @@ fn converged(delta: f64, x: f64) -> bool {
 ///
 /// # Panics
 ///
-/// If `m` is 0 or α ≤ −1.
+/// If `m` is 0 or α ≤ −1, or if a Newton iteration does not converge in
+/// `MAX_NEWTON_STEPS` steps.
 pub(crate) fn gauss_jacobi(m: usize, alpha: f64) -> (Vec<f64>, Vec<f64>) {
     assert!(m >= 1, "a Gauss–Jacobi rule needs at least one point");
     assert!(alpha > -1.0, "the Gauss–Jacobi parameter must exceed −1");
@@ -73,15 +74,17 @@ pub(crate) fn gauss_jacobi(m: usize, alpha: f64) -> (Vec<f64>, Vec<f64>) {
         if let Some(&prev) = nodes.last() {
             x = 0.5 * (x + prev);
         }
-        for _ in 0..MAX_NEWTON_STEPS {
+        let done = (0..MAX_NEWTON_STEPS).any(|_| {
             let (p, dp) = jacobi(m, alpha, 0.0, x);
             let deflation: f64 = nodes.iter().map(|&r| 1.0 / (x - r)).sum();
             let delta = p / (dp - deflation * p);
             x -= delta;
-            if converged(delta, x) {
-                break;
-            }
-        }
+            converged(delta, x)
+        });
+        assert!(
+            done,
+            "Gauss–Jacobi Newton iteration did not converge: node {k}, m = {m}, α = {alpha}"
+        );
         nodes.push(x);
     }
     let raw: Vec<f64> = nodes
@@ -107,7 +110,7 @@ pub(crate) fn gauss_jacobi(m: usize, alpha: f64) -> (Vec<f64>, Vec<f64>) {
 ///
 /// # Panics
 ///
-/// If `m` < 2.
+/// If `m` < 2, or if a Newton iteration does not converge in `MAX_NEWTON_STEPS` steps.
 pub(crate) fn gll_points(m: usize) -> Vec<f64> {
     assert!(m >= 2, "GLL points need at least the two endpoints");
     let n = m - 1;
@@ -116,14 +119,16 @@ pub(crate) fn gll_points(m: usize) -> Vec<f64> {
     // Interior lower half: indices 1..m/2 (the midpoint of odd m is set below).
     for i in 1..m / 2 {
         let mut x = -(std::f64::consts::PI * i as f64 / n as f64).cos();
-        for _ in 0..MAX_NEWTON_STEPS {
+        let done = (0..MAX_NEWTON_STEPS).any(|_| {
             let (p, dp) = jacobi(n - 1, 1.0, 1.0, x);
             let delta = p / dp;
             x -= delta;
-            if converged(delta, x) {
-                break;
-            }
-        }
+            converged(delta, x)
+        });
+        assert!(
+            done,
+            "GLL Newton iteration did not converge: point {i}, m = {m}"
+        );
         // Round t to 1 − u with u = fl(1 − t) ∈ [1/2, 1]: both subtractions are then exact
         // (Sterbenz), so points[n − i] = 1 − points[i] and points[i] = 1 − points[n − i].
         let u = 1.0 - 0.5 * (1.0 + x);
@@ -236,6 +241,20 @@ mod tests {
                         "α = {alpha}, m = {m}, x^{k}: {approx} vs {exact}"
                     );
                 }
+            }
+        }
+    }
+
+    /// The Newton iterations converge (their asserts hold) well beyond the rules M1b uses
+    /// (m ≤ 11 for `gauss_rule` degree 20), with distinct ascending nodes.
+    #[test]
+    fn gauss_jacobi_newton_converges_for_large_m() {
+        for alpha in [0u32, 1, 2] {
+            for m in 16..=60 {
+                let (x, w) = gauss_jacobi(m, f64::from(alpha));
+                assert!(x.windows(2).all(|p| p[0] < p[1]), "α = {alpha}, m = {m}");
+                assert!(x[0] > 0.0 && x[m - 1] < 1.0, "α = {alpha}, m = {m}");
+                assert!(w.iter().all(|&wi| wi > 0.0), "α = {alpha}, m = {m}");
             }
         }
     }
