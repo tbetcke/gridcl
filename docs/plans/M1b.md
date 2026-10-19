@@ -1,6 +1,6 @@
 # M1b Reference cells — plan
 
-- **Status:** approved
+- **Status:** implemented
 - **Branch:** tbetcke/tbetcke-m1b-reference-cells (question 1)
 - **Base commit:** 1b94e3ce1d3d2685d2339b9bdd42d541db894225
 - **Design sections:** "Implementation roadmap / M1b Reference cells (gridcl-refcell, gridcl-conformance)"; "Reference cells and conventions"; Appendix A.1–A.6, A.8 (VTK pyramids), A.9, A.10, A.11; "Geometry / Tabulation and quadrature"; "High-order node orderings"; "Mesh type" (Listing B3, `NodeFamily`); "Kernels receive dimensions from types" (Listing B5, `gridcl_refcell::num_lagrange_nodes`); "Precision policy"; "Testing and validation"; "Development environment and test targets"; "Workspace layout" (crate table, dependency rules 5 and 6, CI matrix)
@@ -357,6 +357,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T8 | Gmsh rules ported from Gmsh 4.15.2 (tag `gmsh_4_15_2`): `pointsGenerators.cpp` and the `M*.h` edge/face tables, cited in `node_maps/gmsh.rs`. The prism interior is Gmsh's non-recursive triangle(p−3) × line(p−2) rule; pyramid lattices map as (m0, m1, p − m2). Cross-checked in scratch against the gmsh 4.15.2 Python wheel for 68 (cell, p) pairs (up to p = 10 / 9 / 8). The shared lattice matcher `match_lattice` is private to `node_maps`. | Done by a worktree subagent, merged with `--no-ff`, ticked after the merge (parallel with T5–T7). | – |
 | 2026-10-19 | T9 | VTK rules ported from VTK v9.7.1 (`vtkHigherOrder{Triangle,Quadrilateral,Tetra,Hexahedron,Wedge,Curve}.cxx`, `vtkHigherOrderInterpolation.cxx`), VTK 9 hexahedron numbering (XML ≥ 2.2). VTK's wedge orders its triangle faces and interior triangle layers lexicographically, not recursively; prism p ≥ 3 checked against VTK's independent `AppendWedgeCollocationPoints` (p ≤ 9) and DOLFINx `vtk_wedge` (p ≤ 2). Done by a worktree subagent, merged with `--no-ff`, ticked after the merge. | "High-order node orderings" says "triangle interiors are recursive, others lexicographic"; true for VTK triangles and tetrahedra, not for prism faces. Design-wording clarification for the review (candidate ADR, no API change). | – |
 | 2026-10-19 | T10 | `orientation.json` and `lagrange_points.json` are written compact (409 kB and 16 kB); `sources.json` reads ndelement's commit from conformance/Cargo.lock and records repository, ref and commit for each source. | Deterministic output that follows the pin; a re-export is byte-identical. | – |
+| 2026-10-19 | finish | Finish run: workspace tests, clippy, doc, fmt and Metal pass on the M3 Max; conformance passes; Locust CUDA (`cargo test --release --workspace --features gridcl-testing/cuda`, job 20261019233247-3771866, 09d8b9c, clean tree) passes. Myriad V100 not run: both submissions failed because Myriad's SGE qmaster refused connections (util01, port 6444); nothing queued. The V100 run moves to the milestone review. | Remote scheduler outage; CLAUDE.md allows two attempts. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
