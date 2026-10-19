@@ -88,6 +88,10 @@ jobs:
           restore-keys: ${{ runner.os }}-mpi-${{ matrix.mpi }}-
       - run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
       - run: scripts/mpi-test.sh 1 2 3 4
+        env:
+          # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
+          # (ibv_create_srq: Operation not supported), so MPI_Init fails.
+          UCX_TLS: self,sm,tcp
 
   vulkan:
     runs-on: ubuntu-24.04
