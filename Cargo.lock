@@ -1998,6 +1998,7 @@ dependencies = [
  "bytemuck",
  "gridcl-device",
  "mpi",
+ "proptest",
 ]
 
 [[package]]
