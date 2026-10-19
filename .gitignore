@@ -31,3 +31,6 @@ target/hpc/
 /results/
 # Written by every remote job (scripts/hpc/jobs/common.sh): CubeCL's database location
 /cubecl.toml
+
+# trybuild's output for compile-fail cases without a .stderr baseline (it adds its own .gitignore too)
+/gridcl*/wip/

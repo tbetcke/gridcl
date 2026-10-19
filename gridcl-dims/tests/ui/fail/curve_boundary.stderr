@@ -1,0 +1,47 @@
+error[E0599]: the method `boundary` exists for reference `&stub::Mesh<f64, gridcl_dims::D1, gridcl_dims::D2>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/curve_boundary.rs:11:25
+   |
+11 |     let _ = curve_in_2d.boundary();
+   |                         ^^^^^^^^ method cannot be called on `&stub::Mesh<f64, gridcl_dims::D1, gridcl_dims::D2>` due to unsatisfied trait bounds
+   |
+  ::: src/dim.rs
+   |
+   | pub struct D0;
+   | ------------- doesn't satisfy `D0: EmbeddedIn<gridcl_dims::D2>` or `D0: TopoDim`
+   |
+note: the following trait bounds were not satisfied:
+      `D0: EmbeddedIn<gridcl_dims::D2>`
+      `D0: TopoDim`
+  --> tests/ui/fail/../stub/mesh.rs
+   |
+   | impl<F, TD, GD, C> Mesh<F, TD, GD, C>
+   |                    ------------------
+...
+   |     TD::Lower: TopoDim + EmbeddedIn<GD>,
+   |                ^^^^^^^   ^^^^^^^^^^^^^^ unsatisfied trait bound introduced here
+   |                |
+   |                unsatisfied trait bound introduced here
+
+error[E0599]: the method `boundary` exists for reference `&stub::Mesh<f64, gridcl_dims::D1, D3>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/curve_boundary.rs:12:19
+   |
+12 |     let _ = curve.boundary();
+   |                   ^^^^^^^^ method cannot be called on `&stub::Mesh<f64, gridcl_dims::D1, D3>` due to unsatisfied trait bounds
+   |
+  ::: src/dim.rs
+   |
+   | pub struct D0;
+   | ------------- doesn't satisfy `D0: EmbeddedIn<D3>` or `D0: TopoDim`
+   |
+note: the following trait bounds were not satisfied:
+      `D0: EmbeddedIn<D3>`
+      `D0: TopoDim`
+  --> tests/ui/fail/../stub/mesh.rs
+   |
+   | impl<F, TD, GD, C> Mesh<F, TD, GD, C>
+   |                    ------------------
+...
+   |     TD::Lower: TopoDim + EmbeddedIn<GD>,
+   |                ^^^^^^^   ^^^^^^^^^^^^^^ unsatisfied trait bound introduced here
+   |                |
+   |                unsatisfied trait bound introduced here
