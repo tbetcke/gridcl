@@ -95,7 +95,7 @@ no device code.
   - After: T0
   - Parallel with: T2 (disjoint files: `dim.rs` vs `cell.rs`, `tests/cell_type.rs`)
 
-- [ ] **T2 Cell conversions (Listing B2)**
+- [x] **T2 Cell conversions (Listing B2)**
   - Goal: `From<CellN> for CellType` and `TryFrom<CellType> for CellN` from one internal
     `macro_rules!`, replacing the T0 stubs, with rustdoc.
   - Crates/files: `gridcl-dims/src/cell.rs`.

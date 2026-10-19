@@ -5,6 +5,17 @@ use core::{fmt::Debug, hash::Hash};
 use crate::dim::{D1, D2, D3, Dim};
 
 /// Every reference cell type, of any topological dimension.
+///
+/// The cells of one dimension convert to and from their family [`Cell1`], [`Cell2`] or
+/// [`Cell3`]:
+///
+/// ```
+/// use gridcl_dims::{Cell3, CellType};
+///
+/// let cell_type = CellType::from(Cell3::Prism);
+/// assert_eq!(cell_type, CellType::Prism);
+/// assert_eq!(Cell3::try_from(cell_type), Ok(Cell3::Prism));
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CellType {
     Point,
@@ -40,6 +51,15 @@ pub enum Cell3 {
 }
 
 /// A cell type used where a different topological dimension is required.
+///
+/// ```
+/// use gridcl_dims::{Cell2, CellType, WrongCellDim};
+///
+/// assert_eq!(
+///     Cell2::try_from(CellType::Tetrahedron),
+///     Err(WrongCellDim { found: CellType::Tetrahedron, expected_tdim: 2 }),
+/// );
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WrongCellDim {
     pub found: CellType,
@@ -69,36 +89,32 @@ impl TopoDim for D3 {
     type Cell = Cell3;
 }
 
-impl From<Cell1> for CellType {
-    fn from(_cell: Cell1) -> Self {
-        todo!()
-    }
+/// `From<$cell> for CellType` and `TryFrom<CellType> for $cell` for the cell family of the
+/// topological dimension `$td`. The `From` match is exhaustive, so every variant of `$cell` must
+/// be listed.
+macro_rules! cell_family {
+    ($cell:ident, $td:ty: $($variant:ident),+) => {
+        impl From<$cell> for CellType {
+            fn from(cell: $cell) -> Self {
+                match cell {
+                    $($cell::$variant => CellType::$variant,)+
+                }
+            }
+        }
+
+        impl TryFrom<CellType> for $cell {
+            type Error = WrongCellDim;
+
+            fn try_from(cell: CellType) -> Result<Self, WrongCellDim> {
+                match cell {
+                    $(CellType::$variant => Ok($cell::$variant),)+
+                    found => Err(WrongCellDim { found, expected_tdim: <$td as Dim>::N }),
+                }
+            }
+        }
+    };
 }
-impl TryFrom<CellType> for Cell1 {
-    type Error = WrongCellDim;
-    fn try_from(_cell: CellType) -> Result<Self, WrongCellDim> {
-        todo!()
-    }
-}
-impl From<Cell2> for CellType {
-    fn from(_cell: Cell2) -> Self {
-        todo!()
-    }
-}
-impl TryFrom<CellType> for Cell2 {
-    type Error = WrongCellDim;
-    fn try_from(_cell: CellType) -> Result<Self, WrongCellDim> {
-        todo!()
-    }
-}
-impl From<Cell3> for CellType {
-    fn from(_cell: Cell3) -> Self {
-        todo!()
-    }
-}
-impl TryFrom<CellType> for Cell3 {
-    type Error = WrongCellDim;
-    fn try_from(_cell: CellType) -> Result<Self, WrongCellDim> {
-        todo!()
-    }
-}
+
+cell_family!(Cell1, D1: Interval);
+cell_family!(Cell2, D2: Triangle, Quadrilateral);
+cell_family!(Cell3, D3: Tetrahedron, Hexahedron, Prism, Pyramid);
