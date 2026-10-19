@@ -34,8 +34,8 @@ fn print_summary(report: &Report) {
             );
         }
     }
-    for error in &report.errors {
-        eprintln!("env-check: error: {error}");
+    for failure in report.failures() {
+        eprintln!("env-check: error: {failure}");
     }
     eprintln!(
         "env-check: {}",

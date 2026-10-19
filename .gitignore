@@ -28,4 +28,4 @@ scripts/hpc/targets.env
 
 # Remote-test runner: copied job results (local) and job results in remote trees
 target/hpc/
-results/
+/results/

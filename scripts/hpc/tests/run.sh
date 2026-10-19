@@ -128,8 +128,8 @@ setup() {
     git init -q -b main "$LOCAL"
     g add -A
     g commit -q -m init
-    g checkout -q -b tbetcke/e0-test
-    TREE=$REMOTE/myriad/tbetcke_e0-test
+    g checkout -q -b dev/e0-test
+    TREE=$REMOTE/myriad/dev_e0-test
     write_targets_env
     export FAKE_STATE GRIDCL_TARGETS_ENV=$T/targets.env GRIDCL_HPC_POLL=0.2
     export PATH="$here/fake-bin:$orig_path"
@@ -256,6 +256,8 @@ case_usage() {
     expect_status 2 "malformed --time"
     rt myriad-v100 --bogus -- true
     expect_status 2 "unknown option"
+    rt locust --gpus 2 -- true
+    expect_status 2 "--gpus 2 on locust (one GPU)"
     expect_absent "$FAKE_STATE/ssh.log" "nothing contacted on usage errors"
 }
 

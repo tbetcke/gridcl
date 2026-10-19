@@ -3,7 +3,7 @@
 # Live E0 acceptance driver for a remote target (docs/plans/E0.md, T7-T9). Runs the steps
 # through remote-test.sh, never more than one job at a time:
 #   turnaround  env-check x3 on one GPU (--expect-sm, --expect-cuda-major); queue wait and
-#               run time of each, and their medians
+#               run time of each, and their medians; the host architecture of the reports
 #   nvrtc       env-check with the cuda-cpp feature (NVRTC path), plus the CPU runtime
 #   gpus2       --gpus 2 --ranks 2: mpi_allreduce_of_rank_ids, one GPU per rank
 #   fail        a deliberately failing command: exit status 3 and its error as first failure
@@ -30,18 +30,18 @@ usage() {
 msg() { echo "acceptance.sh: $*" >&2; }
 
 # Per-target expectations: compute capability, CUDA major version, features of the main and
-# the NVRTC runs, GPUs of the MPI step.
+# the NVRTC runs, GPUs of the MPI step, host architecture.
 target_settings() {
     case $1 in
         myriad-v100)
-            SM=70 CUDA_MAJOR=12 FEATURES=cuda NVRTC_FEATURES=cuda-cpp,cpu MPI_GPUS=2
+            SM=70 CUDA_MAJOR=12 FEATURES=cuda NVRTC_FEATURES=cuda-cpp,cpu MPI_GPUS=2 ARCH=x86_64
             ;;
         myriad-a100)
             # Myriad's newest CUDA module is 12.2.2 (no CUDA 13; docs/dev-environment.md).
-            SM=80 CUDA_MAJOR=12 FEATURES=cuda NVRTC_FEATURES=cuda-cpp,cpu MPI_GPUS=2
+            SM=80 CUDA_MAJOR=12 FEATURES=cuda NVRTC_FEATURES=cuda-cpp,cpu MPI_GPUS=2 ARCH=x86_64
             ;;
         locust)
-            SM=90 CUDA_MAJOR="" FEATURES=cuda,cpu NVRTC_FEATURES=cuda-cpp MPI_GPUS=1
+            SM=90 CUDA_MAJOR="" FEATURES=cuda,cpu NVRTC_FEATURES=cuda-cpp MPI_GPUS=1 ARCH=aarch64
             ;;
         *) return 1 ;;
     esac
@@ -76,6 +76,34 @@ step_turnaround() {
         # shellcheck disable=SC2086 # EXPECT is a list of options
         run_step "turnaround-$i" 0 --max-wait "$MAX_WAIT" -- \
             cargo run --release --manifest-path "$MANIFEST" --features "$FEATURES" -- $EXPECT || rc=1
+    done
+    check_arch turnaround-1 turnaround-2 turnaround-3 || rc=1
+    return "$rc"
+}
+
+# check_arch <step ...>: the env-check report of each step's job names the host architecture
+# $ARCH (docs/design.md, E0: "sm_90 on an aarch64 host" for Locust).
+check_arch() {
+    local step id arch rc=0
+    for step in "$@"; do
+        id=$(cat "$OUT/$step.id" 2>/dev/null)
+        arch=$(python3 -I - "$HPC_ROOT/target/hpc/$TARGET/$id/output.log" <<'EOF'
+import json, re, sys
+try:
+    log = open(sys.argv[1]).read()
+except OSError:
+    log = ""
+m = re.search(r"^\{\n.*?^\}$", log, re.M | re.S)
+try:
+    print(json.loads(m.group(0))["host"]["arch"] if m else "")
+except (ValueError, KeyError):
+    print("")
+EOF
+        )
+        if [ "$arch" != "$ARCH" ]; then
+            msg "step $step: host architecture '${arch:-unknown}' (job ${id:-none}), expected $ARCH"
+            rc=1
+        fi
     done
     return "$rc"
 }

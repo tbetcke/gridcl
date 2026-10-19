@@ -179,6 +179,22 @@ impl Report {
         self.passed = devices && mpi && cuda && self.errors.is_empty();
     }
 
+    /// The reasons the report fails apart from failed kernel checks: `errors`, the CUDA
+    /// record's problems and a wrong MPI allreduce, one line each.
+    pub fn failures(&self) -> Vec<String> {
+        let mut lines = self.errors.clone();
+        if let Some(cuda) = &self.cuda {
+            lines.extend(cuda.problems.iter().map(|p| format!("cuda: {p}")));
+        }
+        if let Some(mpi) = self.mpi.as_ref().filter(|m| !m.allreduce_passed) {
+            lines.push(format!(
+                "MPI: allreduce of rank ids on rank {} of {} gave {}, expected {}",
+                mpi.rank, mpi.size, mpi.allreduce_result, mpi.allreduce_expected
+            ));
+        }
+        lines
+    }
+
     /// Pretty-printed JSON.
     pub fn to_json(&self) -> String {
         // The report holds only strings, numbers, booleans, options and vectors, which
@@ -306,6 +322,53 @@ mod tests {
         });
         with_mpi.finish();
         assert!(!with_mpi.passed);
+    }
+
+    #[test]
+    fn failures_name_errors_cuda_problems_and_mpi() {
+        assert!(
+            report(vec![device(&[CheckStatus::Pass])])
+                .failures()
+                .is_empty()
+        );
+
+        let mut failing = report(Vec::new());
+        failing.errors.push("metal: no device".to_string());
+        failing.cuda = Some(CudaInfo {
+            compiler: "llvm".to_string(),
+            compute_capability: vec!["8.0".to_string()],
+            nvidia_smi_compute_capability: vec!["8.0".to_string()],
+            cuda_path: None,
+            toolkit_version: None,
+            toolkit_source: None,
+            driver_version: None,
+            driver_cuda_version: None,
+            toolkit_not_newer_than_driver: None,
+            expect_sm: Some(70),
+            expect_cuda_major: None,
+            problems: vec!["device 0: sm_80, expected sm_70".to_string()],
+            passed: false,
+        });
+        failing.mpi = Some(MpiInfo {
+            rank: 1,
+            size: 2,
+            library_version: "Open MPI v5.0.8".to_string(),
+            implementation: "open-mpi".to_string(),
+            allreduce_result: 0,
+            allreduce_expected: 1,
+            allreduce_passed: false,
+            device_index: None,
+            cuda_aware: CudaAware::Unknown,
+            cuda_aware_method: "ompi_info --parsable --all".to_string(),
+        });
+        assert_eq!(
+            failing.failures(),
+            vec![
+                "metal: no device".to_string(),
+                "cuda: device 0: sm_80, expected sm_70".to_string(),
+                "MPI: allreduce of rank ids on rank 1 of 2 gave 0, expected 1".to_string(),
+            ]
+        );
     }
 
     #[test]

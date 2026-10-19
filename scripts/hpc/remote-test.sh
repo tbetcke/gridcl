@@ -128,6 +128,7 @@ parse_args() {
     case $TARGET in
         myriad-v100) [ "$OPT_GPUS" -le 2 ] || usage_error "--gpus $OPT_GPUS: an E or F node has 2 V100s" ;;
         myriad-a100) [ "$OPT_GPUS" -le 4 ] || usage_error "--gpus $OPT_GPUS: an L node has 4 A100s" ;;
+        locust) [ "$OPT_GPUS" -le 1 ] || usage_error "--gpus $OPT_GPUS: Locust has one GH200" ;;
     esac
     if [ -n "$OPT_RANKS" ] && [ -n "$OPT_CORES" ] && [ "$OPT_CORES" -lt "$OPT_RANKS" ]; then
         usage_error "--cores $OPT_CORES is less than --ranks $OPT_RANKS"
