@@ -25,7 +25,7 @@ no device code.
 
 ## Tasks
 
-- [ ] **T0 Acceptance tests (failing)**
+- [x] **T0 Acceptance tests (failing)**
   - Goal: every M1a acceptance bullet as an automated test.
   - Crates/files:
     - root `Cargo.toml`: `trybuild = "1"` in `[workspace.dependencies]`; `Cargo.lock`.
@@ -183,6 +183,9 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | plan | Branch `tbetcke/tbetcke-m1a-type-layer`, not `m1a-<slug>`. | Maintainer's worktree branch, as in M0 (question 1). | – |
 | 2026-10-19 | plan | gridcl-dims gets a `trybuild` dev-dependency, not in the crate table. Follow-up for M3: moving the cases to gridcl makes trybuild rebuild gridcl's dependencies, cubecl included, in `target/tests/trybuild` on every target. | Compile-fail tests need trybuild ("Testing and validation"); no public API or crate boundary changes (question 2). | – |
 | 2026-10-19 | plan | T0's stubs leave out the `EmbeddedIn`/`Codim0`/`Codim1` impls instead of having every planned item. | Type-level items have no bodies to `todo!()`; without the impls the pass cases fail at run time, as the template requires of acceptance tests. | – |
+| 2026-10-19 | T0 | `tests/cell_type.rs` has a fourth test, `lists_are_complete`, which checks the variant lists against the exhaustive `match` helpers. | The exhaustive `match` alone does not catch a variant missing from a list. | – |
+| 2026-10-19 | T0 | Root `.gitignore` ignores `/gridcl*/wip/`. | trybuild writes pending `.stderr` files to `gridcl-dims/wip/` (outside `target/`); it adds its own `*` `.gitignore` there, the root entry is a second guard. | – |
+| 2026-10-19 | T0 | The `#[path]` include works; trybuild prints locations in the stub and in `src/` without line numbers (`tests/ui/fail/../stub/mesh.rs`, `src/dim.rs`). | Observation: T3's baselines depend on the text of the bound lines, not on their line numbers. | – |
 
 ## Review
 
