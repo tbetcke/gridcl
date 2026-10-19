@@ -358,6 +358,34 @@ fn radix_sort_length_mismatch() {
     }
 }
 
+/// Both ranking schemes of the radix sort on every device, through injected properties: the
+/// split scheme of a GPU class (one item per unit), and the blocks scheme of a CPU class with
+/// shared memory for eight digits per chunk (Grace's L1 does not hold all 256), at every vector
+/// size the device offers. Both cover several cubes: two units per cube in the blocks case.
+#[test]
+fn radix_sort_both_schemes() {
+    let client = test_client();
+    let mut split = client.properties().clone();
+    split.hardware.num_cpu_cores = None;
+    split.hardware.max_units_per_cube = split.hardware.max_units_per_cube.min(64);
+    let mut blocks = client.properties().clone();
+    blocks.hardware.num_cpu_cores = Some(4);
+    blocks.hardware.max_units_per_cube = blocks.hardware.max_units_per_cube.min(2);
+    blocks.hardware.max_shared_memory_size =
+        blocks.hardware.max_units_per_cube as usize * size_of::<u32>() * 8;
+    for props in [split, blocks] {
+        testing::with_properties(props, || {
+            for n in vector_sizes(&client, size_of::<u32>()) {
+                testing::with_vector_size(VectorSizeOverride::Fixed(n), || {
+                    for (len, seed) in [(1, 1), (17, 2), (1000, 3), (20_001, 4), (20_001, 5)] {
+                        check_radix_sort(&client, len, seed);
+                    }
+                });
+            }
+        });
+    }
+}
+
 #[test]
 fn scatter_out_of_range_is_dropped() {
     let client = test_client();
