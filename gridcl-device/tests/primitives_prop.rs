@@ -358,6 +358,22 @@ fn radix_sort_length_mismatch() {
     }
 }
 
+#[test]
+fn unique_by_key_length_mismatch() {
+    let client = test_client();
+    let keys = upload_keys(&client, &[1, 1, 2], 1);
+    match unique_by_key(&keys, &upload(&client, &[0u32; 4])) {
+        Err(GridError::LengthMismatch {
+            expected: 3,
+            found: 4,
+        }) => {}
+        other => panic!(
+            "3 keys with 4 payloads: {:?}",
+            other.err().map(|e| e.to_string())
+        ),
+    }
+}
+
 /// Both ranking schemes of the radix sort on every device, through injected properties: the
 /// split scheme of a GPU class (one item per unit), and the blocks scheme of a CPU class with
 /// shared memory for eight digits per chunk (Grace's L1 does not hold all 256), at every vector
