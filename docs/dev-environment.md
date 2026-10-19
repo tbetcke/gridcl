@@ -163,3 +163,4 @@ Re-run env-check on a target after its maintenance window or a module change, an
 | 2026-10-18 | Myriad V100 column (E0 T7): acceptance, Open MPI, kernel caches on node-local scratch. |
 | 2026-10-18 | Locust column and reference (E0 T9): acceptance, environment on the data disk, node-load results. |
 | 2026-10-19 | Myriad A100 column (E0 T8); target roles after ADR-0006. |
+| 2026-10-19 | Record closed (E0 T10): no open E0 fields; the hosted CI provider is chosen in M0. |
