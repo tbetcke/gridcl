@@ -9,7 +9,9 @@
 # Environment:
 #   GRIDCL_MPIRUN_FLAGS      extra mpirun flags, split on whitespace (as in env-check)
 #   GRIDCL_MPI_TEST_TIMEOUT  time limit of one run in seconds (default 600)
-#   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default)
+#   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default);
+#                            a backend other than cpu also builds with gridcl-testing/<backend>
+#                            (scripts/hpc jobs set cuda)
 #
 # Prints one line per (ranks, target) and exits non-zero if any run failed. The output of each
 # run is kept in target/mpi-test/<target>-<ranks>.log.
@@ -72,11 +74,21 @@ if [[ -n "${GRIDCL_MPIRUN_FLAGS:-}" ]]; then
     mpirun_flags+=("${extra[@]}")
 fi
 
+# The device every rank opens must be linked into the test executables.
+features=mpi
+case ${GRIDCL_TEST_DEVICE:-} in
+    "" | cpu) ;;
+    cuda | hip | vulkan | metal | metal-native | wgpu)
+        features+=",gridcl-testing/$GRIDCL_TEST_DEVICE"
+        ;;
+    *) die "GRIDCL_TEST_DEVICE '$GRIDCL_TEST_DEVICE' is not a gridcl-testing backend" ;;
+esac
+
 # One build; the [[test]] executables come from cargo's JSON messages.
 logs=target/mpi-test
 mkdir -p "$logs"
 build_json=$logs/build.json
-if ! cargo test -p gridcl-mpi-tests --features mpi --no-run --message-format=json >"$build_json"; then
+if ! cargo test -p gridcl-mpi-tests --features "$features" --no-run --message-format=json >"$build_json"; then
     die "build failed"
 fi
 tests=()
@@ -87,7 +99,7 @@ done < <(jq -r 'select(.reason == "compiler-artifact" and .profile.test
                 | "\(.target.name) \(.executable)"' "$build_json" | sort -u)
 [[ ${#tests[@]} -gt 0 ]] || die "no gridcl-mpi-tests targets were built"
 
-echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), time limit ${time_limit} s"
+echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), features $features, time limit ${time_limit} s"
 failed=0
 for n in "${ranks[@]}"; do
     for entry in "${tests[@]}"; do

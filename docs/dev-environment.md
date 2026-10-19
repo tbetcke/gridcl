@@ -176,13 +176,14 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | CUDA (the runner sets `GRIDCL_TEST_DEVICE=cuda`) | `scripts/hpc/remote-test.sh <target> -- cargo test --release --workspace --features gridcl-testing/cuda` |
 | CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
+| MPI on CUDA (Myriad V100, two GPUs) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
 | dependency check | `scripts/check-workspace-deps.sh` |
 | lint (hosted cpu job) | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps` |
 
 `scripts/hpc/remote-test.sh` runs everything after `--` as one shell command line (`bash -c`). Pass a compound command as one quoted argument, `-- 'A && B'`, not as `-- bash -c 'A && B'`.
 
-`scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`.
+`scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`. A `GRIDCL_TEST_DEVICE` other than `cpu` adds the gridcl-testing feature of the same name to the build, so inside `scripts/hpc` jobs the ranks open CUDA. Every rank opens `Device::cuda(0)` for now; choosing the node-local GPU per rank (`local_gpu_index` in the API walkthrough) is a follow-up.
 
 ## Change history
 
