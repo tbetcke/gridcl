@@ -1,13 +1,15 @@
 //! M0 acceptance test: an element-wise add on the device chosen by `GRIDCL_TEST_DEVICE`.
 //!
-//! The kernel is test code and scalar. Its cube count comes from `calculate_cube_count_elemwise`
-//! rather than `LaunchPlan`, which arrives in M2 (docs/plans/M0.md, question 2).
+//! The kernel is test code and scalar. Its launch shape comes from
+//! `LaunchPlan::elementwise(…, KernelKind::Copy, …)` with `max_vector = 1`, and it runs the
+//! kernel loop of Listing B5 (docs/plans/M0.md, question 2; docs/plans/M2.md, T10). Copy is
+//! the memory-bound element-wise family.
 //!
 //! On the CPU runtime the result is compared bitwise with the host sum; on GPUs within the
 //! tolerances of docs/design.md, "Testing and validation".
 
-use cubecl::calculate_cube_count_elemwise;
 use cubecl::prelude::*;
+use gridcl_device::{DeviceBuffer, KernelKind, LaunchPlan};
 use gridcl_testing::test_client;
 
 /// Lengths of "Testing and validation": the empty case, one element, around a power of two,
@@ -53,11 +55,24 @@ impl TestFloat for f64 {
     }
 }
 
-/// `out = a + b`; units past the end do nothing.
+/// `out = a + b` on the first `len` elements, in the kernel loop of Listing B5: each unit adds
+/// `items_per_unit` consecutive elements (vector size 1), skipping indices at or above
+/// `num_vectors` (the padded length) and `len`, so the padding is never touched.
 #[cube(launch_unchecked)]
-fn add_kernel<F: Float>(a: &[F], b: &[F], out: &mut [F]) {
-    if ABSOLUTE_POS < out.len() {
-        out[ABSOLUTE_POS] = a[ABSOLUTE_POS] + b[ABSOLUTE_POS];
+fn add_kernel<F: Float>(
+    a: &[F],
+    b: &[F],
+    out: &mut [F],
+    len: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+) {
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for i in 0..items_per_unit as usize {
+        let v = first + i;
+        if v < num_vectors as usize && v < len as usize {
+            out[v] = a[v] + b[v];
+        }
     }
 }
 
@@ -96,53 +111,48 @@ fn device_add<F: TestFloat>(client: &Client, a: &[F], b: &[F]) -> Vec<F> {
     let len = a.len();
     assert_eq!(b.len(), len, "inputs of different lengths");
     assert!(len > 0, "an empty add is not launched");
-    let bytes = len
-        .checked_mul(size_of::<F>())
-        .expect("buffer size overflows usize");
-    let max_page = client.properties().memory.max_page_size;
-    assert!(
-        u64::try_from(bytes).is_ok_and(|bytes| bytes <= max_page),
-        "a buffer of {bytes} bytes exceeds max_page_size {max_page}"
-    );
-    u32::try_from(len).expect("the kernel indexes in u32");
+    let len_u32 = u32::try_from(len).expect("the kernel takes its length as u32");
 
-    let cube_dim = CubeDim::new(client, len);
-    let cube_count = calculate_cube_count_elemwise(client, len, cube_dim);
-    let CubeCount::Static(x, y, z) = cube_count else {
-        panic!("calculate_cube_count_elemwise returned a dynamic count");
+    // Three vectors live (a, b and the sum); max_vector 1 keeps the kernel scalar, whatever
+    // GRIDCL_VECTOR_SIZE asks for.
+    let plan = LaunchPlan::elementwise(client, KernelKind::Copy, len, size_of::<F>(), 1, 3)
+        .expect("no launch plan for the add");
+    assert_eq!(plan.vector_size, 1, "the add kernel is scalar");
+    let CubeCount::Static(x, y, z) = plan.cube_count else {
+        panic!("LaunchPlan returned a dynamic cube count");
     };
-    let launched = [x, y, z, cube_dim.num_elems()]
+    let covered = [x, y, z, plan.cube_dim.num_elems(), plan.items_per_unit]
         .into_iter()
         .try_fold(1usize, |acc, n| acc.checked_mul(n as usize))
-        .expect("launched unit count overflows usize");
+        .expect("covered vector count overflows usize");
     assert!(
-        launched >= len,
-        "the launch covers {launched} units, fewer than {len}"
+        plan.num_vectors as usize >= len && covered >= plan.num_vectors as usize,
+        "the plan covers {covered} of {} vectors, for {len} elements",
+        plan.num_vectors
     );
 
-    let a_handle = client.create_from_slice(F::as_bytes(a));
-    let b_handle = client.create_from_slice(F::as_bytes(b));
-    let out_handle = client.empty(bytes);
-    // SAFETY: each buffer holds `len` elements of `F` (`bytes = len * size_of::<F>()`), the
-    // length declared to from_raw_parts. The kernel reads and writes index ABSOLUTE_POS only
-    // when it is below out.len(), which equals the other two lengths, and has no loops.
+    let a = DeviceBuffer::from_host(client, a).expect("upload of a failed");
+    let b = DeviceBuffer::from_host(client, b).expect("upload of b failed");
+    let out = DeviceBuffer::<F>::uninit(client, len).expect("allocation of out failed");
+    // SAFETY: the three buffers hold `len` elements of `F` each, padded to VECTOR_PAD, and
+    // `arg()` declares `len`. The kernel reads and writes only indices `v < len`, which it is
+    // given explicitly (in CubeCL 0.11 the handle size, not the declared length, bounds the
+    // slice, ADR-0007). `out` is a distinct allocation from `a` and `b`, so nothing aliases a
+    // written buffer. The launch shape is the plan's, checked above to cover every index.
     unsafe {
         add_kernel::launch_unchecked::<F>(
             client,
-            cube_count,
-            cube_dim,
-            BufferArg::from_raw_parts(a_handle, len),
-            BufferArg::from_raw_parts(b_handle, len),
-            BufferArg::from_raw_parts(out_handle.clone(), len),
+            plan.cube_count.clone(),
+            plan.cube_dim,
+            a.arg(),
+            b.arg(),
+            out.arg(),
+            len_u32,
+            plan.num_vectors,
+            plan.items_per_unit,
         );
     }
-    let bytes = client
-        .read_one(out_handle)
-        .expect("kernel or read-back failed");
-    let got = F::from_bytes(&bytes);
-    got.get(..len)
-        .unwrap_or_else(|| panic!("read back {} elements, fewer than {len}", got.len()))
-        .to_vec()
+    out.to_host().expect("kernel or read-back failed")
 }
 
 /// Panics at the first element where `got` differs from `want`: bitwise on the CPU runtime,
