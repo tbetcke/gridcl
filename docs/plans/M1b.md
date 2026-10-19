@@ -141,7 +141,7 @@ points by Newton iteration on [0, 1]), `polynomials` (orthonormal sets with firs
     integrals and the A.9/DOLFINx literals), logged; the literals need github.com, the
     conformance build codeberg.org (cached locally).
 
-- [ ] **T1 Reference-cell tables (A.1–A.3)**
+- [x] **T1 Reference-cell tables (A.1–A.3)**
   - Goal: `const` tables for the eight cells and the lexicographic generator that reproduces them.
   - Crates/files: `gridcl-refcell/src/cell.rs`, `src/generator.rs`.
   - Public API added or changed: bodies of `tdim`, `vertices`, `sub_entities`,
@@ -346,6 +346,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | T0 | DOLFINx pinned at main be8352e677303b686d6862b70923bab086b279ff, not the latest release tag (question 7); Basix v0.11.0 and Symfem v2025.12.0 stay release tags. | v0.11.0.post0 lacks hex64, prism40 and pyramid30 (question 13). | ADR-0007 |
 | 2026-10-19 | T0 | gridcl-conformance gets a `gridcl-dims` path dependency and, in `src/lib.rs`, `CELLS` and `reference_cell_type` (gridcl → ndelement cell type), shared by the tests and T10's exporter. | The tests need `CellType`, which gridcl-refcell does not re-export. | – |
 | 2026-10-19 | T0 | The stub modules carry `#![allow(unused_variables)]`, removed by the task that fills each one in; `polynomials.rs` and `node_maps.rs` declare their submodules instead of being empty. | `todo!()` bodies leave the parameters unused; empty parents could not hold `pyramid.rs`, `gmsh.rs` and `vtk.rs`. | – |
+| 2026-10-19 | T1 | `tdim`, `vertices`, `sub_entities`, `sub_entity_types` and `num_sub_entities` are `pub const fn`, not `pub fn`; `generator.rs` is `#![cfg(test)]`. | Usable in `const` and `comptime!` contexts ("Reference cells and conventions"); the generator is only used by the test that checks the tables. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 
 ## Review
