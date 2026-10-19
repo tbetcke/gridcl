@@ -1,6 +1,6 @@
 # ADR-0007: M2 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-19
 - **Raised in:** M2 planning (docs/plans/M2.md, questions 2–6 and 11–13)
 - **Amended:** 2026-10-19, after the maintainer's review: the `testing` module behind a Cargo feature; debug-build index checks in gather and scatter; the n + 1 convention of `exclusive_scan` documented in its rustdoc.
@@ -91,6 +91,12 @@ against those signatures. The design leaves six things open.
 ## Proposed decision
 
 Option 2. Each item is decided as follows.
+
+### Vector scope
+
+SortDigits (the digit counting of the radix sort) and Gather are generic over `N: Size` from M2
+on, as CLAUDE.md requires for every kernel on the candidate list, and get vector-size invariance
+tests. Their histogram and scatter phases stay scalar, as "Where vectors apply" says.
 
 ### gridcl-device: errors and scalars
 
@@ -224,6 +230,8 @@ host thread per mesh ("Streams and threading").
     - one partition per primitive;
     - no plane operations;
     - the count read of run-length and unique-by-key.
+  - **"Implementation roadmap / M2", scope:** "Fill, copy, reduce, the tile-local scan phase, the digit counting of the sort (SortDigits) and gather are generic over the vector size".
+  - **"Device primitives", fifth rule:** the same list of vector-generic phases.
   - **"Data layouts and index widths":** sort keys are planar, word-major, word 0 most significant.
   - **Listing S2 (launch plans):**
     - `DeviceClass::for_client` and its rule;
@@ -265,4 +273,6 @@ host thread per mesh ("Streams and threading").
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-19: option 2, as amended on the same day (the `testing` module behind a Cargo feature; debug-build index checks in gather and scatter; the n + 1 convention of `exclusive_scan` documented in its rustdoc).
+
+When it was applied, the "Vector scope" decision was written out and two consequences were added: the M2 scope in the roadmap and the fifth rule of "Device primitives". The maintainer had decided this scope during M2 planning (docs/plans/M2.md, question 2), and the option list already rejected the literal scope, but the first draft did not name the design text that this decision changes.
