@@ -10,4 +10,5 @@ license.workspace = true
 gridcl-dims = { path = "../gridcl-dims" }
 
 [dev-dependencies]
+proptest.workspace = true
 serde_json.workspace = true
