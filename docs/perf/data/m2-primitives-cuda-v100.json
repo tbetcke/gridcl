@@ -1,0 +1,74 @@
+[
+  {
+    "backend": "cuda",
+    "commit": "20982b2854d3226b3f403ce4556efd45cda4c766",
+    "device": "Tesla V100-PCIE-32GB",
+    "items_per_s": 534281162.3628627,
+    "median_s": 0.018716737,
+    "n": 10000000,
+    "operation": "radix_sort",
+    "profile": "release",
+    "times_s": [
+      0.021902483,
+      0.020846354,
+      0.020730319,
+      0.020662414,
+      0.018753987,
+      0.018657988,
+      0.018679487,
+      0.018649376,
+      0.018570703,
+      0.018615171
+    ],
+    "vector_size_override": null,
+    "words": 2
+  },
+  {
+    "backend": "cuda",
+    "commit": "20982b2854d3226b3f403ce4556efd45cda4c766",
+    "device": "Tesla V100-PCIE-32GB",
+    "items_per_s": 28543781879.836384,
+    "median_s": 0.000350339,
+    "n": 10000000,
+    "operation": "inclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.000562202,
+      0.00035246,
+      0.000347959,
+      0.000346817,
+      0.000347976,
+      0.00035491,
+      0.000350394,
+      0.000350284,
+      0.000350049,
+      0.000350966
+    ],
+    "vector_size_override": null,
+    "words": 1
+  },
+  {
+    "backend": "cuda",
+    "commit": "20982b2854d3226b3f403ce4556efd45cda4c766",
+    "device": "Tesla V100-PCIE-32GB",
+    "items_per_s": 24773477514.972473,
+    "median_s": 0.0004036575,
+    "n": 10000000,
+    "operation": "exclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.000527355,
+      0.000349555,
+      0.000350576,
+      0.000360184,
+      0.000453581,
+      0.000432837,
+      0.00040362,
+      0.000401695,
+      0.000403695,
+      0.000404071
+    ],
+    "vector_size_override": null,
+    "words": 1
+  }
+]

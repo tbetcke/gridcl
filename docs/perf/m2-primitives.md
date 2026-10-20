@@ -37,13 +37,13 @@ Medians in milliseconds over ten runs, the range of the ten runs in brackets; ra
 | M3 Max | `cpu` | Apple M3 Max | 2086 (1910–2426) | 4.8e6 | 9.8 (8.6–15.7) | 1.0e9 | 10.1 (7.6–12.4) | 9.9e8 | `data/m2-primitives-cpu-m3max.json` |
 | M3 Max | `wgpu<msl>` (Metal) | Apple M3 Max | 28.7 (28.6–47.8) | 3.5e8 | 1.14 (0.93–1.73) | 8.8e9 | 1.07 (1.00–1.53) | 9.3e9 | `data/m2-primitives-metal-m3max.json` |
 | Hosted CI (software) | `wgpu<spirv>` (Vulkan, lavapipe) | llvmpipe (LLVM 20.1.2, 256 bits) | 46044 (45800–47700) | 2.2e5 | 936 (927–947) | 1.1e7 | 940 (926–948) | 1.1e7 | `data/m2-primitives-vulkan-lavapipe.json` |
-| Locust | `cuda` | NVIDIA GH200 480GB | pending: node busy in both runs | | | | | | – |
-| Locust | `cpu` | Neoverse-V2 (Grace) | pending: node busy in both runs | | | | | | – |
-| Myriad V100 | `cuda`, `cpu` | V100, Xeon (36 cores) | pending: Myriad's scheduler refused jobs | | | | | | – |
-| Myriad A100 | `cuda`, `cpu` | A100, Xeon (36 cores) | pending: Myriad's scheduler refused jobs | | | | | | – |
+| Myriad V100 | `cuda` | Tesla V100-PCIE-32GB | 18.7 (18.6–21.9) | 5.3e8 | 0.35 (0.35–0.56) | 2.9e10 | 0.40 (0.35–0.53) | 2.5e10 | `data/m2-primitives-cuda-v100.json` |
+| Myriad V100 node | `cpu` | Xeon Gold 6240 (36 cores) | 2989 (2819–3200) | 3.3e6 | 48.7 (29.6–50.3) | 2.1e8 | 50.6 (43.2–51.4) | 2.0e8 | `data/m2-primitives-cpu-myriad-v100.json` |
+| Myriad A100 | `cuda` | A100 | pending | | | | | | – |
+| Locust | `cuda`, `cpu` | NVIDIA GH200 480GB, Neoverse-V2 (Grace) | not recorded: node busy in all three runs | | | | | | – |
 
-All rows were measured on 2026-10-20: the M3 Max CPU row at a8145b5, the others at 246dbae (the
-binary is the same at both commits).
+All rows were measured on 2026-10-20: the M3 Max CPU row at a8145b5, the Myriad rows at 20982b2,
+the others at 246dbae (the binary is the same at all three commits).
 
 ## Conditions
 
@@ -60,13 +60,18 @@ binary is the same at both commits).
   `ubuntu-24.04` runner with 4 vCPUs of an AMD EPYC 7763, Mesa lavapipe (software Vulkan). The
   VM shares its host, and lavapipe is a CPU rasterizer: the row is labelled software and shows
   only that the primitives run there; it is not compared with hardware backends.
-- **Locust:** jobs 20261020094911-3949350 and 20261020100636-3953887 (commit 246dbae; the tree
-  was dirty only by these untracked JSON files). Both passed the result checks, but another
-  user's GPU process held the GPU at 90 to 100 % utilisation before and after each run, so the
-  times are discarded (ADR-0002) and the run is to be repeated when the node is idle.
-- **Myriad:** the V100 and A100 jobs (`--cores 36`) could not be submitted: three `qsub` calls on
-  2026-10-20 failed with "unable to send message to qmaster using port 6444". To be repeated when
-  the scheduler is back.
+- **Locust:** jobs 20261020094911-3949350, 20261020100636-3953887 (246dbae; dirty only by
+  untracked JSON files) and 20261020115726-4015584 (a8145b5, clean). All three passed the result
+  checks, but one other user's GPU process held the GPU at 90 to 100 % utilisation before and
+  after each run, so the times are discarded (ADR-0002). The plan counts Locust only when it is
+  idle; the Myriad rows stand for CUDA.
+- **Myriad V100:** job 9996274 on node-e00a-018 (E node) with `--cores 36`, the whole node:
+  Xeon Gold 6240, Tesla V100-PCIE-32GB; clean tree at 20982b2. The remote tree has no `.git`,
+  so the binary wrote `"commit": "unknown"`; the commit in the JSON was filled in from the
+  runner's job record (`submit.env`). Later remote runs pass `GRIDCL_BENCH_COMMIT`. Earlier the
+  same day, three `qsub` calls failed while Myriad's scheduler was down.
+- **Myriad A100:** CUDA only, without `--cores 36`: a whole-node request waited 2 h 25 min in the
+  queue and was cancelled. The Myriad CPU-runtime row comes from the V100 node.
 
 ## Observations
 
@@ -74,6 +79,8 @@ binary is the same at both commits).
   3.6 ms per pass) and a scan of 10^7 u32 values about 1.1 ms (80 MB of input and output, about
   70 GB/s). Both are well below the M3 Max's memory bandwidth; where the time goes is not
   measured here.
+- On the V100 the sort takes 18.7 ms (5.3e8 keys/s) and a scan 0.35 ms, about 230 GB/s of
+  input and output, a quarter of the card's bandwidth.
 - The CPU runtime is about 70 times slower than Metal for the sort and about 9 times slower for
   the scans. Every kernel runs at vector size 1 and the sort's ranking runs through shared
   memory; M3s measures vector sizes and block sizes for SortDigits and ScanTile and decides from
