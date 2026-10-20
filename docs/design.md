@@ -873,10 +873,11 @@ pub trait DeviceScalar: CubeElement + Numeric + sealed::Sealed {}
 pub fn fill<T: DeviceScalar>(x: &mut DeviceBuffer<T>, v: T) -> Result<()>;
 /// Moves u32 words, so size_of::<T>() must be a multiple of 4; unequal lengths give LengthMismatch.
 pub fn copy<T: CubeElement>(src: &DeviceBuffer<T>, dst: &mut DeviceBuffer<T>) -> Result<()>;
-/// Length 1; an empty input gives the identity of `op`.
+/// Length 1; an empty input gives the identity of `op` (0, T::max_value(), T::min_value(); finite
+/// for floats), written by the fill kernel (ADR-0011).
 pub fn reduce<T: DeviceScalar>(x: &DeviceBuffer<T>, op: ReduceOp) -> Result<DeviceBuffer<T>>;
 /// One value per CSR segment, combined in index order. Offsets are clamped to [0, values.len()];
-/// a decreasing pair gives an empty segment.
+/// a decreasing pair gives an empty segment, whose value is the identity of `op`.
 pub fn segmented_reduce<T: DeviceScalar>(values: &DeviceBuffer<T>, offsets: &DeviceBuffer<u32>,
                                          op: ReduceOp) -> Result<DeviceBuffer<T>>;
 pub fn inclusive_scan<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Result<DeviceBuffer<T>>;
@@ -920,7 +921,7 @@ pub struct Unique { pub keys: SortKeys, pub first: DeviceBuffer<u32>, pub group:
 pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<Unique>;
 ```
 
-The primitives are re-exported at the root of gridcl-device. An empty input never launches a kernel.
+The primitives are re-exported at the root of gridcl-device. An empty input never launches a kernel over that input; a fixed-size output (reduce, exclusive scan, the offsets of run-length) is written by the fill kernel (ADR-0011).
 
 ### Streams and threading
 
@@ -980,7 +981,8 @@ impl DeviceClass {
 
 /// Value of GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and of testing::with_vector_size.
 /// Widest is the first of io_optimized_vector_sizes(elem_bytes). Fixed(n) and Widest skip the
-/// register budget but stay clamped by max_vector; Policy applies the full rule below.
+/// register budget but stay clamped by max_vector and the device's max_vector_size (ADR-0011);
+/// Policy applies the full rule below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }
 
@@ -1032,15 +1034,15 @@ pub mod testing {
 }
 ```
 
-- **Vector size:** the largest power of two not above the policy's size, `max_vector`, and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
+- **Vector size:** the largest power of two not above the policy's size, `max_vector`, the device's `hardware.max_vector_size` (ADR-0011), and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
 - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
-- **CPUs:** `cube_dim` equals `max_units_per_cube`, one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
+- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
 ### Padding and tiles
 
 - `DeviceBuffer` allocations are padded to a multiple of `VECTOR_PAD` = 16 elements (Listing S1). `len()` stays the logical length; `vector_arg(n)` passes the padded length in vectors.
-- An empty buffer still allocates one `VECTOR_PAD` block, so no handle has zero size (wgpu rejects zero-size bindings); `len()` stays 0 and `padded_len()` is at least `VECTOR_PAD`. An empty input never launches a kernel.
+- An empty buffer still allocates one `VECTOR_PAD` block, so no handle has zero size (wgpu rejects zero-size bindings); `len()` stays 0 and `padded_len()` is at least `VECTOR_PAD`. An empty input never launches a kernel over that input; a fixed-size output (reduce, exclusive scan, the offsets of run-length) is written by the fill kernel (ADR-0011).
 - `from_host` and `zeros` zero the padding; after `uninit` it is unspecified. Element-wise kernels may compute garbage in padding lanes. Reductions and scans mask lanes at index ≥ `len`, so padding never reaches a result.
 - Cell data that vectorized kernels read or write is tiled by cells: E-vectors are cell-fastest with their cell count padded by copies of the last cell, and `QuadField` uses tiles of `quad_tile` cells (Listing B4b). Chunks start on tile boundaries. Lanes are consecutive cells, so accesses are contiguous on CPUs and coalesced on GPUs.
 
@@ -1205,7 +1207,8 @@ pub trait CommDyn: 'static {
     fn barrier(&self);
     /// In-place all-reduce of `buf`, read as elements of `dtype`.
     fn all_reduce_bytes(&self, buf: &mut [u8], dtype: DType, op: ReduceOp);
-    /// In-place exclusive scan; rank 0 receives the identity of `op`.
+    /// In-place exclusive scan; rank 0 receives the identity of `op` (0, MAX, MIN; finite for
+    /// floats, ADR-0011).
     fn exscan_bytes(&self, buf: &mut [u8], dtype: DType, op: ReduceOp);
     /// Variable all-to-all; counts in elements.
     fn all_to_all_v_bytes(&self, send: &[u8], send_counts: &[usize],

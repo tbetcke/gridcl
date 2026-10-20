@@ -162,7 +162,7 @@ The module is re-exported at the crate root. In the signatures below, buffers ar
   - Launch shapes come from nowhere else.
 - **Cross-lane operations.** A fixed-order in-vector prefix (lane extracts, unrolled at comptime) is allowed, like a fixed-order reduction. ScanTile uses it.
 - **No plane operations.** Primitives combine values within a cube through shared memory and `sync_cube`, so they are correct with plane size 1 and on the CPU runtime.
-- **Empty inputs.**
+- **Empty inputs.** (Amended by ADR-0011: no kernel runs over an empty input, but a fixed-size output is written by the fill kernel.)
   - An empty input never launches a kernel.
   - `pad_len` rounds 0 up to one `VECTOR_PAD` block, so no handle has zero size, and `len()` stays 0. `padded_len()` is therefore at least `VECTOR_PAD`.
 

@@ -1,6 +1,6 @@
 # ADR-0011: M2 review clarifications: finite Min/Max identities, fill launches for the fixed-size outputs of empty inputs, vector sizes clamped by `max_vector_size`
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-20
 - **Raised in:** M2 review (design-reviewer, Major 1 and Minor 5); the T0, T2, T4, T5, T8 and T9 rows of the M2 Deviations log
 - **Design sections affected:**
@@ -109,4 +109,4 @@ inputs can raise its own ADR.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-20 (option 2, decisions (a)–(c)), without conditions. Applied to docs/design.md in `adr: 0011 apply`.
