@@ -384,28 +384,35 @@ fn radix_sort_both_schemes() {
     let mut split = client.properties().clone();
     split.hardware.num_cpu_cores = None;
     split.hardware.max_units_per_cube = split.hardware.max_units_per_cube.min(64);
+    let split_units = split
+        .hardware
+        .max_units_per_cube
+        .min(split.hardware.max_cube_dim.0) as usize;
     let mut blocks = client.properties().clone();
     blocks.hardware.num_cpu_cores = Some(4);
     blocks.hardware.max_units_per_cube = blocks.hardware.max_units_per_cube.min(2);
     blocks.hardware.max_shared_memory_size =
         blocks.hardware.max_units_per_cube as usize * size_of::<u32>() * 8;
-    // With one unit per cube and one item per unit, the scan of the digit counts cannot shrink
-    // and returns TooLarge. A host with one hardware thread (a one-core batch job) launches no
-    // larger cubes, so it runs only the blocks scheme; GPU backends run the split scheme natively.
-    let mut cases = vec![blocks];
-    if split
-        .hardware
-        .max_units_per_cube
-        .min(split.hardware.max_cube_dim.0)
-        >= 2
-    {
-        cases.insert(0, split);
-    } else {
-        eprintln!("radix_sort_both_schemes: one unit per cube on this host; split scheme skipped");
+    // The GPU-class cubes take their units from the host's hardware threads. A cube that covers
+    // fewer than VECTOR_PAD scalars cannot shrink the recursive scan of the digit counts
+    // (TooLarge), so the split scheme runs only at vector sizes n with units · n ≥ VECTOR_PAD:
+    // all sizes on 16 or more threads, fewer on a 4-vCPU CI runner, none on a one-core batch
+    // job. Real GPUs have cubes of 32 or more units and run the split scheme natively.
+    let sizes = vector_sizes(&client, size_of::<u32>());
+    let split_sizes: Vec<usize> = sizes
+        .iter()
+        .copied()
+        .filter(|&n| split_units * n >= VECTOR_PAD)
+        .collect();
+    if split_sizes.is_empty() {
+        eprintln!(
+            "radix_sort_both_schemes: {split_units} units per cube on this host; \
+             split scheme skipped"
+        );
     }
-    for props in cases {
+    for (props, sizes) in [(split, split_sizes), (blocks, sizes)] {
         testing::with_properties(props, || {
-            for n in vector_sizes(&client, size_of::<u32>()) {
+            for n in sizes {
                 testing::with_vector_size(VectorSizeOverride::Fixed(n), || {
                     for (len, seed) in [(1, 1), (17, 2), (1000, 3), (20_001, 4), (20_001, 5)] {
                         check_radix_sort(&client, len, seed);

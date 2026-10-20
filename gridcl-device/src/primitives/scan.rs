@@ -147,6 +147,12 @@ fn scan_tile_kernel<T: Numeric, N: Size>(
 /// The result is bitwise identical across runs on one device. Float sums depend on the vector
 /// size and the launch shape, which the vector policy fixes per device class; integer sums wrap.
 ///
+/// # Errors
+///
+/// `TooLarge` if the length overflows u32 indices, or if a level of the recursion would not
+/// shrink. That needs cubes that cover fewer than `VECTOR_PAD` scalars, which only injected
+/// device properties produce.
+///
 /// # Example
 ///
 /// ```
@@ -169,6 +175,10 @@ pub fn inclusive_scan<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Result<DeviceBuff
 /// `[0]`.
 ///
 /// Determinism as for [`inclusive_scan`].
+///
+/// # Errors
+///
+/// As for [`inclusive_scan`].
 ///
 /// # Example
 ///
@@ -211,8 +221,8 @@ fn scan<T: DeviceScalar>(x: &DeviceBuffer<T>, exclusive: bool) -> Result<DeviceB
     let tiled = cubes > 1;
     let tile_offsets = if tiled {
         if cubes + 1 >= items {
-            // The recursive scan over cubes + 1 items would not shrink (only possible with
-            // injected limits: one unit and one item per cube).
+            // The recursive scan over cubes + 1 items would not shrink. Only injected
+            // properties give cubes that cover fewer than VECTOR_PAD scalars.
             return Err(GridError::TooLarge);
         }
         let sums = DeviceBuffer::<T>::uninit(client, cubes)?;

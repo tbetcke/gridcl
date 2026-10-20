@@ -325,7 +325,8 @@ enum Scheme {
 ///
 /// `LengthMismatch { expected: keys.len(), found: payload.len() }` if the lengths differ;
 /// `TooLarge` if there are 2^32 or more keys, if the planar words or the digit counts
-/// overflow u32 indices, or if the device's shared memory cannot hold a cube's ranking.
+/// overflow u32 indices, if the device's shared memory cannot hold a cube's ranking, or if the
+/// scan of the digit counts returns it (see [`exclusive_scan`](crate::exclusive_scan)).
 ///
 /// # Example
 ///

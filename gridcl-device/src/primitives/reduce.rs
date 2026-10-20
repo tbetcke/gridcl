@@ -162,6 +162,12 @@ pub(crate) fn tree_half(cube_dim: u32) -> u32 {
 /// The result is bitwise identical across runs on one device. Float sums depend on the vector
 /// size and the launch shape, which the vector policy fixes per device class.
 ///
+/// # Errors
+///
+/// `TooLarge` if the length overflows u32 indices, or if a level of the recursion would not
+/// shrink. That needs cubes that cover fewer than `VECTOR_PAD` scalars, which only injected
+/// device properties produce.
+///
 /// # Example
 ///
 /// ```
@@ -193,7 +199,8 @@ pub fn reduce<T: DeviceScalar>(x: &DeviceBuffer<T>, op: ReduceOp) -> Result<Devi
         )?;
         let cubes = plan.num_cubes();
         if cubes > 1 && cubes >= len {
-            // A level that does not shrink would never finish (one unit, one item per cube).
+            // A level that does not shrink would never finish. Only injected properties give
+            // cubes that cover fewer than VECTOR_PAD scalars, the padded length of a short level.
             return Err(GridError::TooLarge);
         }
         let partials = DeviceBuffer::<T>::uninit(client, cubes)?;
