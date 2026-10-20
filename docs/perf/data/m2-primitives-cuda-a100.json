@@ -1,0 +1,74 @@
+[
+  {
+    "backend": "cuda",
+    "commit": "c99c7f232ac939f60a3c7a796646ad2e392717f6",
+    "device": "NVIDIA A100-PCIE-40GB",
+    "items_per_s": 454373546.44482577,
+    "median_s": 0.0220083235,
+    "n": 10000000,
+    "operation": "radix_sort",
+    "profile": "release",
+    "times_s": [
+      0.022998876,
+      0.022067566,
+      0.022052261,
+      0.021979071,
+      0.021996818,
+      0.021990056,
+      0.022017288,
+      0.022009034,
+      0.021982375,
+      0.022007613
+    ],
+    "vector_size_override": null,
+    "words": 2
+  },
+  {
+    "backend": "cuda",
+    "commit": "c99c7f232ac939f60a3c7a796646ad2e392717f6",
+    "device": "NVIDIA A100-PCIE-40GB",
+    "items_per_s": 36328430811.595314,
+    "median_s": 0.0002752665,
+    "n": 10000000,
+    "operation": "inclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.000535204,
+      0.000277803,
+      0.000274433,
+      0.000276877,
+      0.0002761,
+      0.000274294,
+      0.000280484,
+      0.000273508,
+      0.00027208,
+      0.000272662
+    ],
+    "vector_size_override": null,
+    "words": 1
+  },
+  {
+    "backend": "cuda",
+    "commit": "c99c7f232ac939f60a3c7a796646ad2e392717f6",
+    "device": "NVIDIA A100-PCIE-40GB",
+    "items_per_s": 36285128540.067856,
+    "median_s": 0.000275595,
+    "n": 10000000,
+    "operation": "exclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.000364203,
+      0.000337059,
+      0.000331355,
+      0.000330973,
+      0.000275165,
+      0.000274222,
+      0.000272811,
+      0.000276025,
+      0.000272908,
+      0.00027204
+    ],
+    "vector_size_override": null,
+    "words": 1
+  }
+]
