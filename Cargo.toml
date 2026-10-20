@@ -29,13 +29,20 @@ license = "MIT OR Apache-2.0"
 cubecl = "=0.11.0"
 cubecl-runtime = "=0.11.0"
 mpi = { version = "=0.8.2", default-features = false }
+proptest = "1"
 serde_json = "1"
 bytemuck = "1"
-proptest = "1"
 toml = "1"
+trybuild = "1"
 
 # buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
 # some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback
 # aborts the process (docs/plans/M0.md, Deviations log and Follow-ups). The release profile has no checks already.
 [profile.dev.package.buildid]
 overflow-checks = false
+
+# gridcl-refcell's acceptance tests factor and apply 729 x 729 Vandermonde matrices (hexahedra,
+# p = 8); unoptimised they take minutes (docs/plans/M1b.md, T7). Debug assertions and overflow
+# checks stay on.
+[profile.dev.package.gridcl-refcell]
+opt-level = 3
