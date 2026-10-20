@@ -136,6 +136,17 @@ fn unique_kernel(
 }
 
 /// Runs of consecutive equal keys; `offsets` has runs + 1 entries.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{Runs, SortKeys, run_length};
+///
+/// let client = gridcl_testing::test_client();
+/// let Runs { keys, offsets } = run_length(&SortKeys::from_host(&client, &[7, 7, 9], 1).unwrap()).unwrap();
+/// assert_eq!(keys.to_host().unwrap(), vec![7, 9]);
+/// assert_eq!(offsets.to_host().unwrap(), vec![0, 2, 3]);
+/// ```
 pub struct Runs {
     /// The key of each run.
     pub keys: SortKeys,
@@ -193,10 +204,10 @@ pub fn run_length(keys: &SortKeys) -> Result<Runs> {
             starts.arg(),
             out_keys.words().arg(),
             offsets.arg(),
-            len as u32,
-            pad_len(len)? as u32,
-            pad_len(runs)? as u32,
-            num_words as u32,
+            to_u32(len)?,
+            to_u32(pad_len(len)?)?,
+            to_u32(pad_len(runs)?)?,
+            to_u32(num_words)?,
             plan.items_per_unit,
         );
     }
@@ -207,6 +218,20 @@ pub fn run_length(keys: &SortKeys) -> Result<Runs> {
 }
 
 /// Groups of equal neighbours of sorted keys.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, SortKeys, Unique, unique_by_key};
+///
+/// let client = gridcl_testing::test_client();
+/// let sorted = SortKeys::from_host(&client, &[1, 1, 5, 5, 5, 8], 1).unwrap();
+/// let payload = DeviceBuffer::from_host(&client, &[10u32, 11, 12, 13, 14, 15]).unwrap();
+/// let Unique { keys, first, group } = unique_by_key(&sorted, &payload).unwrap();
+/// assert_eq!(keys.to_host().unwrap(), vec![1, 5, 8]);
+/// assert_eq!(first.to_host().unwrap(), vec![10, 12, 15]);
+/// assert_eq!(group.to_host().unwrap(), vec![0, 0, 1, 1, 1, 2]);
+/// ```
 pub struct Unique {
     /// The key of each group.
     pub keys: SortKeys,
@@ -272,10 +297,10 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
             keys.words().arg(),
             first.arg(),
             group.arg(),
-            len as u32,
-            pad_len(len)? as u32,
-            pad_len(runs)? as u32,
-            num_words as u32,
+            to_u32(len)?,
+            to_u32(pad_len(len)?)?,
+            to_u32(pad_len(runs)?)?,
+            to_u32(num_words)?,
             plan.items_per_unit,
         );
     }
@@ -288,9 +313,9 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
 fn number_runs(keys: &SortKeys) -> Result<(LaunchPlan, DeviceBuffer<u32>, usize)> {
     let client = keys.words().client();
     let len = keys.len();
-    let len_u32 = u32::try_from(len).map_err(|_| GridError::TooLarge)?;
-    let pad = u32::try_from(pad_len(len)?).map_err(|_| GridError::TooLarge)?;
-    u32::try_from(keys.words().padded_len()).map_err(|_| GridError::TooLarge)?;
+    let len_u32 = to_u32(len)?;
+    let pad = to_u32(pad_len(len)?)?;
+    to_u32(keys.words().padded_len())?;
     let plan = LaunchPlan::elementwise(client, KernelKind::Gather, len, 4, 1, 1)?;
     let flags = DeviceBuffer::<u32>::uninit(client, len)?;
     debug_assert_bindings(client, 2);
@@ -305,7 +330,7 @@ fn number_runs(keys: &SortKeys) -> Result<(LaunchPlan, DeviceBuffer<u32>, usize)
             flags.arg(),
             len_u32,
             pad,
-            keys.num_words() as u32,
+            to_u32(keys.num_words())?,
             plan.items_per_unit,
         );
     }
@@ -314,15 +339,25 @@ fn number_runs(keys: &SortKeys) -> Result<(LaunchPlan, DeviceBuffer<u32>, usize)
     Ok((plan, starts, runs))
 }
 
+/// `v` as a u32 index or length; `TooLarge` if it does not fit.
+fn to_u32(v: usize) -> Result<u32> {
+    u32::try_from(v).map_err(|_| GridError::TooLarge)
+}
+
 /// Element `i` of `x`: an explicit, blocking 4-byte device-to-host read (ADR-0009).
 fn read_u32(x: &DeviceBuffer<u32>, i: usize) -> Result<u32> {
-    let size = (x.padded_len() * size_of::<u32>()) as u64;
-    let start = (i * size_of::<u32>()) as u64;
-    let handle = x
-        .handle()
-        .clone()
-        .offset_start(start)
-        .offset_end(size - start - size_of::<u32>() as u64);
+    debug_assert!(i < x.len(), "read_u32: index {i} out of range");
+    let bytes_of = |n: usize| {
+        n.checked_mul(size_of::<u32>())
+            .and_then(|b| u64::try_from(b).ok())
+            .ok_or(GridError::TooLarge)
+    };
+    let size = bytes_of(x.padded_len())?;
+    let start = bytes_of(i)?;
+    let handle = x.handle().clone().offset_start(start).offset_end(
+        size.checked_sub(start + size_of::<u32>() as u64)
+            .expect("read_u32: the index is within the padded length"),
+    );
     let bytes = x.client().read_one(handle)?;
     let word: [u8; 4] = bytes[..4].try_into().expect("a 4-byte read");
     Ok(u32::from_ne_bytes(word))

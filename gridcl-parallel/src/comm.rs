@@ -280,6 +280,15 @@ pub struct Neighbourhood {
 
 impl Neighbourhood {
     /// No sources and no destinations.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::Neighbourhood;
+    ///
+    /// let nb = Neighbourhood::empty();
+    /// assert!(nb.sources().is_empty() && nb.destinations().is_empty());
+    /// ```
     pub fn empty() -> Self {
         Neighbourhood {
             sources: Vec::new(),
@@ -295,10 +304,28 @@ impl Neighbourhood {
         }
     }
     /// The ranks this rank receives from.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::Neighbourhood;
+    ///
+    /// let nb = Neighbourhood::empty();
+    /// assert!(nb.sources().is_empty());
+    /// ```
     pub fn sources(&self) -> &[usize] {
         &self.sources
     }
     /// The ranks this rank sends to.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::Neighbourhood;
+    ///
+    /// let nb = Neighbourhood::empty();
+    /// assert!(nb.destinations().is_empty());
+    /// ```
     pub fn destinations(&self) -> &[usize] {
         &self.destinations
     }

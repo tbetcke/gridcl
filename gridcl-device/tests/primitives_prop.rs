@@ -376,8 +376,10 @@ fn unique_by_key_length_mismatch() {
 
 /// Both ranking schemes of the radix sort on every device, through injected properties: the
 /// split scheme of a GPU class (one item per unit), and the blocks scheme of a CPU class with
-/// shared memory for eight digits per chunk (Grace's L1 does not hold all 256), at every vector
-/// size the device offers. Both cover several cubes: two units per cube in the blocks case.
+/// shared memory for eight digits per chunk (Grace's L1 does not hold all 256). The blocks
+/// scheme runs at every vector size the device offers, the split scheme at those vector sizes n
+/// with units · n ≥ VECTOR_PAD (see below). Both cover several cubes: two units per cube in the
+/// blocks case.
 #[test]
 fn radix_sort_both_schemes() {
     let client = test_client();

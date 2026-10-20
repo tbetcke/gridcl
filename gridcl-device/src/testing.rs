@@ -114,7 +114,8 @@ pub fn with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R {
 }
 
 /// Forces the vector size of plans made inside `f`. It takes precedence over
-/// `GRIDCL_VECTOR_SIZE`; `Fixed(n)` and `Widest` stay clamped by the kernel's `max_vector`.
+/// `GRIDCL_VECTOR_SIZE`; `Fixed(n)` and `Widest` stay clamped by the kernel's `max_vector`
+/// and the device's `hardware.max_vector_size` (ADR-0011).
 ///
 /// # Example
 ///

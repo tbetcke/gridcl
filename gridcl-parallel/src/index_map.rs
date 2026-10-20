@@ -86,31 +86,96 @@ impl IndexMap {
         })
     }
     /// Global indices `[begin, end)` owned by this rank.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// assert_eq!(map.owned_range(), (0, 3));
+    /// ```
     pub fn owned_range(&self) -> (i64, i64) {
         self.owned_range
     }
     /// Global index of each ghost.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// // No ghosts until M6.
+    /// assert!(map.ghosts().is_empty());
+    /// ```
     pub fn ghosts(&self) -> &[i64] {
         &self.ghosts
     }
     /// Owning rank of each ghost.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// assert!(map.ghost_owners().is_empty());
+    /// ```
     pub fn ghost_owners(&self) -> &[i32] {
         &self.ghost_owners
     }
     /// Owned indices on this rank.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// assert_eq!(map.num_owned(), 3);
+    /// ```
     pub fn num_owned(&self) -> usize {
         // Fits: it was a usize when the map was built.
         (self.owned_range.1 - self.owned_range.0) as usize
     }
     /// Ghost indices on this rank.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// assert_eq!(map.num_ghosts(), 0);
+    /// ```
     pub fn num_ghosts(&self) -> usize {
         self.ghosts.len()
     }
     /// Owned plus ghosts.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// assert_eq!(map.num_local(), 3);
+    /// ```
     pub fn num_local(&self) -> usize {
         self.num_owned() + self.num_ghosts()
     }
     /// Size of the global index set.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// // Serial: one rank owns everything.
+    /// assert_eq!(map.size_global(), 3);
+    /// ```
     pub fn size_global(&self) -> i64 {
         self.size_global
     }

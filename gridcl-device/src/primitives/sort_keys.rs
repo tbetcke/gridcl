@@ -125,21 +125,65 @@ impl SortKeys {
     }
 
     /// The number of keys.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::SortKeys;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// // Three two-word keys, key-major on the host.
+    /// assert_eq!(SortKeys::from_host(&client, &[1, 2, 3, 4, 5, 6], 2).unwrap().len(), 3);
+    /// ```
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Words per key, 1..=4.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::SortKeys;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// assert_eq!(SortKeys::from_host(&client, &[1, 2, 3, 4, 5, 6], 2).unwrap().num_words(), 2);
+    /// ```
     pub fn num_words(&self) -> usize {
         self.num_words
     }
 
     /// The planar word buffer: `num_words · pad_len(len)` words.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{SortKeys, VECTOR_PAD};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// // Keys [1, 2] and [3, 4]: word 0 of every key comes first, then word 1.
+    /// let keys = SortKeys::from_host(&client, &[1, 2, 3, 4], 2).unwrap();
+    /// let planar = keys.words().to_host().unwrap();
+    /// assert_eq!(planar.len(), 2 * VECTOR_PAD);
+    /// assert_eq!((planar[0], planar[1]), (1, 3));
+    /// assert_eq!((planar[VECTOR_PAD], planar[VECTOR_PAD + 1]), (2, 4));
+    /// ```
     pub fn words(&self) -> &DeviceBuffer<u32> {
         &self.words
     }
 
     /// The planar word buffer, mutable.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{SortKeys, fill};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut keys = SortKeys::from_host(&client, &[5, 6, 7], 1).unwrap();
+    /// fill(keys.words_mut(), 0u32).unwrap();
+    /// assert_eq!(keys.to_host().unwrap(), vec![0, 0, 0]);
+    /// ```
     pub fn words_mut(&mut self) -> &mut DeviceBuffer<u32> {
         &mut self.words
     }

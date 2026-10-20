@@ -40,6 +40,20 @@ mod sealed {
 }
 
 /// The scalars of the typed primitives (sealed): f32, f64, i32, u32.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, DeviceScalar, ReduceOp, reduce};
+///
+/// fn total<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Vec<T> {
+///     reduce(x, ReduceOp::Sum).unwrap().to_host().unwrap()
+/// }
+///
+/// let client = gridcl_testing::test_client();
+/// assert_eq!(total(&DeviceBuffer::from_host(&client, &[1i32, 2, 3]).unwrap()), vec![6]);
+/// assert_eq!(total(&DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap()), vec![6]);
+/// ```
 pub trait DeviceScalar: CubeElement + Numeric + sealed::Sealed {}
 
 impl DeviceScalar for f32 {}
@@ -48,6 +62,18 @@ impl DeviceScalar for i32 {}
 impl DeviceScalar for u32 {}
 
 /// Sum, min or max. Re-exported by gridcl-parallel, so `gridcl_parallel::ReduceOp` stays valid.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, ReduceOp, reduce};
+///
+/// let client = gridcl_testing::test_client();
+/// let x = DeviceBuffer::from_host(&client, &[3.0f32, -1.0, 2.0]).unwrap();
+/// assert_eq!(reduce(&x, ReduceOp::Sum).unwrap().to_host().unwrap(), vec![4.0]);
+/// assert_eq!(reduce(&x, ReduceOp::Min).unwrap().to_host().unwrap(), vec![-1.0]);
+/// assert_eq!(reduce(&x, ReduceOp::Max).unwrap().to_host().unwrap(), vec![3.0]);
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub enum ReduceOp {
     Sum,

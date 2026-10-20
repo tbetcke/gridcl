@@ -55,13 +55,15 @@ impl LaunchPlan {
     /// `items` scalar items; `max_vector` the widest size the data layout allows (a divisor of
     /// `VECTOR_PAD`); `live` the vectors the kernel keeps live, for the register budget.
     ///
-    /// - **Vector size:** the largest power of two not above the policy's size, `max_vector`
-    ///   and the widest of `vector_sizes_in_registers(elem_bytes, live)`; overridden by
+    /// - **Vector size:** the largest power of two not above the policy's size, `max_vector`,
+    ///   the device's `hardware.max_vector_size` (ADR-0011) and the widest of
+    ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by
     ///   `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size` (see [`VectorSizeOverride`]).
-    /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller;
-    ///   `items_per_unit` is 1.
-    /// - **CPUs:** `cube_dim` equals `max_units_per_cube`, one unit per hardware thread, and
-    ///   each unit takes blocks of about 16 KiB of whole 128-byte lines.
+    /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` (at most `max_cube_dim.0`) if
+    ///   that is smaller; `items_per_unit` is 1.
+    /// - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`,
+    ///   ADR-0011), one unit per hardware thread, and each unit takes blocks of about 16 KiB of
+    ///   whole 128-byte lines.
     /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
     ///
     /// # Errors
@@ -72,6 +74,17 @@ impl LaunchPlan {
     /// # Panics
     ///
     /// If `max_vector` is not a power of two dividing `VECTOR_PAD`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{KernelKind, LaunchPlan, VECTOR_PAD};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// // 100 items pad to 112 = 7 · VECTOR_PAD scalars, whatever the vector size.
+    /// let plan = LaunchPlan::elementwise(&client, KernelKind::Copy, 100, 4, VECTOR_PAD, 2).unwrap();
+    /// assert_eq!(plan.num_vectors as usize * plan.vector_size, 7 * VECTOR_PAD);
+    /// ```
     pub fn elementwise(
         client: &Client,
         kind: KernelKind,
@@ -219,7 +232,7 @@ fn spread_cubes(cubes: usize, max: (u32, u32, u32)) -> Result<(u32, u32, u32)> {
     let (mx, my, mz) = (max.0.max(1) as usize, max.1.max(1) as usize, max.2 as usize);
     let x = n.min(mx);
     let y = n.div_ceil(x).min(my);
-    let z = n.div_ceil(x * y);
+    let z = n.div_ceil(x.checked_mul(y).ok_or(GridError::TooLarge)?);
     if z > mz {
         return Err(GridError::TooLarge);
     }

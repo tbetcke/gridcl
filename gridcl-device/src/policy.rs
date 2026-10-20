@@ -258,6 +258,16 @@ impl VectorPolicy {
 
     /// Preferred vector size for one kernel family and scalar size; 1 until benchmarked, and 1
     /// for scalar sizes the policy does not list.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{KernelKind, VECTOR_PAD, VectorPolicy};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let n = VectorPolicy::for_client(&client).vector_size(KernelKind::Fill, 4);
+    /// assert!(n.is_power_of_two() && VECTOR_PAD % n == 0);
+    /// ```
     pub fn vector_size(&self, kind: KernelKind, elem_bytes: usize) -> usize {
         self.vector_sizes
             .get(&(kind, elem_bytes))
@@ -267,6 +277,16 @@ impl VectorPolicy {
 
     /// Tile width of QuadField and E-vector chunks: 1, 2, 4, 8 or 16. The scoped override
     /// (`testing::with_quad_tile`), then `GRIDCL_QUAD_TILE`, then the policy.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::VectorPolicy;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let tile = VectorPolicy::for_client(&client).quad_tile();
+    /// assert!([1, 2, 4, 8, 16].contains(&tile));
+    /// ```
     pub fn quad_tile(&self) -> usize {
         static ENV: OnceLock<Option<usize>> = OnceLock::new();
         testing::quad_tile_override()

@@ -145,21 +145,64 @@ impl<T: CubeElement> DeviceBuffer<T> {
     }
 
     /// The logical length in elements, not bytes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::DeviceBuffer;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// assert_eq!(DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap().len(), 3);
+    /// assert_eq!(DeviceBuffer::<u32>::uninit(&client, 0).unwrap().len(), 0);
+    /// ```
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// The allocated length in elements: `len` rounded up to `VECTOR_PAD`, at least one block.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, VECTOR_PAD};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// assert_eq!(DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap().padded_len(), VECTOR_PAD);
+    /// assert_eq!(DeviceBuffer::<u32>::uninit(&client, 0).unwrap().padded_len(), VECTOR_PAD);
+    /// assert_eq!(DeviceBuffer::<u32>::uninit(&client, 17).unwrap().padded_len(), 2 * VECTOR_PAD);
+    /// ```
     pub fn padded_len(&self) -> usize {
         self.padded
     }
 
     /// The CubeCL handle, which keeps the allocation alive.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::DeviceBuffer;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let x = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
+    /// let bytes = client.read_one(x.handle().clone()).unwrap();
+    /// assert_eq!(bytes.len(), x.padded_len() * size_of::<u32>());
+    /// ```
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
 
     /// The client the buffer lives on.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::DeviceBuffer;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let x = DeviceBuffer::from_host(&client, &[1.0f32, 2.0]).unwrap();
+    /// let y = DeviceBuffer::from_host(x.client(), &[3.0f32, 4.0]).unwrap();
+    /// assert_eq!(y.client().name(), client.name());
+    /// ```
     pub fn client(&self) -> &Client {
         &self.client
     }

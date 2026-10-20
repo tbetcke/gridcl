@@ -370,7 +370,16 @@ pub fn radix_sort(
     let cube_dim = plan.cube_dim.num_elems();
     let cubes = plan.num_cubes();
     let num_counts = cubes.checked_mul(RADIX).ok_or(GridError::TooLarge)?;
-    to_u32(num_counts + 1)?;
+    to_u32(num_counts.checked_add(1).ok_or(GridError::TooLarge)?)?;
+    let pad_u32 = to_u32(pad)?;
+    let num_words_u32 = to_u32(num_words)?;
+    let cubes_u32 = to_u32(cubes)?;
+    let n_u32 = to_u32(n)?;
+    let block = plan
+        .items_per_unit
+        .checked_mul(n_u32)
+        .ok_or(GridError::TooLarge)?;
+    let slots = cube_dim.checked_mul(n_u32).ok_or(GridError::TooLarge)?;
     let shared = testing::properties(client).hardware.max_shared_memory_size;
     let scheme = scheme(&plan, shared)?;
 
@@ -391,7 +400,7 @@ pub fn radix_sort(
         };
         let (dst_keys, dst_payload) = &out[pass % 2];
         let word = num_words - 1 - pass / 4;
-        let plane = to_u32(word * pad)?;
+        let plane = to_u32(word.checked_mul(pad).ok_or(GridError::TooLarge)?)?;
         let shift = 8 * (pass % 4) as u32;
 
         let counts = DeviceBuffer::<u32>::uninit(client, num_counts)?;
@@ -409,12 +418,12 @@ pub fn radix_sort(
                 n,
                 src_keys.words().vector_arg(n),
                 counts.arg(),
-                plane / n as u32,
+                plane / n_u32,
                 shift,
                 len_u32,
                 plan.num_vectors,
                 plan.items_per_unit,
-                cubes as u32,
+                cubes_u32,
                 cube_dim,
             );
         }
@@ -442,12 +451,12 @@ pub fn radix_sort(
                     dst_keys.words().arg(),
                     dst_payload.arg(),
                     len_u32,
-                    pad as u32,
-                    num_words as u32,
+                    pad_u32,
+                    num_words_u32,
                     plane,
                     shift,
-                    plan.items_per_unit * n as u32,
-                    cubes as u32,
+                    block,
+                    cubes_u32,
                     cube_dim,
                     chunk_digits,
                 ),
@@ -462,13 +471,13 @@ pub fn radix_sort(
                     dst_keys.words().arg(),
                     dst_payload.arg(),
                     len_u32,
-                    pad as u32,
-                    num_words as u32,
+                    pad_u32,
+                    num_words_u32,
                     plane,
                     shift,
-                    cubes as u32,
+                    cubes_u32,
                     cube_dim,
-                    cube_dim * n as u32,
+                    slots,
                 ),
             }
         }
@@ -481,7 +490,10 @@ fn scheme(plan: &LaunchPlan, shared: usize) -> Result<Scheme> {
     let units = plan.cube_dim.num_elems() as usize;
     if plan.items_per_unit > 1 {
         // The largest power-of-two chunk of digits whose per-unit counters fit.
-        let fit = shared / (units * size_of::<u32>());
+        let per_digit = units
+            .checked_mul(size_of::<u32>())
+            .ok_or(GridError::TooLarge)?;
+        let fit = shared / per_digit;
         if fit == 0 {
             return Err(GridError::TooLarge);
         }
@@ -490,8 +502,14 @@ fn scheme(plan: &LaunchPlan, shared: usize) -> Result<Scheme> {
             chunk_digits: chunk_digits as u32,
         })
     } else {
-        let slots = units * plan.vector_size;
-        let bytes = (slots + units + RADIX) * size_of::<u32>();
+        let slots = units
+            .checked_mul(plan.vector_size)
+            .ok_or(GridError::TooLarge)?;
+        let bytes = slots
+            .checked_add(units)
+            .and_then(|w| w.checked_add(RADIX))
+            .and_then(|w| w.checked_mul(size_of::<u32>()))
+            .ok_or(GridError::TooLarge)?;
         if slots > 1 << SLOT_BITS || bytes > shared {
             return Err(GridError::TooLarge);
         }
