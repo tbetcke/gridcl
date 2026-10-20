@@ -921,7 +921,7 @@ pub struct Unique { pub keys: SortKeys, pub first: DeviceBuffer<u32>, pub group:
 pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<Unique>;
 ```
 
-The primitives are re-exported at the root of gridcl-device. An empty input never launches a kernel over that input; a fixed-size output (reduce, exclusive scan, the offsets of run-length) is written by the fill kernel (ADR-0011).
+The primitives are re-exported at the root of gridcl-device. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
 
 ### Streams and threading
 
@@ -1042,7 +1042,7 @@ pub mod testing {
 ### Padding and tiles
 
 - `DeviceBuffer` allocations are padded to a multiple of `VECTOR_PAD` = 16 elements (Listing S1). `len()` stays the logical length; `vector_arg(n)` passes the padded length in vectors.
-- An empty buffer still allocates one `VECTOR_PAD` block, so no handle has zero size (wgpu rejects zero-size bindings); `len()` stays 0 and `padded_len()` is at least `VECTOR_PAD`. An empty input never launches a kernel over that input; a fixed-size output (reduce, exclusive scan, the offsets of run-length) is written by the fill kernel (ADR-0011).
+- An empty buffer still allocates one `VECTOR_PAD` block, so no handle has zero size (wgpu rejects zero-size bindings); `len()` stays 0 and `padded_len()` is at least `VECTOR_PAD`. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
 - `from_host` and `zeros` zero the padding; after `uninit` it is unspecified. Element-wise kernels may compute garbage in padding lanes. Reductions and scans mask lanes at index ≥ `len`, so padding never reaches a result.
 - Cell data that vectorized kernels read or write is tiled by cells: E-vectors are cell-fastest with their cell count padded by copies of the last cell, and `QuadField` uses tiles of `quad_tile` cells (Listing B4b). Chunks start on tile boundaries. Lanes are consecutive cells, so accesses are contiguous on CPUs and coalesced on GPUs.
 

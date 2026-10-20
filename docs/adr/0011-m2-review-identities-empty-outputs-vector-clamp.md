@@ -28,7 +28,8 @@ because later milestones rely on them.
    - `exclusive_scan` writes `[0]`;
    - `run_length` writes the offsets `[0]`.
 
-   The empty input itself is never bound (T4, T5 and T8 rows).
+   No kernel runs over the empty input itself (T4, T5 and T8 rows). The list is not complete;
+   see the amendment in the decision record.
 3. **Vector-size clamps.** Listing S2 says `Fixed(n)` and `Widest` "skip the register budget but
    stay clamped by max_vector". The "Vector size" bullet lists the policy size, `max_vector` and
    the register budget. The implementation also clamps every vector size, `Fixed(n)` and `Widest`
@@ -66,9 +67,9 @@ because later milestones rely on them.
 2. **Record the implemented behaviour** (proposed).
    - (a) The identities of Sum, Min and Max are 0, `T::max_value()` and `T::min_value()`, for
      floats the largest finite values. This holds on the device and in `exscan_bytes`.
-   - (b) An empty input never launches a kernel *over that input*. A fixed-size output is written
-     by the fill kernel: `reduce` → `[identity]`, `exclusive_scan` → `[0]`, `run_length` offsets →
-     `[0]`.
+   - (b) An empty input never launches a kernel *over that input*. An output whose size does not
+     depend on it is written by the fill kernel, for example `reduce` → `[identity]`,
+     `exclusive_scan` → `[0]`, `run_length` offsets → `[0]` (amended: see the decision record).
    - (c) Every vector size, `Fixed(n)` and `Widest` included, is also clamped by
      `hardware.max_vector_size`. The CPU `cube_dim` is also clamped by `max_cube_dim.0`.
 3. **Infinite float identities only** (a'), with (b) and (c) as in option 2.
@@ -110,3 +111,14 @@ inputs can raise its own ADR.
 ## Decision record
 
 Accepted by the maintainer on 2026-10-20 (option 2, decisions (a)–(c)), without conditions. Applied to docs/design.md in `adr: 0011 apply`.
+
+**Amendment, 2026-10-20 (approved by the maintainer at the M2 review).** The design-reviewer's follow-up found that the list in (b) read as complete but was not:
+- `histogram` of empty values returns `zeros(num_bins)`, a fill launch;
+- `gather` from an empty `src` returns `zeros(idx.len())`;
+- `segmented_reduce` of empty values with non-empty offsets launches its kernel over the segments. It binds the empty `values` buffer but reads nothing from it.
+
+The Context's original sentence, "The empty input itself is never bound", was therefore wrong for `segmented_reduce`. Decision (b) now reads: an empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written:
+- by the fill kernel, for example in `reduce`, `exclusive_scan`, the offsets of `run_length`, `histogram`, and `gather` from an empty source;
+- or by a kernel over another, non-empty input, which may bind the empty buffer but reads nothing from it (`segmented_reduce`).
+
+The two sentences in docs/design.md (the paragraph after Listing S1b, and "Padding and tiles") changed accordingly, in `adr: 0011 amend`. Code and tests are unchanged.
