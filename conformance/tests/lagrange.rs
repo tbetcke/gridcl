@@ -33,8 +33,22 @@ fn ndelement_points(cell: CellType, degree: u32, variant: LagrangeVariant) -> Ve
     out
 }
 
+/// Stack for the test body. With OpenBLAS (the hosted Linux job), ndelement's element
+/// construction overflowed the test harness's 2 MiB thread stack in debug builds; with
+/// Accelerate 256 KiB suffice.
+const STACK_BYTES: usize = 64 << 20;
+
 #[test]
 fn points_match_ndelement() {
+    std::thread::Builder::new()
+        .stack_size(STACK_BYTES)
+        .spawn(check_points)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn check_points() {
     use CellType::*;
     let cases = [
         (Interval, true),
