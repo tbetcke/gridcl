@@ -106,7 +106,7 @@ impl IndexMap {
     /// use gridcl_parallel::{IndexMap, Serial};
     ///
     /// let map = IndexMap::new(&Serial, 3).unwrap();
-    /// // No ghosts until M6.
+    /// // Serial maps have no ghosts.
     /// assert!(map.ghosts().is_empty());
     /// ```
     pub fn ghosts(&self) -> &[i64] {

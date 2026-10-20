@@ -114,7 +114,7 @@ Accepted by the maintainer on 2026-10-20 (option 2, decisions (a)–(c)), withou
 
 **Amendment, 2026-10-20 (approved by the maintainer at the M2 review).** The design-reviewer's follow-up found that the list in (b) read as complete but was not:
 - `histogram` of empty values returns `zeros(num_bins)`, a fill launch;
-- `gather` from an empty `src` returns `zeros(idx.len())`;
+- `gather` from an empty `src` returns `zeros(idx.len())` in release builds; debug builds panic in the index check first, as for any out-of-range index;
 - `segmented_reduce` of empty values with non-empty offsets launches its kernel over the segments. It binds the empty `values` buffer but reads nothing from it.
 
 The Context's original sentence, "The empty input itself is never bound", was therefore wrong for `segmented_reduce`. Decision (b) now reads: an empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written:

@@ -355,7 +355,9 @@ fn read_u32(x: &DeviceBuffer<u32>, i: usize) -> Result<u32> {
     let size = bytes_of(x.padded_len())?;
     let start = bytes_of(i)?;
     let handle = x.handle().clone().offset_start(start).offset_end(
-        size.checked_sub(start + size_of::<u32>() as u64)
+        start
+            .checked_add(size_of::<u32>() as u64)
+            .and_then(|end| size.checked_sub(end))
             .expect("read_u32: the index is within the padded length"),
     );
     let bytes = x.client().read_one(handle)?;
