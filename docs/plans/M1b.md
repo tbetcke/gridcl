@@ -1,6 +1,6 @@
 # M1b Reference cells — plan
 
-- **Status:** implemented
+- **Status:** done
 - **Branch:** tbetcke/tbetcke-m1b-reference-cells (question 1)
 - **Base commit:** 1b94e3ce1d3d2685d2339b9bdd42d541db894225
 - **Design sections:** "Implementation roadmap / M1b Reference cells (gridcl-refcell, gridcl-conformance)"; "Reference cells and conventions"; Appendix A.1–A.6, A.8 (VTK pyramids), A.9, A.10, A.11; "Geometry / Tabulation and quadrature"; "High-order node orderings"; "Mesh type" (Listing B3, `NodeFamily`); "Kernels receive dimensions from types" (Listing B5, `gridcl_refcell::num_lagrange_nodes`); "Precision policy"; "Testing and validation"; "Development environment and test targets"; "Workspace layout" (crate table, dependency rules 5 and 6, CI matrix)
