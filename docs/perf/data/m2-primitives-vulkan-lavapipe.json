@@ -1,0 +1,74 @@
+[
+  {
+    "backend": "wgpu<spirv>",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "llvmpipe (LLVM 20.1.2, 256 bits)",
+    "items_per_s": 217181.77223223826,
+    "median_s": 46.044379770999996,
+    "n": 10000000,
+    "operation": "radix_sort",
+    "profile": "release",
+    "times_s": [
+      47.671631005,
+      46.021042842,
+      45.844600369,
+      45.971141911,
+      46.199152487,
+      46.0677167,
+      46.000168329,
+      46.008859132,
+      46.189107853,
+      46.16172374
+    ],
+    "vector_size_override": null,
+    "words": 2
+  },
+  {
+    "backend": "wgpu<spirv>",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "llvmpipe (LLVM 20.1.2, 256 bits)",
+    "items_per_s": 10679920.784421641,
+    "median_s": 0.936336533,
+    "n": 10000000,
+    "operation": "inclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.929779624,
+      0.935758264,
+      0.946141701,
+      0.941983882,
+      0.92741028,
+      0.939664901,
+      0.935434865,
+      0.947237544,
+      0.934861727,
+      0.936914802
+    ],
+    "vector_size_override": null,
+    "words": 1
+  },
+  {
+    "backend": "wgpu<spirv>",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "llvmpipe (LLVM 20.1.2, 256 bits)",
+    "items_per_s": 10637030.040203538,
+    "median_s": 0.940112039,
+    "n": 10000000,
+    "operation": "exclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.941568583,
+      0.94219541,
+      0.939965648,
+      0.927595896,
+      0.94025843,
+      0.937637375,
+      0.948270217,
+      0.926263172,
+      0.946861393,
+      0.937837438
+    ],
+    "vector_size_override": null,
+    "words": 1
+  }
+]

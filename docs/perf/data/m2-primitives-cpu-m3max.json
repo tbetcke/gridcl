@@ -1,0 +1,74 @@
+[
+  {
+    "backend": "cpu",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "Apple M3 Max",
+    "items_per_s": 2332486.4818203533,
+    "median_s": 4.2872702920000005,
+    "n": 10000000,
+    "operation": "radix_sort",
+    "profile": "release",
+    "times_s": [
+      7.043276292,
+      8.135332917,
+      3.212278125,
+      4.430467709,
+      4.144072875,
+      5.765477375,
+      3.547586458,
+      2.470030458,
+      5.531586959,
+      3.8160875
+    ],
+    "vector_size_override": null,
+    "words": 2
+  },
+  {
+    "backend": "cpu",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "Apple M3 Max",
+    "items_per_s": 99339393.03630854,
+    "median_s": 0.100665,
+    "n": 10000000,
+    "operation": "inclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.142382125,
+      0.119217208,
+      0.073030542,
+      0.101254834,
+      0.211252458,
+      0.191433625,
+      0.100075166,
+      0.043286584,
+      0.052789166,
+      0.051742917
+    ],
+    "vector_size_override": null,
+    "words": 1
+  },
+  {
+    "backend": "cpu",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "Apple M3 Max",
+    "items_per_s": 160353953.7720718,
+    "median_s": 0.062362042,
+    "n": 10000000,
+    "operation": "exclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.342088792,
+      0.049631417,
+      0.089076709,
+      0.112797583,
+      0.075092667,
+      0.022489083,
+      0.130186875,
+      0.027403584,
+      0.020852125,
+      0.02213675
+    ],
+    "vector_size_override": null,
+    "words": 1
+  }
+]
