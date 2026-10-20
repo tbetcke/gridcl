@@ -217,7 +217,7 @@ impl Real for f64 { fn widen(self) -> f64 { self } fn narrow(x: f64) -> Self { x
 /// Rust. Constructors and methods require TD: EmbeddedIn<GD>. Mesh is not Clone (see try_clone).
 pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     client: Client,                 // runtime-erased CubeCL client
-    comm: C,                        // Listing S2
+    comm: C,                        // Listing S2c
     topology: Topology<TD>,         // cell and entity blocks, connectivity, vertex IndexMap, origin ids
     geometry: Geometry<F, TD, GD>,  // geometry blocks, nodes, node IndexMap, cached factors
     tags: TagRegistry,
@@ -450,7 +450,7 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = 
 }
 ```
 
-`LaunchPlan` takes the cube count from `calculate_cube_count_elemwise`, which spreads cubes across the device's maximum cube count in each dimension, so no launch exceeds the 65 535-per-dimension limit of WebGPU-class devices. On CPUs it gives each thread contiguous blocks of cell vectors. With vector size 1 the same source is the scalar kernel, so the policy can switch sizes without a second implementation. Chunking keeps every buffer within the device's maximum allocation (see "Device limits").
+`LaunchPlan` computes the cube count itself: it fills x up to the device's maximum, then y, then z, so no launch exceeds the 65 535-per-dimension limit of WebGPU-class devices (ADR-0010). On CPUs it gives each thread contiguous blocks of cell vectors. With vector size 1 the same source is the scalar kernel, so the policy can switch sizes without a second implementation. Chunking keeps every buffer within the device's maximum allocation (see "Device limits").
 
 ### Runtime erasure for I/O
 
@@ -512,7 +512,7 @@ pub trait DeviceGrid {
     type GD: Dim;
 
     fn client(&self) -> &Client;                       // runtime-erased: no runtime type parameter
-    fn comm(&self) -> &dyn CommDyn;                    // Listing S2
+    fn comm(&self) -> &dyn CommDyn;                    // Listing S2c
     fn cell_blocks(&self) -> &[CellBlock<Self::TD>];
     fn geometry_block(&self, b: usize) -> &GeometryBlock<Self::TD>;
     fn nodes(&self) -> &DeviceBuffer<Self::F>;         // L-vector [node][gdim]
@@ -612,7 +612,7 @@ pub fn total_measure<G: DeviceGrid>(g: &G, degree: u32) -> Result<f64> {
         // owned cells only: device reduction per block, finished in f64 on the host
         local += measure_block(g, b, rule.get(block.cell)?)?;
     }
-    Ok(g.comm().sum(local))                       // CommExt, Listing S2
+    Ok(g.comm().sum(local))                       // CommExt, Listing S2c
 }
 
 /// Codimension-specific algorithms state their requirement in the bound.
@@ -728,7 +728,7 @@ impl<T: CubeElement> DeviceBuffer<T> {
     }
     pub fn zeros(client: &Client, len: usize) -> Result<Self>;   // uninit + fill kernel
     pub fn share(&self) -> Self;                                 // same allocation; aliasing is explicit
-    pub fn deep_clone(&self) -> Result<Self>;                    // device-to-device copy
+    pub fn deep_clone(&self) -> Result<Self>;                    // copy kernel (no same-device copy in CubeCL 0.11)
     pub fn len(&self) -> usize { self.len }
     pub fn padded_len(&self) -> usize { self.padded }
     pub fn handle(&self) -> &Handle { &self.handle }
@@ -743,19 +743,24 @@ impl<T: CubeElement> DeviceBuffer<T> {
         let mut out = self.client.read_async(vec![self.handle.clone()]).await?;
         Ok(T::from_bytes(&out.remove(0))[..self.len].to_vec())
     }
-    /// Scalar kernel argument over the logical length. Unsafe: CubeCL trusts the length.
+    /// Scalar kernel argument. In CubeCL 0.11 the handle's size, not this length, bounds the
+    /// kernel's slice, so every kernel also takes its lengths as explicit arguments.
+    /// Unsafe: the kernel must stay within `len` and the padding.
     pub unsafe fn arg(&self) -> BufferArg {
         unsafe { BufferArg::from_raw_parts(self.handle.clone(), self.len) }
     }
-    /// Argument for a kernel over Vector<T, n>: the padded length, counted in vectors.
+    /// Argument for a kernel over Vector<T, n>: the padded length, counted in vectors. Kernels
+    /// take `num_vectors` explicitly, as in Listing B5.
     pub unsafe fn vector_arg(&self, n: usize) -> BufferArg {
         debug_assert!(n.is_power_of_two() && VECTOR_PAD % n == 0);
         unsafe { BufferArg::from_raw_parts(self.handle.clone(), self.padded / n) }
     }
 }
 
+/// An empty buffer still gets one block, so no handle has zero size (wgpu rejects zero-size
+/// bindings); len() stays 0.
 fn pad_len(len: usize) -> Result<usize> {
-    len.checked_next_multiple_of(VECTOR_PAD).ok_or(GridError::TooLarge)
+    len.max(1).checked_next_multiple_of(VECTOR_PAD).ok_or(GridError::TooLarge)
 }
 
 /// Bytes for `len` elements, or an error if the device cannot hold them in one allocation.
@@ -779,7 +784,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` implements `From<ServerError>`. `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -820,14 +825,14 @@ CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; featur
 - **Largest allocation:** `client.properties().memory.max_page_size`. Every `DeviceBuffer` constructor checks it. Per-rank topology and geometry arrays must fit in one allocation each; otherwise mesh creation fails with `GridError::AllocationTooLarge`, and the mesh must be spread over more ranks. Fields at quadrature points and E-vectors are stored in chunks of whole cell tiles (`QuadField`), sized from this limit.
 - **Buffers per kernel:** `hardware.max_bindings`. Library kernels use at most six buffers, which fits WebGPU-class devices; id pairs are interleaved in one buffer for this reason. A debug assertion checks each launch.
 - **Shared memory:** `hardware.max_shared_memory_size`. Primitives size their tiles from it and assume at least 16 KiB.
-- **Cube count:** computed by `calculate_cube_count_elemwise`, which respects `hardware.max_cube_count`. Element counts are multiplied in usize with overflow checks.
+- **Cube count:** computed by `LaunchPlan`, which respects `hardware.max_cube_count`; `TooLarge` if no launch fits (ADR-0010). Element counts are multiplied in usize with overflow checks.
 - **Units per cube:** `hardware.max_units_per_cube` and `max_cube_dim`. On the CPU runtime both equal the number of hardware threads. Every launch takes its shape from `LaunchPlan`, which respects them (see "Vectorization and CPU execution").
 - **Plane size:** read from `hardware.plane_size_min` and `plane_size_max`, never assumed to be 32. Every algorithm must also be correct with plane size 1, as on the CPU runtime.
 
 ### Data layouts and index widths
 
 - Local indices are u32 on the device. Origin ids and global indices are i64 on the host and interleaved (hi, lo) u32 pairs on the device.
-- Sort keys are arrays of one to four u32 words. Payloads are u32 emission indices, so the total number of emitted keys per launch must stay below 2^32; this is checked.
+- Sort keys are arrays of one to four u32 words, stored planar and word-major in one buffer (`SortKeys`, Listing S1b): word w of key i is at `w · pad_len(len) + i`, and word 0 is the most significant. The lanes of a vector are therefore independent keys. Payloads are u32 emission indices, so the total number of emitted keys per launch must stay below 2^32; this is checked.
 - Geometry nodes are stored as an L-vector (unique nodes, AoS [node][gdim]). A cached E-vector ([node_in_cell][gdim][cell], cell index fastest) is built on demand for coalesced and vectorized element kernels, following MFEM. It is stored in chunks of whole tiles, and its cell count is padded to a multiple of `VECTOR_PAD` with copies of the block's last cell, so padding lanes compute finite values.
 - `QuadField` is tiled by cells (Listing B4b), so the lanes of a vectorized kernel write contiguous memory on CPUs and coalesced memory on GPUs.
 - Optional host mirrors carry valid-on-host and valid-on-device flags (MFEM style); any device write invalidates them.
@@ -844,13 +849,79 @@ gridcl-device provides the following primitives (check CubeK first for reusable 
 - segmented reduce (sum, min, max) for f32, f64, i32 and u32;
 - fill and copy.
 
-They follow five rules:
+They follow eight rules:
 
 - no algorithm relies on forward progress between workgroups, which Vulkan and Metal do not guarantee, so there is no decoupled look-back;
 - kernels use no 64-bit atomics and no float atomics; u32 and i32 atomics are allowed;
 - results are deterministic, bitwise identical across runs on the same device;
 - every primitive passes the same tests on CPU, Vulkan and Metal;
-- fill, copy, reduce and the tile-local phase of scan are generic over the vector size, and every primitive takes its launch shape from `LaunchPlan` (see "Vectorization and CPU execution").
+- fill, copy, reduce, the tile-local phase of scan, the digit counting of the sort (SortDigits) and gather are generic over the vector size, and every primitive takes its launch shape from `LaunchPlan` (see "Vectorization and CPU execution");
+- one partition per primitive: a primitive with several kernels computes one `LaunchPlan`, for the `KernelKind` of its vectorized phase (or its first phase if none is vectorized), and every kernel takes its ranges from it. A unit owns `items_per_unit · vector_size` consecutive items, and a cube owns `cube_dim` times as many. Scalar phases launch with the same cube count and cube dimension. Recursive levels (the partials of reduce, the tile sums of scan) use one new `LaunchPlan::elementwise` per level, until one cube remains;
+- no plane operations: values are combined within a cube through shared memory and `sync_cube`, so every primitive is correct with plane size 1 and on the CPU runtime, which has no plane operations;
+- no primitive reads from the device, except that run-length and unique-by-key read their count once (a blocking 4-byte read) and return exactly sized buffers, and that debug builds of gather and scatter read back one value to check their indices (ADR-0009).
+
+**Listing S1b — primitives (gridcl-device)**
+
+```rust
+/// The scalars of the typed primitives (sealed): f32, f64, i32, u32.
+pub trait DeviceScalar: CubeElement + Numeric + sealed::Sealed {}
+
+/// Sum, min or max. Re-exported by gridcl-parallel, so `gridcl_parallel::ReduceOp` stays valid.
+#[derive(Clone, Copy, Debug)] pub enum ReduceOp { Sum, Min, Max }
+
+/// Writes `v` over the padded length.
+pub fn fill<T: DeviceScalar>(x: &mut DeviceBuffer<T>, v: T) -> Result<()>;
+/// Moves u32 words, so size_of::<T>() must be a multiple of 4; unequal lengths give LengthMismatch.
+pub fn copy<T: CubeElement>(src: &DeviceBuffer<T>, dst: &mut DeviceBuffer<T>) -> Result<()>;
+/// Length 1; an empty input gives the identity of `op` (0, T::max_value(), T::min_value(); finite
+/// for floats), written by the fill kernel (ADR-0011).
+pub fn reduce<T: DeviceScalar>(x: &DeviceBuffer<T>, op: ReduceOp) -> Result<DeviceBuffer<T>>;
+/// One value per CSR segment, combined in index order. Offsets are clamped to [0, values.len()];
+/// a decreasing pair gives an empty segment, whose value is the identity of `op`.
+pub fn segmented_reduce<T: DeviceScalar>(values: &DeviceBuffer<T>, offsets: &DeviceBuffer<u32>,
+                                         op: ReduceOp) -> Result<DeviceBuffer<T>>;
+pub fn inclusive_scan<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Result<DeviceBuffer<T>>;
+/// n + 1 elements, the last being the total, so the result can serve as CSR offsets. This
+/// differs from the usual length-n exclusive scan; the rustdoc says so first.
+pub fn exclusive_scan<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Result<DeviceBuffer<T>>;
+/// out[i] = src[idx[i]]. An index >= src.len() yields 0 through a mask (debug builds panic);
+/// the read address is clamped and never out of bounds.
+pub fn gather<T: DeviceScalar>(src: &DeviceBuffer<T>, idx: &DeviceBuffer<u32>)
+    -> Result<DeviceBuffer<T>>;
+/// dst[idx[i]] = src[i]. Out-of-range writes are dropped. Indices must be distinct: duplicates
+/// are memory-safe but leave the result unspecified (debug builds panic).
+pub fn scatter<T: DeviceScalar>(src: &DeviceBuffer<T>, idx: &DeviceBuffer<u32>,
+                                dst: &mut DeviceBuffer<T>) -> Result<()>;
+/// Values >= num_bins are not counted.
+pub fn histogram(values: &DeviceBuffer<u32>, num_bins: u32) -> Result<DeviceBuffer<u32>>;
+
+/// `len` keys of 1..=4 u32 words, planar: word w of key i at w * pad_len(len) + i; word 0 most
+/// significant.
+pub struct SortKeys { /* words: DeviceBuffer<u32>, num_words, len */ }
+impl SortKeys {
+    pub fn uninit(client: &Client, len: usize, num_words: usize) -> Result<Self>;
+    pub fn from_host(client: &Client, keys: &[u32], num_words: usize) -> Result<Self>; // key-major
+    pub fn to_host(&self) -> Result<Vec<u32>>;                                        // key-major
+    pub fn len(&self) -> usize;
+    pub fn num_words(&self) -> usize;
+    pub fn words(&self) -> &DeviceBuffer<u32>;
+    pub fn words_mut(&mut self) -> &mut DeviceBuffer<u32>;
+}
+
+/// Stable LSD sort with 8-bit digits. Unequal lengths give LengthMismatch; len >= 2^32 TooLarge.
+pub fn radix_sort(keys: &SortKeys, payload: &DeviceBuffer<u32>)
+    -> Result<(SortKeys, DeviceBuffer<u32>)>;
+
+/// Runs of consecutive equal keys; offsets has runs + 1 entries.
+pub struct Runs { pub keys: SortKeys, pub offsets: DeviceBuffer<u32> }
+pub fn run_length(keys: &SortKeys) -> Result<Runs>;
+
+/// first: payload of each group's first key; group: the group of each input position.
+pub struct Unique { pub keys: SortKeys, pub first: DeviceBuffer<u32>, pub group: DeviceBuffer<u32> }
+pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<Unique>;
+```
+
+The primitives are re-exported at the root of gridcl-device. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
 
 ### Streams and threading
 
@@ -901,6 +972,19 @@ pub enum KernelKind {
 /// Device classes the policy distinguishes, derived from Client::properties().
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviceClass { CpuSimd128, CpuSimd256, CpuSimd512, Gpu }
+impl DeviceClass {
+    /// A device with hardware.num_cpu_cores is a CPU, classed by hardware.load_width (512 bits:
+    /// CpuSimd512, 256: CpuSimd256, else CpuSimd128); every other device is Gpu. load_width alone
+    /// does not tell a CPU from wgpu, which also reports 128 bits.
+    pub fn for_client(client: &Client) -> DeviceClass;
+}
+
+/// Value of GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and of testing::with_vector_size.
+/// Widest is the first of io_optimized_vector_sizes(elem_bytes). Fixed(n) and Widest skip the
+/// register budget but stay clamped by max_vector and the device's max_vector_size (ADR-0011);
+/// Policy applies the full rule below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }
 
 /// Vector sizes and tile widths chosen from benchmarks (docs/perf/vectorization.md), compiled in
 /// from gridcl-device/vector-policy.toml. GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and
@@ -914,8 +998,8 @@ impl VectorPolicy {
     pub fn quad_tile(&self) -> usize;
 }
 
-/// Shape of one launch on the current device.
-#[derive(Clone, Copy, Debug)]
+/// Shape of one launch on the current device. Not Copy: CubeCount is not Copy in CubeCL 0.11.
+#[derive(Clone, Debug)]
 pub struct LaunchPlan {
     pub cube_count: CubeCount,
     pub cube_dim: CubeDim,
@@ -933,16 +1017,32 @@ impl LaunchPlan {
     pub fn elementwise(client: &Client, kind: KernelKind, items: usize, elem_bytes: usize,
                        max_vector: usize, live: usize) -> Result<Self>;
 }
+
+/// Test hooks, only with gridcl-device's Cargo feature `testing` (off by default, not stable
+/// API; gridcl-testing turns it on). Overrides are scoped and thread-local, because gridcl runs
+/// one host thread per mesh. Precedence: the scoped override, then the environment variable,
+/// then vector-policy.toml. An invalid GRIDCL_VECTOR_SIZE or GRIDCL_QUAD_TILE panics.
+#[cfg(feature = "testing")]
+pub mod testing {
+    /// Replaces the properties gridcl-device reads (limits, device class, vector sizes) for
+    /// buffers and plans made inside `f`; tests clone client.properties() and modify it.
+    pub fn with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R;
+    pub fn with_vector_size<R>(v: VectorSizeOverride, f: impl FnOnce() -> R) -> R;
+    pub fn with_quad_tile<R>(tile: usize, f: impl FnOnce() -> R) -> R;
+    /// The plans made inside `f`, so a test can assert the vector size it ran at.
+    pub fn record_plans<R>(f: impl FnOnce() -> R) -> (R, Vec<(KernelKind, LaunchPlan)>);
+}
 ```
 
-- **Vector size:** the largest power of two not above the policy's size, `max_vector`, and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
-- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from `calculate_cube_count_elemwise` over the vectors.
-- **CPUs:** `cube_dim` equals `max_units_per_cube`, one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
+- **Vector size:** the largest power of two not above the policy's size, `max_vector`, the device's `hardware.max_vector_size` (ADR-0011), and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
+- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
+- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
 ### Padding and tiles
 
 - `DeviceBuffer` allocations are padded to a multiple of `VECTOR_PAD` = 16 elements (Listing S1). `len()` stays the logical length; `vector_arg(n)` passes the padded length in vectors.
+- An empty buffer still allocates one `VECTOR_PAD` block, so no handle has zero size (wgpu rejects zero-size bindings); `len()` stays 0 and `padded_len()` is at least `VECTOR_PAD`. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
 - `from_host` and `zeros` zero the padding; after `uninit` it is unspecified. Element-wise kernels may compute garbage in padding lanes. Reductions and scans mask lanes at index ≥ `len`, so padding never reaches a result.
 - Cell data that vectorized kernels read or write is tiled by cells: E-vectors are cell-fastest with their cell count padded by copies of the last cell, and `QuadField` uses tiles of `quad_tile` cells (Listing B4b). Chunks start on tile boundaries. Lanes are consecutive cells, so accesses are contiguous on CPUs and coalesced on GPUs.
 
@@ -954,7 +1054,7 @@ Vectors pay off where a kernel does the same arithmetic for many independent ite
 | --- | --- | --- | --- |
 | Fill, Copy | elements | padded buffer | memory-bound; wider IO saves index arithmetic on CPUs and gives 128-bit accesses on GPUs |
 | Reduce (sum, min, max over contiguous ranges) | elements | padded buffer, masked tail | gain on CPUs; float sums are reordered by lane (see "Determinism across vector sizes") |
-| ScanTile (tile-local phase of scan) | elements of a tile | padded buffer | to measure: the in-vector prefix needs lane extracts |
+| ScanTile (tile-local phase of scan) | elements of a tile | padded buffer | to measure: the in-vector prefix needs lane extracts; as a fixed-order prefix it is an allowed cross-lane operation, like a fixed-order reduction |
 | SortDigits (digit extraction of the radix sort) | keys | contiguous u32 key words | to measure; the histogram and scatter phases stay scalar |
 | Gather, Pack (halo pack and unpack) | output elements | contiguous index list | to measure: indices load as vectors, data is still gathered lane by lane |
 | TopologyKeys (sub-entity key emission) | cells of one block | cell-fastest copy of the cell–vertex connectivity | to measure, including the cost of the transpose |
@@ -1097,7 +1197,7 @@ Cells are partitioned without overlap, and each rank also holds a configurable g
 
 ### Communicators, IndexMap and Scatterer
 
-**Listing S2 — communicators, ownership and halo exchange (gridcl-parallel)**
+**Listing S2c — communicators, ownership and halo exchange (gridcl-parallel)**
 
 ```rust
 /// Object-safe communicator interface used by IndexMap, Scatterer and partitioners.
@@ -1107,7 +1207,8 @@ pub trait CommDyn: 'static {
     fn barrier(&self);
     /// In-place all-reduce of `buf`, read as elements of `dtype`.
     fn all_reduce_bytes(&self, buf: &mut [u8], dtype: DType, op: ReduceOp);
-    /// In-place exclusive scan; rank 0 receives the identity of `op`.
+    /// In-place exclusive scan; rank 0 receives the identity of `op` (0, MAX, MIN; finite for
+    /// floats, ADR-0011).
     fn exscan_bytes(&self, buf: &mut [u8], dtype: DType, op: ReduceOp);
     /// Variable all-to-all; counts in elements.
     fn all_to_all_v_bytes(&self, send: &[u8], send_counts: &[usize],
@@ -1133,12 +1234,21 @@ pub trait CommExt {
 impl<C: CommDyn + ?Sized> CommExt for C { /* through all_reduce_bytes and exscan_bytes */ }
 
 #[derive(Clone, Copy, Debug)] pub enum DType { I32, I64, U32, U64, F32, F64 }
-#[derive(Clone, Copy, Debug)] pub enum ReduceOp { Sum, Min, Max }
+pub use gridcl_device::ReduceOp;                              // Sum, Min, Max (Listing S1b)
 pub trait CommScalar: bytemuck::Pod { const DTYPE: DType; }   // i32, i64, u32, u64, f32, f64
 
 #[derive(Clone, Copy, Debug, Default)] pub struct Serial;      // no-op collectives
 #[cfg(feature = "mpi")]
 #[derive(Clone)] pub struct Mpi(Rc<mpi::topology::SimpleCommunicator>); // deliberately not Send
+
+/// Source and destination ranks of a distributed-graph communicator. Opaque; Serial accepts
+/// only the empty one. M6 adds construction over a graph communicator.
+pub struct Neighbourhood { /* sources, destinations, graph communicator (mpi) */ }
+impl Neighbourhood {
+    pub fn empty() -> Self;
+    pub fn sources(&self) -> &[usize];
+    pub fn destinations(&self) -> &[usize];
+}
 
 pub struct IndexMap {
     owned_range: (i64, i64),          // global indices [begin, end) owned by this rank
@@ -1150,6 +1260,12 @@ pub struct IndexMap {
 }
 
 impl IndexMap {
+    /// Without ghosts: owned range from exscan_sum of num_owned, size from sum; an i64
+    /// overflow gives TooLarge. M6 adds the constructor with ghosts.
+    pub fn new(comm: &dyn CommDyn, num_owned: usize) -> Result<IndexMap>;
+    pub fn owned_range(&self) -> (i64, i64);
+    pub fn ghosts(&self) -> &[i64];
+    pub fn ghost_owners(&self) -> &[i32];
     pub fn num_owned(&self) -> usize;
     pub fn num_ghosts(&self) -> usize;
     pub fn num_local(&self) -> usize;   // owned + ghosts
@@ -1357,7 +1473,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
     - permutation bits, keyed by cell origin id;
     - output files, after sorting by origin id.
 - **Determinism.** Two runs on the same device and rank count produce bitwise identical device arrays.
-- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16.
+- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16.
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
@@ -1424,8 +1540,8 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- |
 | gridcl-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
 | gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
-| gridcl-device | `DeviceBuffer` family, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access. The only crate that uses CubeCL runtime types. | cubecl; cubecl-runtime (feature `gpu-aware-cuda`) |
-| gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; mpi (optional) |
+| gridcl-device | `DeviceBuffer` family, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); dev: proptest |
+| gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Entity blocks, sort-based entity creation, ownership, connectivity, permutation info | dims, refcell, device, parallel, cubecl |
 | gridcl-geometry | Coordinate elements, geometry blocks, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
@@ -1433,9 +1549,9 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid`, tags, submeshes, prelude | all of the above |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
-| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; cubecl with runtime features |
+| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); cubecl with runtime features |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
-| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-testing; cubecl with runtime features |
+| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-testing; cubecl with runtime features |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
 | tools/env-check (outside the workspace) | Probe of a development target: devices, properties, sample kernels in f32 and f64, MPI allreduce; JSON report. Built in E0. | cubecl with the target's runtime features; mpi (optional) |
 
@@ -1452,6 +1568,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 
 - **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`.
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
+- **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it.
 
 ### CI matrix
 
@@ -1583,7 +1700,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - `Real` and the `DeviceBuffer` family with limit checks and `VECTOR_PAD` padding, plus `check_precision`;
 - `LaunchPlan` and `VectorPolicy`, with vector size 1 and tile width 16 everywhere until M3s, and the `GRIDCL_VECTOR_SIZE` and `GRIDCL_QUAD_TILE` overrides;
-- scan, radix sort (u32-word keys with u32 payload), unique-by-key, run-length, histogram, gather/scatter, segmented reduce, fill and copy. Fill, copy, reduce and the tile-local scan phase are generic over the vector size;
+- scan, radix sort (u32-word keys with u32 payload), unique-by-key, run-length, histogram, gather/scatter, segmented reduce, fill and copy. Fill, copy, reduce, the tile-local scan phase, the digit counting of the sort (SortDigits) and gather are generic over the vector size (ADR-0009);
 - `CommDyn`, `Comm`, `CommExt` and `Serial`, and `IndexMap` without ghosts.
 
 **Acceptance:**
@@ -1735,7 +1852,7 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | --- | --- |
 | CubeCL API churn (alpha, breaking minor releases) | Pin `=0.11.0`. Keep runtime types in gridcl-device. Upgrade as a dedicated milestone, with the kernel test suite as safety net. |
 | Backend capability gaps: no f64 on Metal; f64 and u64 adapter-dependent on Vulkan and WGSL; no 64-bit or float min/max atomics on Metal | f32 is first-class; sort keys are u32 words; kernels use no 64-bit or float atomics; capabilities are checked at mesh creation; CI runs on Vulkan and Metal. |
-| Device limits: allocation size, buffers per kernel, workgroups per dimension, shared memory | Query `Client::properties`; chunk fields by cells; check per-rank array sizes at creation; use `calculate_cube_count_elemwise`; keep kernels to six buffers. |
+| Device limits: allocation size, buffers per kernel, workgroups per dimension, shared memory | Query `Client::properties`; chunk fields by cells; check per-rank array sizes at creation; use `LaunchPlan`; keep kernels to six buffers. |
 | No device-wide sort or scan in CubeCL; no forward-progress guarantee on Vulkan and Metal | Implement reduce-then-scan and LSD radix sort in gridcl-device; check CubeK first; benchmark in M2, because topology creation depends on them. |
 | f32 accuracy for curved high-order geometry | Tabulate in f64 on the host; store coordinates relative to the global origin; finish reductions in f64; test f32 against f64. |
 | GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Host-staged transport stays the default. GPU-aware path behind a feature, with an integration test on a CUDA-aware MPI runner. Keep `CudaAllocator::Sync`. Re-check on every CubeCL upgrade. |
@@ -1785,7 +1902,8 @@ Convert this document to `docs/design.md` in the repository, add the working agr
 - SIMD only through CubeCL Vector<F, N> in kernels; never intrinsics or std::simd.
   - kernels on the candidate list are generic over N: Size and correct for N = 1;
   - lanes are independent items (cells, elements); no cross-lane operations except
-    fixed-order reductions; no branches on lane values (use arithmetic masks);
+    fixed-order reductions and fixed-order in-vector prefixes; no branches on lane values
+    (use arithmetic masks);
   - vector sizes come from VectorPolicy (vector-policy.toml), changed only with benchmark
     data in docs/perf/vectorization.md.
 - Precision: every kernel test runs in f32 and, where supported, f64.
@@ -1801,7 +1919,8 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
 - Host<->device copies in library code only for I/O, explicit to_host()/read_node(),
-  and the host-staged halo exchange.
+  the count read of run-length and unique-by-key, the debug-build index checks of gather
+  and scatter, and the host-staged halo exchange.
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,

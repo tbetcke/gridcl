@@ -19,7 +19,8 @@
 - SIMD only through CubeCL Vector<F, N> in kernels; never intrinsics or std::simd.
   - kernels on the candidate list are generic over N: Size and correct for N = 1;
   - lanes are independent items (cells, elements); no cross-lane operations except
-    fixed-order reductions; no branches on lane values (use arithmetic masks);
+    fixed-order reductions and fixed-order in-vector prefixes; no branches on lane values
+    (use arithmetic masks);
   - vector sizes come from VectorPolicy (vector-policy.toml), changed only with benchmark
     data in docs/perf/vectorization.md.
 - Precision: every kernel test runs in f32 and, where supported, f64.
@@ -35,7 +36,8 @@
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
 - Host<->device copies in library code only for I/O, explicit to_host()/read_node(),
-  and the host-staged halo exchange.
+  the count read of run-length and unique-by-key, the debug-build index checks of gather
+  and scatter, and the host-staged halo exchange.
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,

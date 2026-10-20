@@ -2,3 +2,5 @@
 //!
 //! The facade crate: `Mesh`, the builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid`,
 //! tags, submeshes and the prelude (docs/design.md, "Architecture"). Later milestones fill it in.
+
+pub use gridcl_device::{GridError, Real, Result};

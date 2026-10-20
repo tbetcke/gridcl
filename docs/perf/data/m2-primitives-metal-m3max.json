@@ -1,0 +1,74 @@
+[
+  {
+    "backend": "wgpu<msl>",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "Apple M3 Max",
+    "items_per_s": 348386031.16246855,
+    "median_s": 0.0287037915,
+    "n": 10000000,
+    "operation": "radix_sort",
+    "profile": "release",
+    "times_s": [
+      0.047811417,
+      0.028820875,
+      0.028631292,
+      0.0286955,
+      0.028661333,
+      0.028671458,
+      0.028862041,
+      0.028712083,
+      0.0286455,
+      0.028800917
+    ],
+    "vector_size_override": null,
+    "words": 2
+  },
+  {
+    "backend": "wgpu<msl>",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "Apple M3 Max",
+    "items_per_s": 8791042630.842583,
+    "median_s": 0.0011375215,
+    "n": 10000000,
+    "operation": "inclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.0017285,
+      0.001411708,
+      0.001527042,
+      0.001518875,
+      0.001208834,
+      0.000928417,
+      0.001066209,
+      0.00104075,
+      0.001052292,
+      0.001038083
+    ],
+    "vector_size_override": null,
+    "words": 1
+  },
+  {
+    "backend": "wgpu<msl>",
+    "commit": "246dbae3546ef0e83a1d30df7602f063de93a2db",
+    "device": "Apple M3 Max",
+    "items_per_s": 9348157641.721577,
+    "median_s": 0.0010697295,
+    "n": 10000000,
+    "operation": "exclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.001525792,
+      0.000997875,
+      0.001087334,
+      0.001455167,
+      0.00112125,
+      0.001011333,
+      0.001100333,
+      0.001052125,
+      0.001044125,
+      0.001039875
+    ],
+    "vector_size_override": null,
+    "words": 1
+  }
+]

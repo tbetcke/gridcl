@@ -1,0 +1,69 @@
+# Vector policy of gridcl-device (docs/design.md, "Launch plans and the vector policy").
+#
+# Vector sizes per kernel family and device class, by scalar size in bytes, and the QuadField
+# tile width. Changed only with benchmark data in docs/perf/vectorization.md; until M3s every
+# family runs at vector size 1 and the tile width is 16.
+
+[CpuSimd128]
+quad_tile = 16
+[CpuSimd128.vector_size]
+Fill = { 4 = 1, 8 = 1 }
+Copy = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 1, 8 = 1 }
+ScanTile = { 4 = 1, 8 = 1 }
+SortDigits = { 4 = 1, 8 = 1 }
+Gather = { 4 = 1, 8 = 1 }
+Pack = { 4 = 1, 8 = 1 }
+TopologyKeys = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 1, 8 = 1 }
+EVector = { 4 = 1, 8 = 1 }
+GeomFactors = { 4 = 1, 8 = 1 }
+PullBack = { 4 = 1, 8 = 1 }
+
+[CpuSimd256]
+quad_tile = 16
+[CpuSimd256.vector_size]
+Fill = { 4 = 1, 8 = 1 }
+Copy = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 1, 8 = 1 }
+ScanTile = { 4 = 1, 8 = 1 }
+SortDigits = { 4 = 1, 8 = 1 }
+Gather = { 4 = 1, 8 = 1 }
+Pack = { 4 = 1, 8 = 1 }
+TopologyKeys = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 1, 8 = 1 }
+EVector = { 4 = 1, 8 = 1 }
+GeomFactors = { 4 = 1, 8 = 1 }
+PullBack = { 4 = 1, 8 = 1 }
+
+[CpuSimd512]
+quad_tile = 16
+[CpuSimd512.vector_size]
+Fill = { 4 = 1, 8 = 1 }
+Copy = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 1, 8 = 1 }
+ScanTile = { 4 = 1, 8 = 1 }
+SortDigits = { 4 = 1, 8 = 1 }
+Gather = { 4 = 1, 8 = 1 }
+Pack = { 4 = 1, 8 = 1 }
+TopologyKeys = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 1, 8 = 1 }
+EVector = { 4 = 1, 8 = 1 }
+GeomFactors = { 4 = 1, 8 = 1 }
+PullBack = { 4 = 1, 8 = 1 }
+
+[Gpu]
+quad_tile = 16
+[Gpu.vector_size]
+Fill = { 4 = 1, 8 = 1 }
+Copy = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 1, 8 = 1 }
+ScanTile = { 4 = 1, 8 = 1 }
+SortDigits = { 4 = 1, 8 = 1 }
+Gather = { 4 = 1, 8 = 1 }
+Pack = { 4 = 1, 8 = 1 }
+TopologyKeys = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 1, 8 = 1 }
+EVector = { 4 = 1, 8 = 1 }
+GeomFactors = { 4 = 1, 8 = 1 }
+PullBack = { 4 = 1, 8 = 1 }

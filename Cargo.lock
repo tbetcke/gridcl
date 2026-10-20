@@ -1941,7 +1941,9 @@ version = "0.1.0"
 dependencies = [
  "cubecl",
  "gridcl",
+ "gridcl-device",
  "gridcl-testing",
+ "serde_json",
 ]
 
 [[package]]
@@ -1950,6 +1952,9 @@ version = "0.1.0"
 dependencies = [
  "cubecl",
  "cubecl-runtime",
+ "gridcl-testing",
+ "proptest",
+ "toml",
 ]
 
 [[package]]
@@ -1994,8 +1999,10 @@ dependencies = [
 name = "gridcl-parallel"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "gridcl-device",
  "mpi",
+ "proptest",
 ]
 
 [[package]]
@@ -2022,6 +2029,7 @@ version = "0.1.0"
 dependencies = [
  "cubecl",
  "gridcl",
+ "gridcl-device",
 ]
 
 [[package]]

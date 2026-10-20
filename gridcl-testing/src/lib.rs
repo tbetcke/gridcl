@@ -7,7 +7,7 @@
 
 use cubecl::Device;
 use cubecl::device::{DeviceUnavailable, MetalDevice, WgpuDeviceKind};
-use cubecl::prelude::Client;
+use cubecl::prelude::{Client, CubeElement};
 
 /// The environment variable that names the test device.
 pub const TEST_DEVICE_VAR: &str = "GRIDCL_TEST_DEVICE";
@@ -47,6 +47,40 @@ pub fn test_client() -> Client {
         Ok(device) => device.client(),
         Err(error) => panic!("{}", backend.unavailable(error)),
     }
+}
+
+/// Relative tolerance of f32 results (docs/design.md, "Testing and validation").
+pub const TOL_F32: f64 = 1e-5;
+
+/// Relative tolerance of f64 results (docs/design.md, "Testing and validation").
+pub const TOL_F64: f64 = 1e-12;
+
+/// Whether results on the test device are compared bitwise: true on the CPU runtime, where
+/// every lane computes exactly what the scalar kernel computes and nothing is contracted.
+///
+/// # Example
+///
+/// ```
+/// // Unset GRIDCL_TEST_DEVICE is the CPU runtime.
+/// if std::env::var("GRIDCL_TEST_DEVICE").unwrap_or_default().is_empty() {
+///     assert!(gridcl_testing::bitwise_device());
+/// }
+/// ```
+pub fn bitwise_device() -> bool {
+    let value = std::env::var(TEST_DEVICE_VAR).ok();
+    TestBackend::parse(value.as_deref()) == Ok(TestBackend::Cpu)
+}
+
+/// Whether the device supports `T` in any way (`DeviceProperties::supports_type`).
+///
+/// # Example
+///
+/// ```
+/// let client = gridcl_testing::test_client();
+/// assert!(gridcl_testing::supports::<f32>(&client));
+/// ```
+pub fn supports<T: CubeElement>(client: &Client) -> bool {
+    client.properties().supports_type(T::cube_type())
 }
 
 /// A backend `GRIDCL_TEST_DEVICE` can name.

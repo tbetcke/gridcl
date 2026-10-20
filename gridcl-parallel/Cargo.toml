@@ -10,5 +10,9 @@ license.workspace = true
 mpi = ["dep:mpi"]
 
 [dependencies]
+bytemuck.workspace = true
 gridcl-device = { path = "../gridcl-device" }
 mpi = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true

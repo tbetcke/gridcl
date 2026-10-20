@@ -21,3 +21,4 @@ wgpu = ["cubecl/wgpu"]
 [dependencies]
 cubecl.workspace = true
 gridcl = { path = "../gridcl" }
+gridcl-device = { path = "../gridcl-device", features = ["testing"] }

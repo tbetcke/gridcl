@@ -1,0 +1,74 @@
+[
+  {
+    "backend": "cpu",
+    "commit": "20982b2854d3226b3f403ce4556efd45cda4c766",
+    "device": "Intel(R) Xeon(R) Gold 6240 CPU @ 2.60GHz",
+    "items_per_s": 3345738.1795692425,
+    "median_s": 2.988877032,
+    "n": 10000000,
+    "operation": "radix_sort",
+    "profile": "release",
+    "times_s": [
+      2.857409045,
+      2.961992275,
+      3.2001938819999998,
+      2.9835446279999998,
+      3.096094561,
+      2.818500431,
+      3.012930043,
+      3.056188411,
+      2.9942094360000002,
+      2.871500824
+    ],
+    "vector_size_override": null,
+    "words": 2
+  },
+  {
+    "backend": "cpu",
+    "commit": "20982b2854d3226b3f403ce4556efd45cda4c766",
+    "device": "Intel(R) Xeon(R) Gold 6240 CPU @ 2.60GHz",
+    "items_per_s": 205157848.859228,
+    "median_s": 0.048742956000000004,
+    "n": 10000000,
+    "operation": "inclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.039866988,
+      0.049535176,
+      0.047821778,
+      0.047030477,
+      0.049310634,
+      0.049098176,
+      0.029628072,
+      0.050312792,
+      0.048602842,
+      0.04888307
+    ],
+    "vector_size_override": null,
+    "words": 1
+  },
+  {
+    "backend": "cpu",
+    "commit": "20982b2854d3226b3f403ce4556efd45cda4c766",
+    "device": "Intel(R) Xeon(R) Gold 6240 CPU @ 2.60GHz",
+    "items_per_s": 197667570.1128848,
+    "median_s": 0.050589988,
+    "n": 10000000,
+    "operation": "exclusive_scan",
+    "profile": "release",
+    "times_s": [
+      0.043180844,
+      0.051288729,
+      0.051412399,
+      0.051416029,
+      0.051038089,
+      0.050110566,
+      0.05109017,
+      0.050141887,
+      0.049970847,
+      0.049688573
+    ],
+    "vector_size_override": null,
+    "words": 1
+  }
+]
