@@ -1,4 +1,4 @@
-//! `LaunchPlan` (Listing S2, ADR-0008).
+//! `LaunchPlan` (Listing S2, ADR-0010).
 
 use cubecl::ir::DeviceProperties;
 use cubecl::prelude::*;
@@ -19,7 +19,7 @@ const CPU_LINE_BYTES: usize = 128;
 const MAX_KERNEL_BUFFERS: u32 = 6;
 
 /// Shape of one launch on the current device. Not `Copy`: `CubeCount` is not `Copy` in
-/// CubeCL 0.11 (ADR-0008).
+/// CubeCL 0.11 (ADR-0010).
 ///
 /// Kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit`
 /// vectors, checking `v < num_vectors` (Listing B5). A unit owns `items_per_unit ·
@@ -62,7 +62,7 @@ impl LaunchPlan {
     ///   `items_per_unit` is 1.
     /// - **CPUs:** `cube_dim` equals `max_units_per_cube`, one unit per hardware thread, and
     ///   each unit takes blocks of about 16 KiB of whole 128-byte lines.
-    /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0008).
+    /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
     ///
     /// # Errors
     ///
@@ -211,7 +211,7 @@ fn gcd(mut a: usize, mut b: usize) -> usize {
     a
 }
 
-/// A cube count of at least `cubes` cubes within `max` (ADR-0008): x = min(n, mx), then
+/// A cube count of at least `cubes` cubes within `max` (ADR-0010): x = min(n, mx), then
 /// y = min(⌈n / x⌉, my), then z = ⌈n / (x·y)⌉; `TooLarge` if z exceeds `max.2`. At least one
 /// cube, so a plan is always launchable.
 fn spread_cubes(cubes: usize, max: (u32, u32, u32)) -> Result<(u32, u32, u32)> {

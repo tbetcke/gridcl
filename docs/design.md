@@ -450,7 +450,7 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = 
 }
 ```
 
-`LaunchPlan` computes the cube count itself: it fills x up to the device's maximum, then y, then z, so no launch exceeds the 65 535-per-dimension limit of WebGPU-class devices (ADR-0008). On CPUs it gives each thread contiguous blocks of cell vectors. With vector size 1 the same source is the scalar kernel, so the policy can switch sizes without a second implementation. Chunking keeps every buffer within the device's maximum allocation (see "Device limits").
+`LaunchPlan` computes the cube count itself: it fills x up to the device's maximum, then y, then z, so no launch exceeds the 65 535-per-dimension limit of WebGPU-class devices (ADR-0010). On CPUs it gives each thread contiguous blocks of cell vectors. With vector size 1 the same source is the scalar kernel, so the policy can switch sizes without a second implementation. Chunking keeps every buffer within the device's maximum allocation (see "Device limits").
 
 ### Runtime erasure for I/O
 
@@ -784,7 +784,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0007). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -825,7 +825,7 @@ CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; featur
 - **Largest allocation:** `client.properties().memory.max_page_size`. Every `DeviceBuffer` constructor checks it. Per-rank topology and geometry arrays must fit in one allocation each; otherwise mesh creation fails with `GridError::AllocationTooLarge`, and the mesh must be spread over more ranks. Fields at quadrature points and E-vectors are stored in chunks of whole cell tiles (`QuadField`), sized from this limit.
 - **Buffers per kernel:** `hardware.max_bindings`. Library kernels use at most six buffers, which fits WebGPU-class devices; id pairs are interleaved in one buffer for this reason. A debug assertion checks each launch.
 - **Shared memory:** `hardware.max_shared_memory_size`. Primitives size their tiles from it and assume at least 16 KiB.
-- **Cube count:** computed by `LaunchPlan`, which respects `hardware.max_cube_count`; `TooLarge` if no launch fits (ADR-0008). Element counts are multiplied in usize with overflow checks.
+- **Cube count:** computed by `LaunchPlan`, which respects `hardware.max_cube_count`; `TooLarge` if no launch fits (ADR-0010). Element counts are multiplied in usize with overflow checks.
 - **Units per cube:** `hardware.max_units_per_cube` and `max_cube_dim`. On the CPU runtime both equal the number of hardware threads. Every launch takes its shape from `LaunchPlan`, which respects them (see "Vectorization and CPU execution").
 - **Plane size:** read from `hardware.plane_size_min` and `plane_size_max`, never assumed to be 32. Every algorithm must also be correct with plane size 1, as on the CPU runtime.
 
@@ -858,7 +858,7 @@ They follow eight rules:
 - fill, copy, reduce, the tile-local phase of scan, the digit counting of the sort (SortDigits) and gather are generic over the vector size, and every primitive takes its launch shape from `LaunchPlan` (see "Vectorization and CPU execution");
 - one partition per primitive: a primitive with several kernels computes one `LaunchPlan`, for the `KernelKind` of its vectorized phase (or its first phase if none is vectorized), and every kernel takes its ranges from it. A unit owns `items_per_unit · vector_size` consecutive items, and a cube owns `cube_dim` times as many. Scalar phases launch with the same cube count and cube dimension. Recursive levels (the partials of reduce, the tile sums of scan) use one new `LaunchPlan::elementwise` per level, until one cube remains;
 - no plane operations: values are combined within a cube through shared memory and `sync_cube`, so every primitive is correct with plane size 1 and on the CPU runtime, which has no plane operations;
-- no primitive reads from the device, except that run-length and unique-by-key read their count once (a blocking 4-byte read) and return exactly sized buffers, and that debug builds of gather and scatter read back one value to check their indices (ADR-0007).
+- no primitive reads from the device, except that run-length and unique-by-key read their count once (a blocking 4-byte read) and return exactly sized buffers, and that debug builds of gather and scatter read back one value to check their indices (ADR-0009).
 
 **Listing S1b — primitives (gridcl-device)**
 
@@ -1033,7 +1033,7 @@ pub mod testing {
 ```
 
 - **Vector size:** the largest power of two not above the policy's size, `max_vector`, and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
-- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0008).
+- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
 - **CPUs:** `cube_dim` equals `max_units_per_cube`, one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
@@ -1697,7 +1697,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - `Real` and the `DeviceBuffer` family with limit checks and `VECTOR_PAD` padding, plus `check_precision`;
 - `LaunchPlan` and `VectorPolicy`, with vector size 1 and tile width 16 everywhere until M3s, and the `GRIDCL_VECTOR_SIZE` and `GRIDCL_QUAD_TILE` overrides;
-- scan, radix sort (u32-word keys with u32 payload), unique-by-key, run-length, histogram, gather/scatter, segmented reduce, fill and copy. Fill, copy, reduce, the tile-local scan phase, the digit counting of the sort (SortDigits) and gather are generic over the vector size (ADR-0007);
+- scan, radix sort (u32-word keys with u32 payload), unique-by-key, run-length, histogram, gather/scatter, segmented reduce, fill and copy. Fill, copy, reduce, the tile-local scan phase, the digit counting of the sort (SortDigits) and gather are generic over the vector size (ADR-0009);
 - `CommDyn`, `Comm`, `CommExt` and `Serial`, and `IndexMap` without ghosts.
 
 **Acceptance:**

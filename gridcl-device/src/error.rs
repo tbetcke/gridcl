@@ -1,4 +1,4 @@
-//! `GridError` and `Result`, re-exported by gridcl-parallel and gridcl (ADR-0007).
+//! `GridError` and `Result`, re-exported by gridcl-parallel and gridcl (ADR-0009).
 
 use core::fmt;
 

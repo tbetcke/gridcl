@@ -137,7 +137,7 @@ fn device_add<F: TestFloat>(client: &Client, a: &[F], b: &[F]) -> Vec<F> {
     // SAFETY: the three buffers hold `len` elements of `F` each, padded to VECTOR_PAD, and
     // `arg()` declares `len`. The kernel reads and writes only indices `v < len`, which it is
     // given explicitly (in CubeCL 0.11 the handle size, not the declared length, bounds the
-    // slice, ADR-0007). `out` is a distinct allocation from `a` and `b`, so nothing aliases a
+    // slice, ADR-0009). `out` is a distinct allocation from `a` and `b`, so nothing aliases a
     // written buffer. The launch shape is the plan's, checked above to cover every index.
     unsafe {
         add_kernel::launch_unchecked::<F>(

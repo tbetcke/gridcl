@@ -49,7 +49,7 @@ fn lane_sum<T: Numeric, N: Size>(value: Vector<T, N>) -> T {
     acc
 }
 
-/// The fixed-order in-vector prefix of `value` (ADR-0007): lane l holds the sum of lanes 0..=l,
+/// The fixed-order in-vector prefix of `value` (ADR-0009): lane l holds the sum of lanes 0..=l,
 /// or of lanes 0..l if `exclusive`.
 #[cube]
 fn lane_prefix<T: Numeric, N: Size>(

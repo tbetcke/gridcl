@@ -1,7 +1,8 @@
-# ADR-0007: M2 public items and rules the design leaves open
+# ADR-0009: M2 public items and rules the design leaves open
 
 - **Status:** Accepted
 - **Date:** 2026-10-19
+- **Renumbered:** 2026-10-20, at the M2 review: accepted as ADR-0007 on the M2 branch, but M1b merged a different ADR-0007 into main first.
 - **Raised in:** M2 planning (docs/plans/M2.md, questions 2–6 and 11–13)
 - **Amended:** 2026-10-19, after the maintainer's review: the `testing` module behind a Cargo feature; debug-build index checks in gather and scatter; the n + 1 convention of `exclusive_scan` documented in its rustdoc.
 - **Design sections affected:**

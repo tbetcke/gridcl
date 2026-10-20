@@ -1,7 +1,8 @@
-# ADR-0008: `LaunchPlan` is not `Copy`, and it computes its own cube count
+# ADR-0010: `LaunchPlan` is not `Copy`, and it computes its own cube count
 
 - **Status:** Accepted
 - **Date:** 2026-10-19
+- **Renumbered:** 2026-10-20, at the M2 review: accepted as ADR-0008 on the M2 branch, but M1b merged a different ADR-0008 into main first.
 - **Raised in:** M2 T0 (stubs for Listing S2)
 - **Design sections affected:**
   - "Vectorization and CPU execution": Listing S2 (launch plans) and the bullets after it;
@@ -27,7 +28,7 @@ The paragraph after Listing B5 says "`LaunchPlan` takes the cube count from
 each dimension". "Device limits" says the cube count is "computed by
 `calculate_cube_count_elemwise`, which respects `hardware.max_cube_count`".
 
-ADR-0007 added `testing::with_properties`, which "replaces the properties that gridcl-device
+ADR-0009 added `testing::with_properties`, which "replaces the properties that gridcl-device
 reads (limits, device class, vector sizes) for buffers and plans made inside `f`". The M2
 acceptance test `launch_plan::prop_plan_respects_injected_limits` relies on it: "with injected
 device properties, no plan exceeds `max_units_per_cube`, `max_cube_dim` or `max_cube_count`".

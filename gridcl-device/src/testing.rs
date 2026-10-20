@@ -1,4 +1,4 @@
-//! Test hooks (ADR-0007). Only with the Cargo feature `testing`, which is off by default and not
+//! Test hooks (ADR-0009). Only with the Cargo feature `testing`, which is off by default and not
 //! part of the stable API; gridcl-testing turns it on for every workspace test.
 //!
 //! The overrides are scoped and thread-local, because gridcl runs one host thread per mesh.

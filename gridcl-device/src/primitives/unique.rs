@@ -3,7 +3,7 @@
 //! One partition, from the plan of the first phase. A flag marks each key that differs from
 //! its predecessor (the first key always), the exclusive scan of the flags numbers the runs,
 //! and a compaction writes each run's first key to its number. The run count, the last element
-//! of the scan, is read back once (a blocking 4-byte read, ADR-0007), so the outputs are
+//! of the scan, is read back once (a blocking 4-byte read, ADR-0009), so the outputs are
 //! exactly sized. Integer scans are exact, so the result is bitwise deterministic.
 
 use cubecl::prelude::*;
@@ -314,7 +314,7 @@ fn number_runs(keys: &SortKeys) -> Result<(LaunchPlan, DeviceBuffer<u32>, usize)
     Ok((plan, starts, runs))
 }
 
-/// Element `i` of `x`: an explicit, blocking 4-byte device-to-host read (ADR-0007).
+/// Element `i` of `x`: an explicit, blocking 4-byte device-to-host read (ADR-0009).
 fn read_u32(x: &DeviceBuffer<u32>, i: usize) -> Result<u32> {
     let size = (x.padded_len() * size_of::<u32>()) as u64;
     let start = (i * size_of::<u32>()) as u64;
