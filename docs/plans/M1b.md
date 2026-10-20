@@ -361,6 +361,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-19 | finish | Finish run: workspace tests, clippy, doc, fmt and Metal pass on the M3 Max; conformance passes; Locust CUDA (`cargo test --release --workspace --features gridcl-testing/cuda`, job 20261019233247-3771866, 09d8b9c, clean tree) passes. Myriad V100 not run: both submissions failed because Myriad's SGE qmaster refused connections (util01, port 6444); nothing queued. The V100 run moves to the milestone review. | Remote scheduler outage; CLAUDE.md allows two attempts. | – |
 | 2026-10-19 | plan | T0 exceeds the usual ~600 changed lines. | All acceptance tests with their literals in one failing commit, as the template requires. | – |
 | 2026-10-19 | T4 | `lagrange_entity_nodes` panics for `degree == 0` (documented under `# Panics`) instead of returning `UnsupportedDegree` (question 9). | It returns a plain `Range<usize>`, as planned; recorded at the review (minor 3). | – |
+| 2026-10-20 | review | `conformance::lagrange::points_match_ndelement` runs its body on a thread with a 64 MiB stack. | On the hosted Linux job (OpenBLAS, debug build) it overflowed the test harness's 2 MiB thread stack (run 39371981761); with Accelerate it passes with 256 KiB. Only this test reaches LAPACK. | – |
 | 2026-10-19 | review | Myriad V100 not run at the review either: both submissions failed at `qsub` (SGE qmaster on util01, port 6444, refused connections). The maintainer decided to record it as unavailable and continue. | Remote scheduler outage; two attempts, as CLAUDE.md allows. | – |
 
 ## Review
@@ -384,7 +385,7 @@ without `version =`; there is no `unsafe`. The Deviations log was complete apart
 | 4 | Minor | A.9's "Interval (any): identity" row was tested only for p ≤ 2. | `node_maps::interval_maps_are_identity`, p = 1..=10, Gmsh and VTK (438fcf4). |
 | 5 | Minor | `fixtures::lagrange_points_match_fixture` checked only the number of cells, so a fixture missing families or degrees would pass. | The test now asserts the five cells, the families of each cell (GLL on the tensor cells only) and degrees 1..=4 (438fcf4). |
 | 6 | Minor | The conformance workflow did not trigger on `gridcl-dims/` (a conformance dependency since T0), and nothing detects stale fixtures. | `gridcl-dims/**` added to the path filter, plus a step that re-exports the fixtures and runs `git diff --exit-code` (0f957a5). ndelement's GLL points come from `quadraturerules`' tabulated constants, so the export is platform-independent. |
-| 7 | Minor | The equispaced hexahedron at p = 8 reaches 5.6e-13 against the 1e-12 tolerance, and has been checked only on aarch64. | Follow-up: confirm in the hosted x86-64 cpu job on the PR. |
+| 7 | Minor | The equispaced hexahedron at p = 8 reaches 5.6e-13 against the 1e-12 tolerance, and has been checked only on aarch64. | Confirmed: the hosted x86-64 cpu job passes (run 39372535710). |
 | 8 | Minor | The Newton iterations in `jacobi.rs` silently accepted the last iterate after `MAX_NEWTON_STEPS`. | Both loops assert convergence, naming node, m and α; new test `gauss_jacobi_newton_converges_for_large_m` (m ≤ 60) (a7c1f29). Re-review: the resulting panics of `gauss_rule` and `lagrange_points` are documented under `# Panics` (3b2d465). |
 | 9 | Minor | At the pyramid apex the first derivatives of the rational basis functions follow the axis-limit convention (T6); they have no limit over all directions. | Follow-up for M3 (below). Quadrature points are interior, so the quadrature path is unaffected. |
 | 10 | Minor (re-review) | ADR-0008's consequence "M5, which must accept this ADR before its plan is approved" is stale now that the ADR is accepted. M5's roadmap acceptance list does not name the VTK prism check, which appears only in "High-order node orderings / Checks". | Follow-up for M5 (below). The ADR text is left as accepted. |
@@ -412,16 +413,13 @@ No test is ignored or skipped on any target that ran.
 | Conformance (M3 Max, Accelerate) | `cargo test --manifest-path conformance/Cargo.toml`; `cargo clippy --manifest-path conformance/Cargo.toml --all-targets -- -D warnings`; `cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures && git diff --exit-code gridcl-refcell/tests/fixtures` | – | pass at 5cfad14 and 0f957a5. 4 tests (`sub_entities_match_ndelement`, `bits_match_compute_orientation`, `points_match_ndelement`, `vtk_matches_ndelement`); re-export unchanged |
 | Locust GH200 (CUDA) | `scripts/hpc/remote-test.sh locust` with `cargo test --release --workspace --features gridcl-testing/cuda` | 20261019233829-3787419 (5cfad14) | pass (exit 0, first failure: none). `node load:` busy before and after (another user's process at 100% GPU): correctness only, no timings used (ADR-0002). Also passed at the finish run, job 20261019233247-3771866 (09d8b9c) |
 | Myriad V100 (CUDA) | `scripts/hpc/remote-test.sh myriad-v100` with the same command | – | **unavailable**: `qsub` failed on both attempts with "unable to send message to qmaster using port 6444 on host util01" (SSH and sync worked). Same failure at the finish run. Recorded at the maintainer's decision |
-| Hosted CI (cpu, vulkan; conformance with OpenBLAS) | CI and conformance workflows | – | not yet run: the branch has not been pushed. Runs on the PR |
+| Hosted CI (cpu, vulkan, mpi-mpich, mpi-openmpi; conformance with OpenBLAS) | CI and conformance workflows on PR #4 | runs 39372535710, 39372541030 (CI), 39372535709 (conformance), at 6f3761c | pass. The first conformance run (39371981761, at 5129daa) aborted with a stack overflow in `points_match_ndelement`; fixed in 6f3761c (Deviations log). The x86-64 cpu job passes `tabulation::reproduces_own_space` (minor 7). The conformance job ran all 4 tests, and its re-export with OpenBLAS matches the committed fixtures byte for byte |
 
 **Not run.** MPI: M1b does not touch gridcl-parallel or later crates. Myriad A100: not required
 for M1b ("Development environment and test targets"). Myriad V100: unavailable (above). No remote
 jobs are left queued.
 
 **Follow-ups for later milestones.**
-- PR: confirm in the hosted x86-64 cpu job that `tabulation::reproduces_own_space` passes for
-  the equispaced hexahedron at p = 8 (5.6e-13 on aarch64; minor 7). Confirm that the conformance
-  job's new stale-fixture step passes with OpenBLAS.
 - Next milestone review: run Myriad V100 when its scheduler is back.
 - M3: gridcl-geometry maps `RefCellError::UnsupportedNodeFamily` onto
   `GridError::UnsupportedNodeFamily` with `map_err` (question 3). Reference facet normals and the
