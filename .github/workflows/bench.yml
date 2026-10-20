@@ -1,0 +1,64 @@
+# Primitive throughput on software Vulkan (Mesa lavapipe): docs/plans/M2.md, T11, and
+# docs/perf/m2-primitives.md. A hosted runner shares its CPU with other VMs, so the numbers are
+# labelled "software" and are not compared with hardware backends.
+#
+# GitHub dispatches only workflows on the default branch, so pushes that change the benchmark
+# also run it.
+name: bench
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - gridcl-bench/**
+      - .github/workflows/bench.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # The CPU runtime's build script downloads its LLVM bundle to $XDG_DATA_HOME/tracel.
+  XDG_DATA_HOME: /home/runner/.local/share
+
+jobs:
+  vulkan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Software Vulkan (Mesa lavapipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers vulkan-tools
+          vulkaninfo --summary
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.local/share/tracel
+            target
+          key: ${{ runner.os }}-bench-vulkan-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-bench-vulkan-
+      - run: |
+          cargo run --release -p gridcl-bench --features vulkan --bin primitive_throughput -- \
+            --out m2-primitives-vulkan-lavapipe.json
+          nproc
+          lscpu | sed -n 's/^Model name: *//p'
+        env:
+          GRIDCL_TEST_DEVICE: vulkan
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: m2-primitives-vulkan-lavapipe
+          path: m2-primitives-vulkan-lavapipe.json
