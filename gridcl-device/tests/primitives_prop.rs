@@ -389,7 +389,21 @@ fn radix_sort_both_schemes() {
     blocks.hardware.max_units_per_cube = blocks.hardware.max_units_per_cube.min(2);
     blocks.hardware.max_shared_memory_size =
         blocks.hardware.max_units_per_cube as usize * size_of::<u32>() * 8;
-    for props in [split, blocks] {
+    // With one unit per cube and one item per unit, the scan of the digit counts cannot shrink
+    // and returns TooLarge. A host with one hardware thread (a one-core batch job) launches no
+    // larger cubes, so it runs only the blocks scheme; GPU backends run the split scheme natively.
+    let mut cases = vec![blocks];
+    if split
+        .hardware
+        .max_units_per_cube
+        .min(split.hardware.max_cube_dim.0)
+        >= 2
+    {
+        cases.insert(0, split);
+    } else {
+        eprintln!("radix_sort_both_schemes: one unit per cube on this host; split scheme skipped");
+    }
+    for props in cases {
         testing::with_properties(props, || {
             for n in vector_sizes(&client, size_of::<u32>()) {
                 testing::with_vector_size(VectorSizeOverride::Fixed(n), || {
