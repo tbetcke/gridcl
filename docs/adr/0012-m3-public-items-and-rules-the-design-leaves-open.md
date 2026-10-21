@@ -1,6 +1,6 @@
 # ADR-0012: M3 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-21
 - **Raised in:** M3 planning (docs/plans/M3.md, questions 2–11 and 21–23)
 - **Design sections affected:**
@@ -281,4 +281,4 @@ Option 2. Each item is decided as follows.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-21 (option 2, with the sub-options chosen for problems 2, 5 and 10), without conditions. Applied to docs/design.md and CLAUDE.md in `adr: 0012 apply`.

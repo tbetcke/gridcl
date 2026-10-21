@@ -35,9 +35,11 @@
   library crate, and never add `version =` to its git dependency. After bumping its pin, run
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
-- Host<->device copies in library code only for I/O, explicit to_host()/read_node(),
-  the count read of run-length and unique-by-key, the debug-build index checks of gather
-  and scatter, and the host-staged halo exchange.
+- Host<->device copies in library code only for I/O (including the upload of input arrays
+  at mesh creation, and of quadrature points and tabulations when a rule is created or a
+  tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
+  and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
+  checks of gather and scatter, and the host-staged halo exchange.
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
