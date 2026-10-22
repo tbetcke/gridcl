@@ -115,8 +115,19 @@ where
     ///
     /// Allocation and device errors of the first build.
     pub fn evector(&self, b: usize) -> Result<&EVector<F>> {
-        let _ = (b, &self.evectors);
-        todo!()
+        let cache = &self.evectors[b];
+        if let Some(xe) = cache.get() {
+            return Ok(xe);
+        }
+        let block = &self.blocks[b];
+        let xe = crate::evector::build(
+            &self.nodes,
+            &block.dofmap.data,
+            block.num_cells(),
+            block.nodes_per_cell(),
+            GD::N,
+        )?;
+        Ok(cache.get_or_init(|| xe))
     }
 
     /// A deep copy of every device array; the node index map is rebuilt on `comm`
