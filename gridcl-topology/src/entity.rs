@@ -254,6 +254,8 @@ struct DimContext<'a> {
     ids: &'a DeviceBuffer<u32>,
     fast: bool,
     dim: usize,
+    /// The first flat cell index of each cell block.
+    cell_offsets: &'a [usize],
 }
 
 /// Steps 2–5 and 7 for one entity type of `plan`, with the block offset `offset`.
@@ -265,6 +267,7 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
         ids,
         fast,
         dim,
+        ..
     } = *cx;
     let words = gridcl_refcell::vertices(plan.entity).len();
     let empty = |count: usize| -> Result<TypeEntities> {
@@ -289,7 +292,8 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
     let unique = unique_by_key(&sorted, &payload)?; // the count read
     let runs = unique.keys.len();
     let count = runs - usize::from(plan.has_sentinels());
-    let old2new = crate::renumber::renumber(client, runs)?;
+    let old2new =
+        crate::renumber::renumber(client, &sorted, &payload, plan, cx.cell_offsets, runs)?;
 
     // Entity → vertex in canonical orientation, one launch per block.
     let vertices = DeviceBuffer::<u32>::uninit(client, count * words)?;
@@ -363,6 +367,14 @@ pub(crate) fn create_dimension(
         .collect();
     let plans = emission_plans(&counts, dim)?;
     let mut types = Vec::with_capacity(plans.len());
+    let cell_offsets: Vec<usize> = counts
+        .iter()
+        .scan(0usize, |acc, &(_, n)| {
+            let first = *acc;
+            *acc += n;
+            Some(first)
+        })
+        .collect();
     let cx = DimContext {
         client,
         comm,
@@ -370,6 +382,7 @@ pub(crate) fn create_dimension(
         ids,
         fast,
         dim,
+        cell_offsets: &cell_offsets,
     };
     let mut offset = 0usize;
     for plan in &plans {
