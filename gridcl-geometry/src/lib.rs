@@ -15,6 +15,7 @@ mod geometry;
 mod grid;
 mod layout;
 mod measure;
+mod names;
 mod point_set;
 mod points_jac;
 mod rule;
