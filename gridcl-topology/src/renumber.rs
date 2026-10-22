@@ -87,6 +87,31 @@ fn copy_words_kernel(src: &[u32], dst: &mut [u32], len: u32, items_per_unit: u32
     }
 }
 
+/// One-word sort keys holding `src`.
+pub(crate) fn one_word_keys(src: &DeviceBuffer<u32>) -> Result<SortKeys> {
+    let client = src.client();
+    let len = src.len();
+    let mut keys = SortKeys::uninit(client, len, 1)?;
+    if len > 0 {
+        let launch = LaunchPlan::elementwise(client, KernelKind::Copy, len, 4, 1, 1)?;
+        debug_assert_bindings(client, 2);
+        // SAFETY: `src` holds `len` words and the one plane of `keys` pad_len(len) ≥ len; the
+        // kernel copies indices below `len`.
+        unsafe {
+            copy_words_kernel::launch_unchecked(
+                client,
+                launch.cube_count,
+                launch.cube_dim,
+                src.arg(),
+                keys.words_mut().arg(),
+                fit(len)?,
+                launch.items_per_unit,
+            );
+        }
+    }
+    Ok(keys)
+}
+
 /// u32 of `x`, or `TooLarge`.
 fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
@@ -132,24 +157,7 @@ pub(crate) fn renumber(
     }
     let offsets = run_length(sorted)?.offsets; // the count read of run-length
     let mins = segmented_reduce(&values, &offsets, ReduceOp::Min)?;
-    let mut keys = SortKeys::uninit(client, runs, 1)?;
-    if runs > 0 {
-        let launch = LaunchPlan::elementwise(client, KernelKind::Copy, runs, 4, 1, 1)?;
-        debug_assert_bindings(client, 2);
-        // SAFETY: `mins` holds `runs` words and the one plane of `keys` pad_len(runs) ≥ runs;
-        // the kernel copies indices below `runs`.
-        unsafe {
-            copy_words_kernel::launch_unchecked(
-                client,
-                launch.cube_count,
-                launch.cube_dim,
-                mins.arg(),
-                keys.words_mut().arg(),
-                fit(runs)?,
-                launch.items_per_unit,
-            );
-        }
-    }
+    let keys = one_word_keys(&mins)?;
     let ids = iota(client, runs)?;
     let (_, new2old) = radix_sort(&keys, &ids)?;
     let mut old2new = DeviceBuffer::<u32>::uninit(client, runs)?;

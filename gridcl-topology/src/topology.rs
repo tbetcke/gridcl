@@ -257,8 +257,44 @@ impl<TD: TopoDim> Topology<TD> {
         from: usize,
         to: usize,
     ) -> Result<()> {
-        let _ = (comm, from, to);
-        todo!()
+        let tdim = TD::N;
+        let key = ConnKey {
+            from: u8::try_from(from).map_err(|_| GridError::TooLarge)?,
+            to: u8::try_from(to).map_err(|_| GridError::TooLarge)?,
+        };
+        if !Self::supported(key) {
+            return Err(GridError::UnsupportedConnectivity(key));
+        }
+        if self.connectivity.contains_key(&key) {
+            return Ok(());
+        }
+        if from == tdim {
+            // Downward: filled by entity creation.
+            return self.create_entities(comm, to);
+        }
+        self.create_entities(comm, from)?;
+        let num_entities = self
+            .entity_blocks(from)?
+            .iter()
+            .map(|b| b.index_map.num_local())
+            .sum();
+        let csr = if from == 0 {
+            let rows: Vec<&DeviceStrided<u32>> =
+                self.cell_blocks.iter().map(|b| &b.vertices).collect();
+            crate::connectivity::upward(&self.client, &rows, num_entities)?
+        } else {
+            let down = ConnKey {
+                from: tdim as u8,
+                to: from as u8,
+            };
+            let Some(Connectivity::Downward(rows)) = self.connectivity.get(&down) else {
+                unreachable!("entity creation stores the downward connectivity");
+            };
+            let rows: Vec<&DeviceStrided<u32>> = rows.iter().collect();
+            crate::connectivity::upward(&self.client, &rows, num_entities)?
+        };
+        self.connectivity.insert(key, Connectivity::Upward(csr));
+        Ok(())
     }
 
     /// A deep copy of every device array; index maps are rebuilt on `comm` (collective).
