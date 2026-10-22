@@ -120,12 +120,13 @@ impl<TD: TopoDim> Topology<TD> {
         todo!()
     }
 
-    /// A deep copy of every device array.
+    /// A deep copy of every device array; index maps are rebuilt on `comm` (collective).
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone`.
-    pub fn try_clone(&self) -> Result<Self> {
+    /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
+        let _ = comm;
         todo!()
     }
 }

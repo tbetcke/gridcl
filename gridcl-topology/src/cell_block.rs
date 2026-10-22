@@ -2,7 +2,7 @@
 
 use gridcl_device::{DeviceBuffer, DeviceStrided, Result};
 use gridcl_dims::TopoDim;
-use gridcl_parallel::IndexMap;
+use gridcl_parallel::{CommDyn, IndexMap};
 
 /// The cells of one cell type (Listing B3).
 ///
@@ -52,12 +52,13 @@ impl<TD: TopoDim> CellBlock<TD> {
         todo!()
     }
 
-    /// A deep copy of every device array.
+    /// A deep copy of every device array; the index map is rebuilt on `comm` (collective).
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone`.
-    pub fn try_clone(&self) -> Result<Self> {
+    /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
+        let _ = comm;
         todo!()
     }
 }
