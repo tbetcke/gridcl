@@ -199,8 +199,49 @@ impl<TD: TopoDim> Topology<TD> {
     /// `EntitiesNotCreated(dim)` for dim ≥ tdim; `TooLarge` if the padded emission exceeds
     /// 2^32 keys; device errors.
     pub fn create_entities(&mut self, comm: &dyn CommDyn, dim: usize) -> Result<()> {
-        let _ = (comm, dim);
-        todo!()
+        if dim >= TD::N {
+            return Err(GridError::EntitiesNotCreated(dim));
+        }
+        if self.entities[dim].is_some() {
+            return Ok(());
+        }
+        if dim == 0 {
+            // One Point block of the vertices.
+            let n = self.vertex_index_map.num_local();
+            let block = EntityBlock {
+                cell: CellType::Point,
+                index_map: IndexMap::new(comm, n)?,
+                vertices: DeviceStrided {
+                    data: crate::renumber::iota(&self.client, n)?,
+                    stride: 1,
+                },
+                offset: 0,
+            };
+            self.entities[0] = Some(vec![block]);
+            return Ok(());
+        }
+        let cells: Vec<(CellType, &DeviceStrided<u32>)> = self
+            .cell_blocks
+            .iter()
+            .map(|b| (b.cell.into(), &b.vertices))
+            .collect();
+        let (blocks, downward) = crate::entity::create_dimension(
+            &self.client,
+            comm,
+            &cells,
+            &self.vertex_origin_ids,
+            self.ids_fit_u32,
+            dim,
+        )?;
+        self.entities[dim] = Some(blocks);
+        self.connectivity.insert(
+            ConnKey {
+                from: TD::N as u8,
+                to: dim as u8,
+            },
+            Connectivity::Downward(downward),
+        );
+        Ok(())
     }
 
     /// Creates the connectivity `from` → `to`, creating the entities it needs. Does nothing if

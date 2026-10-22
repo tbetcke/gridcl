@@ -11,10 +11,8 @@
 
 mod cell_block;
 mod connectivity;
-#[allow(dead_code)] // create_entities calls them from T8 on
 mod emission;
 mod entity;
-#[allow(dead_code)] // create_entities calls them from T8 on
 mod keys;
 mod origin;
 mod permutation;

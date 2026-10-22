@@ -2045,6 +2045,7 @@ name = "gridcl-topology"
 version = "0.1.0"
 dependencies = [
  "cubecl",
+ "gridcl",
  "gridcl-device",
  "gridcl-dims",
  "gridcl-parallel",
