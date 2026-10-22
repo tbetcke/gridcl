@@ -2,12 +2,26 @@
 //! impls.
 
 use gridcl_device::{GridError, Real, Result};
-use gridcl_dims::{D1, D2, D3};
+use gridcl_dims::{D1, D2, D3, Dim};
 use gridcl_parallel::{Comm, Serial};
 
 use crate::Mesh;
 
-/// A mesh whose dimensions are known only at run time.
+/// A mesh whose dimensions are known only at run time, as file readers return it. Convert it
+/// with `TryFrom` into the typed mesh, or borrow it with [`as_ref`](AnyMesh::as_ref) for
+/// [`with_mesh!`](crate::with_mesh).
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let h = gridcl_testing::square_box(Cell2::Triangle, 1, 1);
+/// let any = AnyMesh::Planar(h.build::<f32, D2, D2>(&client)?);
+/// assert_eq!((any.tdim(), any.gdim()), (2, 2));
+/// let planar = PlanarMesh::<f32>::try_from(any)?;
+/// assert_eq!(planar.cell_blocks()[0].index_map.num_local(), 2);
+/// # Ok::<(), GridError>(())
+/// ```
 pub enum AnyMesh<F: Real, C: Comm = Serial> {
     Curve1(Mesh<F, D1, D1, C>),
     Curve2(Mesh<F, D1, D2, C>),
@@ -18,6 +32,17 @@ pub enum AnyMesh<F: Real, C: Comm = Serial> {
 }
 
 /// Borrowed view, so writers never need to move or clone a mesh.
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let h = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1);
+/// let planar: PlanarMesh<f32> = h.build(&client)?;
+/// let cells = with_mesh!(AnyMeshRef::Planar(&planar), m => m.cell_blocks()[0].index_map.num_local());
+/// assert_eq!(cells, 4);
+/// # Ok::<(), GridError>(())
+/// ```
 pub enum AnyMeshRef<'a, F: Real, C: Comm = Serial> {
     Curve1(&'a Mesh<F, D1, D1, C>),
     Curve2(&'a Mesh<F, D1, D2, C>),
@@ -30,21 +55,40 @@ pub enum AnyMeshRef<'a, F: Real, C: Comm = Serial> {
 impl<F: Real, C: Comm> AnyMesh<F, C> {
     /// The borrowed view.
     pub fn as_ref(&self) -> AnyMeshRef<'_, F, C> {
-        todo!()
+        match self {
+            AnyMesh::Curve1(m) => AnyMeshRef::Curve1(m),
+            AnyMesh::Curve2(m) => AnyMeshRef::Curve2(m),
+            AnyMesh::Curve3(m) => AnyMeshRef::Curve3(m),
+            AnyMesh::Planar(m) => AnyMeshRef::Planar(m),
+            AnyMesh::Surface(m) => AnyMeshRef::Surface(m),
+            AnyMesh::Volume(m) => AnyMeshRef::Volume(m),
+        }
     }
 
     /// The topological dimension.
     pub fn tdim(&self) -> usize {
-        todo!()
+        crate::with_mesh!(self.as_ref(), m => m.tdim())
     }
 
     /// The geometric dimension.
     pub fn gdim(&self) -> usize {
-        todo!()
+        crate::with_mesh!(self.as_ref(), m => m.gdim())
     }
 }
 
 /// Runs `$body` once per variant with `$m: &Mesh<F, TD, GD, C>` of that variant's types.
+/// Call sites pass `any.as_ref()`.
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let h = gridcl_testing::interval_box(3, 1);
+/// let any = AnyMesh::Curve1(h.build::<f32, D1, D1>(&client)?);
+/// let (tdim, gdim) = with_mesh!(any.as_ref(), m => (m.tdim(), m.gdim()));
+/// assert_eq!((tdim, gdim), (1, 1));
+/// # Ok::<(), GridError>(())
+/// ```
 #[macro_export]
 macro_rules! with_mesh {
     ($any:expr, $m:ident => $body:expr) => {
@@ -65,8 +109,13 @@ macro_rules! try_from_any {
         impl<F: Real, C: Comm> TryFrom<AnyMesh<F, C>> for Mesh<F, $td, $gd, C> {
             type Error = GridError;
             fn try_from(m: AnyMesh<F, C>) -> Result<Self> {
-                let _ = m;
-                todo!()
+                match m {
+                    AnyMesh::$variant(mesh) => Ok(mesh),
+                    other => Err(GridError::DimensionMismatch {
+                        expected: (<$td as Dim>::N, <$gd as Dim>::N),
+                        found: (other.tdim(), other.gdim()),
+                    }),
+                }
             }
         }
     };

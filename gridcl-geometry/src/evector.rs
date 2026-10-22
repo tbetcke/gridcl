@@ -10,7 +10,7 @@ use crate::QuadChunk;
 use crate::field::{alloc_chunks, chunk_cells};
 
 /// The cached E-vector of one geometry block (ADR-0012): chunks of whole tiles,
-/// [k][g][cell] with cells fastest, the cell count padded to `VECTOR_PAD` with copies of the
+/// `[k][g][cell]` with cells fastest, the cell count padded to `VECTOR_PAD` with copies of the
 /// block's last cell. An empty block has no chunks. Built on first use by
 /// `DeviceGrid::evector`.
 ///
@@ -57,9 +57,9 @@ impl<F: Real> EVector<F> {
 /// row (k, g) gets the coordinate g of node k of each lane's cell, gathered lane by lane from
 /// the L-vector; only the stores are vectors. Lanes past the block's last cell copy the last
 /// cell.
-///   nodes   L-vector [node][gdim]
-///   dofmap  [cell][k] node indices of the block
-///   out     [k][g][cell] with row stride `stride_vectors` vectors
+///   nodes   L-vector `[node][gdim]`
+///   dofmap  `[cell][k]` node indices of the block
+///   out     `[k][g][cell]` with row stride `stride_vectors` vectors
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn evector_kernel<F: Float, N: Size>(
@@ -108,7 +108,7 @@ fn fit(x: usize) -> Result<u32> {
 }
 
 /// The E-vector of `num_cells` cells with `nodes_per_cell` nodes each from the L-vector `nodes`
-/// ([node][gdim]) and the block's `dofmap`, chunked by the device's `max_page_size`.
+/// (`[node][gdim]`) and the block's `dofmap`, chunked by the device's `max_page_size`.
 ///
 /// # Errors
 ///

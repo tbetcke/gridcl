@@ -50,7 +50,7 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
 {
-    /// The geometry of `blocks` over `nodes` ([node][gdim], relative to `origin`).
+    /// The geometry of `blocks` over `nodes` (`[node][gdim]`, relative to `origin`).
     ///
     /// # Errors
     ///
@@ -99,7 +99,7 @@ where
         &self.blocks
     }
 
-    /// The L-vector [node][gdim], relative to [`origin`](Geometry::origin).
+    /// The L-vector `[node][gdim]`, relative to [`origin`](Geometry::origin).
     pub fn nodes(&self) -> &DeviceBuffer<F> {
         &self.nodes
     }

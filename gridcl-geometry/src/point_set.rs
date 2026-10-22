@@ -14,9 +14,9 @@ use crate::names::element_error;
 /// Which table of an element a cache entry holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Table {
-    /// Values, [q][k].
+    /// Values, `[q][k]`.
     Values,
-    /// Reference derivatives, [q][k][d].
+    /// Reference derivatives, `[q][k][d]`.
     Derivatives,
 }
 
@@ -51,7 +51,7 @@ pub struct PointSet<F: Real, TD: TopoDim> {
 }
 
 impl<F: Real, TD: TopoDim> PointSet<F, TD> {
-    /// A point set of `cell` with points [q][tdim] and one weight per point.
+    /// A point set of `cell` with points `[q][tdim]` and one weight per point.
     pub(crate) fn new(
         client: &Client,
         cell: TD::Cell,
@@ -124,7 +124,7 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
         self.weights.is_empty()
     }
 
-    /// Reference coordinates, [q][tdim].
+    /// Reference coordinates, `[q][tdim]`.
     ///
     /// # Example
     ///
@@ -175,7 +175,7 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
         &self.client
     }
 
-    /// Basis values of `e` at the points, [q][k].
+    /// Basis values of `e` at the points, `[q][k]`.
     ///
     /// # Errors
     ///
@@ -203,7 +203,7 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
         self.cached(e, Table::Values)
     }
 
-    /// Reference derivatives of the basis of `e` at the points, [q][k][d].
+    /// Reference derivatives of the basis of `e` at the points, `[q][k][d]`.
     ///
     /// # Errors
     ///

@@ -126,7 +126,7 @@ pub(crate) fn chunk_pairs<'a, F: Real, S: FieldShape>(
 /// ```
 ///
 /// counted from the first cell of its chunk, so the lanes of a kernel over consecutive cells
-/// read and write contiguous memory. `tile` = 1 is the plain [cell][point][component] layout.
+/// read and write contiguous memory. `tile` = 1 is the plain `[cell][point][component]` layout.
 /// Stored in chunks of whole tiles so that no chunk exceeds the device's largest allocation
 /// (`device_properties(client).memory.max_page_size`); the cell count is padded to whole tiles.
 pub struct QuadField<F: Real, S: FieldShape> {
@@ -199,7 +199,7 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
         &self.chunks
     }
 
-    /// Host copy in plain [cell][point] order, whatever the tile width.
+    /// Host copy in plain `[cell][point]` order, whatever the tile width.
     ///
     /// # Errors
     ///

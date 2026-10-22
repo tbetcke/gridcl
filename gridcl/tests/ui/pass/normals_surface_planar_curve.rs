@@ -1,11 +1,7 @@
 //! Normals exist in codimension 1: on surface meshes and on curves in the plane.
 #![allow(dead_code, unused)]
 
-#[path = "../stub/mesh.rs"]
-mod stub;
-
-use gridcl_dims::*;
-use stub::*;
+use gridcl::prelude::*;
 
 fn check(
     surface: &SurfaceMesh<f64>,
@@ -13,8 +9,8 @@ fn check(
     curve_in_2d: &Mesh<f64, D1, D2>,
     curve_rule: &QuadRule<f64, D1>,
 ) {
-    let _ = surface.normals(surface_rule);
-    let _ = curve_in_2d.normals(curve_rule);
+    let _: Result<BlockFields<f64, _>> = surface.normals(surface_rule);
+    let _: Result<BlockFields<f64, _>> = curve_in_2d.normals(curve_rule);
 }
 
 fn main() {

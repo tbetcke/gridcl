@@ -30,7 +30,7 @@ pub trait DeviceGrid {
     fn cell_blocks(&self) -> &[CellBlock<Self::TD>];
     /// The geometry of cell block `b`.
     fn geometry_block(&self, b: usize) -> &GeometryBlock<Self::TD>;
-    /// The L-vector [node][gdim], relative to [`origin`](DeviceGrid::origin).
+    /// The L-vector `[node][gdim]`, relative to [`origin`](DeviceGrid::origin).
     fn nodes(&self) -> &DeviceBuffer<Self::F>;
     /// Centre of the global bounding box; `physical_points` adds it back (ADR-0012).
     fn origin(&self) -> <Self::GD as Dim>::Array<f64>;

@@ -32,7 +32,7 @@ use lattice::{PointGrid, SplitMix64};
 pub struct HostMesh {
     /// The geometric dimension.
     pub gdim: usize,
-    /// Node coordinates, [node][gdim].
+    /// Node coordinates, `[node][gdim]`.
     pub nodes: Vec<f64>,
     /// Node origin ids; `None` means the node index.
     pub node_ids: Option<Vec<i64>>,

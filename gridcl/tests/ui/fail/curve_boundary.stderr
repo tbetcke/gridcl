@@ -1,0 +1,29 @@
+error[E0599]: the method `boundary` exists for reference `&gridcl::Mesh<f64, gridcl::D1, gridcl::D2>`, but its trait bounds were not satisfied
+ --> tests/ui/fail/curve_boundary.rs:7:25
+  |
+7 |     let _ = curve_in_2d.boundary();
+  |                         ^^^^^^^^ method cannot be called on `&gridcl::Mesh<f64, gridcl::D1, gridcl::D2>` due to unsatisfied trait bounds
+  |
+ ::: $WORKSPACE/gridcl-dims/src/dim.rs
+  |
+  | pub struct D0;
+  | ------------- doesn't satisfy `D0: EmbeddedIn<gridcl::D2>` or `D0: TopoDim`
+  |
+  = note: the following trait bounds were not satisfied:
+          `D0: TopoDim`
+          `D0: EmbeddedIn<gridcl::D2>`
+
+error[E0599]: the method `boundary` exists for reference `&gridcl::Mesh<f64, gridcl::D1, D3>`, but its trait bounds were not satisfied
+ --> tests/ui/fail/curve_boundary.rs:8:19
+  |
+8 |     let _ = curve.boundary();
+  |                   ^^^^^^^^ method cannot be called on `&gridcl::Mesh<f64, gridcl::D1, D3>` due to unsatisfied trait bounds
+  |
+ ::: $WORKSPACE/gridcl-dims/src/dim.rs
+  |
+  | pub struct D0;
+  | ------------- doesn't satisfy `D0: EmbeddedIn<D3>` or `D0: TopoDim`
+  |
+  = note: the following trait bounds were not satisfied:
+          `D0: TopoDim`
+          `D0: EmbeddedIn<D3>`

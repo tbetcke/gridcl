@@ -1,0 +1,13 @@
+error[E0599]: the method `normals` exists for reference `&Mesh<f64, gridcl::D3, gridcl::D3>`, but its trait bounds were not satisfied
+ --> tests/ui/fail/volume_normals.rs:7:20
+  |
+7 |     let _ = volume.normals(rule);
+  |                    ^^^^^^^
+  |
+ ::: $WORKSPACE/gridcl-dims/src/dim.rs
+  |
+  | pub struct D3;
+  | ------------- doesn't satisfy `gridcl::D3: Codim1<gridcl::D3>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `gridcl::D3: Codim1<gridcl::D3>`

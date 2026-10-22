@@ -83,7 +83,7 @@ struct BlockInput<TD: TopoDim> {
 
 /// Builds a serial [`Mesh`] from host arrays (ADR-0012).
 ///
-/// - [`nodes`](MeshBuilder::nodes): coordinates [node][gdim] in f64, with optional origin ids
+/// - [`nodes`](MeshBuilder::nodes): coordinates `[node][gdim]` in f64, with optional origin ids
 ///   (default: the node's index).
 /// - [`cell_block`](MeshBuilder::cell_block): cell → node lists in A.5 order, one block per
 ///   cell type, with optional cell origin ids (default: the cell's index over all blocks, in
@@ -136,7 +136,7 @@ where
         }
     }
 
-    /// The node coordinates, [node][gdim] in f64, and optionally their origin ids.
+    /// The node coordinates, `[node][gdim]` in f64, and optionally their origin ids.
     pub fn nodes(mut self, coords: &[f64], origin_ids: Option<&[i64]>) -> Self {
         self.coords = coords.to_vec();
         self.node_ids = origin_ids.map(<[i64]>::to_vec);

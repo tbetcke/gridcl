@@ -1964,9 +1964,6 @@ dependencies = [
 [[package]]
 name = "gridcl-dims"
 version = "0.1.0"
-dependencies = [
- "trybuild",
-]
 
 [[package]]
 name = "gridcl-geometry"
