@@ -1,13 +1,14 @@
 //! `Mesh` (Listings B3, B4 and B7).
 
 use cubecl::prelude::Client;
-use gridcl_device::{ConnKey, DeviceBuffer, Real, Result};
+use gridcl_device::{ConnKey, DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{Codim0, Codim1, D1, D2, D3, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{
-    BlockFields, DeviceGrid, EVector, FacetQuadRule, Geometry, GeometryBlock, JacShape, PinvShape,
-    QuadRule, ScalarShape, VecShape,
+    BlockFields, DeviceGrid, EVector, FacetQuadRule, FieldShape, Geometry, GeometryBlock, JacShape,
+    PinvShape, QuadField, QuadRule, ScalarShape, VecShape, detj_block, facet_normals_block,
+    jacobians_block, measure_block, normals_block, physical_points_block, pseudo_inverse_block,
 };
-use gridcl_parallel::{Comm, CommDyn, IndexMap, Serial};
+use gridcl_parallel::{Comm, CommDyn, CommExt, IndexMap, Serial};
 use gridcl_topology::{CellBlock, Connectivity, EntityBlock, Topology};
 
 use crate::EntityMap;
@@ -58,6 +59,22 @@ where
         }
     }
 
+    /// The cell type of block `b`.
+    fn cell(&self, b: usize) -> TD::Cell {
+        self.topology.cell_blocks()[b].cell
+    }
+
+    /// One field per cell block.
+    fn per_block<S: FieldShape>(
+        &self,
+        f: impl Fn(usize) -> Result<QuadField<F, S>>,
+    ) -> Result<BlockFields<F, S>> {
+        let blocks = (0..self.topology.cell_blocks().len())
+            .map(f)
+            .collect::<Result<_>>()?;
+        Ok(BlockFields { blocks })
+    }
+
     /// The topological dimension.
     pub fn tdim(&self) -> usize {
         TD::N
@@ -79,7 +96,12 @@ where
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
     pub fn try_clone(&self) -> Result<Self> {
-        todo!()
+        Ok(Mesh {
+            client: self.client.clone(),
+            comm: self.comm.clone(),
+            topology: self.topology.try_clone(&self.comm)?,
+            geometry: self.geometry.try_clone(&self.comm)?,
+        })
     }
 
     /// Physical points at the points of `rule`, one field per cell block.
@@ -88,8 +110,7 @@ where
     ///
     /// `CellNotInRule` if `rule` lacks a cell type of the mesh; allocation and device errors.
     pub fn physical_points(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, VecShape<GD>>> {
-        let _ = rule;
-        todo!()
+        self.per_block(|b| physical_points_block(self, b, rule.get(self.cell(b))?))
     }
 
     /// Jacobians at the points of `rule`: per point GD × TD, column-major.
@@ -98,8 +119,7 @@ where
     ///
     /// As [`physical_points`](Mesh::physical_points).
     pub fn jacobians(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, JacShape<TD, GD>>> {
-        let _ = rule;
-        todo!()
+        self.per_block(|b| jacobians_block(self, b, rule.get(self.cell(b))?))
     }
 
     /// det J, or sqrt(det(JᵀJ)) when TD < GD.
@@ -108,8 +128,7 @@ where
     ///
     /// As [`physical_points`](Mesh::physical_points).
     pub fn detj(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, ScalarShape>> {
-        let _ = rule;
-        todo!()
+        self.per_block(|b| detj_block(self, b, rule.get(self.cell(b))?))
     }
 
     /// K = (JᵀJ)⁻¹Jᵀ; equals J⁻¹ in codimension 0. Needed for surface gradients in BEM.
@@ -121,8 +140,7 @@ where
         &self,
         rule: &QuadRule<F, TD>,
     ) -> Result<BlockFields<F, PinvShape<TD, GD>>> {
-        let _ = rule;
-        todo!()
+        self.per_block(|b| pseudo_inverse_block(self, b, rule.get(self.cell(b))?))
     }
 
     /// Sum over owned cells on all ranks, finished in f64 on the host, with Gauss rules of
@@ -132,8 +150,12 @@ where
     ///
     /// Allocation and device errors.
     pub fn measure(&self, degree: u32) -> Result<f64> {
-        let _ = degree;
-        todo!()
+        let rule = QuadRule::for_grid(self, degree)?;
+        let mut local = 0.0;
+        for b in 0..self.topology.cell_blocks().len() {
+            local += measure_block(self, b, rule.get(self.cell(b))?)?;
+        }
+        Ok(self.comm.sum(local))
     }
 
     /// One node copied to the host, with the origin added back. Tests and debugging only: one
@@ -143,8 +165,20 @@ where
     ///
     /// `IndexOutOfRange` if `i` is not a local node; device errors.
     pub fn read_node(&self, i: usize) -> Result<GD::Array<F>> {
-        let _ = i;
-        todo!()
+        let num_nodes = self.geometry.node_index_map().num_local();
+        if i >= num_nodes {
+            return Err(GridError::IndexOutOfRange {
+                index: i,
+                len: num_nodes,
+            });
+        }
+        let nodes = self.geometry.nodes().to_host()?;
+        let origin = self.geometry.origin();
+        let mut x = GD::Array::<F>::default();
+        for (g, out) in x.as_mut().iter_mut().enumerate() {
+            *out = F::narrow(nodes[i * GD::N + g].widen() + origin.as_ref()[g]);
+        }
+        Ok(x)
     }
 
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and the connectivity
@@ -154,8 +188,7 @@ where
     ///
     /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation and device errors.
     pub fn create_entities(&mut self, dim: usize) -> Result<()> {
-        let _ = dim;
-        todo!()
+        self.topology.create_entities(&self.comm, dim)
     }
 
     /// Creates the connectivity `from` → `to` and the entities it needs.
@@ -165,8 +198,7 @@ where
     /// `UnsupportedConnectivity` for pairs gridcl does not store; errors of
     /// [`create_entities`](Mesh::create_entities).
     pub fn create_connectivity(&mut self, from: usize, to: usize) -> Result<()> {
-        let _ = (from, to);
-        todo!()
+        self.topology.create_connectivity(&self.comm, from, to)
     }
 }
 
@@ -186,8 +218,7 @@ where
         &self,
         rule: &QuadRule<F, TD>,
     ) -> Result<BlockFields<F, PinvShape<TD, GD>>> {
-        let _ = rule;
-        todo!()
+        self.pseudo_inverse_jacobians(rule)
     }
 
     /// Outward unit normals of every local facet of every cell, at facet quadrature points
@@ -200,8 +231,7 @@ where
         &self,
         rule: &FacetQuadRule<F, TD>,
     ) -> Result<BlockFields<F, VecShape<GD>>> {
-        let _ = rule;
-        todo!()
+        self.per_block(|b| facet_normals_block(self, b, rule.get(self.cell(b))?))
     }
 }
 
@@ -218,8 +248,7 @@ where
     ///
     /// As [`physical_points`](Mesh::physical_points).
     pub fn normals(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, VecShape<GD>>> {
-        let _ = rule;
-        todo!()
+        self.per_block(|b| normals_block(self, b, rule.get(self.cell(b))?))
     }
 }
 
@@ -238,7 +267,7 @@ where
     /// Returns `GridError::NotYetImplemented` until M9 (ADR-0012).
     #[allow(clippy::type_complexity)] // Listing B4's signature
     pub fn boundary(&self) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)> {
-        todo!()
+        Err(GridError::NotYetImplemented("boundary: M9"))
     }
 }
 
