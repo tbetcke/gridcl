@@ -93,8 +93,9 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   from a node shared with other jobs.
 - Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
   from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).
-- At most two remote jobs at a time. Cancel jobs you no longer need; leave none queued at the
-  end of a session.
+- At most two scheduler jobs (Myriad, Kathleen) at a time. Locust jobs are independent of them:
+  one Locust run may go in parallel with the scheduler jobs. Cancel jobs you no longer need;
+  leave none queued at the end of a session.
 - Never put user ids, private host names, project codes or credentials in committed files; they
   live in `scripts/hpc/targets.env`, which git ignores.
 - If a remote target is unreachable, ask the user to open the SSH connection (`ssh myriad true`)
