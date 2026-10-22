@@ -1,6 +1,6 @@
 # ADR-0006: Locust as the routine CUDA test platform, Myriad V100 for reviews and multi-GPU tests
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0014
 - **Date:** 2026-10-18
 - **Raised in:** E0 T8/T9 (maintainer's question after the Myriad A100 and Locust runs)
 - **Design sections affected:** Overview (development and test targets; decision 10); "Supported backends" (CUDA row); "Testing and validation" (targets table); "Development environment and test targets" (targets table, "When A100 and Locust runs are required", the Locust paragraph, the CI matrix rows cuda-v100 and gh200); "Risks and mitigations" (remote targets row); the closing summary of targets

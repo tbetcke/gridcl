@@ -9,9 +9,9 @@ Personal details (user ids, host names that are not public, project codes) never
 | Target | Hardware | Access | Role |
 | --- | --- | --- | --- |
 | M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CubeCL CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
-| Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240), 192 GB RAM, 2 × V100 (compute capability 7.0) | SGE: `-l gpu=N` with `-ac allow=EF` | CUDA at milestone reviews, multi-GPU tests and as the fallback (ADR-0006); CPU benchmarks on AVX-512 |
-| Myriad A100 | L nodes: 36 cores, 192 GB RAM, 4 × A100 40 GB (compute capability 8.0) | SGE: `-l gpu=N` with `-ac allow=L` | second CUDA architecture; when required (no CUDA 13: Myriad's driver supports CUDA 12.4) |
-| Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU, Hopper GPU (compute capability 9.0) | UCL ARC experimental system; SSH to the node itself (alias `locust`, keys); open multi-user node without a scheduler (runner kind `direct`) | routine CUDA platform: after every task that changes kernels (ADR-0006); aarch64 host and Hopper GPU |
+| Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240), 192 GB RAM, 2 × V100 (compute capability 7.0) | SGE: `-l gpu=N` with `-ac allow=EF` | multi-GPU tests, architecture comparisons and the fallback (ADR-0014) |
+| Myriad A100 | L nodes: 36 cores, 192 GB RAM, 4 × A100 40 GB (compute capability 8.0) | SGE: `-l gpu=N` with `-ac allow=L` | second CUDA architecture; comparisons and fallback (no CUDA 13: Myriad's driver supports CUDA 12.4) |
+| Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU, Hopper GPU (compute capability 9.0) | UCL ARC experimental system; SSH to the node itself (alias `locust`, keys); open multi-user node without a scheduler (runner kind `direct`) | CUDA platform for every run: after every task that changes kernels, at every milestone review, and for benchmarks (ADR-0014); aarch64 host and Hopper GPU |
 | Hosted CI | GitHub Actions, `ubuntu-24.04` x86-64 runners | automatic | CPU runtime, Vulkan (software), MPICH and Open MPI, conformance |
 
 Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unless a test needs the larger memory.

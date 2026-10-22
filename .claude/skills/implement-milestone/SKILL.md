@@ -34,9 +34,10 @@ If the milestone is empty, ask the user which milestone to implement.
    kernel, precision, crate-boundary and origin-id rules.
 4. **Verify:** run the task's verification command. The `verify` skill runs before each commit.
    When the task changed kernels, also run the affected crates on Metal
-   (`GRIDCL_TEST_DEVICE=metal`) and, after committing, on a Myriad V100 with the `hpc-test`
-   skill. Run the V100 job in the background; check its result before starting a task that
-   depends on this one, and fix failures before `Status: implemented`.
+   (`GRIDCL_TEST_DEVICE=metal`) and, after committing, on Locust with the `hpc-test` skill
+   (Myriad V100 only as the fallback, ADR-0014). Run the CUDA job in the background; check its
+   result before starting a task that depends on this one, and fix failures before
+   `Status: implemented`.
 5. **Commit** with the message `<milestone> T<n>: <summary>`, in the same commit tick the
    task (`- [x]`) in the plan and add any Deviations-log row.
 6. **Context:** after each task, if the conversation is long or the next task touches other
@@ -69,7 +70,7 @@ run the `draft-adr` skill, and wait for the user's decision. Do not edit docs/de
 When every task is ticked:
 
 1. Ask the test-runner subagent for the full acceptance run: `cargo test --workspace`, lint,
-   Metal, CUDA on Myriad V100 and any other targets in the plan's coverage table, MPI if the milestone touches
+   Metal, CUDA on Locust (Myriad V100 as the fallback) and any other targets in the plan's coverage table, MPI if the milestone touches
    gridcl-parallel or later crates, and conformance if gridcl-refcell or conformance/ changed.
 2. Fix failures as new tasks or as commits to the task they belong to (note them in the
    Deviations log).

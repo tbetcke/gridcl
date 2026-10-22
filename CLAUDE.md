@@ -81,15 +81,16 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   on a login node, and never submit jobs with hand-written `qsub` or `ssh` commands. The
   exception is milestone E0, while the runner is being built: then each such command needs the
   user's approval.
-- Locust (`locust`) is the routine CUDA platform: run it after every task that changes kernels,
-  and at milestone reviews when it is available (ADR-0006).
-- Myriad V100 (`myriad-v100`): at every milestone review, for multi-GPU and GPU-aware MPI tests
-  (`--gpus 2`), and as the fallback when Locust is unreachable or a run fails because another
-  user occupies its GPU. Say why when you fall back.
-- Myriad A100 (`myriad-a100`) only when required: the milestone reviews the design lists,
-  architecture-dependent results, CUDA-version- or architecture-specific changes, benchmarks,
-  or when the user asks. Say why when you schedule it.
-- CPU benchmarks on Myriad request the whole node (`--cores 36`); never draw SIMD conclusions
+- Locust (`locust`) is the CUDA platform for every run: after every task that changes kernels,
+  at every milestone review, and for benchmarks (ADR-0014).
+- Myriad V100 (`myriad-v100`) and A100 (`myriad-a100`) only: as the fallback when Locust is
+  unreachable, a run fails because another user occupies its GPU, or a benchmark cannot get an
+  idle node; for multi-GPU and GPU-aware MPI tests (`--gpus 2`); to compare
+  architecture-dependent results; for CUDA-version- or architecture-specific changes; or when
+  the user asks. Say why when you schedule them.
+- CPU-only runs on Myriad (x86-64 AVX-512 CPU benchmarks) use a CPU-only D node
+  (`-ac allow=D`), never a GPU node: shorter queue waits (ADR-0014).
+- CPU benchmarks on Myriad request the whole D node (`--cores 36`); never draw SIMD conclusions
   from a node shared with other jobs.
 - Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
   from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).

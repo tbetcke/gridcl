@@ -50,8 +50,9 @@ Follow docs/plans/TEMPLATE.md exactly.
   task. Do not mark parallel tasks unless the gain is clear.
 - **Acceptance coverage:** every acceptance bullet appears exactly once, with test names and
   tasks. Include the targets and backends from "Testing and validation": the M3 Max (CPU
-  runtime, Metal), hosted CI (Vulkan, MPI flavours), Myriad V100 for CUDA, and Myriad A100 or
-  Locust where "Development environment and test targets" requires them for this milestone.
+  runtime, Metal), hosted CI (Vulkan, MPI flavours), Locust for CUDA, and Myriad (V100 or A100
+  for multi-GPU tests, a CPU-only D node for AVX-512 CPU benchmarks) where "Development
+  environment and test targets" requires them for this milestone (ADR-0014).
   Every kernel on the candidate list of "Vectorization and CPU execution" needs a vector-size
   invariance test in the table.
 - **Open questions and ADR candidates:** every ambiguity in the design, every conflict with

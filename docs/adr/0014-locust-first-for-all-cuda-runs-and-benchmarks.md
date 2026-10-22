@@ -1,6 +1,6 @@
 # ADR-0014: Locust first for all CUDA runs and benchmarks; Myriad as the fallback
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-22
 - **Raised in:** M3, finish (maintainer's decision after the queued Myriad review jobs 3502 and 3503 were cancelled)
 - **Design sections affected:** Overview (development and test targets; decision 10); "Supported backends" (CUDA row); "Vectorization and CPU execution" (benchmark "Where" and "Conditions"); "Testing and validation" (targets table); "Development environment and test targets" (targets table, "When the V100 and A100 run", the Locust paragraph, the job limit); "Workspace layout" (CI matrix rows cuda-v100, cuda-a100, gh200); roadmap acceptance of M3s and M10 (benchmark targets); "Risks and mitigations" (remote-targets row); the closing summary of targets. Supersedes ADR-0006.
@@ -81,4 +81,4 @@ To confirm in the decision record: whether x86 AVX-512 CPU benchmarks (CpuSimd51
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-22, as proposed (option 2). The open point is settled by option 2's text: an x86-64 AVX-512 CPU is something Locust lacks, so the CpuSimd512 CPU benchmarks still run on Myriad at M3s and M10. The maintainer added, while it was applied: CPU-only Myriad runs use a CPU-only node, not a GPU node, for shorter queue waits. Per the UCL Myriad documentation these are the D nodes (342 nodes, 36 cores, Xeon Gold 6240 with AVX-512, 192 GB; `-ac allow=D`). `scripts/hpc` has no CPU-only target yet: adding `myriad-cpu` is a follow-up for M3s, its first user. Applied the same day.
