@@ -75,8 +75,8 @@ fn to_host_cell_major_follows_the_tile_formula() {
 }
 
 /// The E-vector of block `b` against the host transpose of the L-vector.
-fn check_evector<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
-    mesh: &Mesh<f32, TD, GD>,
+fn check_evector<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
+    mesh: &Mesh<F, TD, GD>,
     b: usize,
     what: &str,
 ) {
@@ -106,8 +106,8 @@ fn check_evector<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
                     let cell = (chunk.first_cell + c).min(n - 1);
                     let want = nodes[dofmap[cell * k + node] as usize * gd + g];
                     assert_eq!(
-                        data[(node * gd + g) * stride + c],
-                        want,
+                        data[(node * gd + g) * stride + c].widen().to_bits(),
+                        want.widen().to_bits(),
                         "{what}: ({node}, {g}, {c})"
                     );
                 }
@@ -120,25 +120,36 @@ fn check_evector<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
     assert!(core::ptr::eq(xe, mesh.evector(b).unwrap()));
 }
 
-#[test]
-fn evector_is_the_transposed_lvector() {
-    let client: Client = gridcl_testing::test_client();
+fn evector_cases<F: Real>(client: &Client) {
     let h = gridcl_testing::mixed_box(2, 2).with_shuffled_nodes(4);
-    let mesh = h.build::<f32, D3, D3>(&client).unwrap();
+    let mesh = h.build::<F, D3, D3>(client).unwrap();
     for b in 0..mesh.cell_blocks().len() {
         check_evector(&mesh, b, "mixed box");
     }
     // An injected limit of 2 · VECTOR_PAD cells per chunk: hexahedra of degree 2 have 27 · 3
     // values per cell.
     let mut props = client.properties().clone();
-    props.memory.max_page_size = (2 * 16 * 27 * 3 * 4) as u64;
+    props.memory.max_page_size = (2 * 16 * 27 * 3 * size_of::<F>()) as u64;
     with_properties(props, || {
         let h = gridcl_testing::cube_box(Cell3::Hexahedron, 4, 2);
-        let mesh = h.build::<f32, D3, D3>(&client).unwrap();
+        let mesh = h.build::<F, D3, D3>(client).unwrap();
         assert_eq!(mesh.evector(0).unwrap().chunks().len(), 2);
         check_evector(&mesh, 0, "hexahedra in chunks of 32 cells");
     });
     // An empty block has no chunks.
-    let mesh = h.first_cells(0).build::<f32, D3, D3>(&client).unwrap();
+    let mesh = h.first_cells(0).build::<F, D3, D3>(client).unwrap();
     assert!(mesh.evector(0).unwrap().chunks().is_empty());
+}
+
+#[test]
+fn evector_is_the_transposed_lvector() {
+    let client: Client = gridcl_testing::test_client();
+    evector_cases::<f32>(&client);
+    if gridcl_testing::supports::<f64>(&client) {
+        evector_cases::<f64>(&client);
+    } else {
+        eprintln!(
+            "evector_is_the_transposed_lvector: f64 is not supported on this device; skipped"
+        );
+    }
 }

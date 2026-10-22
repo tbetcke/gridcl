@@ -71,14 +71,14 @@ fn check_kj<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
                     let x: f64 = (0..gd).map(|g| kp[g * td + t] * jp[s * gd + g]).sum();
                     let want = if t == s { 1.0 } else { 0.0 };
                     assert!(
-                        (x - want).abs() <= 100.0 * tol::<F>(),
+                        (x - want).abs() <= tol::<F>(),
                         "{what}: (KJ)({t},{s}) = {x} at point {p}"
                     );
                 }
             }
             let host = host_detj(jp, td, gd);
             assert!(
-                (dv[p] - host).abs() <= 10.0 * tol::<F>() * host.abs(),
+                (dv[p] - host).abs() <= tol::<F>() * host.abs(),
                 "{what}: det J {} vs {host} at point {p}",
                 dv[p]
             );

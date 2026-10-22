@@ -366,7 +366,7 @@ pub fn assert_matches<F: Real>(got: &[F], want: &[F], what: &str) {
         let g: Vec<f64> = got.iter().map(|x| x.widen()).collect();
         let w: Vec<f64> = want.iter().map(|x| x.widen()).collect();
         let err = rel_max_err(&g, &w);
-        assert!(err <= 10.0 * tol::<F>(), "{what}: relative error {err:e}");
+        assert!(err <= tol::<F>(), "{what}: relative error {err:e}");
     }
 }
 

@@ -46,13 +46,14 @@ fn meshes() -> Vec<(String, BoxKind, HostMesh)> {
 /// Runs `run` at every vector size and asserts the results equal the size-1 result bitwise.
 fn sweep<T: PartialEq + core::fmt::Debug>(
     client: &Client,
+    elem_bytes: usize,
     kind: KernelKind,
     launches: bool,
     what: &str,
     run: impl Fn() -> T,
 ) {
     let mut first: Option<T> = None;
-    for n in vector_sizes(client, 4, 16) {
+    for n in vector_sizes(client, elem_bytes, 16) {
         let got = at_vector_size(n, kind, launches, &run);
         match &first {
             None => first = Some(got),
@@ -103,7 +104,9 @@ fn permutation_info<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
         .collect()
 }
 
-fn evectors<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(mesh: &Mesh<f32, TD, GD>) -> Vec<Vec<u32>> {
+fn evectors<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
+    mesh: &Mesh<F, TD, GD>,
+) -> Vec<Vec<u64>> {
     let fresh = mesh.try_clone().expect("try_clone"); // an empty E-vector cache
     (0..fresh.cell_blocks().len())
         .flat_map(|b| {
@@ -115,7 +118,7 @@ fn evectors<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(mesh: &Mesh<f32, TD, GD>) -> 
                         .to_host()
                         .expect("read")
                         .into_iter()
-                        .map(f32::to_bits)
+                        .map(|x| x.widen().to_bits())
                         .collect()
                 })
                 .collect::<Vec<_>>()
@@ -129,15 +132,25 @@ fn topology_keys_sizes() {
     for (what, kind, h) in meshes() {
         let launches = h.num_cells() > 0 && kind.tdim() > 1;
         match kind.tdim() {
-            1 => sweep(&client, KernelKind::TopologyKeys, false, &what, || {
+            1 => sweep(&client, 4, KernelKind::TopologyKeys, false, &what, || {
                 entities::<D1, D1>(&h, &client)
             }),
-            2 => sweep(&client, KernelKind::TopologyKeys, launches, &what, || {
-                entities::<D2, D2>(&h, &client)
-            }),
-            _ => sweep(&client, KernelKind::TopologyKeys, launches, &what, || {
-                entities::<D3, D3>(&h, &client)
-            }),
+            2 => sweep(
+                &client,
+                4,
+                KernelKind::TopologyKeys,
+                launches,
+                &what,
+                || entities::<D2, D2>(&h, &client),
+            ),
+            _ => sweep(
+                &client,
+                4,
+                KernelKind::TopologyKeys,
+                launches,
+                &what,
+                || entities::<D3, D3>(&h, &client),
+            ),
         }
     }
 }
@@ -148,11 +161,17 @@ fn permutation_info_sizes() {
     for (what, kind, h) in meshes() {
         let launches = h.num_cells() > 0 && kind.tdim() > 1;
         match kind.tdim() {
-            1 => sweep(&client, KernelKind::PermutationInfo, false, &what, || {
-                permutation_info::<D1, D1>(&h, &client)
-            }),
+            1 => sweep(
+                &client,
+                4,
+                KernelKind::PermutationInfo,
+                false,
+                &what,
+                || permutation_info::<D1, D1>(&h, &client),
+            ),
             2 => sweep(
                 &client,
+                4,
                 KernelKind::PermutationInfo,
                 launches,
                 &what,
@@ -160,6 +179,7 @@ fn permutation_info_sizes() {
             ),
             _ => sweep(
                 &client,
+                4,
                 KernelKind::PermutationInfo,
                 launches,
                 &what,
@@ -169,30 +189,35 @@ fn permutation_info_sizes() {
     }
 }
 
-#[test]
-fn evector_sizes() {
-    let client = client();
+fn evector_cases<F: Real>(client: &Client) {
+    let bytes = size_of::<F>();
     for (what, kind, h) in meshes() {
+        let what = format!("{what}, {}", name::<F>());
         let launches = h.num_cells() > 0;
         match kind.tdim() {
             1 => {
-                let mesh = build::<f32, D1, D1>(&h, &client);
-                sweep(&client, KernelKind::EVector, launches, &what, || {
+                let mesh = build::<F, D1, D1>(&h, client);
+                sweep(client, bytes, KernelKind::EVector, launches, &what, || {
                     evectors(&mesh)
                 });
             }
             2 => {
-                let mesh = build::<f32, D2, D2>(&h, &client);
-                sweep(&client, KernelKind::EVector, launches, &what, || {
+                let mesh = build::<F, D2, D2>(&h, client);
+                sweep(client, bytes, KernelKind::EVector, launches, &what, || {
                     evectors(&mesh)
                 });
             }
             _ => {
-                let mesh = build::<f32, D3, D3>(&h, &client);
-                sweep(&client, KernelKind::EVector, launches, &what, || {
+                let mesh = build::<F, D3, D3>(&h, client);
+                sweep(client, bytes, KernelKind::EVector, launches, &what, || {
                     evectors(&mesh)
                 });
             }
         }
     }
+}
+
+#[test]
+fn evector_sizes() {
+    for_each_precision!(client(), evector_cases);
 }
