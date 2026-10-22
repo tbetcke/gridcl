@@ -54,7 +54,8 @@ scripts/hpc/remote-test.sh <target> [options] -- <command>
 
 - Runs that wait in a queue can take a long time. Run the command in the background and continue
   with work that does not depend on it; check the result before starting a task that does.
-- At most two remote jobs at a time. Check with `scripts/hpc/status.sh`.
+- At most two scheduler jobs (Myriad, Kathleen) at a time; check with `scripts/hpc/status.sh`.
+  Locust jobs are independent of them: one Locust run may go in parallel with the scheduler jobs.
 - Cancel jobs you no longer need with `scripts/hpc/cancel.sh <job id>`, and leave none queued
   at the end of a session.
 
