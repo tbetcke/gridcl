@@ -1,6 +1,6 @@
 # ADR-0013: The CPU runtime fuses multiply-adds; reference comparisons treat +0 and −0 as equal
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-22
 - **Raised in:** M3 T14–T15 (`gridcl::factor_invariance::factor_kernels_match_lvector_reference`)
 - **Design sections affected:**
@@ -96,4 +96,4 @@ this is limited to signed zeros for the factor kernels.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-22 (option 2), without conditions. Applied to docs/design.md in `adr: 0013 apply`.

@@ -1007,7 +1007,7 @@ On every CPU the runtime sizes IO for 512 bits, because wider vectors amortise e
 
 - Every unit of a cube is a separate worker thread, and each unit runs the whole cube loop: unit u visits the absolute positions cube · cube_dim + u for every cube of the launch. The plane size is 1.
 - `max_units_per_cube` and each axis of `max_cube_dim` equal the number of hardware threads.
-- LLVM compiles each kernel for the host CPU at O3. Float additions and multiplications are not contracted into fused multiply-adds on the CPU, so each vector lane computes exactly what the scalar kernel computes.
+- LLVM compiles each kernel for the host CPU at O3. CubeCL 0.11 fuses a multiply and the add that consumes it into one fused multiply-add (`llvm.fmuladd`) on every target, the CPU included (ADR-0013). The fusion depends only on the kernel source, so each vector lane computes exactly what the same kernel computes at vector size 1.
 - Shared memory is sized to the L1 data cache.
 
 Two consequences shape gridcl's kernels. First, with the GPU mapping of one item per unit, neighbouring items go to different threads: threads write to shared cache lines (128 bytes on Apple CPUs) and none streams through memory. Every kernel therefore takes its work distribution from a launch plan that gives each CPU thread contiguous blocks. Second, auto-vectorization is not relied on, because the cube loop strides through memory by cube_dim items; vectors are requested explicitly with `Vector<F, N>`.
@@ -1122,7 +1122,7 @@ Histograms, connectivity inversion, segmented reductions over irregular segments
 
 ### Determinism across vector sizes
 
-- **Lane-independent kernels** (geometric factors, element-wise maps, integer kernels) give bitwise identical results at every vector size on the CPU runtime, because each lane performs the scalar operation sequence and nothing is contracted. On GPUs they agree within the precision tolerances.
+- **Lane-independent kernels** (geometric factors, element-wise maps, integer kernels) give bitwise identical results at every vector size on the CPU runtime, because each lane performs the operation sequence of the same kernel at vector size 1 (ADR-0013). On GPUs they agree within the precision tolerances.
 - **Float reductions** combine per-lane partial results in a fixed order. The result depends on the vector size but is bitwise reproducible for a fixed size on the same device; the policy fixes the size per kernel family and device class, so the determinism rule holds.
 - **Integer reductions and scans** are exact at every size.
 
@@ -1529,7 +1529,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
     - permutation bits, keyed by cell origin id;
     - output files, after sorting by origin id.
 - **Determinism.** Two runs on the same device and rank count produce bitwise identical device arrays.
-- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012).
+- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012). A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013).
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
@@ -1791,7 +1791,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - Jacobians on a mixed triangle–quadrilateral surface mesh use one `QuadRule` and match a host reference to 10^−12;
 - permutation info equals the conformance fixtures for every cell;
 - with an injected limit, `QuadField` results are identical with 1 and 7 chunks;
-- factor kernels on E-vectors agree with a scalar L-vector reference kernel at every vector size from 1 up to 16 that the device offers and the tile holds, and at tile widths 1 and 16, bitwise on the CPU runtime and within the tolerances on GPUs.
+- factor kernels on E-vectors agree with a scalar L-vector reference kernel at every vector size from 1 up to 16 that the device offers and the tile holds, and at tile widths 1 and 16, bitwise on the CPU runtime, with +0 and −0 equal (ADR-0013), and within the tolerances on GPUs.
 
 ### M3s SIMD vectorization and benchmarks
 
