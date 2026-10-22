@@ -39,6 +39,8 @@ pub struct Geometry<F: Real, TD: TopoDim, GD: Dim> {
     nodes: DeviceBuffer<F>,
     node_index_map: IndexMap,
     origin: GD::Array<f64>,
+    /// The origin narrowed to `F`, uploaded at creation; the factor kernels add it back.
+    origin_device: DeviceBuffer<F>,
     evectors: Vec<OnceCell<EVector<F>>>,
 }
 
@@ -80,11 +82,14 @@ where
             }
         }
         let evectors = blocks.iter().map(|_| OnceCell::new()).collect();
+        let narrowed: Vec<F> = origin.as_ref().iter().map(|&x| F::narrow(x)).collect();
+        let origin_device = DeviceBuffer::from_host(nodes.client(), &narrowed)?;
         Ok(Geometry {
             blocks,
             nodes,
             node_index_map,
             origin,
+            origin_device,
             evectors,
         })
     }
@@ -126,6 +131,7 @@ where
             block.num_cells(),
             block.nodes_per_cell(),
             GD::N,
+            self.origin_device.share(),
         )?;
         Ok(cache.get_or_init(|| xe))
     }
@@ -142,16 +148,19 @@ where
             0,
             "Geometry::try_clone: index maps with ghosts arrive in M6"
         );
-        let blocks = self
+        let blocks: Vec<GeometryBlock<TD>> = self
             .blocks
             .iter()
             .map(GeometryBlock::try_clone)
-            .collect::<Result<Vec<_>>>()?;
-        Geometry::new(
+            .collect::<Result<_>>()?;
+        let evectors = blocks.iter().map(|_| OnceCell::new()).collect();
+        Ok(Geometry {
             blocks,
-            self.nodes.deep_clone()?,
-            IndexMap::new(comm, self.node_index_map.num_owned())?,
-            self.origin,
-        )
+            nodes: self.nodes.deep_clone()?,
+            node_index_map: IndexMap::new(comm, self.node_index_map.num_owned())?,
+            origin: self.origin,
+            origin_device: self.origin_device.deep_clone()?,
+            evectors,
+        })
     }
 }

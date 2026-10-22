@@ -44,6 +44,9 @@ pub struct PointSet<F: Real, TD: TopoDim> {
     points: Vec<f64>,
     weights: Vec<f64>,
     client: Client,
+    /// The weights narrowed to `F`, uploaded with the rule.
+    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
+    weights_device: DeviceBuffer<F>,
     /// Uploaded tabulations, per element and table.
     cache: RefCell<TableCache<F, TD>>,
 }
@@ -55,15 +58,23 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
         cell: TD::Cell,
         points: Vec<f64>,
         weights: Vec<f64>,
-    ) -> Self {
+    ) -> Result<Self> {
         debug_assert_eq!(points.len(), weights.len() * TD::N);
-        Self {
+        let narrowed: Vec<F> = weights.iter().map(|&w| F::narrow(w)).collect();
+        Ok(Self {
             cell,
             points,
             weights,
             client: client.clone(),
+            weights_device: DeviceBuffer::from_host(client, &narrowed)?,
             cache: RefCell::new(HashMap::new()),
-        }
+        })
+    }
+
+    /// The weights on the device, narrowed to `F` (uploaded when the rule was created).
+    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
+    pub(crate) fn weights_device(&self) -> &DeviceBuffer<F> {
+        &self.weights_device
     }
 
     /// The cell type.
@@ -269,7 +280,8 @@ mod tests {
     #[test]
     fn an_empty_point_set_tabulates_to_empty_buffers() {
         let client = gridcl_testing::test_client();
-        let ps = PointSet::<f32, D2>::new(&client, Cell2::Triangle, Vec::new(), Vec::new());
+        let ps =
+            PointSet::<f32, D2>::new(&client, Cell2::Triangle, Vec::new(), Vec::new()).unwrap();
         assert!(ps.is_empty());
         let e = CoordinateElement::<D2> {
             cell: Cell2::Triangle,

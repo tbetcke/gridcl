@@ -31,6 +31,8 @@ use crate::field::{alloc_chunks, chunk_cells};
 pub struct EVector<F: Real> {
     chunks: Vec<QuadChunk<F>>,
     num_cells: usize,
+    /// The grid's origin narrowed to `F`, [gdim]; the physical-points kernel adds it back.
+    origin: DeviceBuffer<F>,
 }
 
 impl<F: Real> EVector<F> {
@@ -43,6 +45,11 @@ impl<F: Real> EVector<F> {
     /// stride the chunk's cell count rounded up to `VECTOR_PAD`.
     pub fn chunks(&self) -> &[QuadChunk<F>] {
         &self.chunks
+    }
+
+    /// The grid's origin narrowed to `F`.
+    pub(crate) fn origin(&self) -> &DeviceBuffer<F> {
+        &self.origin
     }
 }
 
@@ -112,6 +119,7 @@ pub(crate) fn build<F: Real>(
     num_cells: usize,
     nodes_per_cell: usize,
     gdim: usize,
+    origin: DeviceBuffer<F>,
 ) -> Result<EVector<F>> {
     let client = nodes.client();
     let per_cell = nodes_per_cell
@@ -156,5 +164,9 @@ pub(crate) fn build<F: Real>(
             );
         }
     }
-    Ok(EVector { chunks, num_cells })
+    Ok(EVector {
+        chunks,
+        num_cells,
+        origin,
+    })
 }

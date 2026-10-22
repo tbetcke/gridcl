@@ -64,7 +64,7 @@ impl<F: Real, TD: TopoDim> QuadRule<F, TD> {
                 let rule = gauss_rule(cell.into(), degree);
                 PointSet::new(client, cell, rule.points, rule.weights)
             })
-            .collect();
+            .collect::<Result<_>>()?;
         Ok(Self { sets })
     }
 

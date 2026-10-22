@@ -3,6 +3,7 @@
 use gridcl_device::{Real, Result};
 use gridcl_dims::{Dim, EmbeddedIn, TopoDim};
 
+use crate::layout::{Factor, launch_factor};
 use crate::{DeviceGrid, JacShape, PointSet, QuadField, VecShape};
 
 /// Physical points X at the points of `pts` for every local cell of block `b`, with the origin
@@ -22,8 +23,7 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let _ = (g, b, pts);
-    todo!()
+    launch_factor(g, b, pts, Factor::Points)
 }
 
 /// The Jacobian J (GD × TD, column-major) at the points of `pts` for every local cell of block
@@ -43,6 +43,5 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let _ = (g, b, pts);
-    todo!()
+    launch_factor(g, b, pts, Factor::Jacobian)
 }

@@ -1,7 +1,7 @@
 //! `FacetPointSet` and `FacetQuadRule` (Listing B4b; ADR-0012).
 
 use cubecl::prelude::Client;
-use gridcl_device::{GridError, Real, Result, check_precision};
+use gridcl_device::{DeviceBuffer, GridError, Real, Result, check_precision};
 use gridcl_dims::{CellType, TopoDim};
 use gridcl_refcell::{facet_points_to_cell, gauss_rule, reference_facet_normals, sub_entity_types};
 
@@ -31,12 +31,15 @@ pub struct FacetPointSet<F: Real, TD: TopoDim> {
     facet_offsets: Vec<usize>,
     /// The outward reference normal of each point's facet, [q][tdim].
     normals: Vec<f64>,
+    /// `normals` narrowed to `F`, uploaded with the rule.
+    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
+    normals_device: DeviceBuffer<F>,
 }
 
 impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
     /// The facet point set of `cell`: Gauss rules of `degree` on its facets, mapped into cell
     /// coordinates, facet by facet.
-    fn gauss(client: &Client, cell: TD::Cell, degree: u32) -> Self {
+    fn gauss(client: &Client, cell: TD::Cell, degree: u32) -> Result<Self> {
         let cell_type: CellType = cell.into();
         let td = TD::N;
         let facet_types = sub_entity_types(cell_type, td - 1);
@@ -56,11 +59,20 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
             weights.extend(rule.weights);
             facet_offsets.push(weights.len());
         }
-        Self {
-            points: PointSet::new(client, cell, points, weights),
+        let narrowed: Vec<F> = normals.iter().map(|&x| F::narrow(x)).collect();
+        Ok(Self {
+            points: PointSet::new(client, cell, points, weights)?,
             facet_offsets,
+            normals_device: DeviceBuffer::from_host(client, &narrowed)?,
             normals,
-        }
+        })
+    }
+
+    /// The reference normals on the device, [q][tdim], narrowed to `F` (uploaded when the
+    /// rule was created).
+    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
+    pub(crate) fn normals_device(&self) -> &DeviceBuffer<F> {
+        &self.normals_device
     }
 
     /// All facet points as one point set, with the facets' weights.
@@ -170,7 +182,7 @@ impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
         let sets = distinct(cells.iter().copied())
             .into_iter()
             .map(|cell| FacetPointSet::gauss(client, cell, degree))
-            .collect();
+            .collect::<Result<_>>()?;
         Ok(Self { sets })
     }
 
