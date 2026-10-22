@@ -1,22 +1,73 @@
 //! `Topology<TD>` (ADR-0012): cell blocks, vertex `IndexMap` and origin ids, entity blocks,
 //! connectivity and permutation info.
 
+use std::collections::HashMap;
+
 use cubecl::prelude::Client;
-use gridcl_device::{ConnKey, DeviceBuffer, Result};
-use gridcl_dims::TopoDim;
+use gridcl_device::{ConnKey, DeviceBuffer, DeviceStrided, GridError, Result};
+use gridcl_dims::{CellType, TopoDim};
 use gridcl_parallel::{CommDyn, IndexMap};
 
-use crate::{CellBlock, Connectivity, EntityBlock};
+use crate::{CellBlock, Connectivity, EntityBlock, encode_origin_ids, origin_ids_fit_u32};
+
+/// A ghost-free index map rebuilt on `comm` with the same owned count (collective).
+pub(crate) fn clone_map(map: &IndexMap, comm: &dyn CommDyn) -> Result<IndexMap> {
+    assert_eq!(
+        map.num_ghosts(),
+        0,
+        "try_clone: index maps with ghosts arrive in M6"
+    );
+    IndexMap::new(comm, map.num_owned())
+}
+
+/// A deep copy of a strided array.
+pub(crate) fn clone_strided(s: &DeviceStrided<u32>) -> Result<DeviceStrided<u32>> {
+    Ok(DeviceStrided {
+        data: s.data.deep_clone()?,
+        stride: s.stride,
+    })
+}
 
 /// The topology of a mesh (ADR-0012).
 ///
 /// Entities of dimension 0 ≤ d < tdim are created on demand; cells stay in
 /// [`cell_blocks`](Topology::cell_blocks). Stored connectivities are (tdim, d), downward and
-/// filled by entity creation, and (d, tdim), upward, for 0 ≤ d < tdim, except (tdim, 0), which
-/// is `CellBlock::vertices`; d → 0 is `EntityBlock::vertices`.
+/// filled by entity creation, for 1 ≤ d < tdim, and (d, tdim), upward, for 0 ≤ d < tdim;
+/// (tdim, 0) is `CellBlock::vertices` and d → 0 is `EntityBlock::vertices`.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, DeviceStrided};
+/// use gridcl_dims::{Cell2, D2};
+/// use gridcl_parallel::{IndexMap, Serial};
+/// use gridcl_topology::{CellBlock, Topology, encode_origin_ids};
+///
+/// let client = gridcl_testing::test_client();
+/// // Two triangles sharing the edge (1, 2).
+/// let block = CellBlock::<D2>::new(
+///     Cell2::Triangle,
+///     IndexMap::new(&Serial, 2).unwrap(),
+///     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1]).unwrap(), stride: 3 },
+///     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1])).unwrap(),
+///     DeviceBuffer::from_host(&client, &[0u32, 0]).unwrap(),
+/// );
+/// let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4).unwrap(), &[10, 11, 12, 13]).unwrap();
+/// assert!(topology.ids_fit_u32());
+/// // The second triangle's edges (3, 2), (3, 1) and (2, 1) all run from a higher to a lower id.
+/// let bits = topology.permutation_info(0).unwrap().to_host().unwrap();
+/// assert_eq!(bits, [0b000, 0b111]);
+/// ```
 pub struct Topology<TD: TopoDim> {
+    client: Client,
     cell_blocks: Vec<CellBlock<TD>>,
-    _todo: core::marker::PhantomData<TD>,
+    vertex_index_map: IndexMap,
+    vertex_origin_ids: DeviceBuffer<u32>,
+    ids_fit_u32: bool,
+    permutation_info: Vec<Option<DeviceBuffer<u32>>>,
+    /// Entity blocks of dimension d < tdim, once created.
+    entities: Vec<Option<Vec<EntityBlock>>>,
+    connectivity: HashMap<ConnKey, Connectivity>,
 }
 
 impl<TD: TopoDim> Topology<TD> {
@@ -26,21 +77,55 @@ impl<TD: TopoDim> Topology<TD> {
     ///
     /// # Errors
     ///
-    /// `LengthMismatch` if `vertex_origin_ids` does not have one id per local vertex; device
-    /// errors.
+    /// `LengthMismatch` if `vertex_origin_ids` does not have one id per local vertex, or a
+    /// block's vertex rows are not its cell's vertex count; device errors.
     pub fn new(
         client: &Client,
         cell_blocks: Vec<CellBlock<TD>>,
         vertex_index_map: IndexMap,
         vertex_origin_ids: &[i64],
     ) -> Result<Self> {
-        let _ = (client, cell_blocks, vertex_index_map, vertex_origin_ids);
-        todo!()
+        let num_vertices = vertex_index_map.num_local();
+        if vertex_origin_ids.len() != num_vertices {
+            return Err(GridError::LengthMismatch {
+                expected: num_vertices,
+                found: vertex_origin_ids.len(),
+            });
+        }
+        for block in &cell_blocks {
+            let cell: CellType = block.cell.into();
+            let nv = gridcl_refcell::vertices(cell).len();
+            let rows = block.index_map.num_local();
+            if block.vertices.stride as usize != nv || block.vertices.data.len() != rows * nv {
+                return Err(GridError::LengthMismatch {
+                    expected: rows * nv,
+                    found: block.vertices.data.len(),
+                });
+            }
+        }
+        let ids_fit_u32 = origin_ids_fit_u32(vertex_origin_ids);
+        let ids = DeviceBuffer::from_host(client, &encode_origin_ids(vertex_origin_ids))?;
+        let permutation_info = cell_blocks
+            .iter()
+            .map(|b| {
+                crate::permutation::permutation_info(b.cell.into(), &b.vertices, &ids, ids_fit_u32)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Topology {
+            client: client.clone(),
+            cell_blocks,
+            vertex_index_map,
+            vertex_origin_ids: ids,
+            ids_fit_u32,
+            permutation_info,
+            entities: (0..TD::N).map(|_| None).collect(),
+            connectivity: HashMap::new(),
+        })
     }
 
     /// The client the arrays live on.
     pub fn client(&self) -> &Client {
-        todo!()
+        &self.client
     }
 
     /// The cell blocks, in creation order.
@@ -50,23 +135,26 @@ impl<TD: TopoDim> Topology<TD> {
 
     /// The [owned | ghost] vertices.
     pub fn vertex_index_map(&self) -> &IndexMap {
-        todo!()
+        &self.vertex_index_map
     }
 
     /// The interleaved (hi ^ 0x8000_0000, lo) origin id of each local vertex.
     pub fn vertex_origin_ids(&self) -> &DeviceBuffer<u32> {
-        todo!()
+        &self.vertex_origin_ids
     }
 
     /// Whether every vertex origin id lies in [0, 2^32), the comptime fast path of the kernels.
     pub fn ids_fit_u32(&self) -> bool {
-        todo!()
+        self.ids_fit_u32
     }
 
     /// The orientation word (A.6) of each cell of block `b`; `None` for interval cells.
+    ///
+    /// # Panics
+    ///
+    /// If `b` is not a block index.
     pub fn permutation_info(&self, b: usize) -> Option<&DeviceBuffer<u32>> {
-        let _ = b;
-        todo!()
+        self.permutation_info[b].as_ref()
     }
 
     /// The entity blocks of dimension `dim`, one per entity type.
@@ -74,10 +162,18 @@ impl<TD: TopoDim> Topology<TD> {
     /// # Errors
     ///
     /// `EntitiesNotCreated(dim)` until `create_entities(dim)` has run, and always for
-    /// `dim` = tdim.
+    /// `dim` ≥ tdim.
     pub fn entity_blocks(&self, dim: usize) -> Result<&[EntityBlock]> {
-        let _ = dim;
-        todo!()
+        self.entities
+            .get(dim)
+            .and_then(Option::as_deref)
+            .ok_or(GridError::EntitiesNotCreated(dim))
+    }
+
+    /// Whether gridcl stores the connectivity `key`.
+    fn supported(key: ConnKey) -> bool {
+        let (from, to, tdim) = (usize::from(key.from), usize::from(key.to), TD::N);
+        (from == tdim && (1..tdim).contains(&to)) || (to == tdim && from < tdim)
     }
 
     /// The connectivity `key`.
@@ -87,8 +183,12 @@ impl<TD: TopoDim> Topology<TD> {
     /// `ConnectivityNotCreated(key)` until it has been created; `UnsupportedConnectivity(key)`
     /// for pairs other than (tdim, d) with 1 ≤ d < tdim and (d, tdim) with 0 ≤ d < tdim.
     pub fn connectivity(&self, key: ConnKey) -> Result<&Connectivity> {
-        let _ = key;
-        todo!()
+        if !Self::supported(key) {
+            return Err(GridError::UnsupportedConnectivity(key));
+        }
+        self.connectivity
+            .get(&key)
+            .ok_or(GridError::ConnectivityNotCreated(key))
     }
 
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
@@ -126,7 +226,42 @@ impl<TD: TopoDim> Topology<TD> {
     ///
     /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
-        let _ = comm;
-        todo!()
+        let clone_opt =
+            |b: &Option<DeviceBuffer<u32>>| b.as_ref().map(DeviceBuffer::deep_clone).transpose();
+        Ok(Topology {
+            client: self.client.clone(),
+            cell_blocks: self
+                .cell_blocks
+                .iter()
+                .map(|b| b.try_clone(comm))
+                .collect::<Result<_>>()?,
+            vertex_index_map: clone_map(&self.vertex_index_map, comm)?,
+            vertex_origin_ids: self.vertex_origin_ids.deep_clone()?,
+            ids_fit_u32: self.ids_fit_u32,
+            permutation_info: self
+                .permutation_info
+                .iter()
+                .map(clone_opt)
+                .collect::<Result<_>>()?,
+            entities: self
+                .entities
+                .iter()
+                .map(|e| {
+                    e.as_ref()
+                        .map(|blocks| {
+                            blocks
+                                .iter()
+                                .map(|b| b.try_clone(comm))
+                                .collect::<Result<Vec<_>>>()
+                        })
+                        .transpose()
+                })
+                .collect::<Result<_>>()?,
+            connectivity: self
+                .connectivity
+                .iter()
+                .map(|(k, c)| Ok((*k, c.try_clone()?)))
+                .collect::<Result<_>>()?,
+        })
     }
 }

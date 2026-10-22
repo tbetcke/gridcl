@@ -24,8 +24,12 @@ impl EntityBlock {
     ///
     /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
-        let _ = comm;
-        todo!()
+        Ok(EntityBlock {
+            cell: self.cell,
+            index_map: crate::topology::clone_map(&self.index_map, comm)?,
+            vertices: crate::topology::clone_strided(&self.vertices)?,
+            offset: self.offset,
+        })
     }
 }
 
@@ -45,6 +49,17 @@ impl Connectivity {
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
     pub fn try_clone(&self) -> Result<Self> {
-        todo!()
+        Ok(match self {
+            Connectivity::Downward(blocks) => Connectivity::Downward(
+                blocks
+                    .iter()
+                    .map(crate::topology::clone_strided)
+                    .collect::<Result<_>>()?,
+            ),
+            Connectivity::Upward(csr) => Connectivity::Upward(DeviceCsr {
+                offsets: csr.offsets.deep_clone()?,
+                indices: csr.indices.deep_clone()?,
+            }),
+        })
     }
 }

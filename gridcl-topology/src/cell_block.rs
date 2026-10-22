@@ -48,8 +48,13 @@ impl<TD: TopoDim> CellBlock<TD> {
         origin_ids: DeviceBuffer<u32>,
         flags: DeviceBuffer<u32>,
     ) -> Self {
-        let _ = (cell, index_map, vertices, origin_ids, flags);
-        todo!()
+        CellBlock {
+            cell,
+            index_map,
+            vertices,
+            origin_ids,
+            flags,
+        }
     }
 
     /// A deep copy of every device array; the index map is rebuilt on `comm` (collective).
@@ -58,7 +63,12 @@ impl<TD: TopoDim> CellBlock<TD> {
     ///
     /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
-        let _ = comm;
-        todo!()
+        Ok(CellBlock {
+            cell: self.cell,
+            index_map: crate::topology::clone_map(&self.index_map, comm)?,
+            vertices: crate::topology::clone_strided(&self.vertices)?,
+            origin_ids: self.origin_ids.deep_clone()?,
+            flags: self.flags.deep_clone()?,
+        })
     }
 }
