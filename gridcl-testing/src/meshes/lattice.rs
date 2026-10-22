@@ -6,6 +6,7 @@
 //! affinely through the vertices in exact integer arithmetic, so equal points get equal keys.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 
 use gridcl_dims::CellType;
 use gridcl_refcell::NodeFamily;
@@ -84,22 +85,56 @@ struct BlockBuilder {
     cells: Vec<u32>,
 }
 
-/// Collects cells, deduplicates their nodes by lattice key and produces a [`HostMesh`].
-pub(super) struct Assembler {
+/// Collects cells, deduplicates their nodes by key and produces a [`HostMesh`].
+///
+/// Cells are given by the lattice keys ([`Key`]) of their vertices; their nodes are
+/// deduplicated by a global key `K`. For the boxes `K` is the lattice key itself; the curved
+/// generators map face-local lattice keys to a canonical global key ([`Assembler::cell_with`]).
+pub(super) struct Assembler<K = Key> {
     gdim: usize,
     resolution: i64,
-    index: HashMap<Key, u32>,
-    keys: Vec<Key>,
+    index: HashMap<K, u32>,
+    keys: Vec<K>,
     blocks: Vec<BlockBuilder>,
 }
 
-impl Assembler {
+impl Assembler<Key> {
     /// An empty mesh of dimension `gdim` on the lattice with `resolution` points per unit length.
     pub(super) fn new(gdim: usize, resolution: i64) -> Self {
-        assert!((1..=3).contains(&gdim) && resolution > 0);
+        assert!(resolution > 0);
+        Assembler {
+            resolution,
+            ..Assembler::with_keys(gdim)
+        }
+    }
+
+    /// Adds a cell of type `cell` and degree `degree` with the vertex keys `verts` (A.1 order).
+    /// The cell must be an affine image of the reference cell; its nodes are the images of the
+    /// reference Lagrange points.
+    ///
+    /// # Panics
+    ///
+    /// If `verts` has the wrong length, if a node falls off the lattice or if the cell is not
+    /// affine (a node's vertex image differs from the given vertex).
+    pub(super) fn cell(&mut self, cell: CellType, degree: u32, verts: &[Key]) {
+        self.cell_with(cell, degree, verts, |k| k);
+    }
+
+    /// The mesh: node coordinates key / resolution, blocks in [`CellType`] order, index-based
+    /// node ids and cell ids numbered consecutively over the blocks.
+    pub(super) fn finish(self) -> HostMesh {
+        let res = self.resolution as f64;
+        self.finish_with(|k| k.map(|x| x as f64 / res))
+    }
+}
+
+impl<K: Copy + Eq + Hash> Assembler<K> {
+    /// An empty mesh of dimension `gdim` whose nodes are deduplicated by keys of type `K`.
+    pub(super) fn with_keys(gdim: usize) -> Self {
+        assert!((1..=3).contains(&gdim));
         Assembler {
             gdim,
-            resolution,
+            resolution: 1,
             index: HashMap::new(),
             keys: Vec::new(),
             blocks: Vec::new(),
@@ -107,7 +142,7 @@ impl Assembler {
     }
 
     /// The node at `key`, created on first use: nodes are numbered in order of first use.
-    fn node(&mut self, key: Key) -> u32 {
+    fn node(&mut self, key: K) -> u32 {
         if let Some(&i) = self.index.get(&key) {
             return i;
         }
@@ -154,15 +189,14 @@ impl Assembler {
         block
     }
 
-    /// Adds a cell of type `cell` and degree `degree` with the vertex keys `verts` (A.1 order).
-    /// The cell must be an affine image of the reference cell; its nodes are the images of the
-    /// reference Lagrange points.
-    ///
-    /// # Panics
-    ///
-    /// If `verts` has the wrong length, if a node falls off the lattice or if the cell is not
-    /// affine (a node's vertex image differs from the given vertex).
-    pub(super) fn cell(&mut self, cell: CellType, degree: u32, verts: &[Key]) {
+    /// [`Assembler::cell`] with the node keys mapped by `canon` to the global key of the node.
+    pub(super) fn cell_with(
+        &mut self,
+        cell: CellType,
+        degree: u32,
+        verts: &[Key],
+        canon: impl Fn(Key) -> K,
+    ) {
         let nv = gridcl_refcell::vertices(cell).len();
         assert_eq!(verts.len(), nv, "{cell:?} has {nv} vertices");
         let axes = axes(cell, verts);
@@ -178,21 +212,25 @@ impl Assembler {
             if i < nv {
                 assert_eq!(key, verts[i], "{cell:?} cell {verts:?} is not affine");
             }
-            row.push(self.node(key));
+            row.push(self.node(canon(key)));
         }
         let block = self.block(cell, degree);
         block.ref_points = ref_points;
         block.cells.extend(row);
     }
 
-    /// The mesh: node coordinates key / resolution, blocks in [`CellType`] order, index-based
-    /// node ids and cell ids numbered consecutively over the blocks.
-    pub(super) fn finish(mut self) -> HostMesh {
-        let res = self.resolution as f64;
+    /// The mesh with node coordinates `coords(key)` (the first gdim of them), blocks in
+    /// [`CellType`] order, index-based node ids and cell ids numbered consecutively over the
+    /// blocks.
+    pub(super) fn finish_with(mut self, coords: impl Fn(&K) -> [f64; 3]) -> HostMesh {
+        let gdim = self.gdim;
         let nodes = self
             .keys
             .iter()
-            .flat_map(|k| k[..self.gdim].iter().map(|&x| x as f64 / res))
+            .flat_map(|k| {
+                let x = coords(k);
+                (0..gdim).map(move |g| x[g])
+            })
             .collect();
         let node_ids = Some((0..self.keys.len() as i64).collect());
         self.blocks.sort_by_key(|b| b.cell);
