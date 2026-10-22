@@ -112,8 +112,31 @@ pub fn orientation_bits(cell: CellType, vertex_ids: &[i64]) -> u32 {
 /// If `entity` is not a point, interval, triangle or quadrilateral, or `ids.len()` is not its
 /// vertex count.
 pub fn canonical_order(entity: CellType, ids: &[i64]) -> Vec<usize> {
-    let _ = (entity, ids);
-    todo!()
+    let nv = match entity {
+        CellType::Point => 1,
+        CellType::Interval => 2,
+        CellType::Triangle => 3,
+        CellType::Quadrilateral => 4,
+        _ => panic!("canonical_order: {entity:?} is not an entity of a cell"),
+    };
+    assert_eq!(
+        ids.len(),
+        nv,
+        "canonical_order: {entity:?} has {nv} vertices, got {} ids",
+        ids.len()
+    );
+    let mut slots: Vec<usize> = (0..nv).collect();
+    if entity != CellType::Quadrilateral {
+        // Points, edges and triangles: ascending, since every vertex neighbours the lowest.
+        slots.sort_by_key(|&s| ids[s]);
+        return slots;
+    }
+    // Tensor slots on the cycle 0–1–3–2: the neighbours of slot s are s ^ 1 and s ^ 2, and
+    // the opposite slot is s ^ 3.
+    let lowest = (0..4).min_by_key(|&s| ids[s]).expect("four vertices");
+    let (a, b) = (lowest ^ 1, lowest ^ 2);
+    let (lower, other) = if ids[a] < ids[b] { (a, b) } else { (b, a) };
+    vec![lowest, lower, other, lowest ^ 3]
 }
 
 #[cfg(test)]
@@ -173,6 +196,107 @@ mod tests {
         assert_eq!((bits >> 6) & 0b111, 0b010);
         // Edge with ids (30, 4): edge 0 of a triangle, reversed.
         assert_eq!(orientation_bits(Triangle, &[30, 4, 50]) & 1, 1);
+    }
+
+    #[test]
+    fn canonical_order_of_the_worked_example() {
+        let stored = |cell, ids: &[i64]| -> Vec<i64> {
+            canonical_order(cell, ids).iter().map(|&s| ids[s]).collect()
+        };
+        assert_eq!(stored(Quadrilateral, &[17, 4, 9, 12]), [4, 12, 17, 9]);
+        assert_eq!(stored(Triangle, &[9, 30, 4]), [4, 9, 30]);
+        assert_eq!(stored(Interval, &[30, 4]), [4, 30]);
+        assert_eq!(stored(Point, &[7]), [7]);
+    }
+
+    #[test]
+    fn stored_quadrilaterals_keep_their_edges() {
+        // The stored face is again a tensor-ordered quadrilateral with the same four edges.
+        let edges = |v: &[i64]| -> Vec<(i64, i64)> {
+            let mut e: Vec<(i64, i64)> = [(0, 1), (1, 3), (3, 2), (2, 0)]
+                .iter()
+                .map(|&(a, b)| (v[a].min(v[b]), v[a].max(v[b])))
+                .collect();
+            e.sort_unstable();
+            e
+        };
+        for ids in permutations(4) {
+            let stored: Vec<i64> = canonical_order(Quadrilateral, &ids)
+                .iter()
+                .map(|&s| ids[s])
+                .collect();
+            assert_eq!(edges(&stored), edges(&ids), "{ids:?}");
+            assert_eq!(stored[0], 0);
+            assert!(stored[1] < stored[2]);
+        }
+    }
+
+    /// The stored entity of every edge and face of `cell` agrees with the bits of
+    /// `orientation_bits`: edge bit set iff the edge is stored reversed; the stored face starts
+    /// at the cycle position of the rotation count and continues to the successor iff the
+    /// reflection bit is clear.
+    fn check_against_bits(cell: CellType, ids: &[i64]) {
+        let bits = orientation_bits(cell, ids);
+        let mut n = 0;
+        if tdim(cell) >= 2 {
+            for edge in sub_entities(cell, 1) {
+                let slots = canonical_order(Interval, &[ids[edge[0]], ids[edge[1]]]);
+                assert_eq!(slots == [1, 0], (bits >> n) & 1 == 1, "{cell:?} edge {n}");
+                n += 1;
+            }
+        }
+        if tdim(cell) == 3 {
+            for (f, (face, ty)) in sub_entities(cell, 2)
+                .iter()
+                .zip(sub_entity_types(cell, 2))
+                .enumerate()
+            {
+                let cycle: &[usize] = match ty {
+                    Triangle => &[0, 1, 2],
+                    _ => &[0, 1, 3, 2],
+                };
+                let face_ids: Vec<i64> = face.iter().map(|&v| ids[v]).collect();
+                let slots = canonical_order(*ty, &face_ids);
+                let field = (bits >> n) & 0b111;
+                let rotation = (field & 0b11) as usize;
+                let reflection = field >> 2;
+                assert_eq!(slots[0], cycle[rotation], "{cell:?} face {f}: rotation");
+                let successor = cycle[(rotation + 1) % cycle.len()];
+                assert_eq!(
+                    slots[1] == successor,
+                    reflection == 0,
+                    "{cell:?} face {f}: reflection"
+                );
+                n += 3;
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn canonical_order_matches_bits(
+            cell in prop::sample::select(vec![Triangle, Quadrilateral, Tetrahedron, Hexahedron, Prism, Pyramid]),
+            seed in prop::collection::vec(any::<i64>(), 8),
+        ) {
+            let nv = vertices(cell).len();
+            let mut ids = seed[..nv].to_vec();
+            ids.sort_unstable();
+            ids.dedup();
+            prop_assume!(ids.len() == nv);
+            // A random order of distinct random ids.
+            let mut ids = seed[..nv].to_vec();
+            ids.rotate_left((seed[7].unsigned_abs() % nv as u64) as usize);
+            check_against_bits(cell, &ids);
+        }
+    }
+
+    #[test]
+    fn canonical_order_matches_bits_for_every_numbering() {
+        for cell in [Triangle, Quadrilateral, Tetrahedron, Prism, Pyramid] {
+            for ids in permutations(vertices(cell).len()) {
+                check_against_bits(cell, &ids);
+            }
+        }
     }
 
     #[test]
