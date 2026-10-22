@@ -56,6 +56,8 @@ scripts/hpc/remote-test.sh <target> [options] -- <command>
   with work that does not depend on it; check the result before starting a task that does.
 - At most two scheduler jobs (Myriad, Kathleen) at a time; check with `scripts/hpc/status.sh`.
   Locust jobs are independent of them: one Locust run may go in parallel with the scheduler jobs.
+- Submit Myriad jobs one after the other, never at the same moment: they sync into one remote
+  tree and race (rsync exit code 23). Locust syncs to its own host and is not affected.
 - Cancel jobs you no longer need with `scripts/hpc/cancel.sh <job id>`, and leave none queued
   at the end of a session.
 
