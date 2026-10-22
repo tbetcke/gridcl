@@ -477,19 +477,27 @@ mod tests {
         }
     }
 
-    #[test]
-    fn curved_meshes_build() {
+    /// The curved meshes build in `F`.
+    fn curved_meshes_build_in<F: gridcl::Real>(client: &cubecl::prelude::Client) {
         use gridcl::prelude::*;
-        let client = crate::test_client();
-        let s = sphere(1, 2).build::<f64, D2, D3>(&client).expect("sphere");
+        let s = sphere(1, 2).build::<F, D2, D3>(client).expect("sphere");
         assert_eq!((s.tdim(), s.gdim()), (2, 3));
         let m = mixed_surface(0, 2)
-            .build::<f64, D2, D3>(&client)
+            .build::<F, D2, D3>(client)
             .expect("mixed surface");
         let cells: Vec<Cell2> = m.cell_blocks().iter().map(|b| b.cell).collect();
         assert_eq!(cells.len(), 2);
         assert!(cells.contains(&Cell2::Triangle) && cells.contains(&Cell2::Quadrilateral));
-        let b = ball(0, 2).build::<f64, D3, D3>(&client).expect("ball");
+        let b = ball(0, 2).build::<F, D3, D3>(client).expect("ball");
         assert_eq!((b.tdim(), b.gdim()), (3, 3));
+    }
+
+    #[test]
+    fn curved_meshes_build() {
+        let client = crate::test_client();
+        curved_meshes_build_in::<f32>(&client);
+        if crate::supports::<f64>(&client) {
+            curved_meshes_build_in::<f64>(&client);
+        }
     }
 }
