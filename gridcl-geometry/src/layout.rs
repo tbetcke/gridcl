@@ -60,6 +60,10 @@ pub(crate) enum Factor {
     Points,
     /// The Jacobian J, column-major.
     Jacobian,
+    /// det J, or the pseudo-determinant sqrt(det(JᵀJ)) when TD < GD.
+    DetJ,
+    /// K = (JᵀJ)⁻¹Jᵀ, column-major TD × GD.
+    Pinv,
 }
 
 impl Factor {
@@ -67,13 +71,15 @@ impl Factor {
     pub(crate) fn len(self, l: &GeomLayout) -> usize {
         match self {
             Factor::Points => l.gdim,
-            Factor::Jacobian => l.tdim * l.gdim,
+            Factor::Jacobian | Factor::Pinv => l.tdim * l.gdim,
+            Factor::DetJ => 1,
         }
     }
 }
 
-/// J at point q of the lanes' cells: entry (g, d) at component d · G + g, each a sum over the
-/// nodes k ascending from 0 of x(k, g) · ∂_d φ_k(q) (Listing B5); the same operation sequence
+/// J at point q of the lanes' cells: entry (g, d) at component d · G + g, the sum over the
+/// nodes k of x(k, g) · ∂_d φ_k(q) (Listing B5), starting with k = 0 rather than with 0, whose
+/// `0 + x` an optimizer may fold and so flip the sign of a zero; the same operation sequence
 /// in every lane as for N = 1.
 #[cube]
 fn jacobian<F: Float, N: Size>(
@@ -90,9 +96,10 @@ fn jacobian<F: Float, N: Size>(
     for d in 0..l.tdim {
         #[unroll]
         for g in 0..l.gdim {
-            let mut acc = Vector::<F, N>::broadcast(F::from_int(0));
+            let mut acc = xe[g * x_stride + x_offset + v]
+                * Vector::<F, N>::broadcast(dphi[q * l.nodes_per_cell * l.tdim + d]);
             #[unroll]
-            for k in 0..l.nodes_per_cell {
+            for k in 1..l.nodes_per_cell {
                 let x = xe[(k * l.gdim + g) * x_stride + x_offset + v];
                 let w = Vector::<F, N>::broadcast(dphi[(q * l.nodes_per_cell + k) * l.tdim + d]);
                 acc += x * w;
@@ -101,6 +108,110 @@ fn jacobian<F: Float, N: Size>(
         }
     }
     j
+}
+
+/// Σ_g J(g, a) · J(g, b) of the column-major `j`, starting with g = 0.
+#[cube]
+fn column_dot<F: Float, N: Size>(
+    j: &Array<Vector<F, N>>,
+    #[comptime] a: usize,
+    #[comptime] b: usize,
+    #[comptime] gdim: usize,
+) -> Vector<F, N> {
+    let mut acc = j[a * gdim] * j[b * gdim];
+    #[unroll]
+    for g in 1..gdim {
+        acc += j[a * gdim + g] * j[b * gdim + g];
+    }
+    acc
+}
+
+/// det J of a square column-major `j` (J(g, d) at d · D + g): J00 (1×1), J00·J11 − J01·J10
+/// (2×2), cofactors along the first row (3×3).
+#[cube]
+#[allow(unused_assignments)] // every comptime branch assigns `det`
+fn square_det<F: Float, N: Size>(j: &Array<Vector<F, N>>, #[comptime] dim: usize) -> Vector<F, N> {
+    let mut det = j[0];
+    if comptime!(dim == 2) {
+        det = j[0] * j[3] - j[2] * j[1];
+    } else if comptime!(dim == 3) {
+        det = j[0] * (j[4] * j[8] - j[7] * j[5]) - j[3] * (j[1] * j[8] - j[7] * j[2])
+            + j[6] * (j[1] * j[5] - j[4] * j[2]);
+    }
+    det
+}
+
+/// det J, or the pseudo-determinant sqrt(det(JᵀJ)) when TD < GD.
+#[cube]
+#[allow(unused_assignments)] // every comptime branch assigns `det`
+fn detj_of<F: Float, N: Size>(j: &Array<Vector<F, N>>, #[comptime] l: GeomLayout) -> Vector<F, N> {
+    let mut det = j[0];
+    if comptime!(l.tdim == l.gdim) {
+        det = square_det::<F, N>(j, l.tdim);
+    } else if comptime!(l.tdim == 1) {
+        det = column_dot::<F, N>(j, 0usize, 0usize, l.gdim).sqrt();
+    } else {
+        let a = column_dot::<F, N>(j, 0usize, 0usize, l.gdim);
+        let b = column_dot::<F, N>(j, 0usize, 1usize, l.gdim);
+        let c = column_dot::<F, N>(j, 1usize, 1usize, l.gdim);
+        det = (a * c - b * b).sqrt();
+    }
+    det
+}
+
+/// K = (JᵀJ)⁻¹Jᵀ of the column-major `j`, K(t, g) at component g · T + t: the adjugate times
+/// 1 / det in codimension 0; J(g, 0) · (1/a) for TD = 1 < GD; Ginv · Jᵀ with
+/// Ginv = (c·inv, −b·inv; −b·inv, a·inv), inv = 1/(a·c − b·b), for TD = 2, GD = 3.
+#[cube]
+fn pinv_of<F: Float, N: Size>(
+    j: &Array<Vector<F, N>>,
+    #[comptime] l: GeomLayout,
+) -> Array<Vector<F, N>> {
+    let gd = l.gdim;
+    let td = l.tdim;
+    let one = Vector::<F, N>::broadcast(F::from_int(1));
+    let mut k = Array::<Vector<F, N>>::new(comptime!(l.tdim * l.gdim));
+    if comptime!(l.tdim == l.gdim) {
+        let inv = one / square_det::<F, N>(j, l.tdim);
+        if comptime!(l.tdim == 1) {
+            k[0] = inv;
+        } else if comptime!(l.tdim == 2) {
+            k[0] = j[3] * inv;
+            k[2] = -j[2] * inv;
+            k[1] = -j[1] * inv;
+            k[3] = j[0] * inv;
+        } else {
+            k[0] = (j[4] * j[8] - j[7] * j[5]) * inv;
+            k[3] = (j[6] * j[5] - j[3] * j[8]) * inv;
+            k[6] = (j[3] * j[7] - j[6] * j[4]) * inv;
+            k[1] = (j[7] * j[2] - j[1] * j[8]) * inv;
+            k[4] = (j[0] * j[8] - j[6] * j[2]) * inv;
+            k[7] = (j[6] * j[1] - j[0] * j[7]) * inv;
+            k[2] = (j[1] * j[5] - j[4] * j[2]) * inv;
+            k[5] = (j[3] * j[2] - j[0] * j[5]) * inv;
+            k[8] = (j[0] * j[4] - j[3] * j[1]) * inv;
+        }
+    } else if comptime!(l.tdim == 1) {
+        let inv = one / column_dot::<F, N>(j, 0usize, 0usize, l.gdim);
+        #[unroll]
+        for g in 0..gd {
+            k[g] = j[g] * inv;
+        }
+    } else {
+        let a = column_dot::<F, N>(j, 0usize, 0usize, l.gdim);
+        let b = column_dot::<F, N>(j, 0usize, 1usize, l.gdim);
+        let c = column_dot::<F, N>(j, 1usize, 1usize, l.gdim);
+        let inv = one / (a * c - b * b);
+        let g00 = c * inv;
+        let g01 = -b * inv;
+        let g11 = a * inv;
+        #[unroll]
+        for g in 0..gd {
+            k[g * td] = g00 * j[g] + g01 * j[gd + g];
+            k[g * td + 1] = g01 * j[g] + g11 * j[gd + g];
+        }
+    }
+    k
 }
 
 /// A geometric factor at every point of the cell vectors `v < num_vectors` of one chunk pair.
@@ -143,9 +254,10 @@ fn factor_kernel<F: Float, N: Size>(
                     {
                         #[unroll]
                         for g in 0..l.gdim {
-                            let mut acc = Vector::<F, N>::broadcast(F::from_int(0));
+                            let mut acc = xe[g * x_stride as usize + x_offset as usize + v]
+                                * Vector::<F, N>::broadcast(tab[q * l.nodes_per_cell]);
                             #[unroll]
-                            for k in 0..l.nodes_per_cell {
+                            for k in 1..l.nodes_per_cell {
                                 let x = xe
                                     [(k * l.gdim + g) * x_stride as usize + x_offset as usize + v];
                                 let w = Vector::<F, N>::broadcast(tab[q * l.nodes_per_cell + k]);
@@ -167,6 +279,34 @@ fn factor_kernel<F: Float, N: Size>(
                         #[unroll]
                         for c in 0..comptime!(l.tdim * l.gdim) {
                             out[(o + c) * vpt + lane] = j[c];
+                        }
+                    }
+                    Factor::DetJ => {
+                        let j = jacobian::<F, N>(
+                            xe,
+                            tab,
+                            x_offset as usize,
+                            x_stride as usize,
+                            v,
+                            q,
+                            l,
+                        );
+                        out[o * vpt + lane] = detj_of::<F, N>(&j, l);
+                    }
+                    Factor::Pinv => {
+                        let j = jacobian::<F, N>(
+                            xe,
+                            tab,
+                            x_offset as usize,
+                            x_stride as usize,
+                            v,
+                            q,
+                            l,
+                        );
+                        let k = pinv_of::<F, N>(&j, l);
+                        #[unroll]
+                        for c in 0..comptime!(l.tdim * l.gdim) {
+                            out[(o + c) * vpt + lane] = k[c];
                         }
                     }
                 }

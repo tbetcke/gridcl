@@ -3,6 +3,7 @@
 use gridcl_device::{Real, Result};
 use gridcl_dims::{Dim, EmbeddedIn, TopoDim};
 
+use crate::layout::{Factor, launch_factor};
 use crate::{DeviceGrid, PinvShape, PointSet, QuadField, ScalarShape};
 
 /// det J, or the pseudo-determinant sqrt(det(JᵀJ)) when TD < GD, at the points of `pts` for
@@ -22,8 +23,7 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let _ = (g, b, pts);
-    todo!()
+    launch_factor(g, b, pts, Factor::DetJ)
 }
 
 /// K = (JᵀJ)⁻¹Jᵀ (TD × GD, column-major), which equals J⁻¹ in codimension 0, at the points of
@@ -43,6 +43,5 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let _ = (g, b, pts);
-    todo!()
+    launch_factor(g, b, pts, Factor::Pinv)
 }

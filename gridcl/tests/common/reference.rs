@@ -5,15 +5,18 @@
 //! sequence the library's factor kernels perform in every lane, so results agree bitwise on the
 //! CPU runtime:
 //!
-//! - X(g) = (Σ_k x_k(g) · φ_k) + origin(g), k ascending from 0;
-//! - J(g, d) = Σ_k x_k(g) · ∂_d φ_k, k ascending from 0; component d · G + g;
+//! Every sum starts with its first term (not with 0, whose `0 + x` an optimizer may fold and
+//! so flip the sign of a zero) and adds the others in ascending order:
+//!
+//! - X(g) = (Σ_k x_k(g) · φ_k) + origin(g);
+//! - J(g, d) = Σ_k x_k(g) · ∂_d φ_k; component d · G + g;
 //! - det J: J00 (1×1); J00·J11 − J01·J10 (2×2); cofactors along the first row (3×3);
 //!   sqrt(a) with a = Σ_g J(g,0)² (TD = 1 < GD); sqrt(a·c − b·b) with a = J0·J0, b = J0·J1,
-//!   c = J1·J1 (TD = 2, GD = 3); every dot product accumulated from 0, g ascending;
+//!   c = J1·J1 (TD = 2, GD = 3); dot products over g;
 //! - K (component g · T + t): the adjugate times inv = 1 / det in codimension 0; J(g,0) · (1/a)
 //!   for TD = 1 < GD; Ginv · Jᵀ with Ginv = (c·inv, −b·inv; −b·inv, a·inv) and inv = 1/(a·c − b·b)
 //!   for TD = 2, GD = 3;
-//! - facet normals: m(g) = Σ_t K(t, g) · n_ref(t) from 0, |m| = sqrt(Σ_g m(g)²) from 0,
+//! - facet normals: m(g) = Σ_t K(t, g) · n_ref(t), |m| = sqrt(Σ_g m(g)²),
 //!   n(g) = m(g) / |m|;
 //! - normals: v = (J(1,0), −J(0,0)) for curves in 2D, v = J0 × J1 for surfaces, |v| as above,
 //!   n(g) = (s · v(g)) / |v| with s = −1 where bit 0 of the cell's flags is set, else 1.
@@ -55,6 +58,22 @@ impl RefLayout {
     }
 }
 
+/// Σ_g J(g, a) · J(g, b) of the column-major `j`, starting with g = 0.
+#[cube]
+fn column_dot<F: Float>(
+    j: &Array<F>,
+    #[comptime] a: usize,
+    #[comptime] b: usize,
+    #[comptime] gd: usize,
+) -> F {
+    let mut acc = j[a * gd] * j[b * gd];
+    #[unroll]
+    for g in 1..gd {
+        acc += j[a * gd + g] * j[b * gd + g];
+    }
+    acc
+}
+
 /// J of cell `c` at point `q`, column-major (component d · G + g).
 #[cube]
 fn jacobian_at<F: Float>(
@@ -70,9 +89,10 @@ fn jacobian_at<F: Float>(
     for d in 0..l.tdim {
         #[unroll]
         for g in 0..l.gdim {
-            let mut acc = F::from_int(0);
+            let node0 = dofmap[c * l.nodes_per_cell] as usize;
+            let mut acc = nodes[node0 * l.gdim + g] * dphi[q * l.nodes_per_cell * l.tdim + d];
             #[unroll]
-            for k in 0..l.nodes_per_cell {
+            for k in 1..l.nodes_per_cell {
                 let node = dofmap[c * l.nodes_per_cell + k] as usize;
                 acc += nodes[node * l.gdim + g] * dphi[(q * l.nodes_per_cell + k) * l.tdim + d];
             }
@@ -99,28 +119,11 @@ fn detj_of<F: Float>(j: &Array<F>, #[comptime] l: RefLayout) -> F {
                 + j[6] * (j[1] * j[5] - j[4] * j[2]);
         }
     } else if comptime!(l.tdim == 1) {
-        let mut a = F::from_int(0);
-        #[unroll]
-        for g in 0..gd {
-            a += j[g] * j[g];
-        }
-        det = F::sqrt(a);
+        det = F::sqrt(column_dot::<F>(j, 0usize, 0usize, gd));
     } else {
-        let mut a = F::from_int(0);
-        let mut b = F::from_int(0);
-        let mut c = F::from_int(0);
-        #[unroll]
-        for g in 0..gd {
-            a += j[g] * j[g];
-        }
-        #[unroll]
-        for g in 0..gd {
-            b += j[g] * j[gd + g];
-        }
-        #[unroll]
-        for g in 0..gd {
-            c += j[gd + g] * j[gd + g];
-        }
+        let a = column_dot::<F>(j, 0usize, 0usize, gd);
+        let b = column_dot::<F>(j, 0usize, 1usize, gd);
+        let c = column_dot::<F>(j, 1usize, 1usize, gd);
         det = F::sqrt(a * c - b * b);
     }
     det
@@ -158,32 +161,15 @@ fn pinv_of<F: Float>(j: &Array<F>, #[comptime] l: RefLayout) -> Array<F> {
             k[8] = (j[0] * j[4] - j[3] * j[1]) * inv; // K22 = m00 m11 - m01 m10
         }
     } else if comptime!(l.tdim == 1) {
-        let mut a = F::from_int(0);
-        #[unroll]
-        for g in 0..gd {
-            a += j[g] * j[g];
-        }
-        let inv = F::from_int(1) / a;
+        let inv = F::from_int(1) / column_dot::<F>(j, 0usize, 0usize, gd);
         #[unroll]
         for g in 0..gd {
             k[g] = j[g] * inv;
         }
     } else {
-        let mut a = F::from_int(0);
-        let mut b = F::from_int(0);
-        let mut c = F::from_int(0);
-        #[unroll]
-        for g in 0..gd {
-            a += j[g] * j[g];
-        }
-        #[unroll]
-        for g in 0..gd {
-            b += j[g] * j[gd + g];
-        }
-        #[unroll]
-        for g in 0..gd {
-            c += j[gd + g] * j[gd + g];
-        }
+        let a = column_dot::<F>(j, 0usize, 0usize, gd);
+        let b = column_dot::<F>(j, 0usize, 1usize, gd);
+        let c = column_dot::<F>(j, 1usize, 1usize, gd);
         let inv = F::from_int(1) / (a * c - b * b);
         let g00 = c * inv;
         let g01 = -b * inv;
@@ -230,9 +216,10 @@ fn reference_kernel<F: Float>(
                     {
                         #[unroll]
                         for g in 0..gd {
-                            let mut acc = F::from_int(0);
+                            let node0 = dofmap[c * l.nodes_per_cell] as usize;
+                            let mut acc = nodes[node0 * gd + g] * tab[q * l.nodes_per_cell];
                             #[unroll]
-                            for k in 0..l.nodes_per_cell {
+                            for k in 1..l.nodes_per_cell {
                                 let node = dofmap[c * l.nodes_per_cell + k] as usize;
                                 acc += nodes[node * gd + g] * tab[q * l.nodes_per_cell + k];
                             }
@@ -264,16 +251,16 @@ fn reference_kernel<F: Float>(
                         let mut m = Array::<F>::new(comptime!(l.gdim));
                         #[unroll]
                         for g in 0..gd {
-                            let mut acc = F::from_int(0);
+                            let mut acc = k[g * td] * extra[q * td];
                             #[unroll]
-                            for t in 0..td {
+                            for t in 1..td {
                                 acc += k[g * td + t] * extra[q * td + t];
                             }
                             m[g] = acc;
                         }
-                        let mut s2 = F::from_int(0);
+                        let mut s2 = m[0] * m[0];
                         #[unroll]
-                        for g in 0..gd {
+                        for g in 1..gd {
                             s2 += m[g] * m[g];
                         }
                         let norm = F::sqrt(s2);
@@ -293,9 +280,9 @@ fn reference_kernel<F: Float>(
                             v[1] = j[2] * j[3] - j[0] * j[5];
                             v[2] = j[0] * j[4] - j[1] * j[3];
                         }
-                        let mut s2 = F::from_int(0);
+                        let mut s2 = v[0] * v[0];
                         #[unroll]
-                        for g in 0..gd {
+                        for g in 1..gd {
                             s2 += v[g] * v[g];
                         }
                         let norm = F::sqrt(s2);
