@@ -348,17 +348,18 @@ pub fn flat_f64<F: Real, S: FieldShape>(fields: &BlockFields<F, S>) -> Vec<Vec<f
         .collect()
 }
 
-/// Asserts `got` equals `want` bitwise on the CPU runtime and within the tolerance of `F`
-/// (relative to the largest |want|) elsewhere.
+/// Asserts `got` equals `want` bitwise up to the sign of zero on the CPU runtime, and within
+/// the tolerance of `F` (relative to the largest |want|) elsewhere. A separately written
+/// reference kernel may fuse multiply-adds differently, which can flip the sign of a zero
+/// (ADR-0013); every nonzero value must match in every bit.
 pub fn assert_matches<F: Real>(got: &[F], want: &[F], what: &str) {
     assert_eq!(got.len(), want.len(), "{what}: lengths");
     if gridcl_testing::bitwise_device() {
         for (i, (a, b)) in got.iter().zip(want).enumerate() {
+            let (a, b) = (a.widen(), b.widen());
             assert!(
-                a.widen().to_bits() == b.widen().to_bits(),
-                "{what}: entry {i}: {} vs {} (bitwise)",
-                a.widen(),
-                b.widen()
+                a.to_bits() == b.to_bits() || (a == 0.0 && b == 0.0),
+                "{what}: entry {i}: {a} vs {b} (bitwise up to the sign of zero)"
             );
         }
     } else {
