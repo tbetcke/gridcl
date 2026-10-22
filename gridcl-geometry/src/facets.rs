@@ -3,6 +3,7 @@
 use gridcl_device::{Real, Result};
 use gridcl_dims::{Codim0, Codim1, Dim, TopoDim};
 
+use crate::layout::{Factor, launch_factor};
 use crate::{DeviceGrid, FacetPointSet, PointSet, QuadField, VecShape};
 
 /// Outward unit normals n = Kᵀ n_ref / |Kᵀ n_ref| at the facet points of `pts` (facet-major)
@@ -22,8 +23,13 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let _ = (g, b, pts);
-    todo!()
+    launch_factor(
+        g,
+        b,
+        pts.points(),
+        Factor::FacetNormals,
+        Some(pts.normals_device()),
+    )
 }
 
 /// Unit normals of a codimension-1 block at the points of `pts`, with the sign s = −1 where
@@ -44,6 +50,5 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let _ = (g, b, pts);
-    todo!()
+    launch_factor(g, b, pts, Factor::Normals, None)
 }

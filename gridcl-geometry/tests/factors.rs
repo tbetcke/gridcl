@@ -182,3 +182,61 @@ fn detj_of_affine_cells_is_constant() {
         "triangles",
     );
 }
+
+/// Facet normals of affine cells are their transformed reference normals: Kᵀ n_ref / |Kᵀ n_ref|
+/// with K constant on the cell. On axis-aligned boxes they are the reference normals; on the
+/// mixed box they equal Kᵀ n_ref / |Kᵀ n_ref| with K from the pseudo-inverse field.
+#[test]
+fn facet_normals_of_affine_cells_are_transformed_reference_normals() {
+    use gridcl_testing::*;
+    let client = gridcl_testing::test_client();
+    // Axis-aligned hexahedra and quadrilaterals: n = n_ref.
+    let mesh = cube_box(Cell3::Hexahedron, 2, 1)
+        .build::<f32, D3, D3>(&client)
+        .unwrap();
+    let rule = FacetQuadRule::for_grid(&mesh, 2).unwrap();
+    let fps = rule.get(Cell3::Hexahedron).unwrap();
+    let n = flat(&mesh.facet_normals(&rule).unwrap().blocks[0]);
+    let q = fps.points().len();
+    for (c, cell) in n.chunks_exact(q * 3).enumerate() {
+        for p in 0..q {
+            for (g, &want) in fps.reference_normal(p).iter().enumerate() {
+                assert!(
+                    (cell[p * 3 + g] - want).abs() < 1e-6,
+                    "hexahedron {c}, point {p}"
+                );
+            }
+        }
+    }
+    // The mixed box: K from the pseudo-inverse field at the facet points.
+    let h = mixed_box(2, 1);
+    let mesh = h
+        .build::<f64, D3, D3>(&gridcl_testing::cpu_client())
+        .unwrap();
+    let rule = FacetQuadRule::for_grid(&mesh, 2).unwrap();
+    let normals = mesh.facet_normals(&rule).unwrap();
+    for (b, block) in mesh.cell_blocks().iter().enumerate() {
+        let fps = rule.get(block.cell).unwrap();
+        let q = fps.points().len();
+        let k = flat(&gridcl::pseudo_inverse_block(&mesh, b, fps.points()).unwrap());
+        let n = flat(&normals.blocks[b]);
+        for (c, (nc, kc)) in n.chunks_exact(q * 3).zip(k.chunks_exact(q * 9)).enumerate() {
+            for p in 0..q {
+                let r = fps.reference_normal(p);
+                let m: Vec<f64> = (0..3)
+                    .map(|g| (0..3).map(|t| kc[p * 9 + g * 3 + t] * r[t]).sum())
+                    .collect();
+                let len = m.iter().map(|x| x * x).sum::<f64>().sqrt();
+                for g in 0..3 {
+                    assert!(
+                        (nc[p * 3 + g] - m[g] / len).abs() < 1e-12,
+                        "{:?} {c}, point {p}",
+                        block.cell
+                    );
+                }
+                let unit: f64 = (0..3).map(|g| nc[p * 3 + g] * nc[p * 3 + g]).sum();
+                assert!((unit - 1.0).abs() < 1e-12);
+            }
+        }
+    }
+}

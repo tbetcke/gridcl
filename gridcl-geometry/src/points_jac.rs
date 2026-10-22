@@ -23,7 +23,7 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    launch_factor(g, b, pts, Factor::Points)
+    launch_factor(g, b, pts, Factor::Points, None)
 }
 
 /// The Jacobian J (GD × TD, column-major) at the points of `pts` for every local cell of block
@@ -43,5 +43,5 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    launch_factor(g, b, pts, Factor::Jacobian)
+    launch_factor(g, b, pts, Factor::Jacobian, None)
 }

@@ -45,7 +45,6 @@ pub struct PointSet<F: Real, TD: TopoDim> {
     weights: Vec<f64>,
     client: Client,
     /// The weights narrowed to `F`, uploaded with the rule.
-    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
     weights_device: DeviceBuffer<F>,
     /// Uploaded tabulations, per element and table.
     cache: RefCell<TableCache<F, TD>>,
@@ -72,7 +71,6 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     }
 
     /// The weights on the device, narrowed to `F` (uploaded when the rule was created).
-    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
     pub(crate) fn weights_device(&self) -> &DeviceBuffer<F> {
         &self.weights_device
     }

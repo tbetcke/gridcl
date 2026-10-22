@@ -2,7 +2,8 @@
 
 use cubecl::prelude::*;
 use gridcl_device::{
-    GridError, KernelKind, LaunchPlan, Real, Result, VectorPolicy, debug_assert_bindings,
+    DeviceBuffer, GridError, KernelKind, LaunchPlan, Real, Result, VectorPolicy,
+    debug_assert_bindings,
 };
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
@@ -64,13 +65,17 @@ pub(crate) enum Factor {
     DetJ,
     /// K = (JᵀJ)⁻¹Jᵀ, column-major TD × GD.
     Pinv,
+    /// Outward unit facet normals Kᵀ n_ref / |Kᵀ n_ref| (codimension 0).
+    FacetNormals,
+    /// Unit normals s (J0 × J1) / |J0 × J1| or s (J0_y, −J0_x) / |J0| (codimension 1).
+    Normals,
 }
 
 impl Factor {
     /// Components per point.
     pub(crate) fn len(self, l: &GeomLayout) -> usize {
         match self {
-            Factor::Points => l.gdim,
+            Factor::Points | Factor::FacetNormals | Factor::Normals => l.gdim,
             Factor::Jacobian | Factor::Pinv => l.tdim * l.gdim,
             Factor::DetJ => 1,
         }
@@ -219,7 +224,9 @@ fn pinv_of<F: Float, N: Size>(
 ///   xe     E-vector chunk [k][g][cell], cells fastest; row (k, g) starts at (k·G + g)·x_stride
 ///   tab    φ [q][k] (Points) or ∂φ [q][k][d] (all others); broadcast to every lane
 ///   out    tiled QuadField chunk
-///   extra  the origin [gdim] (Points)
+///   extra  the origin [gdim] (Points) or the reference normals [q][tdim] (FacetNormals)
+///   flags  cell flags of the block (Normals): bit 0 flips the normal; lanes read cell
+///          min(first_cell + v·N + lane, last_cell)
 /// Offsets and strides count vectors.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
@@ -227,10 +234,13 @@ fn factor_kernel<F: Float, N: Size>(
     xe: &[Vector<F, N>],
     tab: &[F],
     extra: &[F],
+    flags: &[u32],
     out: &mut [Vector<F, N>],
     x_offset: u32,
     x_stride: u32,
     out_first_tile: u32,
+    first_cell: u32,
+    last_cell: u32,
     num_vectors: u32,
     items_per_unit: u32,
     #[comptime] l: GeomLayout,
@@ -309,6 +319,81 @@ fn factor_kernel<F: Float, N: Size>(
                             out[(o + c) * vpt + lane] = k[c];
                         }
                     }
+                    Factor::FacetNormals => {
+                        let j = jacobian::<F, N>(
+                            xe,
+                            tab,
+                            x_offset as usize,
+                            x_stride as usize,
+                            v,
+                            q,
+                            l,
+                        );
+                        let k = pinv_of::<F, N>(&j, l);
+                        let td = l.tdim;
+                        let mut m = Array::<Vector<F, N>>::new(comptime!(l.gdim));
+                        #[unroll]
+                        for g in 0..l.gdim {
+                            let mut acc = k[g * td] * Vector::<F, N>::broadcast(extra[q * td]);
+                            #[unroll]
+                            for t in 1..td {
+                                acc += k[g * td + t] * Vector::<F, N>::broadcast(extra[q * td + t]);
+                            }
+                            m[g] = acc;
+                        }
+                        let mut s2 = m[0] * m[0];
+                        #[unroll]
+                        for g in 1..l.gdim {
+                            s2 += m[g] * m[g];
+                        }
+                        let norm = s2.sqrt();
+                        #[unroll]
+                        for g in 0..l.gdim {
+                            out[(o + g) * vpt + lane] = m[g] / norm;
+                        }
+                    }
+                    Factor::Normals => {
+                        let j = jacobian::<F, N>(
+                            xe,
+                            tab,
+                            x_offset as usize,
+                            x_stride as usize,
+                            v,
+                            q,
+                            l,
+                        );
+                        let mut n = Array::<Vector<F, N>>::new(comptime!(l.gdim));
+                        if comptime!(l.gdim == 2) {
+                            n[0] = j[1];
+                            n[1] = -j[0];
+                        } else {
+                            n[0] = j[1] * j[5] - j[2] * j[4];
+                            n[1] = j[2] * j[3] - j[0] * j[5];
+                            n[2] = j[0] * j[4] - j[1] * j[3];
+                        }
+                        let mut s2 = n[0] * n[0];
+                        #[unroll]
+                        for g in 1..l.gdim {
+                            s2 += n[g] * n[g];
+                        }
+                        let norm = s2.sqrt();
+                        // The sign of each lane's cell, by arithmetic masks.
+                        let mut bit = Vector::<u32, N>::broadcast(0u32);
+                        #[unroll]
+                        for ln in 0..N::value() {
+                            let c = min(first_cell + (v * N::value() + ln) as u32, last_cell);
+                            bit.insert(ln, flags[c as usize] & 1u32);
+                        }
+                        let s = select_many(
+                            bit.equal(&Vector::<u32, N>::broadcast(1u32)),
+                            Vector::<F, N>::broadcast(F::from_int(-1)),
+                            Vector::<F, N>::broadcast(F::from_int(1)),
+                        );
+                        #[unroll]
+                        for g in 0..l.gdim {
+                            out[(o + g) * vpt + lane] = (s * n[g]) / norm;
+                        }
+                    }
                 }
             }
         }
@@ -327,6 +412,7 @@ pub(crate) fn launch_factor<F, TD, GD, G, S>(
     b: usize,
     pts: &PointSet<F, TD>,
     f: Factor,
+    extra: Option<&DeviceBuffer<F>>,
 ) -> Result<QuadField<F, S>>
 where
     F: Real,
@@ -351,6 +437,7 @@ where
         _ => pts.tabulate_derivatives(&gb.element)?,
     };
     let live = 2 * layout.tdim * layout.gdim + 2;
+    let flags = &g.cell_blocks()[b].flags;
     for r in chunk_pairs(xe, &out) {
         let plan = LaunchPlan::elementwise(
             client,
@@ -361,12 +448,14 @@ where
             live,
         )?;
         let n = plan.vector_size;
-        debug_assert_bindings(client, 4);
+        debug_assert_bindings(client, 5);
         // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD and the
         // E-vector stride, so the vector offsets below are exact. The kernel handles vectors
         // v < padded_cells / n: it reads E-vector vectors (k·G + g)·stride/n + x_first_cell/n
         // + v < K·G·stride/n, inside the E-vector chunk (x_first_cell + padded_cells ≤
-        // stride); it reads `tab` below num_points · K · tdim and `extra` below gdim; it writes
+        // stride); it reads `tab` below num_points · K · tdim, `extra` below gdim (the origin)
+        // or num_points · tdim (reference normals), and `flags` at cells ≤ num_cells − 1; it
+        // writes
         // tiles
         // out_first_cell/tile + v/(tile/n), which lie inside the field chunk's padded cells, at
         // vector offsets below the chunk's padded_cells · num_points · LEN / n.
@@ -378,11 +467,14 @@ where
                 n,
                 r.x.vector_arg(n),
                 tab.arg(),
-                xe.origin().arg(),
+                extra.unwrap_or(xe.origin()).arg(),
+                flags.arg(),
                 r.out.vector_arg(n),
                 fit(r.x_first_cell / n)?,
                 fit(r.x_stride_cells / n)?,
                 fit(r.out_first_cell / tile)?,
+                fit(r.first_cell)?,
+                fit(num_cells - 1)?,
                 fit(r.padded_cells / n)?,
                 plan.items_per_unit,
                 layout,

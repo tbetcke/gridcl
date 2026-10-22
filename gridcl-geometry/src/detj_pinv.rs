@@ -23,7 +23,7 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    launch_factor(g, b, pts, Factor::DetJ)
+    launch_factor(g, b, pts, Factor::DetJ, None)
 }
 
 /// K = (JᵀJ)⁻¹Jᵀ (TD × GD, column-major), which equals J⁻¹ in codimension 0, at the points of
@@ -43,5 +43,5 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    launch_factor(g, b, pts, Factor::Pinv)
+    launch_factor(g, b, pts, Factor::Pinv, None)
 }

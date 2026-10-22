@@ -32,7 +32,6 @@ pub struct FacetPointSet<F: Real, TD: TopoDim> {
     /// The outward reference normal of each point's facet, [q][tdim].
     normals: Vec<f64>,
     /// `normals` narrowed to `F`, uploaded with the rule.
-    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
     normals_device: DeviceBuffer<F>,
 }
 
@@ -70,7 +69,6 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
 
     /// The reference normals on the device, [q][tdim], narrowed to `F` (uploaded when the
     /// rule was created).
-    #[allow(dead_code)] // facet_normals_block and measure_block (T15) read it
     pub(crate) fn normals_device(&self) -> &DeviceBuffer<F> {
         &self.normals_device
     }
