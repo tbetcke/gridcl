@@ -299,9 +299,23 @@ impl<T: CubeElement> DeviceBuffer<T> {
     }
 }
 
-/// `len` rounded up to `VECTOR_PAD`. An empty buffer still gets one block, so no handle has
-/// zero size (wgpu rejects zero-size bindings); `len()` stays 0.
-pub(crate) fn pad_len(len: usize) -> Result<usize> {
+/// `len` rounded up to `VECTOR_PAD`: the allocated length of a buffer of `len` elements, and the
+/// plane stride of `SortKeys`. An empty buffer still gets one block, so no handle has zero size
+/// (wgpu rejects zero-size bindings); `len()` stays 0.
+///
+/// # Errors
+///
+/// `TooLarge` if the rounded length overflows `usize`.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{VECTOR_PAD, pad_len};
+///
+/// assert_eq!(pad_len(0).unwrap(), VECTOR_PAD);
+/// assert_eq!(pad_len(17).unwrap(), 2 * VECTOR_PAD);
+/// ```
+pub fn pad_len(len: usize) -> Result<usize> {
     len.max(1)
         .checked_next_multiple_of(VECTOR_PAD)
         .ok_or(GridError::TooLarge)

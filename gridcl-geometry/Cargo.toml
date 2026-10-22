@@ -13,3 +13,7 @@ gridcl-dims = { path = "../gridcl-dims" }
 gridcl-parallel = { path = "../gridcl-parallel" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 gridcl-topology = { path = "../gridcl-topology" }
+
+[dev-dependencies]
+gridcl-testing = { path = "../gridcl-testing" }
+proptest.workspace = true

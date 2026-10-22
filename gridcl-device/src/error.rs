@@ -19,6 +19,35 @@ use cubecl::server::ServerError;
 /// ```
 pub type Result<T, E = GridError> = core::result::Result<T, E>;
 
+/// A connectivity between two topological dimensions (Listing T1): `from` → `to`.
+///
+/// Defined here so that [`GridError::ConnectivityNotCreated`] can carry it; gridcl-topology and
+/// gridcl re-export it (ADR-0012).
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{ConnKey, GridError};
+///
+/// let key = ConnKey { from: 2, to: 0 };
+/// assert_eq!(key.to_string(), "2 -> 0");
+/// let e = GridError::ConnectivityNotCreated(key);
+/// assert_eq!(e.to_string(), "connectivity 2 -> 0 has not been created");
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ConnKey {
+    /// The topological dimension of the rows.
+    pub from: u8,
+    /// The topological dimension of the entries.
+    pub to: u8,
+}
+
+impl fmt::Display for ConnKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} -> {}", self.from, self.to)
+    }
+}
+
 /// Errors of gridcl. Later milestones add variants when they first use them.
 ///
 /// # Example
@@ -45,6 +74,44 @@ pub enum GridError {
     LengthMismatch { expected: usize, found: usize },
     /// The compute server reported an error.
     Server(ServerError),
+    /// The node family is not offered on this cell type (GLL exists on intervals,
+    /// quadrilaterals and hexahedra only).
+    UnsupportedNodeFamily {
+        cell: &'static str,
+        family: &'static str,
+    },
+    /// The degree is not supported on this cell type (degrees start at 1).
+    UnsupportedDegree { cell: &'static str, degree: u32 },
+    /// A cell type used where a different topological dimension is required.
+    WrongCellDim {
+        found: &'static str,
+        expected_tdim: usize,
+    },
+    /// A mesh of dimensions `found` = (tdim, gdim) where `expected` was required.
+    DimensionMismatch {
+        expected: (usize, usize),
+        found: (usize, usize),
+    },
+    /// The entities of this dimension have not been created (and those of the cell dimension
+    /// never are: cells are in the cell blocks).
+    EntitiesNotCreated(usize),
+    /// The connectivity has not been created.
+    ConnectivityNotCreated(ConnKey),
+    /// gridcl does not store this connectivity.
+    UnsupportedConnectivity(ConnKey),
+    /// Two vertices, nodes or cells share an origin id.
+    DuplicateOriginId(i64),
+    /// An index is not below the length it indexes.
+    IndexOutOfRange { index: usize, len: usize },
+    /// A node is a vertex of one cell and a non-vertex node of another; the payload is the
+    /// node's input index.
+    NodeRoleMismatch(usize),
+    /// A second cell block of the same cell type.
+    DuplicateCellBlock(&'static str),
+    /// The quadrature rule has no point set for this cell type.
+    CellNotInRule(&'static str),
+    /// A method declared before the milestone that implements it.
+    NotYetImplemented(&'static str),
 }
 
 impl fmt::Display for GridError {
@@ -62,6 +129,47 @@ impl fmt::Display for GridError {
                 write!(f, "length mismatch: expected {expected}, found {found}")
             }
             GridError::Server(error) => write!(f, "compute server error: {error}"),
+            GridError::UnsupportedNodeFamily { cell, family } => {
+                write!(f, "node family {family} is not supported on {cell} cells")
+            }
+            GridError::UnsupportedDegree { cell, degree } => {
+                write!(f, "degree {degree} is not supported on {cell} cells")
+            }
+            GridError::WrongCellDim {
+                found,
+                expected_tdim,
+            } => write!(
+                f,
+                "{found} cells where cells of topological dimension {expected_tdim} are required"
+            ),
+            GridError::DimensionMismatch { expected, found } => write!(
+                f,
+                "dimension mismatch: expected (tdim, gdim) = {expected:?}, found {found:?}"
+            ),
+            GridError::EntitiesNotCreated(dim) => {
+                write!(f, "the entities of dimension {dim} have not been created")
+            }
+            GridError::ConnectivityNotCreated(key) => {
+                write!(f, "connectivity {key} has not been created")
+            }
+            GridError::UnsupportedConnectivity(key) => {
+                write!(f, "connectivity {key} is not supported")
+            }
+            GridError::DuplicateOriginId(id) => write!(f, "duplicate origin id {id}"),
+            GridError::IndexOutOfRange { index, len } => {
+                write!(f, "index {index} is out of range for length {len}")
+            }
+            GridError::NodeRoleMismatch(node) => write!(
+                f,
+                "node {node} is a vertex of one cell and a non-vertex node of another"
+            ),
+            GridError::DuplicateCellBlock(cell) => {
+                write!(f, "a second cell block of {cell} cells")
+            }
+            GridError::CellNotInRule(cell) => {
+                write!(f, "the quadrature rule has no point set for {cell} cells")
+            }
+            GridError::NotYetImplemented(what) => write!(f, "not yet implemented: {what}"),
         }
     }
 }

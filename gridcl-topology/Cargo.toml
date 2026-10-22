@@ -12,3 +12,8 @@ gridcl-device = { path = "../gridcl-device" }
 gridcl-dims = { path = "../gridcl-dims" }
 gridcl-parallel = { path = "../gridcl-parallel" }
 gridcl-refcell = { path = "../gridcl-refcell" }
+
+[dev-dependencies]
+gridcl-testing = { path = "../gridcl-testing" }
+proptest.workspace = true
+serde_json.workspace = true

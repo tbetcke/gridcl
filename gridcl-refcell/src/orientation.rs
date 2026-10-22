@@ -82,6 +82,40 @@ pub fn orientation_bits(cell: CellType, vertex_ids: &[i64]) -> u32 {
     bits
 }
 
+/// The A.6 storage slots of an entity: the local positions of its vertices in canonical
+/// orientation, so the stored entity is `[local[slots[0]], local[slots[1]], …]`.
+///
+/// `ids` are the origin ids of the entity's vertices in their local order (the order of the
+/// cell's sub-entity table). Points keep their one vertex; an edge is stored (lower, higher); a
+/// triangle in ascending order; a quadrilateral in tensor order starting at its lowest vertex,
+/// then that vertex's lower neighbour on the cycle 0–1–3–2, its other neighbour, and the
+/// opposite vertex. It is the host reference of the device kernels of entity creation.
+///
+/// # Example
+///
+/// The worked example of A.6: a quadrilateral with origin ids 17, 4, 9, 12 in its tensor slots
+/// is stored as [4, 12, 17, 9].
+///
+/// ```
+/// use gridcl_dims::CellType;
+/// use gridcl_refcell::canonical_order;
+///
+/// let ids = [17, 4, 9, 12];
+/// let slots = canonical_order(CellType::Quadrilateral, &ids);
+/// let stored: Vec<i64> = slots.iter().map(|&s| ids[s]).collect();
+/// assert_eq!(stored, [4, 12, 17, 9]);
+/// assert_eq!(canonical_order(CellType::Interval, &[30, 4]), [1, 0]);
+/// ```
+///
+/// # Panics
+///
+/// If `entity` is not a point, interval, triangle or quadrilateral, or `ids.len()` is not its
+/// vertex count.
+pub fn canonical_order(entity: CellType, ids: &[i64]) -> Vec<usize> {
+    let _ = (entity, ids);
+    todo!()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

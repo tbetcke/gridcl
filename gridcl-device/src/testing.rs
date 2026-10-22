@@ -27,6 +27,23 @@ thread_local! {
 }
 
 /// The properties gridcl-device reads for `client`: the injected ones inside
+/// `testing::with_properties` (feature `testing`), else the client's own. Kernel launchers in
+/// every crate read device limits through it, so injected limits reach them (ADR-0012).
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::device_properties;
+///
+/// let client = gridcl_testing::test_client();
+/// let props = device_properties(&client);
+/// assert_eq!(props.memory.max_page_size, client.properties().memory.max_page_size);
+/// ```
+pub fn device_properties(client: &Client) -> Arc<DeviceProperties> {
+    properties(client)
+}
+
+/// The properties gridcl-device reads for `client`: the injected ones inside
 /// [`with_properties`], else the client's own.
 pub(crate) fn properties(client: &Client) -> Arc<DeviceProperties> {
     #[cfg(feature = "testing")]

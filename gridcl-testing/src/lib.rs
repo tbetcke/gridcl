@@ -5,6 +5,13 @@
 //! only gridcl-bench and gridcl-device (`gpu-aware-cuda`) enable them (docs/design.md,
 //! "Cargo features", "Dependency rules").
 
+mod meshes;
+
+pub use meshes::{
+    HostBlock, HostMesh, ball, cube_box, interval_box, mixed_box, mixed_surface, sphere,
+    square_box, triangle_strip,
+};
+
 use cubecl::Device;
 use cubecl::device::{DeviceUnavailable, MetalDevice, WgpuDeviceKind};
 use cubecl::prelude::{Client, CubeElement};
@@ -46,6 +53,23 @@ pub fn test_client() -> Client {
     match backend.device() {
         Ok(device) => device.client(),
         Err(error) => panic!("{}", backend.unavailable(error)),
+    }
+}
+
+/// The client of the CPU runtime, whatever `GRIDCL_TEST_DEVICE` says: the f64 side of f32-vs-f64
+/// comparisons on devices without f64 (docs/plans/M3.md, question 15).
+///
+/// # Example
+///
+/// ```
+/// let client = gridcl_testing::cpu_client();
+/// assert!(gridcl_testing::supports::<f64>(&client));
+/// ```
+#[cfg(feature = "cpu")]
+pub fn cpu_client() -> Client {
+    match Device::cpu() {
+        Ok(device) => device.client(),
+        Err(error) => panic!("{}", TestBackend::Cpu.unavailable(error)),
     }
 }
 
