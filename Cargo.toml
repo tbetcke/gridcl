@@ -46,3 +46,9 @@ overflow-checks = false
 # checks stay on.
 [profile.dev.package.gridcl-refcell]
 opt-level = 3
+
+# Dependencies (not workspace members) optimised in debug builds: the CPU runtime's kernel
+# compilation and execution dominate debug test times (docs/plans/M3.md, question 20, step 2).
+# Workspace crates keep opt-level 0, debug assertions and overflow checks.
+[profile.dev.package."*"]
+opt-level = 2

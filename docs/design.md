@@ -34,7 +34,7 @@ The requirements are unchanged from the draft, apart from the development target
 - **Device residency:** all large mesh arrays live on the compute device. The host keeps only metadata and communication bookkeeping.
 - **Backends:** CUDA, HIP, Vulkan and Metal (through wgpu), and the CubeCL CPU runtime. f64 is used where the device supports it; f32 must work everywhere.
 - **CPU performance:** on the CubeCL CPU runtime, kernels use the host's SIMD units through CubeCL vectors where benchmarks show a gain. The same kernel source serves CPUs and GPUs.
-- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Locust (NVIDIA Grace Hopper GH200) as the routine CUDA platform, UCL Myriad's V100 nodes at milestone reviews, for multi-GPU tests and as the fallback, and Myriad's A100 nodes for runs scheduled when required (ADR-0006). See "Development environment and test targets".
+- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Myriad's CPU-only D nodes for x86-64 AVX-512 CPU benchmarks, and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback when Locust is unavailable (ADR-0014). See "Development environment and test targets".
 - **Distribution:** MPI-distributed meshes with ownership, ghost layers and parallel partitioning. PT-Scotch is the production default; other partitioners are pluggable.
 - **High order:** geometry of arbitrary polynomial degree, with sub-entity orientation information for later high-order FEM and BEM.
 - **I/O:** Gmsh MSH 4.1 import and export, and VTK export (VTU/PVTU, VTKHDF) including VTK Lagrange cells.
@@ -51,7 +51,7 @@ The requirements are unchanged from the draft, apart from the development target
 7. Canonical orientation is keyed on origin vertex ids (decided in review, Q1).
 8. wgpu and Metal are real targets (Q2).
 9. The CI default partitioner is the built-in block partitioner plus vendored METIS on rank 0; PT-Scotch runs in its own CI job (Q3).
-10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Locust (GH200) is the routine CUDA platform; Myriad V100 runs at milestone reviews, for multi-GPU tests and as the fallback; Myriad A100 when required (ADR-0006).
+10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Locust (GH200) is the CUDA platform for routine runs, milestone reviews and benchmarks; Myriad's CPU-only D nodes run the x86-64 AVX-512 CPU benchmarks; Myriad V100 and A100 run multi-GPU tests and architecture comparisons, and are the fallback when Locust is unavailable (ADR-0014).
 11. SIMD is written in CubeCL kernels with `Vector<F, N>`, never with intrinsics or `std::simd` on the host. Vector sizes per kernel family and device class come from benchmarks (M3s); until then every kernel runs at vector size 1.
 
 ### Out of scope
@@ -220,7 +220,7 @@ pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     comm: C,                        // Listing S2c
     topology: Topology<TD>,         // cell and entity blocks, connectivity, vertex IndexMap, origin ids
     geometry: Geometry<F, TD, GD>,  // geometry blocks, nodes, node IndexMap, cached factors
-    tags: TagRegistry,
+    tags: TagRegistry,              // from M4, its first user (ADR-0012)
 }
 
 pub type CurveMesh<F, C = Serial>   = Mesh<F, D1, D3, C>;
@@ -232,10 +232,15 @@ pub struct CellBlock<TD: TopoDim> {
     pub cell: TD::Cell,                 // e.g. Cell3::Prism
     pub index_map: IndexMap,            // [owned | ghost] cells of this block
     pub vertices: DeviceStrided<u32>,   // local vertex indices in reference-cell order
-    pub origin_ids: DeviceBuffer<u32>,  // interleaved (hi, lo) origin id of each cell
+    pub origin_ids: DeviceBuffer<u32>,  // interleaved (hi ^ 0x8000_0000, lo) origin id of each cell
     pub flags: DeviceBuffer<u32>,       // bit 0: manifold orientation flipped (codimension 1)
 }
+impl<TD: TopoDim> CellBlock<TD> {      // CellBlock lives in gridcl-topology (ADR-0012)
+    pub fn new(cell: TD::Cell, index_map: IndexMap, vertices: DeviceStrided<u32>,
+               origin_ids: DeviceBuffer<u32>, flags: DeviceBuffer<u32>) -> Self;
+}
 
+// CoordinateElement and GeometryBlock live in gridcl-geometry, re-exported by gridcl (ADR-0012).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CoordinateElement<TD: TopoDim> { pub cell: TD::Cell, pub degree: u32, pub family: NodeFamily }
 
@@ -297,6 +302,7 @@ where F: Real, GD: Dim, C: Comm,
       TD: TopoDim + EmbeddedIn<GD>, TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
     /// All boundary facets as a mesh one dimension lower, oriented outward.
+    /// Returns GridError::NotYetImplemented until M9 (ADR-0012).
     pub fn boundary(&self) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>;
     /// Tagged boundary facets only; interior facets are rejected (GridError::InteriorFacet).
     pub fn facet_submesh(&self, facets: &MeshTags) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>;
@@ -313,7 +319,35 @@ impl<F: Real, TD: TopoDim> QuadRule<F, TD> {
     pub fn gauss(client: &Client, cells: &[TD::Cell], degree: u32) -> Result<Self>;
     /// Gauss rules for every cell type present in `grid`.
     pub fn for_grid<G: DeviceGrid<F = F, TD = TD>>(grid: &G, degree: u32) -> Result<Self>;
-    pub fn get(&self, cell: TD::Cell) -> Result<&PointSet<F, TD>>;
+    pub fn get(&self, cell: TD::Cell) -> Result<&PointSet<F, TD>>;   // CellNotInRule if absent
+}
+
+/// Points and weights on one reference cell (host, f64), with device tabulations of coordinate
+/// elements: computed in f64, narrowed to F, uploaded on first use and cached per element
+/// (ADR-0012). The tabulate calls return share()s of the cached buffers.
+pub struct PointSet<F: Real, TD: TopoDim> { /* cell, points, weights, client, tabulation cache */ }
+impl<F: Real, TD: TopoDim> PointSet<F, TD> {
+    pub fn cell(&self) -> TD::Cell;
+    pub fn len(&self) -> usize;
+    pub fn points(&self) -> &[f64];                  // reference coordinates, [q][tdim]
+    pub fn weights(&self) -> &[f64];
+    pub fn tabulate(&self, e: &CoordinateElement<TD>) -> Result<DeviceBuffer<F>>;             // [q][k]
+    pub fn tabulate_derivatives(&self, e: &CoordinateElement<TD>) -> Result<DeviceBuffer<F>>; // [q][k][d]
+}
+
+/// Points on every facet of a cell, in cell coordinates, facet-major (ADR-0012). A cell's facets
+/// may differ in point count (prism, pyramid), so a facet field has sum over facets of n_f points per cell.
+pub struct FacetPointSet<F: Real, TD: TopoDim> { /* points: PointSet<F, TD>, facet offsets, normals */ }
+impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
+    pub fn points(&self) -> &PointSet<F, TD>;        // the facets' weights
+    pub fn facet_offsets(&self) -> &[usize];         // facets + 1 entries
+    pub fn reference_normal(&self, q: usize) -> &[f64];
+}
+pub struct FacetQuadRule<F: Real, TD: TopoDim> { sets: Vec<FacetPointSet<F, TD>> }
+impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
+    pub fn gauss(client: &Client, cells: &[TD::Cell], degree: u32) -> Result<Self>;
+    pub fn for_grid<G: DeviceGrid<F = F, TD = TD>>(grid: &G, degree: u32) -> Result<Self>;
+    pub fn get(&self, cell: TD::Cell) -> Result<&FacetPointSet<F, TD>>;
 }
 
 pub trait FieldShape { const LEN: usize; type Host<T: Copy + Default>: Copy + Default; }
@@ -337,17 +371,30 @@ impl<TD: EmbeddedIn<GD>, GD: Dim> FieldShape for PinvShape<TD, GD> {
 ///     ((c / tile) * num_points * LEN + q * LEN + k) * tile + c % tile,
 /// so the lanes of a kernel over consecutive cells read and write contiguous memory. tile = 1 is
 /// the plain [cell][point][component] layout. Stored in chunks of whole tiles so that no chunk
-/// exceeds the device's largest allocation; the cell count is padded to whole tiles.
+/// exceeds the device's largest allocation (device_properties(client).memory.max_page_size,
+/// which honours testing::with_properties; ADR-0012); the cell count is padded to whole tiles.
 pub struct QuadField<F: Real, S: FieldShape> { chunks: Vec<QuadChunk<F>>, num_cells: usize, num_points: usize, tile: usize, _s: PhantomData<S> }
 pub struct QuadChunk<F: Real> { pub first_cell: usize, pub num_cells: usize, pub data: DeviceBuffer<F> }
 impl<F: Real, S: FieldShape> QuadField<F, S> {
     pub fn uninit(client: &Client, num_cells: usize, num_points: usize, tile: usize) -> Result<Self>;
     pub fn tile(&self) -> usize;
+    pub fn num_cells(&self) -> usize;
+    pub fn num_points(&self) -> usize;
+    pub fn chunks(&self) -> &[QuadChunk<F>];
     /// Host copy in plain [cell][point] order, whatever the tile width.
     pub fn to_host_cell_major(&self) -> Result<Vec<S::Host<F>>>;
 }
 /// One QuadField per cell block, indexed like cell_blocks().
 pub struct BlockFields<F: Real, S: FieldShape> { pub blocks: Vec<QuadField<F, S>> }
+
+/// The cached E-vector of one geometry block (ADR-0012): chunks of whole tiles, [k][g][cell] with
+/// cells fastest, the cell count padded to VECTOR_PAD with copies of the block's last cell. An empty
+/// block has none. Built on first use by DeviceGrid::evector.
+pub struct EVector<F: Real> { /* chunks */ }
+impl<F: Real> EVector<F> {
+    pub fn num_cells(&self) -> usize;
+    pub fn chunks(&self) -> &[QuadChunk<F>];
+}
 ```
 
 ### Kernels receive dimensions from types
@@ -428,7 +475,7 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = 
     let tile = VectorPolicy::for_client(g.client()).quad_tile();
     let layout = GeomLayout::new::<TD, GD>(&gb.element, pts.len(), tile);
     let num_cells = g.cell_blocks()[b].index_map.num_local();          // owned + ghost
-    let xe = gb.evector()?;                                             // cached; tile-aligned chunks
+    let xe = g.evector(b)?;                                             // cached; tile-aligned chunks
     let out = QuadField::<F, JacShape<TD, GD>>::uninit(g.client(), num_cells, pts.len(), tile)?;
     let dphi = pts.tabulate_derivatives(&gb.element)?;                  // host f64 tabulation, narrowed
     // Tile-aligned cell ranges that each lie in one E-vector chunk and one field chunk.
@@ -502,7 +549,7 @@ impl<F: Real, C: Comm> TryFrom<AnyMesh<F, C>> for SurfaceMesh<F, C> {
 
 ### Trait vocabulary for downstream crates
 
-**Listing B7 — what FEM and BEM crates program against (gridcl)**
+**Listing B7 — what FEM and BEM crates program against (gridcl-geometry, re-exported by gridcl; ADR-0012)**
 
 ```rust
 /// Implemented by Mesh and by submeshes; later by extruded or structured grids.
@@ -515,20 +562,28 @@ pub trait DeviceGrid {
     fn comm(&self) -> &dyn CommDyn;                    // Listing S2c
     fn cell_blocks(&self) -> &[CellBlock<Self::TD>];
     fn geometry_block(&self, b: usize) -> &GeometryBlock<Self::TD>;
-    fn nodes(&self) -> &DeviceBuffer<Self::F>;         // L-vector [node][gdim]
+    fn nodes(&self) -> &DeviceBuffer<Self::F>;         // L-vector [node][gdim], relative to origin()
+    /// Centre of the global bounding box; physical_points adds it back (ADR-0012).
+    fn origin(&self) -> <Self::GD as Dim>::Array<f64>;
+    /// E-vector of geometry block b, built on first use and cached (ADR-0012).
+    fn evector(&self, b: usize) -> Result<&EVector<Self::F>>;
     fn node_index_map(&self) -> &IndexMap;
     fn vertex_index_map(&self) -> &IndexMap;
-    fn vertex_origin_ids(&self) -> &DeviceBuffer<u32>; // interleaved (hi, lo) per local vertex
-    /// Err(GridError::EntitiesNotCreated(dim)) until create_entities(dim) has run.
+    fn vertex_origin_ids(&self) -> &DeviceBuffer<u32>; // interleaved (hi ^ 0x8000_0000, lo) per local vertex
+    /// Err(GridError::EntitiesNotCreated(dim)) until create_entities(dim) has run, and always
+    /// for dim = tdim: cells are in cell_blocks() (ADR-0012).
     fn entity_blocks(&self, dim: usize) -> Result<&[EntityBlock]>;
-    /// Err(GridError::ConnectivityNotCreated(key)) until create_connectivity has run.
+    /// Err(GridError::ConnectivityNotCreated(key)) until create_connectivity has run;
+    /// Err(GridError::UnsupportedConnectivity(key)) for pairs other than (tdim, d) and (d, tdim).
     fn connectivity(&self, key: ConnKey) -> Result<&Connectivity>;
     /// Per-cell orientation bits (A.6); None for interval cells, which have none.
     fn permutation_info(&self, b: usize) -> Option<&DeviceBuffer<u32>>;
 }
 ```
 
-This mirrors the mesh traits of ndmesh but returns device views instead of per-entity host iterators. Function spaces, assemblers and BEM operators are generic over `G: DeviceGrid`, so they work unchanged on submeshes and future grid kinds. Accessors never create data: lazily created entities and connectivity are built only by the `&mut self` methods `create_entities` and `create_connectivity`.
+This mirrors the mesh traits of ndmesh but returns device views instead of per-entity host iterators. Function spaces, assemblers and BEM operators are generic over `G: DeviceGrid`, so they work unchanged on submeshes and future grid kinds. Accessors create no topology: entities and connectivity are built only by the `&mut self` methods `create_entities` and `create_connectivity`. Derived geometry data (E-vectors) is built on first use and cached (ADR-0012).
+
+`DeviceGrid` lives in gridcl-geometry, because `QuadRule::for_grid` and the block functions of Listing B5 (gridcl-geometry) are generic over it; gridcl re-exports it. `create_entities(d)` accepts 0 ≤ d < tdim, and dimension 0 gives one `Point` block of the vertices. `create_connectivity` supports (tdim, d), which is downward and filled by entity creation, and (d, tdim), which is upward, for 0 ≤ d < tdim; d → 0 is `EntityBlock::vertices` and tdim → 0 is `CellBlock::vertices` (ADR-0012).
 
 ## API walkthrough
 
@@ -670,7 +725,7 @@ gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 
 
 - **Vertex numbering (A.1).** Every cell uses the DefElement reference cell, shared with ndelement, Basix and Symfem. Quadrilaterals and hexahedra use tensor (lexicographic) order, e.g. (0,0), (1,0), (0,1), (1,1) for the quadrilateral. This differs from the counter-clockwise order of Gmsh and VTK but keeps the tensor structure that sum-factorisation kernels need. I/O applies the maps in A.9.
 - **Sub-entity numbering (A.2, A.3).** Sub-entities of each dimension are numbered by their sorted vertex lists in lexicographic order (DefElement Convention 2). ndelement main and Symfem main use the same rule. For triangles and tetrahedra this reverses the Basix and DOLFINx order (conversion in A.11); for all other cells the two coincide. Every cell stores, per dimension, the local vertex lists of its sub-entities and their cell types, since prism and pyramid faces are mixed.
-- **Origin ids.** Every vertex has an origin id, an i64 that does not depend on the partition. It is the Gmsh node tag of the corner node, the id passed to the mesh builder (or the construction index if none is given), or the parent's id for a submesh. Origin ids must be globally unique; readers check this and return `GridError::DuplicateOriginId`. They travel with the vertex through migration and ghosting. On the device they are stored as interleaved (hi, lo) u32 pairs, with a comptime fast path when every id fits in u32. Cells carry origin ids too (Gmsh element tags or builder indices); these are used for output ordering and tests. A future refinement must derive new ids independently of the partition, e.g. from the pair of origin ids of the parent edge.
+- **Origin ids.** Every vertex has an origin id, an i64 that does not depend on the partition. It is the Gmsh node tag of the corner node, the id passed to the mesh builder (or the construction index if none is given), or the parent's id for a submesh. Origin ids must be globally unique; readers check this and return `GridError::DuplicateOriginId`. They travel with the vertex through migration and ghosting. On the device they are stored as interleaved (hi ^ 0x8000_0000, lo) u32 pairs, so unsigned pair order equals i64 order and negative ids stay valid; a comptime fast path compares only the lo words when every id lies in [0, 2^32), that is, when every stored hi word is 0x8000_0000 (ADR-0012). Cells carry origin ids too (Gmsh element tags or builder indices); these are used for output ordering and tests. A future refinement must derive new ids independently of the partition, e.g. from the pair of origin ids of the parent edge.
 - **Canonical entity orientation (A.6).** An edge or face is stored starting at its smallest origin id and continuing towards the smaller neighbour. This is the low-to-high rule of ndelement, Basix and DOLFINx, applied to origin ids. Every rank sharing an entity therefore agrees on its orientation, and the orientation does not change when the mesh is repartitioned. Storing entity vertex lists in this orientation is a deliberate difference from DOLFINx: device kernels can orient an entity without a lookup.
     - Edges and triangle faces are simply sorted by origin id.
     - For a quadrilateral face the four slots follow its tensor order (boundary cycle 0–1–3–2). Slot 0 holds the lowest vertex, slot 1 its lower neighbour, slot 2 its other neighbour and slot 3 the opposite vertex.
@@ -784,7 +839,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`; cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -793,7 +848,7 @@ The backend is chosen at run time through `cubecl::Device`, and no gridcl type c
 | Backend | cubecl feature | Device | f64 | u64 arithmetic | Float atomic add | GPU-aware MPI | Tested on |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CPU runtime | `cpu` | `Device::cpu()` | yes | yes | f32, f64 | no | M3 Max on every change; hosted Linux CI |
-| CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | yes (`gpu-aware-cuda`) | Locust (routine); Myriad V100 (reviews, multi-GPU); Myriad A100 when required |
+| CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | yes (`gpu-aware-cuda`) | Locust; Myriad V100/A100 for multi-GPU, comparisons and fallback |
 | HIP/ROCm | `hip` | `Device::rocm(i)` | yes | yes | f32 | planned (`gpu-aware-hip`) | manual |
 | Vulkan via wgpu (SPIR-V) | `vulkan` | `Device::vulkan(kind)` | if the adapter has shaderFloat64 | if the adapter has shaderInt64 | f32 if supported | no | hosted Linux CI (software Vulkan) |
 | Metal via wgpu (MSL) | `metal` | `Device::metal_msl(kind)` | no | yes | f32 only | no | M3 Max on every change |
@@ -831,7 +886,7 @@ CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; featur
 
 ### Data layouts and index widths
 
-- Local indices are u32 on the device. Origin ids and global indices are i64 on the host and interleaved (hi, lo) u32 pairs on the device.
+- Local indices are u32 on the device. Origin ids and global indices are i64 on the host and interleaved (hi, lo) u32 pairs on the device; origin ids store hi ^ 0x8000_0000 (ADR-0012).
 - Sort keys are arrays of one to four u32 words, stored planar and word-major in one buffer (`SortKeys`, Listing S1b): word w of key i is at `w · pad_len(len) + i`, and word 0 is the most significant. The lanes of a vector are therefore independent keys. Payloads are u32 emission indices, so the total number of emitted keys per launch must stay below 2^32; this is checked.
 - Geometry nodes are stored as an L-vector (unique nodes, AoS [node][gdim]). A cached E-vector ([node_in_cell][gdim][cell], cell index fastest) is built on demand for coalesced and vectorized element kernels, following MFEM. It is stored in chunks of whole tiles, and its cell count is padded to a multiple of `VECTOR_PAD` with copies of the block's last cell, so padding lanes compute finite values.
 - `QuadField` is tiled by cells (Listing B4b), so the lanes of a vectorized kernel write contiguous memory on CPUs and coalesced memory on GPUs.
@@ -952,7 +1007,7 @@ On every CPU the runtime sizes IO for 512 bits, because wider vectors amortise e
 
 - Every unit of a cube is a separate worker thread, and each unit runs the whole cube loop: unit u visits the absolute positions cube · cube_dim + u for every cube of the launch. The plane size is 1.
 - `max_units_per_cube` and each axis of `max_cube_dim` equal the number of hardware threads.
-- LLVM compiles each kernel for the host CPU at O3. Float additions and multiplications are not contracted into fused multiply-adds on the CPU, so each vector lane computes exactly what the scalar kernel computes.
+- LLVM compiles each kernel for the host CPU at O3. CubeCL 0.11 fuses a multiply and the add that consumes it into one fused multiply-add (`llvm.fmuladd`) on every target, the CPU included (ADR-0013). The fusion depends only on the kernel source, so each vector lane computes exactly what the same kernel computes at vector size 1.
 - Shared memory is sized to the L1 data cache.
 
 Two consequences shape gridcl's kernels. First, with the GPU mapping of one item per unit, neighbouring items go to different threads: threads write to shared cache lines (128 bytes on Apple CPUs) and none streams through memory. Every kernel therefore takes its work distribution from a launch plan that gives each CPU thread contiguous blocks. Second, auto-vectorization is not relied on, because the cube loop strides through memory by cube_dim items; vectors are requested explicitly with `Vector<F, N>`.
@@ -1067,7 +1122,7 @@ Histograms, connectivity inversion, segmented reductions over irregular segments
 
 ### Determinism across vector sizes
 
-- **Lane-independent kernels** (geometric factors, element-wise maps, integer kernels) give bitwise identical results at every vector size on the CPU runtime, because each lane performs the scalar operation sequence and nothing is contracted. On GPUs they agree within the precision tolerances.
+- **Lane-independent kernels** (geometric factors, element-wise maps, integer kernels) give bitwise identical results at every vector size on the CPU runtime, because each lane performs the operation sequence of the same kernel at vector size 1 (ADR-0013). On GPUs they agree within the precision tolerances.
 - **Float reductions** combine per-lane partial results in a fixed order. The result depends on the vector size but is bitwise reproducible for a fixed size on the same device; the policy fixes the size per kernel family and device class, so the determinism rule holds.
 - **Integer reductions and scans** are exact at every size.
 
@@ -1077,7 +1132,7 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 
 - **What it runs:** every candidate family at every vector size the device offers, at QuadField tile widths 1, 4 and 16 for geometry kernels, and on CPUs at block sizes of 4, 16 and 64 KiB. Sizes are 10^5, 10^6 and 10^7 items, in f32, f64 and u32 as the family requires.
 - **What it reports:** the median of ten timed runs after a warm-up launch that absorbs JIT compilation, the effective bandwidth relative to a copy kernel on the same device, and the compile time per vector size. Results are written as JSON.
-- **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and a Myriad V100 node (CPU runtime on its AVX-512 Xeon as CpuSimd512, and CUDA). Locust (Grace CPU with 72 cores, and H100) and a Myriad A100 node are added when available. CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
+- **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus a whole CPU-only Myriad D node (36-core Xeon Gold 6240 with AVX-512, no GPU; `-ac allow=D`) for the CPU runtime as CpuSimd512, which Locust cannot provide; CPU-only nodes queue far shorter than GPU nodes. Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
 - **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
 - **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width and CPU block size follow the same rule.
 - **Record:** the choices go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
@@ -1088,17 +1143,18 @@ Cells and their vertices come from the input. Edges and faces are created on dem
 
 ### Entity creation
 
-1. **Emission plan (host).** For entity dimension d and each entity type T (e.g. triangle faces), list the cell blocks whose cells have sub-entities of type T, with the count k_b per cell from the gridcl-refcell tables. Prefix sums give block b the emission range [e_b, e_b + n_b · k_b). The total must stay below 2^32.
+1. **Emission plan (host).** For entity dimension d and each entity type T (e.g. triangle faces), list the cell blocks whose cells have sub-entities of type T, with the count k_b per cell from the gridcl-refcell tables. With n̂_b the block's cell count n_b rounded up to `VECTOR_PAD`, prefix sums of k_b · n̂_b give block b the emission range [e_b, e_b + n̂_b · k_b); sub-entity i of cell c has emission index e = e_b + i · n̂_b + c, so the lanes of a vector are aligned consecutive cells. The padded total must stay below 2^32 (ADR-0012).
 2. **Emit keys (device).** There is one launch per cell block, with the cell type and sub-entity table as comptime constants. One unit per (cell, local sub-entity i of type T) writes at its emission index e:
     - the key is the sub-entity's local vertex ids, sorted ascending by a sorting network of at most four values (two u32 words for edges, three for triangles, four for quadrilaterals);
-    - the payload is e.
+    - the payload is e;
+    - padding positions (c ≥ n_b) write an all-ones sentinel key, which sorts last and forms one group that is dropped from the entity count and from the decode (ADR-0012).
 3. **Sort (device).** Stable LSD radix sort of all keys of type T with their payloads, all blocks together. A face shared by a hexahedron and a prism is therefore found once.
-4. **Mark and number.** flag[i] = 1 if i = 0 or key[i] ≠ key[i−1], else 0. The provisional id is id[i] = inclusive_scan(flag)[i] − 1, and the entity count is id[last] + 1.
+4. **Mark and number.** flag[i] = 1 if i = 0 or key[i] ≠ key[i−1], else 0. The provisional id is id[i] = inclusive_scan(flag)[i] − 1, and the entity count is id[last] + 1. `unique_by_key` computes exactly this: its `group` is the provisional id, and its count read is the one CLAUDE.md allows (ADR-0012).
 5. **Provisional connectivity.** Each sorted position i decodes its payload e into (block, cell, local index) using the emission ranges, then writes cell→entity[block][cell][local index] = id[i]. Each head position also writes entity→vertex from its own occurrence, rewritten into canonical orientation using vertex origin ids (A.6 storage slots).
 6. **Ownership** (parallel only; see below). Each entity is marked owned or ghost, and every ghost gets its owner rank.
 7. **Renumber.** Owned entities come first, ordered by the smallest local cell index that touches them (a segmented minimum over the sorted runs), which preserves locality. Ghosts follow, ordered by (owner rank, global index). The permutation is applied to entity→vertex, and cell→entity is rewritten by a gather.
 8. **Global numbers.** An exclusive scan of the owned counts over ranks gives each rank its owned range. Ghost global numbers arrive from their owners by a forward exchange.
-9. **Upward connectivity** (on demand). entity→cells is built by counting sort (histogram, scan, scatter) into a `DeviceCsr`.
+9. **Upward connectivity** (on demand). entity→cells is built by counting sort into a `DeviceCsr`: offsets from histogram and exclusive scan, and the rows filled by a stable radix sort of the entity ids with the cell as payload, so each row is in cell order and deterministic without atomics (ADR-0012).
 
 Entities of one dimension are grouped into homogeneous entity blocks by type; a prism mesh, for example, has a triangle face block and a quadrilateral face block. Each entity block has its own IndexMap with [owned | ghost] numbering, so device arrays always have a fixed stride. Connectivity arrays use a per-dimension flat index (block offset + block-local index). The type of the sub-entity at local position i follows from the reference tables, so no per-entry type tag is stored.
 
@@ -1113,7 +1169,7 @@ pub struct EntityBlock {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ConnKey { pub from: u8, pub to: u8 }
+pub struct ConnKey { pub from: u8, pub to: u8 }        // defined in gridcl-device, re-exported (ADR-0012)
 
 pub enum Connectivity {
     /// One strided array per cell block (cell -> edges, cell -> faces, ...), flat indices.
@@ -1159,7 +1215,7 @@ Geometry is a vector-valued Lagrange field of arbitrary degree, evaluated by dev
 
 ### Geometric factors
 
-Factors are computed on the device, following MFEM's GeometricFactors, and cached by (rule id, factor flags). They are stored in cell chunks (`QuadField`). Factor kernels read the E-vector and vectorize across the cells of a tile (Listing B5).
+Factors are computed on the device, following MFEM's GeometricFactors. Caching by (rule id, factor flags) is deferred to the first milestone that needs it; until then the methods of Listing B4 return fresh fields (ADR-0012). They are stored in cell chunks (`QuadField`). Factor kernels read the E-vector and vectorize across the cells of a tile (Listing B5).
 
 - **Physical points** X(ξ).
 - **Jacobian** J (D_GEO × D_TOP, column-major).
@@ -1168,7 +1224,7 @@ Factors are computed on the device, following MFEM's GeometricFactors, and cache
 - **Normals** in codimension 1, with s = −1 if the cell's orientation flag is set and +1 otherwise:
     - D2 in D3: n = s (J0 × J1) / |J0 × J1|;
     - D1 in D2: n = s (J0_y, −J0_x) / |J0|, which points outward for counter-clockwise closed curves.
-- **Facet normals** of codimension-0 cells, at facet quadrature points: n = K^T n_ref / |K^T n_ref|, using the reference facet normals from gridcl-refcell.
+- **Facet normals** of codimension-0 cells, at facet quadrature points: n = K^T n_ref / |K^T n_ref|, using the reference facet normals from gridcl-refcell. The points are facet-major, so a cell has Σ_f n_f points (`FacetPointSet`, Listing B4b; ADR-0012).
 
 ### Manifold orientation
 
@@ -1452,9 +1508,9 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 | --- | --- | --- |
 | M3 Max, local (macOS, arm64) | CubeCL CPU runtime in f32 and f64; Metal via wgpu in f32; MPI | every change |
 | Hosted CI, Linux x86-64 | CPU runtime in f32 and f64; Vulkan (software driver) in f32, plus f64 if supported; MPI under MPICH and Open MPI | every push |
-| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | every milestone review; multi-GPU and GPU-aware tests; fallback when Locust is unavailable |
+| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU and GPU-aware tests; architecture comparisons; fallback when Locust is unavailable (ADR-0014) |
 | Myriad A100 (sm_80) | CUDA in f32 and f64 | when required (see "Development environment and test targets") |
-| Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | after every task that changes kernels; milestone reviews when available |
+| Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review; benchmarks (ADR-0014) |
 | Myriad node with a CUDA-aware MPI | GPU-aware halo exchange | from M10 |
 
 - **Tolerances.** Quantities that are exact in exact arithmetic (unit volume, polynomial reproduction) are checked to 10^−12 relative in f64 and 10^−5 in f32. f32 results are also compared with f64 results to 10^−5 relative. Convergence rates are tested in f64 only.
@@ -1473,7 +1529,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
     - permutation bits, keyed by cell origin id;
     - output files, after sorting by origin id.
 - **Determinism.** Two runs on the same device and rank count produce bitwise identical device arrays.
-- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16.
+- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012). A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013).
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
@@ -1493,18 +1549,21 @@ Claude Code runs on the M3 Max and tests there on every change. CUDA work runs o
 | Target | Hardware | Access | Role |
 | --- | --- | --- | --- |
 | M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
-| Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240, AVX-512) and 2 × V100 (sm_70) each | SGE batch jobs: `-l gpu=N` with `-ac allow=EF` | CUDA at milestone reviews, multi-GPU tests and fallback; oldest supported architecture; CPU benchmarks on AVX-512 |
-| Myriad A100 | L nodes: 36 cores and 4 × A100 40 GB (sm_80) each | SGE batch jobs: `-l gpu=N` with `-ac allow=L` | second CUDA architecture and CUDA 13; scheduled when required |
-| Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU and Hopper GPU (sm_90) | UCL ARC experimental system; SSH to the node, no scheduler (recorded in E0) | routine CUDA platform; aarch64 host and Hopper GPU |
+| Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240, AVX-512) and 2 × V100 (sm_70) each | SGE batch jobs: `-l gpu=N` with `-ac allow=EF` | multi-GPU tests, architecture comparisons and fallback; oldest supported architecture |
+| Myriad A100 | L nodes: 36 cores and 4 × A100 40 GB (sm_80) each | SGE batch jobs: `-l gpu=N` with `-ac allow=L` | second CUDA architecture and CUDA 13; comparisons and fallback |
+| Myriad CPU | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB, no GPU | SGE batch jobs with `-ac allow=D` | every CPU-only Myriad run: CPU benchmarks on AVX-512 (CpuSimd512) (ADR-0014) |
+| Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU and Hopper GPU (sm_90) | UCL ARC experimental system; SSH to the node, no scheduler (recorded in E0) | CUDA platform for routine runs, milestone reviews and benchmarks; aarch64 host and Hopper GPU |
 | Hosted CI | Linux x86-64 runners | automatic | CPU runtime, Vulkan, both MPI flavours, conformance |
 
-**When the V100 and A100 run.** Locust is the default for CUDA runs: Claude runs the CUDA tests there after every task that changes kernels, and at milestone reviews when it is available (ADR-0006). Myriad V100 runs at every milestone review, for multi-GPU and GPU-aware MPI tests (`--gpus 2`; Locust has one GPU), and as the fallback when Locust is unreachable or a run fails because another user occupies its GPU; the run report says why. Claude schedules A100 runs only:
+**When the V100 and A100 run.** Locust is the CUDA platform for every run: Claude runs the CUDA tests there after every task that changes kernels and at every milestone review, and runs the benchmarks there (ADR-0014). Claude schedules Myriad V100 or A100 runs only:
 
-- for the milestone reviews of M2, M3, M6, M9 and M10;
-- to compare, when a Locust or V100 failure or result looks architecture-dependent;
+- as the fallback, when Locust is unreachable, a run fails because another user occupies its GPU, or a benchmark cannot get an idle node; the run report says why;
+- for multi-GPU and GPU-aware MPI tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU);
+- to compare, when a Locust failure or result looks architecture-dependent (sm_70, sm_80);
 - when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device or the GPU-aware transport;
-- for benchmarks;
 - when the user asks.
+
+CPU-only Myriad runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), which Locust cannot provide, use a D node (`-ac allow=D`), never a GPU node: CPU-only nodes queue far shorter.
 
 Locust is an experimental system, so its runs are kept short, build with at most half of the node's cores, and never block a milestone when it is unavailable. It is an open multi-user node without a scheduler, so other users' work can share its CPU and GPU at any time.
 
@@ -1522,7 +1581,7 @@ targets: myriad-v100 | myriad-a100 | locust
 5. **Wait.** It polls the scheduler for up to `--max-wait` (default 3 hours, queue time included). On timeout it deletes the job and exits with status 124.
 6. **Report.** It copies the results to `target/hpc/<target>/<job id>/`, prints a summary of at most 40 lines with the first failure first (on direct targets including a `node load:` line, `idle` or `busy` with the reason, for both snapshots), and exits with the command's exit status.
 
-`--cores` requests CPU cores for the job (all 36 for CPU benchmarks); the job script maps it to the scheduler request recorded in E0. `scripts/hpc/status.sh` lists the user's remote jobs and `scripts/hpc/cancel.sh <job id>` deletes one. At most two remote jobs run at a time.
+`--cores` requests CPU cores for the job (all 36 for CPU benchmarks); the job script maps it to the scheduler request recorded in E0. `scripts/hpc/status.sh` lists the user's remote jobs and `scripts/hpc/cancel.sh <job id>` deletes one. At most two scheduler jobs (Myriad) run at a time, and one Locust run may run in parallel with them. Myriad jobs are submitted one after the other, because they sync into one remote tree (ADR-0014).
 
 **Myriad rules that shape the runner** (UCL Research Computing documentation):
 
@@ -1539,17 +1598,17 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | Crate | Purpose | Depends on |
 | --- | --- | --- |
 | gridcl-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
-| gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
-| gridcl-device | `DeviceBuffer` family, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); dev: proptest |
+| gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
+| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); dev: proptest |
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
-| gridcl-topology | Entity blocks, sort-based entity creation, ownership, connectivity, permutation info | dims, refcell, device, parallel, cubecl |
-| gridcl-geometry | Coordinate elements, geometry blocks, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl |
+| gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
+| gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
 | gridcl-io | Gmsh reader and writer, VTU/PVTU, VTKHDF | topology, geometry, parallel, partition; hdf5-metno (optional) |
-| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid`, tags, submeshes, prelude | all of the above |
+| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, prelude | all of the above |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
-| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); cubecl with runtime features |
+| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
 | gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-testing; cubecl with runtime features |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
@@ -1580,9 +1639,9 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `GRIDCL_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
 | ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to gridcl-partition; nightly |
 | conformance | hosted Linux with OpenBLAS, or the M3 Max with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
-| cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | every milestone review; multi-GPU; fallback |
+| cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | multi-GPU; fallback |
 | cuda-a100 | Myriad L node through `scripts/hpc` | as cuda-v100, with the newest toolkit the driver supports | when required |
-| gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | after every task that changes kernels |
+| gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review |
 | gpu-aware | Myriad node with a CUDA-aware MPI, through `scripts/hpc` | host-staged vs GPU-aware halo exchange | from M10, at every milestone review |
 
 The hosted CI provider is not fixed. Without one, the M3 Max covers the cpu, MPI and conformance jobs, and Vulkan runs are skipped.
@@ -1721,7 +1780,8 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - device entity creation ("Topology construction"), connectivity and permutation info;
 - geometry blocks, `QuadRule` and `FacetQuadRule`;
 - E-vectors of the geometry nodes, built on demand and cached per geometry block, and the tiled `QuadField`;
-- factor kernels (X, J, det J, K, facet normals), generic over the vector size, and `measure`;
+- factor kernels (X, J, det J, K, facet normals, normals), generic over the vector size, and `measure`;
+- `AnyMesh`, `AnyMeshRef`, `with_mesh!` and `DeviceGrid` (change log, BLK-3); `boundary()` is declared and returns `NotYetImplemented` until M9 (ADR-0012);
 - the gridcl-testing mesh generators;
 - the real `Mesh` replaces the M1a stub in the compile-fail tests.
 
@@ -1734,7 +1794,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - Jacobians on a mixed triangle–quadrilateral surface mesh use one `QuadRule` and match a host reference to 10^−12;
 - permutation info equals the conformance fixtures for every cell;
 - with an injected limit, `QuadField` results are identical with 1 and 7 chunks;
-- factor kernels on E-vectors agree with a scalar L-vector reference kernel at every vector size from 1 to 16 and at tile widths 1 and 16, bitwise on the CPU runtime and within the tolerances on GPUs.
+- factor kernels on E-vectors agree with a scalar L-vector reference kernel at every vector size from 1 up to 16 that the device offers and the tile holds, and at tile widths 1 and 16, bitwise on the CPU runtime, with +0 and −0 equal (ADR-0013), and within the tolerances on GPUs.
 
 ### M3s SIMD vectorization and benchmarks
 
@@ -1747,7 +1807,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Acceptance:**
 
-- benchmark JSON committed under `docs/perf/data/` for the M3 Max (CPU runtime, Metal) and a Myriad V100 node (CPU runtime on its Xeon, CUDA), plus Locust and a Myriad A100 node if they were available;
+- benchmark JSON committed under `docs/perf/data/` for the M3 Max (CPU runtime, Metal), Locust (CPU runtime on Grace, CUDA) and a CPU-only Myriad D node (CPU runtime on its AVX-512 Xeon), plus Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014);
 - `docs/perf/vectorization.md` lists, for every candidate family, device class and scalar type, the measured speedup of each vector size over size 1, the chosen size and the reason;
 - every vector size above 1 in `vector-policy.toml` is at least 10% faster than size 1 at 10^6 and 10^7 items on its device class, and every chosen configuration (vector size, tile width, block size) is within 3% of the fastest one measured;
 - a test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass`, and that every value is a power of two from 1 to 16;
@@ -1817,7 +1877,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M9 Submeshes and manifolds
 
-**Scope:** boundary, facet and edge submeshes with `EntityMap`; distributed manifold orientation; normals, pseudo-inverse and facet normals; pull-back, generic over the vector size.
+**Scope:** boundary, facet and edge submeshes with `EntityMap` (`boundary()` replaces M3's `NotYetImplemented`); distributed manifold orientation (`orient`); the manifold tests of normals, pseudo-inverse and facet normals, whose kernels exist from M3 (ADR-0012); pull-back, generic over the vector size.
 
 **Acceptance:**
 
@@ -1839,7 +1899,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Acceptance:**
 
 - on a Myriad node with a CUDA-aware MPI, the GPU-aware halo exchange is bitwise identical to the host-staged one on 2 ranks (V100 node) and 4 ranks (A100 node);
-- benchmarks (entities created per second, geometric factors per second) are recorded on the M3 Max (CPU runtime, Metal), the Myriad V100 and A100 nodes, and Locust;
+- benchmarks (entities created per second, geometric factors per second) are recorded on the M3 Max (CPU runtime, Metal), Locust and a CPU-only Myriad D node (AVX-512), plus Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014);
 - the M3s study covers every `KernelKind`, including Pack and PullBack; `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
 - every example runs on the CPU runtime and on at least one GPU backend;
 - rustdoc builds without warnings, and every public item is documented.
@@ -1866,7 +1926,7 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | Unmaintained dependencies | hdf5-metno instead of hdf5; mshio as a test oracle only; coupe removed. |
 | CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit; CubeCL's default LLVM path chooses the PTX version for the node's driver, and the NVRTC path (`cuda-cpp`) needs a toolkit no newer than the driver's CUDA version (ADR-0001); env-check records both on every target. |
 | CubeCL's LLVM NVPTX backend advertises fewer device features than NVRTC (MMA) | gridcl uses no tensor-core MMA; env-check runs both backends on every remote target (ADR-0001). |
-| Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; turnaround measured in E0; Locust (no queue) as the routine CUDA target and the V100 at every review and as the fallback (ADR-0006); Locust runs never block a milestone. |
+| Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; turnaround measured in E0; Locust (no queue) for all CUDA runs, reviews included, and the V100 as the fallback (ADR-0014); Locust runs never block a milestone. |
 | Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. The prebuilt bundle needs glibc ≥ 2.34; on Myriad the same LLVM version is built with Spack and linked with LLD. |
 | Spack-built LLVM relies on undocumented bundler internals (sentinel file, directory name, `llvm-config`) | Rebuild and re-run env-check on Myriad with every CubeCL upgrade; Apptainer image as the fallback (ADR-0004). |
 | SIMD gains depend on kernel and hardware, and each vector size is a separate JIT compilation | Benchmark-driven policy (M3s) with scalar defaults; one vector size per kernel family and device class at run time; compile time recorded. |
@@ -1918,9 +1978,11 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   library crate, and never add `version =` to its git dependency. After bumping its pin, run
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
-- Host<->device copies in library code only for I/O, explicit to_host()/read_node(),
-  the count read of run-length and unique-by-key, the debug-build index checks of gather
-  and scatter, and the host-staged halo exchange.
+- Host<->device copies in library code only for I/O (including the upload of input arrays
+  at mesh creation, and of quadrature points and tabulations when a rule is created or a
+  tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
+  and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
+  checks of gather and scatter, and the host-staged halo exchange.
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
@@ -2268,7 +2330,7 @@ All 44 findings of the consolidated design review are addressed. The table gives
 **Revision 2 (17 October 2026): development environment.**
 
 - New milestone E0 (development environment), before M0.
-- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Locust (routine CUDA platform), Myriad V100 (milestone reviews, multi-GPU, fallback), Myriad A100 (when required), and hosted CI for Linux CPU, Vulkan and MPI.
+- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Locust (CUDA for routine runs, reviews and benchmarks), Myriad D nodes (AVX-512 CPU benchmarks), Myriad V100 and A100 (multi-GPU, comparisons, fallback), and hosted CI for Linux CPU, Vulkan and MPI.
 - CUDA toolkit and driver rules for V100 and for the driver's PTX JIT.
 - The remote-test runner `scripts/hpc/remote-test.sh` and the probe `tools/env-check/`.
 - Updated: requirements, fixed decisions, supported backends, testing targets, workspace layout, CI matrix, the M0, M7, M8 and M10 acceptance tests, and the risks.

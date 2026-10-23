@@ -241,9 +241,22 @@ fn spread_cubes(cubes: usize, max: (u32, u32, u32)) -> Result<(u32, u32, u32)> {
 }
 
 /// Debug check of a launch's buffer count: at most six, and at most the device's
-/// `max_bindings`.
-#[allow(dead_code)] // The kernels of T3 onwards call it.
-pub(crate) fn debug_assert_bindings(client: &Client, n: u32) {
+/// `max_bindings` (read through [`device_properties`](crate::device_properties)). Every kernel
+/// launcher calls it once per launch; release builds skip the check.
+///
+/// # Panics
+///
+/// In debug builds, if `n` exceeds either limit.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::debug_assert_bindings;
+///
+/// let client = gridcl_testing::test_client();
+/// debug_assert_bindings(&client, 4);
+/// ```
+pub fn debug_assert_bindings(client: &Client, n: u32) {
     if cfg!(debug_assertions) {
         let max = testing::properties(client).hardware.max_bindings;
         assert!(

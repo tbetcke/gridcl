@@ -12,11 +12,14 @@
 //! - [`num_lagrange_nodes`], [`lagrange_points`], [`lagrange_entity_nodes`]: A.4 and A.5.
 //! - [`gauss_rule`]: quadrature on every cell.
 //! - [`LagrangeElement`]: tabulation of Lagrange bases with an orthonormal basis and dense LU.
-//! - [`orientation_bits`]: the permutation info of A.6, from origin ids.
+//! - [`orientation_bits`], [`canonical_order`]: the permutation info and storage slots of A.6,
+//!   from origin ids.
+//! - [`reference_facet_normals`], [`facet_points_to_cell`]: facet normals and facet point maps.
 //! - [`gmsh_to_internal`], [`vtk_to_internal`]: node maps between files and gridcl (A.9).
 
 mod cell;
 mod error;
+mod facet;
 mod generator;
 mod jacobi;
 mod lagrange;
@@ -29,11 +32,12 @@ mod tabulation;
 
 pub use cell::{num_sub_entities, sub_entities, sub_entity_types, tdim, vertices};
 pub use error::RefCellError;
+pub use facet::{facet_points_to_cell, reference_facet_normals};
 pub use lagrange::{
     NodeFamily, lagrange_entity_nodes, lagrange_points, num_interior_lagrange_nodes,
     num_lagrange_nodes,
 };
 pub use node_maps::{gmsh_to_internal, vtk_to_internal};
-pub use orientation::orientation_bits;
+pub use orientation::{canonical_order, orientation_bits};
 pub use quadrature::{QuadratureRule, gauss_rule};
 pub use tabulation::{LagrangeElement, Tabulation};

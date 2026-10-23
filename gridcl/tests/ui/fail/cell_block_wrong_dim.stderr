@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/cell_block_wrong_dim.rs:13:34
+   |
+13 |     let _ = CellBlock::<D2>::new(Cell3::Tetrahedron, index_map, vertices, origin_ids, flags);
+   |             -------------------- ^^^^^^^^^^^^^^^^^^ expected `Cell2`, found `Cell3`
+   |             |
+   |             arguments to this function are incorrect
+   |
+note: associated function defined here
+  --> $WORKSPACE/gridcl-topology/src/cell_block.rs
+   |
+   |     pub fn new(
+   |            ^^^

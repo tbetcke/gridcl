@@ -1932,7 +1932,11 @@ dependencies = [
  "gridcl-parallel",
  "gridcl-partition",
  "gridcl-refcell",
+ "gridcl-testing",
  "gridcl-topology",
+ "proptest",
+ "serde_json",
+ "trybuild",
 ]
 
 [[package]]
@@ -1960,20 +1964,20 @@ dependencies = [
 [[package]]
 name = "gridcl-dims"
 version = "0.1.0"
-dependencies = [
- "trybuild",
-]
 
 [[package]]
 name = "gridcl-geometry"
 version = "0.1.0"
 dependencies = [
  "cubecl",
+ "gridcl",
  "gridcl-device",
  "gridcl-dims",
  "gridcl-parallel",
  "gridcl-refcell",
+ "gridcl-testing",
  "gridcl-topology",
+ "proptest",
 ]
 
 [[package]]
@@ -2030,6 +2034,8 @@ dependencies = [
  "cubecl",
  "gridcl",
  "gridcl-device",
+ "gridcl-dims",
+ "gridcl-refcell",
 ]
 
 [[package]]
@@ -2037,10 +2043,14 @@ name = "gridcl-topology"
 version = "0.1.0"
 dependencies = [
  "cubecl",
+ "gridcl",
  "gridcl-device",
  "gridcl-dims",
  "gridcl-parallel",
  "gridcl-refcell",
+ "gridcl-testing",
+ "proptest",
+ "serde_json",
 ]
 
 [[package]]

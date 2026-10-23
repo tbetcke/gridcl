@@ -43,7 +43,7 @@ Every acceptance bullet of the milestone in docs/design.md appears exactly once.
 
 | Acceptance criterion (docs/design.md) | Test name(s) | Task(s) | Targets and backends |
 | --- | --- | --- | --- |
-| <criterion> | `<crate>::<test>` | T0, T3 | M3 Max: CPU f32/f64, Metal f32; CI: Vulkan f32; Myriad V100: CUDA f32/f64 |
+| <criterion> | `<crate>::<test>` | T0, T3 | M3 Max: CPU f32/f64, Metal f32; CI: Vulkan f32; Locust: CUDA f32/f64 |
 
 ## Open questions and ADR candidates
 

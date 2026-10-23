@@ -21,8 +21,9 @@ If the milestone is empty, ask the user which milestone to review.
 - Ask the **design-reviewer** subagent to review the range `main...HEAD` for this milestone.
   Pass it the milestone id, the plan path and the plan's design sections.
 - Ask the **test-runner** subagent for the full run: lint, `cargo test --workspace`, Metal,
-  CUDA on Myriad V100, every other target in the plan's acceptance-coverage table (Myriad A100
-  and Locust where docs/design.md requires them for this milestone), MPI if the milestone touches
+  CUDA on Locust (Myriad V100 as the fallback when Locust is unavailable, ADR-0014), every other
+  target in the plan's acceptance-coverage table (Myriad for multi-GPU tests where
+  docs/design.md requires them for this milestone), MPI if the milestone touches
   gridcl-parallel or later crates, and conformance if gridcl-refcell or conformance/ changed.
 
 ## 3. Check acceptance coverage yourself

@@ -15,9 +15,10 @@ pub mod testing;
 #[cfg(not(feature = "testing"))]
 mod testing;
 
-pub use buffer::{DeviceBuffer, DeviceCsr, DeviceStrided, VECTOR_PAD};
-pub use error::{GridError, Result};
-pub use plan::LaunchPlan;
+pub use buffer::{DeviceBuffer, DeviceCsr, DeviceStrided, VECTOR_PAD, pad_len};
+pub use error::{ConnKey, GridError, Result};
+pub use plan::{LaunchPlan, debug_assert_bindings};
 pub use policy::{DeviceClass, KernelKind, VectorPolicy, VectorSizeOverride};
 pub use precision::{Real, check_precision};
 pub use primitives::*;
+pub use testing::device_properties;

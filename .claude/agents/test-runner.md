@@ -27,7 +27,7 @@ Run exactly the commands the delegating prompt asks for. When it only names a sc
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
 | lint | `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` |
 
-For CUDA, T is `locust` (ADR-0006) unless the delegating prompt names `myriad-v100` or `myriad-a100`.
+For CUDA, T is `locust` (ADR-0014) unless the delegating prompt names `myriad-v100` or `myriad-a100`.
 Before M0, the CUDA command is `cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda`.
 Remote runs can wait in a queue; let them finish (the runner enforces its own time limit).
 

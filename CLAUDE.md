@@ -35,9 +35,11 @@
   library crate, and never add `version =` to its git dependency. After bumping its pin, run
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
-- Host<->device copies in library code only for I/O, explicit to_host()/read_node(),
-  the count read of run-length and unique-by-key, the debug-build index checks of gather
-  and scatter, and the host-staged halo exchange.
+- Host<->device copies in library code only for I/O (including the upload of input arrays
+  at mesh creation, and of quadrature points and tabulations when a rule is created or a
+  tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
+  and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
+  checks of gather and scatter, and the host-staged halo exchange.
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
@@ -79,20 +81,22 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   on a login node, and never submit jobs with hand-written `qsub` or `ssh` commands. The
   exception is milestone E0, while the runner is being built: then each such command needs the
   user's approval.
-- Locust (`locust`) is the routine CUDA platform: run it after every task that changes kernels,
-  and at milestone reviews when it is available (ADR-0006).
-- Myriad V100 (`myriad-v100`): at every milestone review, for multi-GPU and GPU-aware MPI tests
-  (`--gpus 2`), and as the fallback when Locust is unreachable or a run fails because another
-  user occupies its GPU. Say why when you fall back.
-- Myriad A100 (`myriad-a100`) only when required: the milestone reviews the design lists,
-  architecture-dependent results, CUDA-version- or architecture-specific changes, benchmarks,
-  or when the user asks. Say why when you schedule it.
-- CPU benchmarks on Myriad request the whole node (`--cores 36`); never draw SIMD conclusions
+- Locust (`locust`) is the CUDA platform for every run: after every task that changes kernels,
+  at every milestone review, and for benchmarks (ADR-0014).
+- Myriad V100 (`myriad-v100`) and A100 (`myriad-a100`) only: as the fallback when Locust is
+  unreachable, a run fails because another user occupies its GPU, or a benchmark cannot get an
+  idle node; for multi-GPU and GPU-aware MPI tests (`--gpus 2`); to compare
+  architecture-dependent results; for CUDA-version- or architecture-specific changes; or when
+  the user asks. Say why when you schedule them.
+- CPU-only runs on Myriad (x86-64 AVX-512 CPU benchmarks) use a CPU-only D node
+  (`-ac allow=D`), never a GPU node: shorter queue waits (ADR-0014).
+- CPU benchmarks on Myriad request the whole D node (`--cores 36`); never draw SIMD conclusions
   from a node shared with other jobs.
 - Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
   from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).
-- At most two remote jobs at a time. Cancel jobs you no longer need; leave none queued at the
-  end of a session.
+- At most two scheduler jobs (Myriad, Kathleen) at a time. Locust jobs are independent of them:
+  one Locust run may go in parallel with the scheduler jobs. Cancel jobs you no longer need;
+  leave none queued at the end of a session.
 - Never put user ids, private host names, project codes or credentials in committed files; they
   live in `scripts/hpc/targets.env`, which git ignores.
 - If a remote target is unreachable, ask the user to open the SSH connection (`ssh myriad true`)

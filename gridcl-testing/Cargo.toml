@@ -22,3 +22,5 @@ wgpu = ["cubecl/wgpu"]
 cubecl.workspace = true
 gridcl = { path = "../gridcl" }
 gridcl-device = { path = "../gridcl-device", features = ["testing"] }
+gridcl-dims = { path = "../gridcl-dims" }
+gridcl-refcell = { path = "../gridcl-refcell" }

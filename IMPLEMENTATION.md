@@ -168,10 +168,10 @@ Merge them into main one at a time, in dependency order. If a branch falls behin
 - **M0:** the first plan with crates; it builds on the toolchain and runner from E0. M0 checks the `rust-toolchain.toml` that E0 created, and creates the workspace, gridcl-testing, gridcl-mpi-tests, `scripts/mpi-test.sh` and the CI jobs. Make sure `docs/plans/M0.md` records the exact commands for GPU backends and MPI; the test-runner and verify steps use them later.
 - **M1b:** the conformance crate needs OpenBLAS (or Accelerate) and network access to codeberg.org for the pinned ndelement commit.
 - **M3:** the largest milestone. Expect the design-reviewer critique during planning and several `/clear` cycles during implementation.
-- **M3s:** a measurement milestone. Claude runs gridcl-bench on the M3 Max and, through `/hpc-test`, on whole Myriad V100 nodes (CPU and CUDA), and on Locust and A100 nodes if available. Before local benchmark runs, connect the power adapter and close other applications. The result is `vector-policy.toml` plus `docs/perf/vectorization.md`; later changes to the policy need new benchmark data. M3s can run in parallel with M4–M6.
+- **M3s:** a measurement milestone. Claude runs gridcl-bench on the M3 Max and, through `/hpc-test`, on Locust (CPU and CUDA) and on a whole CPU-only Myriad D node for the AVX-512 CPU class; Myriad's GPUs only if Locust is unavailable (ADR-0014). Before local benchmark runs, connect the power adapter and close other applications. The result is `vector-policy.toml` plus `docs/perf/vectorization.md`; later changes to the policy need new benchmark data. M3s can run in parallel with M4–M6.
 - **M4:** generate the Gmsh fixture corpus once with a pinned Gmsh version and commit it; Claude can write the `.geo` scripts.
 - **M6 and later:** run the MPI tests under both MPICH and Open MPI where you can; the `Comm` design depends on it.
-- **CUDA:** Claude runs CUDA tests on Locust after kernel changes, on Myriad V100 at every review, for multi-GPU tests and when Locust is unavailable, and schedules Myriad A100 only when the policy in `CLAUDE.md` requires it (ADR-0006). Ask for a specific target with `/hpc-test myriad-a100 -- <command>`.
+- **CUDA:** Claude runs CUDA tests on Locust after kernel changes and at every review, and schedules Myriad V100 or A100 only for multi-GPU tests, architecture comparisons, or as the fallback when Locust is unavailable; CPU-only Myriad runs use a D node (ADR-0014). Ask for a specific target with `/hpc-test myriad-a100 -- <command>`.
 - **M10:** needs a Myriad node with a CUDA-aware MPI (2 ranks on a V100 node, 4 on an A100 node). If E0 found none, decide early whether to build one in your home directory.
 
 ## Useful one-off prompts
@@ -182,7 +182,7 @@ Merge them into main one at a time, in dependency order. If a branch falls behin
 | Apply an accepted design change | "Apply ADR-0003 to docs/design.md and update the affected plans." |
 | Re-plan after a design change | "Re-plan the unticked tasks of docs/plans/M6.md after ADR-0004; keep ticked tasks unchanged." |
 | Check GPU backends mid-milestone | "Use the test-runner subagent to run the workspace tests on Metal and on locust and report failures." |
-| Benchmark one kernel family | "Run gridcl-bench for GeomFactors on the M3 Max and on a whole myriad-v100 node (CPU and CUDA), and compare with docs/perf/vectorization.md." |
+| Benchmark one kernel family | "Run gridcl-bench for GeomFactors on the M3 Max and on locust (CPU and CUDA, idle node), and compare with docs/perf/vectorization.md." |
 | Compare architectures | "Run the failing test on myriad-v100 and myriad-a100 with /hpc-test and compare with the Locust result." |
 | Quick design check | "Use the design-reviewer subagent to check the last three commits against docs/design.md." |
 | Start a milestone from scratch | "Discard docs/plans/M5.md and run /plan-milestone M5 again." |
