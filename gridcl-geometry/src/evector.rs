@@ -56,7 +56,8 @@ impl<F: Real> EVector<F> {
 /// One E-vector chunk: for every cell vector `v < num_vectors` (Listing B5 loop) of the chunk,
 /// row (k, g) gets the coordinate g of node k of each lane's cell, gathered lane by lane from
 /// the L-vector; only the stores are vectors. Lanes past the block's last cell copy the last
-/// cell.
+/// cell. Node indices are clamped to `last_node` lane by lane (an arithmetic `min`, as in
+/// `gather`), so an index past the local nodes reads the last node.
 ///   nodes   L-vector `[node][gdim]`
 ///   dofmap  `[cell][k]` node indices of the block
 ///   out     `[k][g][cell]` with row stride `stride_vectors` vectors
@@ -68,6 +69,7 @@ fn evector_kernel<F: Float, N: Size>(
     out: &mut [Vector<F, N>],
     first_cell: u32,
     num_cells: u32,
+    last_node: u32,
     stride_vectors: u32,
     num_vectors: u32,
     items_per_unit: u32,
@@ -86,7 +88,7 @@ fn evector_kernel<F: Float, N: Size>(
                 #[unroll]
                 for lane in 0..lanes {
                     let c = min(first_cell + (v * lanes + lane) as u32, last) as usize;
-                    node.insert(lane, dofmap[c * nodes_per_cell + k]);
+                    node.insert(lane, min(dofmap[c * nodes_per_cell + k], last_node));
                 }
                 #[unroll]
                 for g in 0..gdim {
@@ -125,6 +127,9 @@ pub(crate) fn build<F: Real>(
     let per_cell = nodes_per_cell
         .checked_mul(gdim)
         .ok_or(GridError::TooLarge)?;
+    // The largest node index the kernel reads; 0 when there are no nodes (then it reads the
+    // first gdim ≤ 3 elements of the allocation of at least VECTOR_PAD elements).
+    let last_node = fit(nodes.len() / gdim.max(1))?.saturating_sub(1);
     let per_chunk = chunk_cells::<F>(client, per_cell, VECTOR_PAD)?;
     let chunks = alloc_chunks::<F>(client, num_cells, per_cell, VECTOR_PAD, per_chunk)?;
     for chunk in &chunks {
@@ -143,8 +148,11 @@ pub(crate) fn build<F: Real>(
         // and so of n; the kernel writes vectors (k · gdim + g) · padded / n + v with
         // v < num_vectors = padded / n, k < nodes_per_cell and g < gdim, all below
         // per_cell · padded / n. It reads `dofmap` at c · nodes_per_cell + k with
-        // c ≤ num_cells − 1, within the block's dofmap, and `nodes` at node · gdim + g for the
-        // dofmap's node indices, within the L-vector.
+        // c ≤ num_cells − 1, within the block's dofmap. It reads `nodes` at node · gdim + g
+        // with node = min(dofmap[..], last_node) and g < gdim: at most nodes.len() − 1 when
+        // there are nodes (last_node = nodes.len() / gdim − 1), and below gdim ≤ VECTOR_PAD,
+        // inside the padded allocation, when there are none. No dofmap entry is trusted:
+        // Geometry::new checks lengths only.
         unsafe {
             evector_kernel::launch_unchecked::<F>(
                 client,
@@ -156,6 +164,7 @@ pub(crate) fn build<F: Real>(
                 chunk.data.vector_arg(n),
                 fit(chunk.first_cell)?,
                 fit(num_cells)?,
+                last_node,
                 fit(padded / n)?,
                 plan.num_vectors,
                 plan.items_per_unit,

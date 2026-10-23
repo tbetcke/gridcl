@@ -78,7 +78,13 @@ impl<TD: TopoDim> Topology<TD> {
     /// # Errors
     ///
     /// `LengthMismatch` if `vertex_origin_ids` does not have one id per local vertex, or a
-    /// block's vertex rows are not its cell's vertex count; device errors.
+    /// block's vertex rows are not its cell's vertex count, its `origin_ids` not two words
+    /// per cell or its `flags` not one word per cell (cells: its index map's `num_local`);
+    /// `TooLarge` if a length overflows; device errors.
+    ///
+    /// The vertex indices themselves stay on the device and are not checked: the kernels
+    /// clamp an index past the local vertices to the last vertex, so such a topology is
+    /// consistent but meaningless.
     pub fn new(
         client: &Client,
         cell_blocks: Vec<CellBlock<TD>>,
@@ -96,10 +102,25 @@ impl<TD: TopoDim> Topology<TD> {
             let cell: CellType = block.cell.into();
             let nv = gridcl_refcell::vertices(cell).len();
             let rows = block.index_map.num_local();
-            if block.vertices.stride as usize != nv || block.vertices.data.len() != rows * nv {
+            let entries = rows.checked_mul(nv).ok_or(GridError::TooLarge)?;
+            if block.vertices.stride as usize != nv || block.vertices.data.len() != entries {
                 return Err(GridError::LengthMismatch {
-                    expected: rows * nv,
+                    expected: entries,
                     found: block.vertices.data.len(),
+                });
+            }
+            // Interleaved (hi, lo) words: two per cell (crate::origin).
+            let words = rows.checked_mul(2).ok_or(GridError::TooLarge)?;
+            if block.origin_ids.len() != words {
+                return Err(GridError::LengthMismatch {
+                    expected: words,
+                    found: block.origin_ids.len(),
+                });
+            }
+            if block.flags.len() != rows {
+                return Err(GridError::LengthMismatch {
+                    expected: rows,
+                    found: block.flags.len(),
                 });
             }
         }

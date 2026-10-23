@@ -438,6 +438,10 @@ where
     };
     let live = 2 * layout.tdim * layout.gdim + 2;
     let flags = &g.cell_blocks()[b].flags;
+    // The last cell whose flags the Normals kernel reads: num_cells − 1, since Topology::new
+    // checks flags.len() = num_cells; the min with flags.len() keeps the reads inside `flags`
+    // for any DeviceGrid (0 for empty flags reads the first padding word).
+    let last_cell = fit(num_cells.min(flags.len()).saturating_sub(1))?;
     for r in chunk_pairs(xe, &out) {
         let plan = LaunchPlan::elementwise(
             client,
@@ -454,9 +458,9 @@ where
         // v < padded_cells / n: it reads E-vector vectors (k·G + g)·stride/n + x_first_cell/n
         // + v < K·G·stride/n, inside the E-vector chunk (x_first_cell + padded_cells ≤
         // stride); it reads `tab` below num_points · K · tdim, `extra` below gdim (the origin)
-        // or num_points · tdim (reference normals), and `flags` at cells ≤ num_cells − 1; it
-        // writes
-        // tiles
+        // or num_points · tdim (reference normals), and `flags` at cells
+        // ≤ last_cell = min(num_cells, flags.len()) − 1 (word 0 of the allocation of at least
+        // VECTOR_PAD words when `flags` is empty); it writes tiles
         // out_first_cell/tile + v/(tile/n), which lie inside the field chunk's padded cells, at
         // vector offsets below the chunk's padded_cells · num_points · LEN / n.
         unsafe {
@@ -474,7 +478,7 @@ where
                 fit(r.x_stride_cells / n)?,
                 fit(r.out_first_cell / tile)?,
                 fit(r.first_cell)?,
-                fit(num_cells - 1)?,
+                last_cell,
                 fit(r.padded_cells / n)?,
                 plan.items_per_unit,
                 layout,

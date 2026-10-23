@@ -32,7 +32,10 @@ fn sort2<N: Size>(a: &mut Vector<u32, N>, b: &mut Vector<u32, N>) {
 /// Keys and payloads of every cell vector `v < num_vectors` (Listing B5 loop) of one block:
 /// sub-entity i of cell c goes to emission index start + i · padded_cells + c. Lanes of cells
 /// c ≥ num_cells write the all-ones sentinel key; they read the last cell, so reads stay in
-/// bounds.
+/// bounds. Vertex indices are clamped to `last_vertex` lane by lane (an arithmetic `min`), as
+/// the head and PermutationInfo kernels clamp them before reading origin ids, so all three
+/// treat an index past the local vertices as the last vertex, and no real key reaches the
+/// sentinel while `last_vertex` < u32::MAX.
 ///   vertices  [cell][nv] local vertex indices
 ///   keys      planar words: word w of key e at w · plane + e
 ///   payload   one emission index per key
@@ -42,6 +45,7 @@ fn topology_keys_kernel<N: Size>(
     keys: &mut [Vector<u32, N>],
     payload: &mut [Vector<u32, N>],
     num_cells: u32,
+    last_vertex: u32,
     padded_cells: u32,
     start: u32,
     plane: u32,
@@ -74,7 +78,7 @@ fn topology_keys_kernel<N: Size>(
                     #[unroll]
                     for lane in 0..lanes {
                         let c = min((v * lanes + lane) as u32, last) as usize;
-                        x.insert(lane, vertices[c * nv + local]);
+                        x.insert(lane, min(vertices[c * nv + local], last_vertex));
                     }
                     w[j] = x;
                 }
@@ -119,7 +123,8 @@ fn topology_keys_kernel<N: Size>(
 }
 
 /// The keys and payloads of `plan`: one launch per cell block of the plan. `blocks` gives the
-/// cell type and vertex rows of every cell block, indexed like the plan's ranges' `block`.
+/// cell type and vertex rows of every cell block, indexed like the plan's ranges' `block`;
+/// vertex indices above `last_vertex` count as `last_vertex`.
 ///
 /// # Errors
 ///
@@ -129,6 +134,7 @@ pub(crate) fn emit_keys(
     blocks: &[(CellType, &DeviceStrided<u32>)],
     dim: usize,
     plan: &EmissionPlan,
+    last_vertex: u32,
 ) -> Result<(SortKeys, DeviceBuffer<u32>)> {
     let words = gridcl_refcell::vertices(plan.entity).len();
     let mut keys = SortKeys::uninit(client, plan.total, words)?;
@@ -173,6 +179,7 @@ pub(crate) fn emit_keys(
                 keys.words_mut().vector_arg(n),
                 payload.vector_arg(n),
                 fit(range.cells)?,
+                last_vertex,
                 fit(range.padded)?,
                 fit(range.start)?,
                 plane,
@@ -235,7 +242,7 @@ mod tests {
             .map(|(c, rows)| (*c, rows.len() / gridcl_refcell::vertices(*c).len()))
             .collect();
         for plan in emission_plans(&counts, dim).unwrap() {
-            let (keys, payload) = emit_keys(&client, &refs, dim, &plan).unwrap();
+            let (keys, payload) = emit_keys(&client, &refs, dim, &plan, 999).unwrap();
             let (want_keys, want_payload) = reference(blocks, dim, &plan);
             assert_eq!(keys.to_host().unwrap(), want_keys, "{:?} keys", plan.entity);
             assert_eq!(

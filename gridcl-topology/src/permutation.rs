@@ -81,7 +81,9 @@ fn less<N: Size>(
 }
 
 /// The orientation word of every cell vector `v < num_vectors` (Listing B5 loop). Lanes past
-/// the last cell recompute the last cell, so they read in bounds.
+/// the last cell recompute the last cell, so they read in bounds. Each vertex index is clamped
+/// to `last_vertex` lane by lane (an arithmetic `min`, as in `gather`), so an index past the
+/// local vertices reads the last vertex's ids instead of leaving `ids`.
 ///   vertices  [cell][nv] local vertex indices
 ///   ids       interleaved (hi, lo) origin id words per local vertex
 ///   out       one word per cell
@@ -91,6 +93,7 @@ fn permutation_info_kernel<N: Size>(
     ids: &[u32],
     out: &mut [Vector<u32, N>],
     num_cells: u32,
+    last_vertex: u32,
     num_vectors: u32,
     items_per_unit: u32,
     #[comptime] t: PermTables,
@@ -110,7 +113,7 @@ fn permutation_info_kernel<N: Size>(
                 #[unroll]
                 for lane in 0..N::value() {
                     let c = min((v * N::value() + lane) as u32, last) as usize;
-                    let vertex = vertices[c * nv + j] as usize;
+                    let vertex = min(vertices[c * nv + j], last_vertex) as usize;
                     h.insert(lane, ids[2 * vertex]);
                     l.insert(lane, ids[2 * vertex + 1]);
                 }
@@ -178,6 +181,11 @@ pub(crate) fn permutation_info(
         return Ok(Some(out));
     }
     let cells = u32::try_from(num_cells).map_err(|_| GridError::TooLarge)?;
+    // The largest vertex index the kernel reads; 0 when there are no vertices (then it reads
+    // the zeroed padding words 0 and 1 of `ids`).
+    let last_vertex = u32::try_from(ids.len() / 2)
+        .map_err(|_| GridError::TooLarge)?
+        .saturating_sub(1);
     let plan = LaunchPlan::elementwise(
         client,
         KernelKind::PermutationInfo,
@@ -190,9 +198,11 @@ pub(crate) fn permutation_info(
     debug_assert_bindings(client, 3);
     // SAFETY: `out` holds pad_len(num_cells) words, plan.num_vectors · n of them, and the kernel
     // writes only vectors below num_vectors. It reads `vertices` at c · nv + j with
-    // c ≤ num_cells − 1 and j < nv, within its num_cells · nv entries, and `ids` at 2 · vertex
-    // and 2 · vertex + 1 for vertex indices of the block, which index the local vertices whose
-    // two id words `ids` holds (checked by Topology::new).
+    // c ≤ num_cells − 1 and j < nv, within its num_cells · nv entries (num_cells is
+    // vertices.len() / nv). It reads `ids` at 2 · vertex and 2 · vertex + 1 with
+    // vertex = min(vertices[..], last_vertex): with ids.len() = 2 · num_vertices ≥ 2 that is
+    // at most ids.len() − 1; with no vertices it reads words 0 and 1, inside the allocation of
+    // at least VECTOR_PAD words. No vertex index is trusted: Topology::new checks lengths only.
     unsafe {
         permutation_info_kernel::launch_unchecked(
             client,
@@ -203,6 +213,7 @@ pub(crate) fn permutation_info(
             ids.arg(),
             out.vector_arg(n),
             cells,
+            last_vertex,
             plan.num_vectors,
             plan.items_per_unit,
             tables,

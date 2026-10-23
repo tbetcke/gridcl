@@ -11,7 +11,9 @@ use gridcl_device::{
 use crate::renumber::one_word_keys;
 
 /// The (entity, flat cell) pairs of one cell block's downward rows, written at `base`:
-/// `entities[base + i] = rows[i]`, `cells[base + i] = cell_offset + i / k`.
+/// `entities[base + i] = min(rows[i], last_entity)`, `cells[base + i] = cell_offset + i / k`.
+/// The clamp matches the topology kernels, which treat a vertex index past the local vertices
+/// as the last vertex; downward rows of created entities are always in range.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn pairs_kernel(
@@ -19,6 +21,7 @@ fn pairs_kernel(
     entities: &mut [u32],
     cells: &mut [u32],
     len: u32,
+    last_entity: u32,
     k: u32,
     base: u32,
     cell_offset: u32,
@@ -29,7 +32,7 @@ fn pairs_kernel(
         let i = first + it;
         if i < len as usize {
             let o = base as usize + i;
-            entities[o] = rows[i];
+            entities[o] = min(rows[i], last_entity);
             cells[o] = cell_offset + i as u32 / k;
         }
     }
@@ -54,6 +57,7 @@ pub(crate) fn upward(
         .ok_or(GridError::TooLarge)?;
     let entities = DeviceBuffer::<u32>::uninit(client, total)?;
     let cells = DeviceBuffer::<u32>::uninit(client, total)?;
+    let last_entity = fit(num_entities)?.saturating_sub(1);
     let (mut base, mut cell_offset) = (0usize, 0usize);
     for d in downward {
         let len = d.data.len();
@@ -72,6 +76,7 @@ pub(crate) fn upward(
                     entities.arg(),
                     cells.arg(),
                     fit(len)?,
+                    last_entity,
                     fit(k)?,
                     fit(base)?,
                     fit(cell_offset)?,

@@ -97,7 +97,9 @@ fn id_less(ids: &[u32], a: u32, b: u32, #[comptime] fast: bool) -> bool {
 
 /// Entity → vertex in the A.6 storage slots, from the head occurrence of each entity: group
 /// g < count whose first emission index lies in this block's range [start, end) reads its
-/// sub-entity from the cell's vertices and writes row `old2new[g]`. Scalar: one entity per item.
+/// sub-entity from the cell's vertices and writes row `old2new[g]` if it is below `count`.
+/// Vertex indices are clamped to `last_vertex` as they are read (as in the TopologyKeys
+/// kernel), so the origin-id reads stay inside `ids`. Scalar: one entity per item.
 ///   first     emission index of each group's first key
 ///   vertices  [cell][nv] local vertex indices of the block
 ///   ids       interleaved (hi, lo) vertex origin ids
@@ -112,6 +114,7 @@ fn head_kernel(
     old2new: &[u32],
     out: &mut [u32],
     count: u32,
+    last_vertex: u32,
     start: u32,
     end: u32,
     padded: u32,
@@ -134,7 +137,10 @@ fn head_kernel(
                     if sub == comptime!(k as u32) {
                         #[unroll]
                         for j in 0..words {
-                            v[j] = vertices[c * t.nv + comptime!(t.entities[k][j])];
+                            v[j] = min(
+                                vertices[c * t.nv + comptime!(t.entities[k][j])],
+                                last_vertex,
+                            );
                         }
                     }
                 }
@@ -181,10 +187,13 @@ fn head_kernel(
                         }
                     }
                 }
-                let row = old2new[g] as usize * words;
-                #[unroll]
-                for j in 0..words {
-                    out[row + j] = v[j];
+                let new = old2new[g];
+                if new < count {
+                    let row = new as usize * words;
+                    #[unroll]
+                    for j in 0..words {
+                        out[row + j] = v[j];
+                    }
                 }
             }
         }
@@ -254,6 +263,11 @@ struct DimContext<'a> {
     ids: &'a DeviceBuffer<u32>,
     fast: bool,
     dim: usize,
+    /// The largest vertex index the kernels use: ids.len() / 2 − 1, or 0 when there are no
+    /// vertices (then the head kernel reads the zeroed padding words 0 and 1 of `ids`). Below
+    /// u32::MAX, since the vertex count must fit in u32, so no clamped key is the all-ones
+    /// sentinel.
+    last_vertex: u32,
     /// The first flat cell index of each cell block.
     cell_offsets: &'a [usize],
 }
@@ -287,7 +301,7 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
     if plan.total == 0 {
         return empty(0);
     }
-    let (keys, payload) = emit_keys(client, cells, dim, plan)?;
+    let (keys, payload) = emit_keys(client, cells, dim, plan, cx.last_vertex)?;
     let (sorted, payload) = radix_sort(&keys, &payload)?;
     let unique = unique_by_key(&sorted, &payload)?; // the count read
     let runs = unique.keys.len();
@@ -296,7 +310,9 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
         crate::renumber::renumber(client, &sorted, &payload, plan, cx.cell_offsets, runs)?;
 
     // Entity → vertex in canonical orientation, one launch per block.
-    let vertices = DeviceBuffer::<u32>::uninit(client, count * words)?;
+    let vertices_len = count.checked_mul(words).ok_or(GridError::TooLarge)?;
+    fit(vertices_len)?;
+    let vertices = DeviceBuffer::<u32>::uninit(client, vertices_len)?;
     for range in plan.ranges.iter().filter(|r| r.cells > 0 && count > 0) {
         let (cell, rows) = cells[range.block];
         let tables = HeadTables {
@@ -308,11 +324,15 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
         let launch = LaunchPlan::elementwise(client, KernelKind::Gather, count, 4, 1, 1)?;
         debug_assert_bindings(client, 5);
         // SAFETY: groups g < count read first[g] (count ≤ runs entries); a head in this block's
-        // range [start, end) decodes to cell c < padded with sub-entity index < local.len(),
-        // and the head of a real group has c < cells, so the kernel reads `rows` at
-        // c · nv + j within its cells · nv entries; vertex indices index `ids`, which holds
-        // two words per local vertex; old2new[g] < count for real groups (the sentinel group
-        // is last and renumbered last), so rows written lie within `vertices`' count · words.
+        // range [start, end) decodes to cell c < padded with sub-entity index < local.len().
+        // The keys hold vertex indices clamped to last_vertex < u32::MAX, so no real key equals
+        // the all-ones sentinel: the sentinel group holds exactly the padding positions, and
+        // the head of every other group has c < cells, so the kernel reads `rows` at
+        // c · nv + j within its cells · nv entries. It reads `ids` at 2 · v and 2 · v + 1 with
+        // v = min(vertex, last_vertex): at most ids.len() − 1 when there are vertices, and
+        // words 0 and 1 of the allocation of at least VECTOR_PAD words when there are none.
+        // It reads old2new[g] for g < count ≤ runs, and writes row old2new[g] only when it is
+        // below count, within `vertices`' count · words entries.
         unsafe {
             head_kernel::launch_unchecked(
                 client,
@@ -324,6 +344,7 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
                 old2new.arg(),
                 vertices.arg(),
                 fit(count)?,
+                cx.last_vertex,
                 fit(range.start)?,
                 fit(range.end())?,
                 fit(range.padded)?,
@@ -382,6 +403,7 @@ pub(crate) fn create_dimension(
         ids,
         fast,
         dim,
+        last_vertex: fit(ids.len() / 2)?.saturating_sub(1),
         cell_offsets: &cell_offsets,
     };
     let mut offset = 0usize;
@@ -421,7 +443,9 @@ pub(crate) fn create_dimension(
                 (s, j)
             })
             .collect();
-        let out = DeviceBuffer::<u32>::uninit(client, n * k)?;
+        let out_len = n.checked_mul(k).ok_or(GridError::TooLarge)?;
+        fit(out_len)?;
+        let out = DeviceBuffer::<u32>::uninit(client, out_len)?;
         if n > 0 {
             let range = |s: usize| {
                 plans[used[s]]
@@ -442,10 +466,11 @@ pub(crate) fn create_dimension(
             let offset1 = used.get(1).map_or(0, |&p1| types[p1].block.offset);
             let launch = LaunchPlan::elementwise(client, KernelKind::Gather, n, 4, 1, 1)?;
             debug_assert_bindings(client, 3);
-            // SAFETY: cells c < n write out[c · k + i] < n · k, the length of `out`; each read
-            // flat_s[start + j · padded + c] lies in the block's emission range of type s
-            // (j < its local count, c < n ≤ padded), within the plan's total, the length of
-            // flat_s. A block with one entity type never reads `flat1` (comptime slots).
+            // SAFETY: cells c < n write out[c · k + i] < n · k (checked to fit u32 above), the
+            // length of `out`; each read flat_s[start + j · padded + c] lies in the block's
+            // emission range of type s (j < its local count, c < n ≤ padded), within the plan's
+            // total, the length of flat_s. A block with one entity type never reads `flat1`
+            // (comptime slots).
             unsafe {
                 downward_kernel::launch_unchecked(
                     client,
