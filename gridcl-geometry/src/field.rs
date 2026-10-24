@@ -130,6 +130,23 @@ pub(crate) fn chunk_pairs<'a, F: Real, S: FieldShape>(
 /// read and write contiguous memory. `tile` = 1 is the plain `[cell][point][component]` layout.
 /// Stored in chunks of whole tiles so that no chunk exceeds the device's largest allocation
 /// (`device_properties(client).memory.max_page_size`); the cell count is padded to whole tiles.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+/// use gridcl::ScalarShape;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+/// let rule = QuadRule::for_grid(&mesh, 1)?;
+/// let detj = mesh.detj(&rule)?;
+/// let field: &QuadField<f32, ScalarShape> = &detj.blocks[0];
+/// assert_eq!((field.num_cells(), field.num_points()), (4, 1));
+/// // Squares of side 1/2.
+/// assert!(field.to_host_cell_major()?.iter().all(|d| (d - 0.25).abs() < 1e-6));
+/// # Ok::<(), GridError>(())
+/// ```
 pub struct QuadField<F: Real, S: FieldShape> {
     chunks: Vec<QuadChunk<F>>,
     num_cells: usize,
@@ -139,6 +156,21 @@ pub struct QuadField<F: Real, S: FieldShape> {
 }
 
 /// One chunk of a [`QuadField`] or [`EVector`](crate::EVector): whole tiles of cells.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+/// use gridcl::ScalarShape;
+///
+/// let client = gridcl_testing::test_client();
+/// let field = QuadField::<f32, ScalarShape>::uninit(&client, 5, 3, 4)?;
+/// let chunk = &field.chunks()[0];
+/// assert_eq!((chunk.first_cell, chunk.num_cells), (0, 5));
+/// // 5 cells padded to two tiles of 4, 3 points each.
+/// assert_eq!(chunk.data.len(), 8 * 3);
+/// # Ok::<(), GridError>(())
+/// ```
 pub struct QuadChunk<F: Real> {
     /// The first cell of the chunk.
     pub first_cell: usize,
@@ -159,6 +191,21 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// # Panics
     ///
     /// If `tile` is not 1, 2, 4, 8 or 16.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    /// use gridcl::VecShape;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// // 20 cells, 4 points of 3 components each, in tiles of 16 cells.
+    /// let field = QuadField::<f32, VecShape<D3>>::uninit(&client, 20, 4, 16)?;
+    /// assert_eq!((field.num_cells(), field.num_points(), field.tile()), (20, 4, 16));
+    /// // One chunk, its 20 cells padded to 32.
+    /// assert_eq!(field.chunks()[0].data.len(), 32 * 4 * 3);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn uninit(
         client: &Client,
         num_cells: usize,
@@ -181,21 +228,71 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     }
 
     /// Cells per tile.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    /// use gridcl::ScalarShape;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
+    /// assert_eq!(field.tile(), 8);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn tile(&self) -> usize {
         self.tile
     }
 
     /// The number of cells, padding excluded.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    /// use gridcl::ScalarShape;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
+    /// assert_eq!(field.num_cells(), 10);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn num_cells(&self) -> usize {
         self.num_cells
     }
 
     /// Points per cell.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    /// use gridcl::ScalarShape;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
+    /// assert_eq!(field.num_points(), 6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn num_points(&self) -> usize {
         self.num_points
     }
 
     /// The chunks, in cell order.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    /// use gridcl::ScalarShape;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
+    /// // The chunks cover the cells in order.
+    /// let cells: usize = field.chunks().iter().map(|c| c.num_cells).sum();
+    /// assert_eq!(cells, 10);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn chunks(&self) -> &[QuadChunk<F>] {
         &self.chunks
     }
@@ -205,6 +302,25 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// # Errors
     ///
     /// Device read errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 2)?;
+    /// let jac = mesh.jacobians(&rule)?;
+    /// let values = jac.blocks[0].to_host_cell_major()?;
+    /// // 4 cells × 4 points; J = I / 2, column-major.
+    /// assert_eq!(values.len(), 16);
+    /// for j in values {
+    ///     assert!((j[0][0] - 0.5).abs() < 1e-6 && j[0][1].abs() < 1e-6);
+    ///     assert!(j[1][0].abs() < 1e-6 && (j[1][1] - 0.5).abs() < 1e-6);
+    /// }
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn to_host_cell_major(&self) -> Result<Vec<S::Host<F>>> {
         let len = S::LEN;
         assert_eq!(
@@ -237,6 +353,22 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
 }
 
 /// One `QuadField` per cell block, indexed like `cell_blocks()`.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh = gridcl_testing::mixed_box(1, 1).build::<f32, D3, D3>(&client)?;
+/// let rule = QuadRule::for_grid(&mesh, 1)?;
+/// let detj = mesh.detj(&rule)?;
+/// assert_eq!(detj.blocks.len(), mesh.cell_blocks().len());
+/// for (field, block) in detj.blocks.iter().zip(mesh.cell_blocks()) {
+///     assert_eq!(field.num_cells(), block.index_map.num_local());
+/// }
+/// # Ok::<(), GridError>(())
+/// ```
 pub struct BlockFields<F: Real, S: FieldShape> {
     /// The fields, one per cell block.
     pub blocks: Vec<QuadField<F, S>>,

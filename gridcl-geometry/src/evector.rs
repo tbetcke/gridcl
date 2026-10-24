@@ -37,12 +37,39 @@ pub struct EVector<F: Real> {
 
 impl<F: Real> EVector<F> {
     /// The number of cells, padding excluded.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// assert_eq!(mesh.evector(0)?.num_cells(), 4);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn num_cells(&self) -> usize {
         self.num_cells
     }
 
     /// The chunks, in cell order. Row (k, g) of a chunk starts at (k · gdim + g) · stride, with
     /// stride the chunk's cell count rounded up to `VECTOR_PAD`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::VECTOR_PAD;
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// let chunk = &mesh.evector(0)?.chunks()[0];
+    /// assert_eq!((chunk.first_cell, chunk.num_cells), (0, 4));
+    /// // Row (k, g) holds coordinate g of node k of each cell, cells fastest.
+    /// let stride = chunk.num_cells.next_multiple_of(VECTOR_PAD);
+    /// assert_eq!(chunk.data.len(), 4 * 2 * stride);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn chunks(&self) -> &[QuadChunk<F>] {
         &self.chunks
     }

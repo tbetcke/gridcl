@@ -126,7 +126,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T0
   - Parallel with: T3, T4, T5, T7
   - Risks / notes: if they add more than about 2 min in debug on the M3 Max, they get `#[cfg_attr(debug_assertions, ignore = "release only")]`, and a release step for them is added to the hosted cpu job. Logged.
-- [ ] **T3 Rustdoc examples, gridcl-geometry and gridcl-topology (m2, part 1)**
+- [x] **T3 Rustdoc examples, gridcl-geometry and gridcl-topology (m2, part 1)**
   - Goal: examples for `DeviceGrid`, `EVector`, `QuadChunk`, `BlockFields`, the `QuadField` methods, the shape types, the six block functions, `EntityBlock` and `Connectivity`.
   - Crates/files: `gridcl-geometry/src/{grid.rs, evector.rs, field.rs, shape.rs, points_jac.rs, detj_pinv.rs, facets.rs}`, `gridcl-topology/src/entity.rs`.
   - Public API added or changed: none.

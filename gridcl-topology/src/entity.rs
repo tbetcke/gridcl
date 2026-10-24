@@ -13,6 +13,23 @@ use crate::emission::{EmissionPlan, emission_plans, sub_entity_vertices};
 use crate::keys::emit_keys;
 
 /// The entities of one type and dimension (Listing T1).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+/// mesh.create_entities(1)?;
+/// let edges = &mesh.entity_blocks(1)?[0];
+/// assert_eq!(edges.cell, CellType::Interval);
+/// // The square's four sides and its diagonal, two vertices each.
+/// assert_eq!(edges.index_map.num_local(), 5);
+/// assert_eq!((edges.vertices.stride, edges.vertices.data.len()), (2, 10));
+/// assert_eq!(edges.offset, 0);
+/// # Ok::<(), GridError>(())
+/// ```
 pub struct EntityBlock {
     /// The entity type, e.g. `Triangle`.
     pub cell: CellType,
@@ -30,6 +47,21 @@ impl EntityBlock {
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// mesh.create_entities(1)?;
+    /// let edges = &mesh.entity_blocks(1)?[0];
+    /// let copy = edges.try_clone(mesh.comm())?;
+    /// assert_eq!(copy.vertices.data.to_host()?, edges.vertices.data.to_host()?);
+    /// assert_eq!(copy.index_map.num_local(), 5);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
         Ok(EntityBlock {
             cell: self.cell,
@@ -41,6 +73,28 @@ impl EntityBlock {
 }
 
 /// A stored connectivity (Listing T1).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+/// mesh.create_connectivity(2, 1)?;
+/// let Connectivity::Downward(blocks) = mesh.connectivity(ConnKey { from: 2, to: 1 })? else {
+///     unreachable!("cell -> edge is downward")
+/// };
+/// // Three edges per triangle.
+/// assert_eq!((blocks[0].stride, blocks[0].data.len()), (3, 6));
+/// mesh.create_connectivity(1, 2)?;
+/// let Connectivity::Upward(csr) = mesh.connectivity(ConnKey { from: 1, to: 2 })? else {
+///     unreachable!("edge -> cell is upward")
+/// };
+/// // Five edges; only the diagonal has two cells.
+/// assert_eq!((csr.offsets.len(), csr.indices.len()), (6, 6));
+/// # Ok::<(), GridError>(())
+/// ```
 #[allow(clippy::large_enum_variant)] // Listing T1's layout; one value per stored key
 pub enum Connectivity {
     /// One strided array per cell block (cell -> edges, cell -> faces, ...), flat indices.
@@ -55,6 +109,20 @@ impl Connectivity {
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// mesh.create_connectivity(2, 1)?;
+    /// let copy = mesh.connectivity(ConnKey { from: 2, to: 1 })?.try_clone()?;
+    /// let Connectivity::Downward(blocks) = copy else { unreachable!("cell -> edge is downward") };
+    /// assert_eq!(blocks[0].data.len(), 6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn try_clone(&self) -> Result<Self> {
         Ok(match self {
             Connectivity::Downward(blocks) => Connectivity::Downward(

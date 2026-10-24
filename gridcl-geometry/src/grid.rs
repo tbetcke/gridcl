@@ -14,6 +14,27 @@ use crate::{EVector, GeometryBlock};
 /// Accessors create no topology: entities and connectivity are built only by the `&mut self`
 /// methods `create_entities` and `create_connectivity`. Derived geometry data (E-vectors) is
 /// built on first use and cached (ADR-0012).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// /// The local cells of any grid.
+/// fn num_cells(g: &impl DeviceGrid) -> usize {
+///     g.cell_blocks().iter().map(|b| b.index_map.num_local()).sum()
+/// }
+///
+/// let client = gridcl_testing::test_client();
+/// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 2, 1).build::<f32, D2, D2>(&client)?;
+/// assert_eq!(num_cells(&mesh), 8);
+/// // Accessors create no topology.
+/// assert!(mesh.entity_blocks(1).is_err());
+/// mesh.create_entities(1)?;
+/// // 9 vertices and 8 triangles: 16 edges.
+/// assert_eq!(mesh.entity_blocks(1)?[0].index_map.num_local(), 16);
+/// # Ok::<(), GridError>(())
+/// ```
 pub trait DeviceGrid {
     /// The scalar of the geometry.
     type F: Real;
