@@ -152,7 +152,7 @@ pub(crate) fn build<F: Real>(
         // with node = min(dofmap[..], last_node) and g < gdim: at most nodes.len() − 1 when
         // there are nodes (last_node = nodes.len() / gdim − 1), and below gdim ≤ VECTOR_PAD,
         // inside the padded allocation, when there are none. No dofmap entry is trusted:
-        // Geometry::new checks lengths only.
+        // Geometry::new checks lengths only (and rejects cells without nodes).
         unsafe {
             evector_kernel::launch_unchecked::<F>(
                 client,
@@ -178,4 +178,45 @@ pub(crate) fn build<F: Real>(
         num_cells,
         origin,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cells whose nodes are all out of range of an empty L-vector read only its zeroed
+    /// padding: memory-safe and deterministic. `Geometry::new` rejects this input, so the
+    /// kernel is called directly (M3 review, m10 and m11).
+    fn cells_without_nodes<F: Real>() {
+        let client = gridcl_testing::test_client();
+        let nodes = DeviceBuffer::<F>::from_host(&client, &[]).unwrap();
+        let dofmap = DeviceBuffer::from_host(&client, &[3u32, 4, 5, 9, 9, 1]).unwrap();
+        let origin = DeviceBuffer::from_host(&client, &[F::narrow(0.0); 3]).unwrap();
+        let read = || -> Vec<Vec<F>> {
+            build(&nodes, &dofmap, 2, 3, 3, origin.share())
+                .unwrap()
+                .chunks()
+                .iter()
+                .map(|c| c.data.to_host().unwrap())
+                .collect()
+        };
+        let xe = read();
+        let bits = |x: &[Vec<F>]| -> Vec<Vec<u64>> {
+            x.iter()
+                .map(|c| c.iter().map(|v| v.widen().to_bits()).collect())
+                .collect()
+        };
+        assert_eq!(bits(&xe), bits(&read()), "deterministic");
+        assert!(xe.iter().flatten().all(|&x| x.widen() == 0.0));
+    }
+
+    #[test]
+    fn cells_without_nodes_read_no_node_memory() {
+        cells_without_nodes::<f32>();
+        if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
+            cells_without_nodes::<f64>();
+        } else {
+            eprintln!("cells_without_nodes_read_no_node_memory: f64 is not supported; skipped");
+        }
+    }
 }

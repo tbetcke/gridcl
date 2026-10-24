@@ -82,9 +82,13 @@ impl<TD: TopoDim> Topology<TD> {
     /// per cell or its `flags` not one word per cell (cells: its index map's `num_local`);
     /// `TooLarge` if a length overflows; device errors.
     ///
-    /// The vertex indices themselves stay on the device and are not checked: the kernels
-    /// clamp an index past the local vertices to the last vertex, so such a topology is
-    /// consistent but meaningless.
+    /// The vertex indices themselves stay on the device and are not checked. Out-of-range
+    /// indices are not an error but give a meaningless topology: every kernel that reads
+    /// through a vertex index clamps an index past the local vertices to the last vertex, so
+    /// no read leaves its buffer, and entities, keys and permutation info are computed as if
+    /// the index were the last vertex. The (tdim, 0) connectivity,
+    /// [`CellBlock::vertices`](crate::CellBlock), is the input unchanged and keeps the raw
+    /// indices.
     pub fn new(
         client: &Client,
         cell_blocks: Vec<CellBlock<TD>>,

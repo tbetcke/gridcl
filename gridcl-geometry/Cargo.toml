@@ -17,4 +17,3 @@ gridcl-topology = { path = "../gridcl-topology" }
 [dev-dependencies]
 gridcl = { path = "../gridcl" }
 gridcl-testing = { path = "../gridcl-testing" }
-proptest.workspace = true

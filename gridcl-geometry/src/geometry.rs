@@ -54,8 +54,11 @@ where
     ///
     /// # Errors
     ///
-    /// `LengthMismatch` if `nodes` does not hold `gdim` values per local node, or a dofmap's
-    /// stride is not its element's node count or its length not a whole number of rows.
+    /// `LengthMismatch` if `nodes` does not hold `gdim` values per local node, if a dofmap's
+    /// stride is not its element's node count or its length not a whole number of rows, or if
+    /// there are no nodes but a dofmap is not empty (`expected: 0`). Node indices themselves
+    /// are not checked: the E-vector kernel clamps an index past the local nodes to the last
+    /// node.
     pub fn new(
         blocks: Vec<GeometryBlock<TD>>,
         nodes: DeviceBuffer<F>,
@@ -78,6 +81,14 @@ where
                 return Err(GridError::LengthMismatch {
                     expected: k,
                     found: block.dofmap.stride as usize,
+                });
+            }
+            // Cells without nodes would read only the padding of the L-vector, which `uninit`
+            // leaves unspecified, so their E-vectors would not be deterministic.
+            if expected == 0 && block.dofmap.data.len() != 0 {
+                return Err(GridError::LengthMismatch {
+                    expected: 0,
+                    found: block.dofmap.data.len(),
                 });
             }
         }

@@ -103,7 +103,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: –
   - Parallel with: –
   - Risks / notes: larger than about 600 lines only if the stubs are; data-dependent tests fail until T17.
-- [ ] **T1 M3 review follow-ups m9, m10, m11 and the small m8 items**
+- [x] **T1 M3 review follow-ups m9, m10, m11 and the small m8 items**
   - Goal: close the follow-ups the maintainer scheduled first.
   - Crates/files:
     - `gridcl-topology/src/topology.rs` (m9): `Topology::new`'s rustdoc states that kernels clamp out-of-range indices and that (tdim, 0) returns the input unchanged.
@@ -374,6 +374,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-24 | T0 | How `perf_record` reads the rule where the plan is silent: a configuration's class time is the geometric mean of the devices' medians, so ratios of class times are geometric means of per-device ratios. The 3% condition must hold at both 10^6 and 10^7, like the 10% condition. Records carry `nominal_n` (10^5, 10^6 or 10^7; mesh boxes give approximate cell counts) and a `cube_dim` mode (`Plan` or `PerformanceCores`), and only `Plan` records enter the rule. | The rule names no size for the 3% comparison; the mesh families cannot hit 10^6 cells exactly; question 8 keeps the performance-core `cube_dim` out of the configuration. | – |
 | 2026-10-24 | T0 | The transpose check in `kernel_invariance` is stricter than "a `Scalar` plan before the candidate plan": above size 1, every TopologyKeys and PermutationInfo plan must directly follow a `Scalar` plan. `gridcl/tests/common/mod.rs` gains `at_vector_size_with_plans`. | After T6 other `Scalar` helpers also plan before them; with "directly follows", the mixed box fails until T10. | – |
 | 2026-10-24 | T0 | Records name the Myriad CPU-only target `myriad-cpu`, the remote-test target of T7; the data file stays `m3s-sweep-cpu-myriad-d.json`. T0 also updates `gridcl-geometry/src/field.rs` (rustdoc of `quad_tile`). | Same names as the runner. | – |
+| 2026-10-24 | T1 | `cells_without_nodes_read_no_node_memory` moved from `gridcl-geometry/tests/bounds.rs` to a unit test in `gridcl-geometry/src/evector.rs`, which calls the E-vector builder directly, in f32 and, where supported, f64. `bounds.rs` gains `empty_nodes_with_cells_are_rejected` (f32 and f64), and its skipped f64 cases now print why. | m11 makes `Geometry::new` reject exactly the input that test built (no nodes, a non-empty dofmap), so m10's kernel check is reachable only below the public constructor. | – |
 
 ## Review
 
