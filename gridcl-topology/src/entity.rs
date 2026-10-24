@@ -389,7 +389,7 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
             words,
             fast,
         };
-        let launch = LaunchPlan::elementwise(client, KernelKind::Gather, count, 4, 1, 1)?;
+        let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, count, 4, 1, 1)?;
         debug_assert_bindings(client, 5);
         // SAFETY: groups g < count read first[g] (count ≤ runs entries); a head in this block's
         // range [start, end) decodes to cell c < padded with sub-entity index < local.len().
@@ -532,7 +532,7 @@ pub(crate) fn create_dimension(
                 }
             };
             let offset1 = used.get(1).map_or(0, |&p1| types[p1].block.offset);
-            let launch = LaunchPlan::elementwise(client, KernelKind::Gather, n, 4, 1, 1)?;
+            let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, n, 4, 1, 1)?;
             debug_assert_bindings(client, 3);
             // SAFETY: cells c < n write out[c · k + i] < n · k (checked to fit u32 above), the
             // length of `out`; each read flat_s[start + j · padded + c] lies in the block's

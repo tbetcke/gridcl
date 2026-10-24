@@ -316,7 +316,7 @@ fn number_runs(keys: &SortKeys) -> Result<(LaunchPlan, DeviceBuffer<u32>, usize)
     let len_u32 = to_u32(len)?;
     let pad = to_u32(pad_len(len)?)?;
     to_u32(keys.words().padded_len())?;
-    let plan = LaunchPlan::elementwise(client, KernelKind::Gather, len, 4, 1, 1)?;
+    let plan = LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)?;
     let flags = DeviceBuffer::<u32>::uninit(client, len)?;
     debug_assert_bindings(client, 2);
     // SAFETY: the kernel touches key i only for i < len: words w · pad + i and w · pad + i - 1

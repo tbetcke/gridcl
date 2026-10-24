@@ -63,7 +63,7 @@ pub(crate) fn upward(
         let len = d.data.len();
         let k = d.stride as usize;
         if len > 0 {
-            let launch = LaunchPlan::elementwise(client, KernelKind::Gather, len, 4, 1, 1)?;
+            let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)?;
             debug_assert_bindings(client, 3);
             // SAFETY: the kernel reads rows[i] for i < len, the rows' length, and writes
             // entities and cells at base + i < base + len ≤ total, their length.

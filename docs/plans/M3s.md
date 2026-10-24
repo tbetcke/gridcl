@@ -157,7 +157,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T0
   - Parallel with: T1, T2, T7
   - Risks / notes: the `quad_tile` callers in gridcl-geometry pass `size_of::<F>()` from T0 on.
-- [ ] **T6 Scalar helper kernels plan as `KernelKind::Scalar` (m8)**
+- [x] **T6 Scalar helper kernels plan as `KernelKind::Scalar` (m8)**
   - Goal: `record_plans`, per-kind overrides and block entries attribute only candidate kernels to candidate families.
   - Crates/files:
     - `gridcl-device/src/primitives/{histogram.rs, segmented.rs, gather.rs (scatter), unique.rs}`;

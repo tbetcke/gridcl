@@ -6,6 +6,8 @@
 use std::collections::BTreeMap;
 
 use gridcl::prelude::*;
+use gridcl_device::testing::{record_plans, with_vector_size};
+use gridcl_device::{KernelKind, LaunchPlan, VectorSizeOverride};
 use gridcl_dims::CellType;
 use gridcl_refcell::{canonical_order, sub_entities, sub_entity_types};
 use gridcl_testing::HostMesh;
@@ -138,6 +140,39 @@ fn empty_blocks_have_no_entities() {
             .iter()
             .all(|b| b.index_map.num_local() == 0)
     );
+}
+
+/// Entity creation plans its candidate kernels under their families and every scalar helper
+/// (head positions, renumbering, downward connectivity, scatter, unique) as `Scalar` (m8): at a
+/// forced vector size, every non-`Scalar` plan runs at that size and every `Scalar` plan at 1.
+#[test]
+fn create_entities_plans_helpers_as_scalar() {
+    let client = gridcl_testing::test_client();
+    let mut mesh = gridcl_testing::cube_box(Cell3::Tetrahedron, 2, 1)
+        .build::<f32, D3, D3>(&client)
+        .unwrap();
+    let ((), plans): ((), Vec<(KernelKind, LaunchPlan)>) = record_plans(|| {
+        with_vector_size(VectorSizeOverride::Fixed(2), || {
+            mesh.create_entities(1).unwrap()
+        })
+    });
+    let n = 2.min(client.properties().hardware.max_vector_size);
+    for (kind, plan) in &plans {
+        let want = if *kind == KernelKind::Scalar { 1 } else { n };
+        assert_eq!(plan.vector_size, want, "{kind:?}");
+    }
+    let kinds: Vec<KernelKind> = plans.iter().map(|(k, _)| *k).collect();
+    for kind in [
+        KernelKind::TopologyKeys,
+        KernelKind::SortDigits,
+        KernelKind::ScanTile,
+        KernelKind::Gather,
+        KernelKind::Scalar,
+    ] {
+        assert!(kinds.contains(&kind), "no {kind:?} plan");
+    }
+    // The renumbering helpers planned as Copy before m8.
+    assert!(!kinds.contains(&KernelKind::Copy), "a Copy plan");
 }
 
 proptest! {

@@ -28,7 +28,7 @@ pub(crate) fn iota(client: &Client, len: usize) -> Result<DeviceBuffer<u32>> {
         return Ok(out);
     }
     let n = u32::try_from(len).map_err(|_| GridError::TooLarge)?;
-    let plan = LaunchPlan::elementwise(client, KernelKind::Fill, len, size_of::<u32>(), 1, 1)?;
+    let plan = LaunchPlan::elementwise(client, KernelKind::Scalar, len, size_of::<u32>(), 1, 1)?;
     debug_assert_bindings(client, 1);
     // SAFETY: `out` holds `len` words, and the kernel writes only indices below `len`.
     unsafe {
@@ -93,7 +93,7 @@ pub(crate) fn one_word_keys(src: &DeviceBuffer<u32>) -> Result<SortKeys> {
     let len = src.len();
     let mut keys = SortKeys::uninit(client, len, 1)?;
     if len > 0 {
-        let launch = LaunchPlan::elementwise(client, KernelKind::Copy, len, 4, 1, 1)?;
+        let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)?;
         debug_assert_bindings(client, 2);
         // SAFETY: `src` holds `len` words and the one plane of `keys` pad_len(len) ≥ len; the
         // kernel copies indices below `len`.
@@ -134,7 +134,7 @@ pub(crate) fn renumber(
     let mut values = DeviceBuffer::<u32>::uninit(client, len)?;
     fill(&mut values, u32::MAX)?;
     for range in plan.ranges.iter().filter(|r| r.cells > 0) {
-        let launch = LaunchPlan::elementwise(client, KernelKind::Gather, len, 4, 1, 1)?;
+        let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)?;
         debug_assert_bindings(client, 2);
         // SAFETY: the kernel reads payload[p] and writes values[p] only for p < len, the
         // length of both.

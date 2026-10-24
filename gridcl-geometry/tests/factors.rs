@@ -5,6 +5,7 @@
 use cubecl::prelude::Client;
 use gridcl::prelude::*;
 use gridcl::{FieldShape, QuadField};
+use gridcl_device::KernelKind;
 use gridcl_testing::{HostMesh, TOL_F32, TOL_F64};
 
 fn tol<F: Real>() -> f64 {
@@ -239,4 +240,30 @@ fn facet_normals_of_affine_cells_are_transformed_reference_normals() {
             }
         }
     }
+}
+
+/// `measure` plans its per-cell and per-block sums as `Scalar` (m8); only the E-vector and the
+/// factor kernels plan under candidate families.
+#[test]
+fn measure_plans_its_sums_as_scalar() {
+    let client = gridcl_testing::test_client();
+    let mesh = gridcl_testing::square_box(Cell2::Triangle, 3, 2)
+        .build::<f32, D2, D2>(&client)
+        .unwrap();
+    let (area, plans) = gridcl_device::testing::record_plans(|| mesh.measure(4).unwrap());
+    assert!((area - 1.0).abs() < 1e-5);
+    let mut kinds = Vec::new();
+    for (k, _) in &plans {
+        if !kinds.contains(k) {
+            kinds.push(*k);
+        }
+    }
+    assert_eq!(
+        kinds,
+        [
+            KernelKind::EVector,
+            KernelKind::GeomFactors,
+            KernelKind::Scalar
+        ]
+    );
 }
