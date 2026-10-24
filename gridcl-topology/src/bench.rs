@@ -29,6 +29,17 @@ impl BenchOutput {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Host copies of the held buffers, in order, padding excluded: for [`emit_keys`], the
+    /// planar key words (`SortKeys::words`) and then the payloads of each emitted entity type;
+    /// for [`permutation_info`], the orientation words. For the benchmarks' checks.
+    ///
+    /// # Errors
+    ///
+    /// Device read errors.
+    pub fn to_host(&self) -> Result<Vec<Vec<u32>>> {
+        self.buffers.iter().map(DeviceBuffer::to_host).collect()
+    }
 }
 
 /// The key emission of `create_entities(dim)` ("Entity creation", step 1) for every entity type

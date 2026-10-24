@@ -1945,7 +1945,9 @@ dependencies = [
  "cubecl",
  "gridcl",
  "gridcl-device",
+ "gridcl-refcell",
  "gridcl-testing",
+ "gridcl-topology",
  "serde_json",
  "toml",
 ]

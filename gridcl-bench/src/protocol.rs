@@ -197,6 +197,12 @@ pub trait Workload {
         Ok(())
     }
 
+    /// Untimed work before every call, warm-up included, such as a fresh copy of a cached
+    /// input.
+    fn prepare(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
     /// One timed call. Returns what must stay alive until `client.sync()`.
     fn run(&mut self) -> Result<Box<dyn Any>, String>;
 
@@ -205,8 +211,9 @@ pub trait Workload {
 }
 
 /// The protocol for one configuration: `reset`, a warm-up `run` whose output `check` compares
-/// with the host reference, then `runs` timed `run`s, each ending with `client.sync()`. Only
-/// the plans of `kind` made during the warm-up give the size that ran.
+/// with the host reference, then `runs` timed `run`s, each ending with `client.sync()`. Every
+/// `run` follows an untimed `prepare` and sync. Only the plans of `kind` made during the
+/// warm-up give the size that ran.
 ///
 /// # Errors
 ///
@@ -218,6 +225,7 @@ pub fn measure(
     work: &mut dyn Workload,
 ) -> Result<Measured, String> {
     work.reset()?;
+    work.prepare()?;
     sync(client)?;
     let start = Instant::now();
     let (out, plans) = record_plans(|| -> Result<Box<dyn Any>, String> {
@@ -236,6 +244,8 @@ pub fn measure(
 
     let mut times_s = Vec::with_capacity(runs);
     for _ in 0..runs {
+        work.prepare()?;
+        sync(client)?;
         let start = Instant::now();
         let out = work.run()?;
         sync(client)?;

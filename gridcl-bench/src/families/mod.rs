@@ -2,9 +2,12 @@
 //! measured with the protocol of [`crate::protocol`].
 //!
 //! - [`device`]: the device-primitive families (Fill, Copy, Reduce, ScanTile, SortDigits,
-//!   Gather) and the scalar helpers measured for `KernelKind::Scalar`'s CPU blocks.
+//!   Gather) and the scalar helpers measured for `KernelKind::Scalar`'s CPU blocks;
+//! - [`mesh`]: the mesh families (TopologyKeys, PermutationInfo, EVector, GeomFactors), with
+//!   cells as items.
 
 pub mod device;
+pub mod mesh;
 
 use std::collections::BTreeMap;
 
@@ -20,6 +23,8 @@ use crate::record::{Cores, CubeDimMode, Scalar, SweepRecord};
 pub const SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
 /// CPU block targets of the protocol, in bytes.
 pub const BLOCKS: [usize; 3] = [4 << 10, 16 << 10, 64 << 10];
+/// QuadField tile widths of the protocol (GeomFactors).
+pub const TILES: [usize; 3] = [1, 4, 16];
 
 /// The families the sweep measures, with their scalar types.
 pub fn families() -> Vec<(KernelKind, &'static [Scalar])> {
@@ -31,12 +36,16 @@ pub fn families() -> Vec<(KernelKind, &'static [Scalar])> {
         (KernelKind::ScanTile, &[U32]),
         (KernelKind::SortDigits, &[U32]),
         (KernelKind::Gather, &[F32, F64, U32]),
+        (KernelKind::TopologyKeys, &[U32]),
+        (KernelKind::PermutationInfo, &[U32]),
+        (KernelKind::EVector, &[F32, F64]),
+        (KernelKind::GeomFactors, &[F32, F64]),
         // Histogram and segmented reduce, for the CPU blocks of Scalar (ADR-0015, item 7).
         (KernelKind::Scalar, &[U32, F64]),
     ]
 }
 
-/// The workload of `kind` in `scalar` at size `n`.
+/// The workload of `kind` in `scalar` at size `n` (about `n` cells for the mesh families).
 ///
 /// # Errors
 ///
@@ -48,6 +57,7 @@ pub fn workload(
     n: usize,
 ) -> Result<Box<dyn Workload>, String> {
     device::workload(client, kind, scalar, n)
+        .or_else(|| mesh::workload(client, kind, scalar, n))
         .unwrap_or_else(|| Err(format!("{kind:?} is not measured in {}", scalar.name())))
 }
 
@@ -96,7 +106,9 @@ impl Machine {
 /// Runs the sweep and passes each record to `on_record` as soon as it is measured.
 ///
 /// Each (family, type, size) gets one set of inputs. The bandwidth reference is a u32 copy of
-/// the same length under the policy, measured once per size.
+/// the same length under the policy, measured once per size. GeomFactors also runs every tile
+/// width of [`TILES`], at the vector sizes the tile holds (a factor plan's widest size is its
+/// tile; ADR-0012); the other families keep the policy's tile.
 ///
 /// # Errors
 ///
@@ -153,6 +165,11 @@ pub fn sweep(
             .copied()
             .filter(|&v| !scalar_kind || v == 1)
             .collect();
+        let tiles: Vec<Option<usize>> = if kind == KernelKind::GeomFactors {
+            TILES.iter().copied().map(Some).collect()
+        } else {
+            vec![None]
+        };
         for &scalar in scalars {
             if options
                 .scalars
@@ -176,12 +193,18 @@ pub fn sweep(
                     }
                 };
                 for &cube_dim in &cube_dims {
-                    for &block_bytes in &blocks {
+                    for (&block_bytes, &tile) in blocks
+                        .iter()
+                        .flat_map(|b| tiles.iter().map(move |t| (b, t)))
+                    {
                         for &vector_size in &kind_sizes {
+                            if tile.is_some_and(|t| vector_size > t) {
+                                continue;
+                            }
                             let config = Config {
                                 vector_size,
                                 block_bytes,
-                                tile: None,
+                                tile,
                                 cube_dim,
                             };
                             let what = format!("{kind:?} {} n = {n} {config:?}", scalar.name());
@@ -267,15 +290,28 @@ fn sweep_record(
 mod tests {
     use super::*;
 
-    /// The sweep at 10^4 items, two runs, every family: every configuration gives a record
-    /// whose size ran is at most the size asked for; Scalar runs on CPUs only, at size 1.
+    /// The mesh families, which [`smoke_sweep_at_ten_thousand`] leaves to
+    /// [`mesh_smoke_sweep_at_a_thousand_cells`].
+    const MESH: [KernelKind; 4] = [
+        KernelKind::TopologyKeys,
+        KernelKind::PermutationInfo,
+        KernelKind::EVector,
+        KernelKind::GeomFactors,
+    ];
+
+    /// The sweep at 10^4 items, two runs, every device family: every configuration gives a
+    /// record whose size ran is at most the size asked for; Scalar runs on CPUs only, at size 1.
     #[test]
     fn smoke_sweep_at_ten_thousand() {
         let client = gridcl_testing::test_client();
         let machine = Machine::new(&client);
         let options = SweepOptions {
             target: "test".to_owned(),
-            families: families().into_iter().map(|(k, _)| k).collect(),
+            families: families()
+                .into_iter()
+                .map(|(k, _)| k)
+                .filter(|k| !MESH.contains(k))
+                .collect(),
             scalars: None,
             sizes: vec![10_000],
             vector_sizes: None,
@@ -300,6 +336,7 @@ mod tests {
         for (kind, _) in families() {
             let of = records.iter().filter(|r| r.family == kind).count();
             let want = match kind {
+                _ if MESH.contains(&kind) => 0,
                 KernelKind::Scalar if is_cpu(machine.class) => types(kind) * blocks,
                 KernelKind::Scalar => 0,
                 _ => types(kind) * blocks * sizes,
@@ -314,6 +351,63 @@ mod tests {
             assert_eq!(r.bandwidth_ratio.is_some(), has_bytes, "{r:?}");
             assert!(r.bandwidth_ratio.is_none_or(|b| b > 0.0), "{r:?}");
             assert_eq!(r.block_bytes.is_some(), is_cpu(machine.class));
+        }
+    }
+
+    /// The mesh families at about 10^3 cells, two runs, one block: the records count the cells
+    /// of the boxes, GeomFactors runs every tile at the sizes it holds, and every warm-up passed
+    /// its check.
+    #[test]
+    fn mesh_smoke_sweep_at_a_thousand_cells() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        let options = SweepOptions {
+            target: "test".to_owned(),
+            families: MESH.to_vec(),
+            scalars: None,
+            sizes: vec![1000],
+            vector_sizes: None,
+            blocks: vec![16 << 10],
+            cube_dims: vec![CubeDimMode::Plan],
+            runs: 2,
+            fallback_reason: None,
+        };
+        let records = sweep(&client, &machine, &options, &mut |_| ()).unwrap();
+        let sizes = protocol::vector_sizes(&client);
+        let has_f64 = check_precision::<f64>(&client).is_ok();
+        let types = if has_f64 { 2 } else { 1 };
+        let tet_cells = 6 * 5 * 5 * 5;
+        for kind in MESH {
+            let of: Vec<&SweepRecord> = records.iter().filter(|r| r.family == kind).collect();
+            let (cells, want) = match kind {
+                KernelKind::TopologyKeys | KernelKind::PermutationInfo => (tet_cells, sizes.len()),
+                KernelKind::EVector => (tet_cells, types * sizes.len()),
+                _ => {
+                    let per_tile: usize = TILES
+                        .iter()
+                        .map(|&t| sizes.iter().filter(|&&v| v <= t).count())
+                        .sum();
+                    (mesh::factor_cells(1000), types * per_tile)
+                }
+            };
+            assert_eq!(of.len(), want, "{kind:?}");
+            for r in of {
+                assert_eq!(
+                    (r.n, r.nominal_n, r.times_s.len()),
+                    (cells, 1000, 2),
+                    "{r:?}"
+                );
+                assert!(r.vector_size_ran <= r.vector_size, "{r:?}");
+                assert!(r.median_s > 0.0 && r.units > 0, "{r:?}");
+                assert!(r.bandwidth_ratio.is_some_and(|b| b > 0.0), "{r:?}");
+                match kind {
+                    KernelKind::GeomFactors => {
+                        let tile = r.tile.expect("GeomFactors records a tile");
+                        assert!(r.vector_size <= tile, "{r:?}");
+                    }
+                    _ => assert_eq!(r.tile, None, "{r:?}"),
+                }
+            }
         }
     }
 }
