@@ -195,6 +195,14 @@ impl<TD: TopoDim> Topology<TD> {
             .ok_or(GridError::EntitiesNotCreated(dim))
     }
 
+    /// The cell type and vertex rows of each cell block.
+    pub(crate) fn cell_rows(&self) -> Vec<(CellType, &DeviceStrided<u32>)> {
+        self.cell_blocks
+            .iter()
+            .map(|b| (b.cell.into(), &b.vertices))
+            .collect()
+    }
+
     /// Whether gridcl stores the connectivity `key`.
     fn supported(key: ConnKey) -> bool {
         let (from, to, tdim) = (usize::from(key.from), usize::from(key.to), TD::N);
@@ -245,11 +253,7 @@ impl<TD: TopoDim> Topology<TD> {
             self.entities[0] = Some(vec![block]);
             return Ok(());
         }
-        let cells: Vec<(CellType, &DeviceStrided<u32>)> = self
-            .cell_blocks
-            .iter()
-            .map(|b| (b.cell.into(), &b.vertices))
-            .collect();
+        let cells = self.cell_rows();
         let (blocks, downward) = crate::entity::create_dimension(
             &self.client,
             comm,

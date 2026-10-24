@@ -440,6 +440,20 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
     })
 }
 
+/// The cell type and cell count of each cell block.
+pub(crate) fn cell_counts(cells: &[(CellType, &DeviceStrided<u32>)]) -> Vec<(CellType, usize)> {
+    cells
+        .iter()
+        .map(|(c, rows)| (*c, rows.data.len() / rows.stride.max(1) as usize))
+        .collect()
+}
+
+/// The largest vertex index the kernels read for the origin ids `ids`: ids.len() / 2 − 1, or 0
+/// when there are no vertices.
+pub(crate) fn last_vertex(ids: &DeviceBuffer<u32>) -> Result<u32> {
+    Ok(fit(ids.len() / 2)?.saturating_sub(1))
+}
+
 /// The entity blocks of dimension `dim` ≥ 1 and the downward connectivity (tdim, dim) of the
 /// cell blocks `cells` (cell type and vertex rows), over vertices with origin ids `ids`.
 pub(crate) fn create_dimension(
@@ -450,10 +464,7 @@ pub(crate) fn create_dimension(
     fast: bool,
     dim: usize,
 ) -> Result<(Vec<EntityBlock>, Vec<DeviceStrided<u32>>)> {
-    let counts: Vec<(CellType, usize)> = cells
-        .iter()
-        .map(|(c, rows)| (*c, rows.data.len() / rows.stride.max(1) as usize))
-        .collect();
+    let counts = cell_counts(cells);
     let plans = emission_plans(&counts, dim)?;
     let mut types = Vec::with_capacity(plans.len());
     let cell_offsets: Vec<usize> = counts
@@ -471,7 +482,7 @@ pub(crate) fn create_dimension(
         ids,
         fast,
         dim,
-        last_vertex: fit(ids.len() / 2)?.saturating_sub(1),
+        last_vertex: last_vertex(ids)?,
         cell_offsets: &cell_offsets,
     };
     let mut offset = 0usize;

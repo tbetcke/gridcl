@@ -21,6 +21,7 @@ mod origin;
 mod permutation;
 mod renumber;
 mod topology;
+mod transpose;
 
 pub use cell_block::CellBlock;
 pub use entity::{Connectivity, EntityBlock};
