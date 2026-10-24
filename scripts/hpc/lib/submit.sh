@@ -83,7 +83,7 @@ submit_build_command() {
 
 # submit_render: the job script of this submission on stdout: jobs/<target>.sh with its
 # placeholders replaced and the requests of targets.env added (SGE), the job settings, and
-# jobs/common.sh.
+# jobs/common.sh. GRIDCL_TEST_DEVICE is cuda, or cpu on myriad-cpu (hpc_target_device).
 submit_render() {
     local template=$HPC_DIR/jobs/$TARGET.sh requests="" rendered
     [ -f "$template" ] || hpc_die 125 "no job script $template"
@@ -134,7 +134,7 @@ submit_render() {
     printf 'GRIDCL_HPC_CUDA_PATH=%q\n' "$CFG_CUDA_PATH"
     printf 'export CARGO_TARGET_DIR=%q\n' "$TREE/target/$TARGET"
     echo "export CARGO_NET_OFFLINE=true"
-    echo "export GRIDCL_TEST_DEVICE=cuda"
+    echo "export GRIDCL_TEST_DEVICE=$(hpc_target_device "$TARGET")"
     if [ -n "$OPT_RANKS" ]; then
         echo "export GRIDCL_RANKS=$OPT_RANKS"
     fi

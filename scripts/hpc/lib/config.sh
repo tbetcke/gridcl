@@ -4,7 +4,8 @@
 # Settings come from scripts/hpc/targets.env (git-ignored; GRIDCL_TARGETS_ENV overrides the
 # path), created from targets.example.env. The file is sourced by bash; the keys of target
 # <t> carry the prefix <t> in upper case with '-' replaced by '_' (myriad-v100 ->
-# MYRIAD_V100_HOST, ...).
+# MYRIAD_V100_HOST, ...). myriad-cpu is the one target without GPUs: its jobs run on Myriad's
+# CPU-only D nodes with GRIDCL_TEST_DEVICE=cpu (ADR-0014).
 #
 # Exit statuses of the runner: 2 usage error, 124 --max-wait exceeded (job deleted),
 # 125 runner failure (settings, ssh, sync, fetch, submission, job without exit status);
@@ -15,7 +16,7 @@
 # but bash; the functions must therefore run on both bash 3.2 and bash 4/5 and must not use
 # here-documents.
 
-HPC_TARGETS="myriad-v100 myriad-a100 locust"
+HPC_TARGETS="myriad-v100 myriad-a100 myriad-cpu locust"
 HPC_SSH_OPTS="-o BatchMode=yes"
 
 hpc_msg() { # hpc_msg <text>: progress and errors, on stderr
@@ -34,6 +35,13 @@ hpc_known_target() { # hpc_known_target <name>
         *" $1 "*) return 0 ;;
     esac
     return 1
+}
+
+hpc_target_device() { # hpc_target_device <target>: the GRIDCL_TEST_DEVICE of its jobs
+    case $1 in
+        myriad-cpu) printf 'cpu' ;;
+        *) printf 'cuda' ;;
+    esac
 }
 
 hpc_prefix() { # hpc_prefix <target>: the key prefix of a target (myriad-v100 -> MYRIAD_V100)

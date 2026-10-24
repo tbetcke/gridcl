@@ -30,18 +30,22 @@ DEFAULT_MAX_WAIT=03:00:00
 usage() {
     cat <<EOF
 usage: scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
-targets: myriad-v100 | myriad-a100 | locust
+targets: myriad-v100 | myriad-a100 | myriad-cpu | locust
 
 Syncs the working tree to the target, fetches crates on its login node, runs <command> in
-a job from the root of the remote tree (offline, GRIDCL_TEST_DEVICE=cuda) and prints a
-summary of at most 40 lines. The words after -- are joined with spaces and run by bash.
+a job from the root of the remote tree (offline, GRIDCL_TEST_DEVICE=cuda; =cpu on
+myriad-cpu) and prints a summary of at most 40 lines. The words after -- are joined with
+spaces and run by bash.
 On SGE targets (Myriad) the job is queued; on direct targets (Locust: no scheduler) it starts
 at once under timeout (the smaller of --time and --max-wait) and records the node load
-before and after the command (summary line "node load:").
+before and after the command (summary line "node load:"). myriad-cpu runs on a CPU-only
+D node (36 cores, AVX-512, no GPU).
 
-  --gpus N           GPUs of the job (default 1; at most 2 on myriad-v100, 4 on myriad-a100)
+  --gpus N           GPUs of the job (default 1; at most 2 on myriad-v100, 4 on myriad-a100;
+                     not accepted on myriad-cpu)
   --ranks N          reserve N slots and export GRIDCL_RANKS=N; the command starts mpirun
-  --cores N          CPU cores of the job (36: a whole Myriad node, for CPU benchmarks);
+  --cores N          CPU cores of the job (36: a whole Myriad node, for CPU benchmarks and
+                     every CPU-runtime run on myriad-cpu, whose threads follow the slots);
                      ignored on direct targets, which reserve nothing
   --time HH:MM:SS    wall-clock limit of the job (default $DEFAULT_TIME)
   --max-wait HH:MM:SS  wait at most this long, queue time included (default $DEFAULT_MAX_WAIT);
@@ -84,7 +88,8 @@ parse_args() {
     TARGET=$1
     shift
     hpc_known_target "$TARGET" || usage_error "unknown target '$TARGET'"
-    OPT_GPUS=1 OPT_RANKS="" OPT_CORES="" OPT_TIME=$DEFAULT_TIME OPT_MAX_WAIT=$DEFAULT_MAX_WAIT
+    OPT_GPUS=1 OPT_GPUS_GIVEN="" OPT_RANKS="" OPT_CORES="" OPT_TIME=$DEFAULT_TIME
+    OPT_MAX_WAIT=$DEFAULT_MAX_WAIT
     while [ $# -gt 0 ]; do
         opt=$1
         case $opt in
@@ -111,7 +116,7 @@ parse_args() {
             *) usage_error "'$opt' before --: put the command after --" ;;
         esac
         case $opt in
-            --gpus) check_count "$opt" "$val" && OPT_GPUS=$((10#$val)) ;;
+            --gpus) check_count "$opt" "$val" && OPT_GPUS=$((10#$val)) OPT_GPUS_GIVEN=1 ;;
             --ranks) check_count "$opt" "$val" && OPT_RANKS=$((10#$val)) ;;
             --cores) check_count "$opt" "$val" && OPT_CORES=$((10#$val)) ;;
             --time) check_duration "$opt" "$val" && OPT_TIME=$val ;;
@@ -128,6 +133,11 @@ parse_args() {
     case $TARGET in
         myriad-v100) [ "$OPT_GPUS" -le 2 ] || usage_error "--gpus $OPT_GPUS: an E or F node has 2 V100s" ;;
         myriad-a100) [ "$OPT_GPUS" -le 4 ] || usage_error "--gpus $OPT_GPUS: an L node has 4 A100s" ;;
+        myriad-cpu)
+            [ -z "$OPT_GPUS_GIVEN" ] ||
+                usage_error "--gpus $OPT_GPUS: myriad-cpu runs on CPU-only D nodes; use myriad-v100 or myriad-a100 for GPUs"
+            OPT_GPUS=0
+            ;;
         locust) [ "$OPT_GPUS" -le 1 ] || usage_error "--gpus $OPT_GPUS: Locust has one GH200" ;;
     esac
     if [ -n "$OPT_RANKS" ] && [ -n "$OPT_CORES" ] && [ "$OPT_CORES" -lt "$OPT_RANKS" ]; then
@@ -196,7 +206,11 @@ main() {
             hpc_msg "--cores ignored: $TARGET has no scheduler to reserve cores (the node load is recorded instead)"
         fi
         JOB_CORES=""
-    elif [ -n "$OPT_CORES$OPT_RANKS" ]; then
+    elif [ "$TARGET" = myriad-cpu ] && [ -z "$OPT_CORES" ]; then
+        hpc_msg "note: myriad-cpu without --cores: the CPU runtime's threads follow the job's" \
+            "slots (${OPT_RANKS:-1}); use --cores 36 for benchmarks and whole-suite runs"
+    fi
+    if [ "$CFG_SCHEDULER" = sge ] && [ -n "$OPT_CORES$OPT_RANKS" ]; then
         case $CFG_CORES_REQUEST in
             *'{cores}'*) ;;
             *) hpc_die 125 "--cores/--ranks need ${CFG_PREFIX}_CORES_REQUEST with {cores} in targets.env" ;;

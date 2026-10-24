@@ -11,6 +11,7 @@ Personal details (user ids, host names that are not public, project codes) never
 | M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CubeCL CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
 | Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240), 192 GB RAM, 2 × V100 (compute capability 7.0) | SGE: `-l gpu=N` with `-ac allow=EF` | multi-GPU tests, architecture comparisons and the fallback (ADR-0014) |
 | Myriad A100 | L nodes: 36 cores, 192 GB RAM, 4 × A100 40 GB (compute capability 8.0) | SGE: `-l gpu=N` with `-ac allow=L` | second CUDA architecture; comparisons and fallback (no CUDA 13: Myriad's driver supports CUDA 12.4) |
+| Myriad CPU (`myriad-cpu`) | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB RAM, no GPU | SGE: `-ac allow=D`, no `-l gpu`; `--cores 36` for the whole node; the job sets `GRIDCL_TEST_DEVICE=cpu` | every CPU-only Myriad run: CPU runtime on AVX-512 (CpuSimd512) benchmarks and tests (ADR-0014) |
 | Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU, Hopper GPU (compute capability 9.0) | UCL ARC experimental system; SSH to the node itself (alias `locust`, keys); open multi-user node without a scheduler (runner kind `direct`) | CUDA platform for every run: after every task that changes kernels, at every milestone review, and for benchmarks (ADR-0014); aarch64 host and Hopper GPU |
 | Hosted CI | GitHub Actions, `ubuntu-24.04` x86-64 runners | automatic | CPU runtime, Vulkan (software), MPICH and Open MPI, conformance |
 
@@ -99,6 +100,12 @@ From the UCL Research Computing documentation; E0 checks each item against the l
 - **Acceptance (E0 T7, 2026-10-18):** `scripts/hpc/acceptance.sh myriad-v100` passed in two runs from the same sources: `gpus2` (job 175401), then `turnaround nvrtc fail max-wait` (jobs 175462–175496). The failing command exited 3 and its error was the summary's first failure. The `--max-wait 00:02:00` run was deleted while still queued, with exit status 124. `status.sh` was empty afterwards.
 - **A100 acceptance (E0 T8, 2026-10-18 and 19):** `scripts/hpc/acceptance.sh myriad-a100` passed in two runs from the same env-check sources, after one warm-up job that built the A100 target directory (job 177336, 8 cores): `turnaround nvrtc fail max-wait` (jobs 177590–186144), then `gpus2` (job 186145), whose first attempt (job 178649) was deleted after its 4 h `--max-wait` in the queue. The L nodes run the same system, driver (550.127.05) and module lines as the E nodes, with Xeon Gold 6240 CPUs. `status.sh` was empty afterwards.
 
+### Myriad CPU-only D nodes (`myriad-cpu`, M3s T7)
+
+- **Target:** `scripts/hpc/remote-test.sh myriad-cpu --cores 36 -- <command>`. The job script (`jobs/myriad-cpu.sh`) asks for `-ac allow=D` and no `-l gpu`; the runner rejects `--gpus` and exports `GRIDCL_TEST_DEVICE=cpu`. The target shares Myriad's host, base directory (one tree per branch, with its own `target/myriad-cpu/`), cores and memory requests with the V100; its module lines are the V100's login-node lines (no CUDA module) and `MYRIAD_CPU_CUDA_PATH` is empty.
+- **Slots:** the CPU runtime's threads follow the job's slots (E0: 8 hardware threads in an 8-slot job), so CPU work always asks for `--cores 36`; without `--cores` the runner prints a note and the job has one slot. `--cores 36` with `-l mem=4G` asks for 144 GB of the node's 192 GB. The prologue records `slots:` and `cpus:` (`nproc` without the OMP variables, the online CPUs, and `OMP_NUM_THREADS`).
+- **Smoke job:** job 10224 (2026-10-24, `--cores 36 --time 02:00:00`, `cargo test --release -p gridcl-device`) was still queued after about two hours when T7 was committed; its result is recorded here when it finishes.
+
 ### CubeCL's LLVM on Myriad (ADR-0004)
 
 cubecl-cuda (both `cuda` and `cuda-cpp`) and the CPU runtime need cubecl-llvm, whose build script downloads a prebuilt LLVM (tracel-llvm-bundler 23.1.0-3: LLVM 23.1.0) that needs glibc ≥ 2.34. On Myriad the same LLVM version is built with Spack and laid out where the bundler looks for it: `$XDG_DATA_HOME/tracel/tracel-llvm-23.1.0-3/` with the sentinel file `.tracel-llvm-installed`, which makes the bundler skip its download. The binaries link with LLD, because RHEL 7's GNU ld 2.27 resolves archives in one pass and misses LLVM symbols that only pliron-llvm uses.
@@ -175,6 +182,7 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | Vulkan (hosted CI) | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` |
 | CUDA (the runner sets `GRIDCL_TEST_DEVICE=cuda`) | `scripts/hpc/remote-test.sh <target> -- cargo test --release --workspace --features gridcl-testing/cuda` |
 | CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
+| CPU runtime on a Myriad D node (AVX-512; the runner sets `GRIDCL_TEST_DEVICE=cpu`) | `scripts/hpc/remote-test.sh myriad-cpu --cores 36 -- cargo test --release --workspace` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
 | MPI on CUDA (Myriad V100; both ranks use GPU 0 until per-rank selection) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
@@ -197,3 +205,4 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | 2026-10-19 | Record closed (E0 T10): no open E0 fields; the hosted CI provider is chosen in M0. |
 | 2026-10-19 | M0: hosted CI on GitHub Actions, test commands, Locust doctest linker (`RUSTDOCFLAGS`), CubeCL's database under `$TMPDIR` via `cubecl.toml`. |
 | 2026-10-19 | M0 review: MPI on CUDA row (Myriad V100); `mpi-test.sh` links the `GRIDCL_TEST_DEVICE` backend and needs no `jq`; debug profile and the buildid overflow override. |
+| 2026-10-24 | M3s T7: Myriad CPU-only target `myriad-cpu` (D nodes, ADR-0014): target row, reference section and test command; prologue line `cpus:`. |
