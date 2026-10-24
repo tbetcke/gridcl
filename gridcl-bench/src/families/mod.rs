@@ -1,7 +1,8 @@
 //! The vector-size sweep: every family, scalar type, size and configuration of "Benchmarks",
 //! measured with the protocol of [`crate::protocol`].
 //!
-//! - [`device`]: the device-primitive families (Fill, Copy, Reduce).
+//! - [`device`]: the device-primitive families (Fill, Copy, Reduce, ScanTile, SortDigits,
+//!   Gather) and the scalar helpers measured for `KernelKind::Scalar`'s CPU blocks.
 
 pub mod device;
 
@@ -27,6 +28,11 @@ pub fn families() -> Vec<(KernelKind, &'static [Scalar])> {
         (KernelKind::Fill, &[F32, F64, U32]),
         (KernelKind::Copy, &[U32]),
         (KernelKind::Reduce, &[F32, F64, U32]),
+        (KernelKind::ScanTile, &[U32]),
+        (KernelKind::SortDigits, &[U32]),
+        (KernelKind::Gather, &[F32, F64, U32]),
+        // Histogram and segmented reduce, for the CPU blocks of Scalar (ADR-0015, item 7).
+        (KernelKind::Scalar, &[U32, F64]),
     ]
 }
 
@@ -137,6 +143,16 @@ pub fn sweep(
         if !options.families.contains(&kind) {
             continue;
         }
+        // Scalar kernels plan at size 1; only their CPU blocks are chosen (ADR-0015, item 7).
+        let scalar_kind = kind == KernelKind::Scalar;
+        if scalar_kind && !is_cpu(class) {
+            continue;
+        }
+        let kind_sizes: Vec<usize> = vector_sizes
+            .iter()
+            .copied()
+            .filter(|&v| !scalar_kind || v == 1)
+            .collect();
         for &scalar in scalars {
             if options
                 .scalars
@@ -161,7 +177,7 @@ pub fn sweep(
                 };
                 for &cube_dim in &cube_dims {
                     for &block_bytes in &blocks {
-                        for &vector_size in &vector_sizes {
+                        for &vector_size in &kind_sizes {
                             let config = Config {
                                 vector_size,
                                 block_bytes,
@@ -251,8 +267,8 @@ fn sweep_record(
 mod tests {
     use super::*;
 
-    /// The sweep at 10^4 items, two runs, every family of T8: every configuration gives a
-    /// record whose size ran is at most the size asked for.
+    /// The sweep at 10^4 items, two runs, every family: every configuration gives a record
+    /// whose size ran is at most the size asked for; Scalar runs on CPUs only, at size 1.
     #[test]
     fn smoke_sweep_at_ten_thousand() {
         let client = gridcl_testing::test_client();
@@ -274,16 +290,29 @@ mod tests {
         let sizes = protocol::vector_sizes(&client).len();
         let blocks = if is_cpu(machine.class) { 2 } else { 1 };
         let has_f64 = check_precision::<f64>(&client).is_ok();
-        let types: usize = families()
-            .iter()
-            .map(|(_, s)| s.iter().filter(|&&s| has_f64 || s != Scalar::F64).count())
-            .sum();
-        assert_eq!(records.len(), types * blocks * sizes);
+        let types = |kind: KernelKind| {
+            let (_, scalars) = families().into_iter().find(|(k, _)| *k == kind).unwrap();
+            scalars
+                .iter()
+                .filter(|&&s| has_f64 || s != Scalar::F64)
+                .count()
+        };
+        for (kind, _) in families() {
+            let of = records.iter().filter(|r| r.family == kind).count();
+            let want = match kind {
+                KernelKind::Scalar if is_cpu(machine.class) => types(kind) * blocks,
+                KernelKind::Scalar => 0,
+                _ => types(kind) * blocks * sizes,
+            };
+            assert_eq!(of, want, "{kind:?}");
+        }
         for r in &records {
             assert_eq!((r.n, r.nominal_n, r.times_s.len()), (10_000, 10_000, 2));
             assert!(r.vector_size_ran <= r.vector_size, "{r:?}");
             assert!(r.median_s > 0.0 && r.units > 0, "{r:?}");
-            assert!(r.bandwidth_ratio.is_some_and(|b| b > 0.0), "{r:?}");
+            let has_bytes = r.family != KernelKind::SortDigits;
+            assert_eq!(r.bandwidth_ratio.is_some(), has_bytes, "{r:?}");
+            assert!(r.bandwidth_ratio.is_none_or(|b| b > 0.0), "{r:?}");
             assert_eq!(r.block_bytes.is_some(), is_cpu(machine.class));
         }
     }
