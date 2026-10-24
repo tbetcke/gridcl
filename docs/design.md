@@ -1044,8 +1044,9 @@ impl DeviceClass {
 pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }
 
 /// Vector sizes, QuadField tiles and CPU block sizes chosen from benchmarks
-/// (docs/perf/vectorization.md), compiled in from gridcl-device/vector-policy.toml. GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and
-/// GRIDCL_QUAD_TILE override it for tests and benchmarks.
+/// (docs/perf/vectorization.md), compiled in from gridcl-device/vector-policy.toml.
+/// GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and GRIDCL_QUAD_TILE override it for
+/// tests and benchmarks.
 pub struct VectorPolicy { /* per (KernelKind, DeviceClass, element size) */ }
 impl VectorPolicy {
     pub fn for_client(client: &Client) -> &'static VectorPolicy;
@@ -1081,7 +1082,8 @@ impl LaunchPlan {
 /// Test hooks, only with gridcl-device's Cargo feature `testing` (off by default, not stable
 /// API; gridcl-testing turns it on). Overrides are scoped and thread-local, because gridcl runs
 /// one host thread per mesh. Precedence: the scoped per-kind override, then the scoped override,
-/// then the environment variable, then vector-policy.toml. An invalid GRIDCL_VECTOR_SIZE or GRIDCL_QUAD_TILE panics.
+/// then the environment variable, then vector-policy.toml. An invalid GRIDCL_VECTOR_SIZE or
+/// GRIDCL_QUAD_TILE panics.
 #[cfg(feature = "testing")]
 pub mod testing {
     /// Replaces the properties gridcl-device reads (limits, device class, vector sizes) for
