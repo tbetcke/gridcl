@@ -187,7 +187,7 @@ fn every_vector_size_gives_the_same_bits() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
     #[test]
     fn prop_bits_match_orientation_bits(

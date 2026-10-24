@@ -141,7 +141,7 @@ fn empty_blocks_have_no_entities() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 12, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
     #[test]
     fn prop_entities_invariant_under_shuffles(ids in any::<u64>(), nodes in any::<u64>(), n in 1usize..3) {

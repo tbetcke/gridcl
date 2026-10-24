@@ -117,7 +117,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T0
   - Parallel with: T5, T7
   - Risks / notes: –
-- [ ] **T2 Property tests at 256 cases (m3)**
+- [x] **T2 Property tests at 256 cases (m3)**
   - Goal: `prop_entities_invariant_under_shuffles` and `prop_bits_match_orientation_bits` run 256 cases.
   - Crates/files: `gridcl-topology/tests/{entities.rs, permutation.rs}`. Also `.github/workflows/ci.yml`, only if the tests become release-only: the hosted cpu job has no release step.
   - Public API added or changed: none.
