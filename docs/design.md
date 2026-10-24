@@ -367,7 +367,7 @@ impl<TD: EmbeddedIn<GD>, GD: Dim> FieldShape for PinvShape<TD, GD> {
 }
 
 /// Values at quadrature points of one cell block, in tiles of `tile` cells (1, 2, 4, 8 or 16;
-/// VectorPolicy::quad_tile, 16 by default). Component k at point q of cell c is stored at
+/// VectorPolicy::quad_tile(size_of::<F>()), 16 by default). Component k at point q of cell c is stored at
 ///     ((c / tile) * num_points * LEN + q * LEN + k) * tile + c % tile,
 /// so the lanes of a kernel over consecutive cells read and write contiguous memory. tile = 1 is
 /// the plain [cell][point][component] layout. Stored in chunks of whole tiles so that no chunk
@@ -472,7 +472,7 @@ pub fn jacobians_block<F, TD, GD, G>(g: &G, b: usize, pts: &PointSet<F, TD>)
 where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
     let gb = g.geometry_block(b);
-    let tile = VectorPolicy::for_client(g.client()).quad_tile();
+    let tile = VectorPolicy::for_client(g.client()).quad_tile(size_of::<F>());
     let layout = GeomLayout::new::<TD, GD>(&gb.element, pts.len(), tile);
     let num_cells = g.cell_blocks()[b].index_map.num_local();          // owned + ghost
     let xe = g.evector(b)?;                                             // cached; tile-aligned chunks
@@ -911,7 +911,7 @@ They follow eight rules:
 - results are deterministic, bitwise identical across runs on the same device;
 - every primitive passes the same tests on CPU, Vulkan and Metal;
 - fill, copy, reduce, the tile-local phase of scan, the digit counting of the sort (SortDigits) and gather are generic over the vector size, and every primitive takes its launch shape from `LaunchPlan` (see "Vectorization and CPU execution");
-- one partition per primitive: a primitive with several kernels computes one `LaunchPlan`, for the `KernelKind` of its vectorized phase (or its first phase if none is vectorized), and every kernel takes its ranges from it. A unit owns `items_per_unit · vector_size` consecutive items, and a cube owns `cube_dim` times as many. Scalar phases launch with the same cube count and cube dimension. Recursive levels (the partials of reduce, the tile sums of scan) use one new `LaunchPlan::elementwise` per level, until one cube remains;
+- one partition per primitive: a primitive with several kernels computes one `LaunchPlan`, for the `KernelKind` of its vectorized phase, or `KernelKind::Scalar` if none is vectorized (ADR-0015), and every kernel takes its ranges from it. A unit owns `items_per_unit · vector_size` consecutive items, and a cube owns `cube_dim` times as many. Scalar phases launch with the same cube count and cube dimension. Recursive levels (the partials of reduce, the tile sums of scan) use one new `LaunchPlan::elementwise` per level, until one cube remains;
 - no plane operations: values are combined within a cube through shared memory and `sync_cube`, so every primitive is correct with plane size 1 and on the CPU runtime, which has no plane operations;
 - no primitive reads from the device, except that run-length and unique-by-key read their count once (a blocking 4-byte read) and return exactly sized buffers, and that debug builds of gather and scatter read back one value to check their indices (ADR-0009).
 
@@ -1022,6 +1022,8 @@ Two consequences shape gridcl's kernels. First, with the GPU mapping of one item
 pub enum KernelKind {
     Fill, Copy, Reduce, ScanTile, SortDigits, Gather, Pack,
     TopologyKeys, PermutationInfo, EVector, GeomFactors, PullBack,
+    /// Kernels not on the candidate list; always vector size 1 (ADR-0015).
+    Scalar,
 }
 
 /// Device classes the policy distinguishes, derived from Client::properties().
@@ -1041,16 +1043,19 @@ impl DeviceClass {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }
 
-/// Vector sizes and tile widths chosen from benchmarks (docs/perf/vectorization.md), compiled in
-/// from gridcl-device/vector-policy.toml. GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and
+/// Vector sizes, QuadField tiles and CPU block sizes chosen from benchmarks
+/// (docs/perf/vectorization.md), compiled in from gridcl-device/vector-policy.toml. GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and
 /// GRIDCL_QUAD_TILE override it for tests and benchmarks.
 pub struct VectorPolicy { /* per (KernelKind, DeviceClass, element size) */ }
 impl VectorPolicy {
     pub fn for_client(client: &Client) -> &'static VectorPolicy;
     /// Preferred vector size for one kernel family and scalar size; 1 until benchmarked.
     pub fn vector_size(&self, kind: KernelKind, elem_bytes: usize) -> usize;
-    /// Tile width of QuadField and E-vector chunks: 1, 2, 4, 8 or 16.
-    pub fn quad_tile(&self) -> usize;
+    /// Tile width of QuadField and E-vector chunks for one scalar size: 1, 2, 4, 8 or 16.
+    pub fn quad_tile(&self, elem_bytes: usize) -> usize;
+    /// CPU block of one kind and element size in bytes (vector-policy.toml stores units of
+    /// 4 KiB); None on Gpu.
+    pub fn cpu_block_bytes(&self, kind: KernelKind, elem_bytes: usize) -> Option<usize>;
 }
 
 /// Shape of one launch on the current device. Not Copy: CubeCount is not Copy in CubeCL 0.11.
@@ -1075,8 +1080,8 @@ impl LaunchPlan {
 
 /// Test hooks, only with gridcl-device's Cargo feature `testing` (off by default, not stable
 /// API; gridcl-testing turns it on). Overrides are scoped and thread-local, because gridcl runs
-/// one host thread per mesh. Precedence: the scoped override, then the environment variable,
-/// then vector-policy.toml. An invalid GRIDCL_VECTOR_SIZE or GRIDCL_QUAD_TILE panics.
+/// one host thread per mesh. Precedence: the scoped per-kind override, then the scoped override,
+/// then the environment variable, then vector-policy.toml. An invalid GRIDCL_VECTOR_SIZE or GRIDCL_QUAD_TILE panics.
 #[cfg(feature = "testing")]
 pub mod testing {
     /// Replaces the properties gridcl-device reads (limits, device class, vector sizes) for
@@ -1084,6 +1089,12 @@ pub mod testing {
     pub fn with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R;
     pub fn with_vector_size<R>(v: VectorSizeOverride, f: impl FnOnce() -> R) -> R;
     pub fn with_quad_tile<R>(tile: usize, f: impl FnOnce() -> R) -> R;
+    /// Vector size of one family; takes precedence over with_vector_size, the environment and
+    /// the policy for that kind.
+    pub fn with_kind_vector_size<R>(kind: KernelKind, v: VectorSizeOverride,
+                                    f: impl FnOnce() -> R) -> R;
+    /// CPU block target, a power of two from 4 to 64 KiB, for plans made inside f.
+    pub fn with_cpu_block_bytes<R>(bytes: usize, f: impl FnOnce() -> R) -> R;
     /// The plans made inside `f`, so a test can assert the vector size it ran at.
     pub fn record_plans<R>(f: impl FnOnce() -> R) -> (R, Vec<(KernelKind, LaunchPlan)>);
 }
@@ -1091,7 +1102,7 @@ pub mod testing {
 
 - **Vector size:** the largest power of two not above the policy's size, `max_vector`, the device's `hardware.max_vector_size` (ADR-0011), and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
 - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
-- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, about 16 KiB of the widest stream and a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is benchmarked in M3s.
+- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
 ### Padding and tiles
@@ -1118,7 +1129,7 @@ Vectors pay off where a kernel does the same arithmetic for many independent ite
 | GeomFactors (X, J, det J, K, normals) | cells of one tile | E-vector, tiled `QuadField` | the main expected gain: dense arithmetic with broadcast basis values |
 | PullBack (Newton iteration) | points | points tiled like cells | to measure: lanes that have converged keep their value through arithmetic masks while the others iterate |
 
-Histograms, connectivity inversion, segmented reductions over irregular segments and the scatter phase of the sort stay scalar. Kernels in the candidate list are written generic over `N: Size` from the start and run at the policy's size. All other kernels are scalar but still take their CPU work distribution from `LaunchPlan`.
+Histograms, connectivity inversion, segmented reductions over irregular segments and the scatter phase of the sort stay scalar. Kernels in the candidate list are written generic over `N: Size` from the start and run at the policy's size. All other kernels are scalar, plan as `KernelKind::Scalar`, and still take their CPU work distribution from `LaunchPlan`.
 
 ### Determinism across vector sizes
 
@@ -1134,8 +1145,8 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 - **What it reports:** the median of ten timed runs after a warm-up launch that absorbs JIT compilation, the effective bandwidth relative to a copy kernel on the same device, and the compile time per vector size. Results are written as JSON.
 - **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus a whole CPU-only Myriad D node (36-core Xeon Gold 6240 with AVX-512, no GPU; `-ac allow=D`) for the CPU runtime as CpuSimd512, which Locust cannot provide; CPU-only nodes queue far shorter than GPU nodes. Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
 - **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
-- **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width and CPU block size follow the same rule.
-- **Record:** the choices go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
+- **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width and CPU block size follow the same rule. With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015).
+- **Record:** the choices — vector sizes, QuadField tiles per element size, and CPU block sizes per kind and element size in units of 4 KiB — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
 
 ## Topology construction on the device
 
@@ -1601,7 +1612,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
 | gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); dev: proptest |
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
-| gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
+| gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
 | gridcl-io | Gmsh reader and writer, VTU/PVTU, VTKHDF | topology, geometry, parallel, partition; hdf5-metno (optional) |
@@ -1610,7 +1621,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
 | gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
-| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-testing; cubecl with runtime features |
+| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
 | tools/env-check (outside the workspace) | Probe of a development target: devices, properties, sample kernels in f32 and f64, MPI allreduce; JSON report. Built in E0. | cubecl with the target's runtime features; mpi (optional) |
 
@@ -1628,6 +1639,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 - **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`.
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
 - **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it.
+- **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on.
 
 ### CI matrix
 
@@ -1809,7 +1821,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - benchmark JSON committed under `docs/perf/data/` for the M3 Max (CPU runtime, Metal), Locust (CPU runtime on Grace, CUDA) and a CPU-only Myriad D node (CPU runtime on its AVX-512 Xeon), plus Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014);
 - `docs/perf/vectorization.md` lists, for every candidate family, device class and scalar type, the measured speedup of each vector size over size 1, the chosen size and the reason;
-- every vector size above 1 in `vector-policy.toml` is at least 10% faster than size 1 at 10^6 and 10^7 items on its device class, and every chosen configuration (vector size, tile width, block size) is within 3% of the fastest one measured;
+- every vector size above 1 in `vector-policy.toml` is at least 10% faster than size 1 at 10^6 and 10^7 items on its device class (the geometric mean over its measured devices), and every chosen configuration (vector size, tile width, block size) is within 3% of the fastest one the 10% rule admits (ADR-0015);
 - a test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass`, and that every value is a power of two from 1 to 16;
 - with the chosen policy, the whole test suite passes on every target, including the vector-size invariance tests;
 - entities created per second and geometric factors per second are recorded on the M3 Max CPU runtime and a Myriad CPU, with the chosen policy and with every kernel scalar.
@@ -1900,7 +1912,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - on a Myriad node with a CUDA-aware MPI, the GPU-aware halo exchange is bitwise identical to the host-staged one on 2 ranks (V100 node) and 4 ranks (A100 node);
 - benchmarks (entities created per second, geometric factors per second) are recorded on the M3 Max (CPU runtime, Metal), Locust and a CPU-only Myriad D node (AVX-512), plus Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014);
-- the M3s study covers every `KernelKind`, including Pack and PullBack; `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
+- the M3s study covers every candidate `KernelKind`, including Pack and PullBack; `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
 - every example runs on the CPU runtime and on at least one GPU backend;
 - rustdoc builds without warnings, and every public item is documented.
 

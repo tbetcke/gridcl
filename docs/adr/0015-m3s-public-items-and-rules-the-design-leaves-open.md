@@ -1,6 +1,6 @@
 # ADR-0015: M3s public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-24
 - **Raised in:** M3s planning (docs/plans/M3s.md, "Planned public API and rules", questions 2, 3, 4, 6 and 14)
 - **Design sections affected:**
@@ -189,4 +189,4 @@ planning (2026-10-24).
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-24, as proposed (option 2, items 1–8), without conditions. Applied to docs/design.md in `adr: 0015 apply`.
