@@ -31,8 +31,11 @@ tests cannot run until E0 is merged, and stop.
 - **`kathleen`** (Slurm; whole nodes of 2 × 20-core Xeon Gold 6248, AVX-512) for every
   CPU-only remote run (x86-64 AVX-512 CPU benchmarks, CpuSimd512, which Locust cannot provide;
   the CPU runtime on x86-64) and for MPI runs beyond 4 ranks; from M6 on, every milestone review
-  also runs the MPI tests on two Kathleen nodes (ADR-0016). Never more than two nodes per job.
-  The runner gains this target in M3s T19; until it exists, say so and stop.
+  also runs the MPI tests on two Kathleen nodes (ADR-0016). Never more than two nodes per job:
+  `--nodes 1` (default, QoS `singlenode`, at most 6 h) or `--nodes 2` (`test` up to 1 h, else
+  `small`); `--ranks N` on two nodes spreads the ranks over both. If its jobs stay pending
+  because the nodes are drained or reserved (`ReqNodeNotAvail`; maintenance), cancel them and
+  use `myriad-cpu`, with that reason.
 - **`myriad-cpu`** (a CPU-only D node, `-ac allow=D`; 36 cores, Xeon Gold 6240; never a GPU
   node) only as the fallback for CPU-only runs: Kathleen unreachable, a job still queued after
   `--max-wait`, or the user asks. State the reason in one line. The job sets
