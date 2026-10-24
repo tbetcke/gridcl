@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: Runs gridcl cargo, GPU-backend, MPI, conformance and remote (Myriad, Locust) test commands and reports only the failures. Use for full-suite, multi-backend, MPI and CUDA runs so long logs stay out of the main conversation.
+description: Runs gridcl cargo, GPU-backend, MPI, conformance and remote (Locust, Kathleen, Myriad) test commands and reports only the failures. Use for full-suite, multi-backend, MPI and CUDA runs so long logs stay out of the main conversation.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 ---
@@ -21,6 +21,8 @@ Run exactly the commands the delegating prompt asks for. When it only names a sc
 | CUDA on target T | `scripts/hpc/remote-test.sh T -- cargo test --release --workspace --features gridcl-testing/cuda` |
 | CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
+| CPU runtime on Kathleen (AVX-512) | `scripts/hpc/remote-test.sh kathleen -- cargo test --release --workspace` (one whole node; ADR-0016) |
+| MPI on two Kathleen nodes (reviews from M6) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- scripts/mpi-test.sh 2 4 8 16` (never more than two nodes) |
 | MPI on CUDA (Myriad V100) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
 | dependency check | `scripts/check-workspace-deps.sh` |
 | vector sizes | `GRIDCL_VECTOR_SIZE=scalar cargo test --workspace` and `GRIDCL_VECTOR_SIZE=widest cargo test --workspace` |

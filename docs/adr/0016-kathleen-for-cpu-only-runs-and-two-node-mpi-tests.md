@@ -115,4 +115,4 @@ The runner follows `scripts/hpc` and the facts above:
 
 ## Decision record
 
-Accepted by the maintainer on 2026-10-24, as proposed (option 2), including the two-node MPI run at every milestone review from M6 on. Applied to docs/design.md and CLAUDE.md in `adr: 0016 apply`; `.claude/skills/hpc-test/SKILL.md` and `.claude/agents/test-runner.md` are left to the maintainer, because the sandbox denies writes there. The `kathleen` target is M3s T19.
+Accepted by the maintainer on 2026-10-24, as proposed (option 2), including the two-node MPI run at every milestone review from M6 on. Applied to docs/design.md and CLAUDE.md in `adr: 0016 apply`; `.claude/skills/hpc-test/SKILL.md` and `.claude/agents/test-runner.md` were updated with the maintainer's permission outside the sandbox. The `kathleen` target is M3s T19.

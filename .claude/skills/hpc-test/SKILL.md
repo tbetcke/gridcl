@@ -28,10 +28,15 @@ tests cannot run until E0 is merged, and stop.
     - the user asked for it.
 
   State the reason in one line when you choose `myriad-v100` or `myriad-a100`.
-- **CPU-only runs on Myriad** (x86-64 AVX-512 CPU benchmarks, CpuSimd512, which Locust cannot
-  provide) use a CPU-only D node (`-ac allow=D`; 36 cores, Xeon Gold 6240), never a GPU node:
-  CPU-only nodes queue far shorter. The runner has no such target yet (a `myriad-cpu` target is
-  an M3s follow-up); until it exists, say so and stop rather than using a GPU node.
+- **`kathleen`** (Slurm; whole nodes of 2 × 20-core Xeon Gold 6248, AVX-512) for every
+  CPU-only remote run (x86-64 AVX-512 CPU benchmarks, CpuSimd512, which Locust cannot provide;
+  the CPU runtime on x86-64) and for MPI runs beyond 4 ranks; from M6 on, every milestone review
+  also runs the MPI tests on two Kathleen nodes (ADR-0016). Never more than two nodes per job.
+  The runner gains this target in M3s T19; until it exists, say so and stop.
+- **`myriad-cpu`** (a CPU-only D node, `-ac allow=D`; 36 cores, Xeon Gold 6240; never a GPU
+  node) only as the fallback for CPU-only runs: Kathleen unreachable, a job still queued after
+  `--max-wait`, or the user asks. State the reason in one line. The runner gains this target in
+  M3s T7; until it exists, say so and stop.
 
 If the user named a target, use it.
 
@@ -58,6 +63,7 @@ scripts/hpc/remote-test.sh <target> [options] -- <command>
 - Runs that wait in a queue can take a long time. Run the command in the background and continue
   with work that does not depend on it; check the result before starting a task that does.
 - At most two scheduler jobs (Myriad, Kathleen) at a time; check with `scripts/hpc/status.sh`.
+  A Kathleen job takes at most two nodes.
   Locust jobs are independent of them: one Locust run may go in parallel with the scheduler jobs.
 - Submit Myriad jobs one after the other, never at the same moment: they sync into one remote
   tree and race (rsync exit code 23). Locust syncs to its own host and is not affected.
