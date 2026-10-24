@@ -11,8 +11,6 @@ use crate::{
 
 /// Units per cube on GPUs, or `max_units_per_cube` if that is smaller.
 const GPU_CUBE_DIM: u32 = 256;
-/// Bytes of the widest stream each CPU unit processes in one block: about 16 KiB.
-const CPU_BLOCK_BYTES: usize = 16 << 10;
 /// Cache-line size CPU blocks are a whole number of.
 const CPU_LINE_BYTES: usize = 128;
 /// Buffers a library kernel may bind (docs/design.md, "Device limits").
@@ -57,13 +55,15 @@ impl LaunchPlan {
     ///
     /// - **Vector size:** the largest power of two not above the policy's size, `max_vector`,
     ///   the device's `hardware.max_vector_size` (ADR-0011) and the widest of
-    ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by
-    ///   `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size` (see [`VectorSizeOverride`]).
+    ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by `GRIDCL_VECTOR_SIZE`,
+    ///   `testing::with_vector_size` or `testing::with_kind_vector_size` (see
+    ///   [`VectorSizeOverride`]).
     /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` (at most `max_cube_dim.0`) if
     ///   that is smaller; `items_per_unit` is 1.
     /// - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`,
-    ///   ADR-0011), one unit per hardware thread, and each unit takes blocks of about 16 KiB of
-    ///   whole 128-byte lines.
+    ///   ADR-0011), one unit per hardware thread, and each unit takes blocks of
+    ///   `VectorPolicy::cpu_block_bytes(kind, elem_bytes)` of the widest stream (16 KiB until
+    ///   M3s), rounded to whole 128-byte lines (ADR-0015).
     /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
     ///
     /// # Errors
@@ -101,7 +101,7 @@ impl LaunchPlan {
             elem_bytes,
             max_vector,
             live,
-            VectorSizeOverride::current(),
+            VectorSizeOverride::current(kind),
         )?;
         testing::record(kind, &plan);
         Ok(plan)
@@ -139,11 +139,12 @@ fn plan_for(
     let num_vectors = pad_len(items)? / n;
     let num_vectors_u32 = u32::try_from(num_vectors).map_err(|_| GridError::TooLarge)?;
 
-    let (cube_dim, items_per_unit) = if class.is_cpu() {
+    let cpu_block = VectorPolicy::for_class(class).cpu_block_bytes(kind, elem_bytes);
+    let (cube_dim, items_per_unit) = if let Some(block) = cpu_block {
         let bytes = n.checked_mul(elem_bytes).ok_or(GridError::TooLarge)?;
         (
             hw.max_units_per_cube.min(hw.max_cube_dim.0),
-            cpu_items_per_unit(bytes),
+            cpu_items_per_unit(bytes, block),
         )
     } else {
         (
@@ -208,12 +209,12 @@ fn vector_size(
     1 << n.ilog2()
 }
 
-/// Vectors of `vector_bytes` bytes per CPU block: about `CPU_BLOCK_BYTES`, and a whole number
-/// of `CPU_LINE_BYTES` lines.
-fn cpu_items_per_unit(vector_bytes: usize) -> usize {
+/// Vectors of `vector_bytes` bytes per CPU block: about `block_bytes`, and a whole number of
+/// `CPU_LINE_BYTES` lines.
+fn cpu_items_per_unit(vector_bytes: usize, block_bytes: usize) -> usize {
     // The fewest vectors that fill whole lines.
     let step = CPU_LINE_BYTES / gcd(CPU_LINE_BYTES, vector_bytes);
-    let fit = CPU_BLOCK_BYTES / vector_bytes;
+    let fit = block_bytes / vector_bytes;
     (fit - fit % step).max(step)
 }
 
@@ -352,17 +353,116 @@ mod tests {
 
     #[test]
     fn cpu_blocks_are_whole_lines_of_about_16_kib() {
-        for bytes in [4, 8, 16, 32, 64, 128, 12, 24, 256] {
-            let ipu = cpu_items_per_unit(bytes);
-            let block = ipu * bytes;
-            assert!(block.is_multiple_of(CPU_LINE_BYTES), "{bytes}: {block}");
-            assert!(
-                block <= CPU_BLOCK_BYTES.max(CPU_LINE_BYTES.max(bytes) * 2),
-                "{bytes}: {block}"
-            );
+        let policy = VectorPolicy::for_class(DeviceClass::CpuSimd128);
+        for elem_bytes in [4, 8] {
+            let target = policy
+                .cpu_block_bytes(KernelKind::Fill, elem_bytes)
+                .unwrap();
+            assert_eq!(target, 16 << 10, "the policy's block until M3s's data");
+            for n in [1, 2, 4, 8, 16] {
+                let bytes = n * elem_bytes;
+                let block = cpu_items_per_unit(bytes, target) * bytes;
+                assert!(block.is_multiple_of(CPU_LINE_BYTES), "{bytes}: {block}");
+                assert!(block <= target && block > target / 2, "{bytes}: {block}");
+            }
         }
-        assert_eq!(cpu_items_per_unit(4), 4096);
-        assert_eq!(cpu_items_per_unit(128), 128);
+        for bytes in [12, 24, 256] {
+            let block = cpu_items_per_unit(bytes, 16 << 10) * bytes;
+            assert!(block.is_multiple_of(CPU_LINE_BYTES), "{bytes}: {block}");
+            assert!(block <= 16 << 10, "{bytes}: {block}");
+        }
+        assert_eq!(cpu_items_per_unit(4, 16 << 10), 4096);
+        assert_eq!(cpu_items_per_unit(128, 16 << 10), 128);
+    }
+
+    /// The block override sets the target at 4, 16 and 64 KiB; blocks stay whole lines.
+    #[test]
+    fn block_override_rounds_to_whole_lines() {
+        let mut props = props();
+        props.hardware.num_cpu_cores = Some(8);
+        props.hardware.max_units_per_cube = 8;
+        props.hardware.max_cube_dim = (8, 8, 8);
+        props.hardware.load_width = 128;
+        props.hardware.max_vector_size = 16;
+        for kib in [4usize, 16, 64] {
+            let target = kib << 10;
+            for elem_bytes in [4usize, 8] {
+                for n in [1usize, 2, 4, 8, 16] {
+                    let plan = testing::with_cpu_block_bytes(target, || {
+                        plan_for(
+                            &props,
+                            KernelKind::Gather,
+                            10_000_000,
+                            elem_bytes,
+                            16,
+                            1,
+                            VectorSizeOverride::Fixed(n),
+                        )
+                    })
+                    .unwrap();
+                    let block = plan.items_per_unit as usize * n * elem_bytes;
+                    assert!(block.is_multiple_of(CPU_LINE_BYTES), "{kib} KiB: {block}");
+                    assert_eq!(block, target, "{kib} KiB, {n} × {elem_bytes} bytes");
+                }
+            }
+            // No effect on GPUs.
+            let mut gpu = props.clone();
+            gpu.hardware.num_cpu_cores = None;
+            let plan = testing::with_cpu_block_bytes(target, || {
+                plan_for(
+                    &gpu,
+                    KernelKind::Gather,
+                    1000,
+                    4,
+                    16,
+                    1,
+                    VectorSizeOverride::Scalar,
+                )
+            })
+            .unwrap();
+            assert_eq!(plan.items_per_unit, 1);
+        }
+    }
+
+    #[test]
+    fn block_override_is_bounded() {
+        for bad in [0usize, 2048, 3 << 12, 128 << 10, usize::MAX] {
+            let result = std::panic::catch_unwind(|| testing::with_cpu_block_bytes(bad, || ()));
+            assert!(result.is_err(), "{bad} bytes accepted");
+        }
+        for good in [4usize << 10, 8 << 10, 32 << 10, 64 << 10] {
+            testing::with_cpu_block_bytes(good, || ());
+        }
+    }
+
+    /// The per-kind override wins over the scoped override (and so over the environment) for its
+    /// kind only; nested calls for other kinds add to it, and every scope is restored.
+    #[test]
+    fn kind_override_takes_precedence() {
+        use VectorSizeOverride::{Fixed, Policy, Scalar};
+        let current = VectorSizeOverride::current;
+        testing::with_vector_size(Fixed(4), || {
+            assert_eq!(current(KernelKind::SortDigits), Fixed(4));
+            testing::with_kind_vector_size(KernelKind::SortDigits, Fixed(2), || {
+                assert_eq!(current(KernelKind::SortDigits), Fixed(2));
+                assert_eq!(current(KernelKind::ScanTile), Fixed(4));
+                testing::with_kind_vector_size(KernelKind::ScanTile, Policy, || {
+                    assert_eq!(current(KernelKind::SortDigits), Fixed(2));
+                    assert_eq!(current(KernelKind::ScanTile), Policy);
+                    testing::with_kind_vector_size(KernelKind::SortDigits, Scalar, || {
+                        assert_eq!(current(KernelKind::SortDigits), Scalar);
+                    });
+                    assert_eq!(current(KernelKind::SortDigits), Fixed(2));
+                });
+                assert_eq!(current(KernelKind::ScanTile), Fixed(4));
+            });
+            assert_eq!(current(KernelKind::SortDigits), Fixed(4));
+        });
+        assert_eq!(testing::kind_vector_override(KernelKind::SortDigits), None);
+        let result = std::panic::catch_unwind(|| {
+            testing::with_kind_vector_size(KernelKind::Fill, Fixed(3), || ())
+        });
+        assert!(result.is_err(), "Fixed(3) accepted");
     }
 
     #[test]

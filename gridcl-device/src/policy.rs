@@ -188,10 +188,12 @@ impl VectorSizeOverride {
         }
     }
 
-    /// The scoped override, else `GRIDCL_VECTOR_SIZE` (read once per process), else `Policy`.
-    pub(crate) fn current() -> VectorSizeOverride {
+    /// The scoped override of `kind`, else the scoped override, else `GRIDCL_VECTOR_SIZE` (read
+    /// once per process), else `Policy`.
+    pub(crate) fn current(kind: KernelKind) -> VectorSizeOverride {
         static ENV: OnceLock<Option<VectorSizeOverride>> = OnceLock::new();
-        testing::vector_override()
+        testing::kind_vector_override(kind)
+            .or_else(testing::vector_override)
             .or(*ENV.get_or_init(|| {
                 read_env(VECTOR_SIZE_VAR)
                     .map(|v| VectorSizeOverride::parse(&v).unwrap_or_else(|e| panic!("{e}")))
@@ -210,6 +212,16 @@ pub(crate) fn parse_quad_tile(value: &str) -> Result<usize, String> {
     }
 }
 
+/// The bytes of one CPU block unit in vector-policy.toml.
+const CPU_BLOCK_UNIT: usize = 4 << 10;
+/// The CPU block of kinds and scalar sizes the policy does not list: 16 KiB.
+const DEFAULT_CPU_BLOCK_BYTES: usize = 16 << 10;
+
+/// A CPU block size: a power of two from 4 KiB to 64 KiB.
+pub(crate) fn is_cpu_block_bytes(bytes: usize) -> bool {
+    bytes.is_power_of_two() && (CPU_BLOCK_UNIT..=16 * CPU_BLOCK_UNIT).contains(&bytes)
+}
+
 /// A power of two that divides `VECTOR_PAD`.
 pub(crate) fn is_vector_size(n: usize) -> bool {
     n.is_power_of_two() && VECTOR_PAD.is_multiple_of(n)
@@ -220,9 +232,10 @@ fn read_env(var: &str) -> Option<String> {
     std::env::var(var).ok().filter(|v| !v.is_empty())
 }
 
-/// Vector sizes and tile widths chosen from benchmarks (docs/perf/vectorization.md), compiled in
-/// from gridcl-device/vector-policy.toml. `GRIDCL_VECTOR_SIZE` and `GRIDCL_QUAD_TILE` override
-/// it for tests and benchmarks.
+/// Vector sizes, QuadField tiles and CPU block sizes chosen from benchmarks
+/// (docs/perf/vectorization.md), per (`KernelKind`, `DeviceClass`, element size), compiled in
+/// from gridcl-device/vector-policy.toml (ADR-0015). `GRIDCL_VECTOR_SIZE` and
+/// `GRIDCL_QUAD_TILE` override it for tests and benchmarks.
 ///
 /// # Example
 ///
@@ -235,7 +248,10 @@ fn read_env(var: &str) -> Option<String> {
 #[derive(Debug)]
 pub struct VectorPolicy {
     vector_sizes: HashMap<(KernelKind, usize), usize>,
-    quad_tile: usize,
+    /// Tile width per scalar size.
+    quad_tiles: HashMap<usize, usize>,
+    /// CPU block in bytes per kind and scalar size; `None` on `Gpu`.
+    cpu_blocks: Option<HashMap<(KernelKind, usize), usize>>,
 }
 
 /// The policy file, compiled in.
@@ -280,7 +296,8 @@ impl VectorPolicy {
     }
 
     /// Tile width of QuadField and E-vector chunks for one scalar size: 1, 2, 4, 8 or 16. The
-    /// scoped override (`testing::with_quad_tile`), then `GRIDCL_QUAD_TILE`, then the policy.
+    /// scoped override (`testing::with_quad_tile`), then `GRIDCL_QUAD_TILE`, then the policy;
+    /// 1 for scalar sizes the policy does not list. The overrides apply to every scalar size.
     ///
     /// # Example
     ///
@@ -292,76 +309,138 @@ impl VectorPolicy {
     /// assert!([1, 2, 4, 8, 16].contains(&tile));
     /// ```
     pub fn quad_tile(&self, elem_bytes: usize) -> usize {
-        let _ = elem_bytes; // T5: one tile per scalar size
         static ENV: OnceLock<Option<usize>> = OnceLock::new();
         testing::quad_tile_override()
             .or(*ENV.get_or_init(|| {
                 read_env(QUAD_TILE_VAR)
                     .map(|v| parse_quad_tile(&v).unwrap_or_else(|e| panic!("{e}")))
             }))
-            .unwrap_or(self.quad_tile)
+            .unwrap_or_else(|| self.quad_tiles.get(&elem_bytes).copied().unwrap_or(1))
     }
 
     /// CPU block of one kind and element size in bytes (vector-policy.toml stores units of
-    /// 4 KiB); `None` on `Gpu`.
+    /// 4 KiB); `None` on `Gpu`. The scoped override (`testing::with_cpu_block_bytes`), then the
+    /// policy; 16 KiB for kinds and scalar sizes the policy does not list.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceClass, KernelKind, VectorPolicy};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let block = VectorPolicy::for_client(&client).cpu_block_bytes(KernelKind::Fill, 4);
+    /// match DeviceClass::for_client(&client) {
+    ///     DeviceClass::Gpu => assert_eq!(block, None),
+    ///     _ => assert!(block.is_some_and(|b| b.is_power_of_two() && (4096..=65536).contains(&b))),
+    /// }
+    /// ```
     pub fn cpu_block_bytes(&self, kind: KernelKind, elem_bytes: usize) -> Option<usize> {
-        let _ = (kind, elem_bytes);
-        todo!("M3s T5: cpu_block_bytes")
+        let blocks = self.cpu_blocks.as_ref()?;
+        Some(testing::cpu_block_override().unwrap_or_else(|| {
+            blocks
+                .get(&(kind, elem_bytes))
+                .copied()
+                .unwrap_or(DEFAULT_CPU_BLOCK_BYTES)
+        }))
     }
 
     /// The policy of `class` in the TOML text `text`.
     fn parse(text: &str, class: DeviceClass) -> Result<VectorPolicy, String> {
         let table: toml::Table = text.parse().map_err(|e| format!("{e}"))?;
+        let c = class.name();
         let section = table
-            .get(class.name())
+            .get(c)
             .and_then(|v| v.as_table())
-            .ok_or_else(|| format!("no table [{}]", class.name()))?;
+            .ok_or_else(|| format!("no table [{c}]"))?;
         let quad_tile = section
             .get("quad_tile")
-            .and_then(|v| v.as_integer())
-            .ok_or_else(|| format!("[{}] has no integer quad_tile", class.name()))?;
-        let quad_tile = usize::try_from(quad_tile)
-            .ok()
-            .filter(|&t| is_vector_size(t))
-            .ok_or_else(|| {
-                format!(
-                    "[{}] quad_tile {quad_tile} is not 1, 2, 4, 8 or 16",
-                    class.name()
-                )
-            })?;
+            .and_then(|v| v.as_table())
+            .ok_or_else(|| format!("[{c}] has no table quad_tile"))?;
+        let quad_tiles = parse_sizes(quad_tile, &format!("[{c}] quad_tile"), |t| {
+            is_vector_size(t).then_some(t).ok_or("not 1, 2, 4, 8 or 16")
+        })?;
         let sizes = section
             .get("vector_size")
             .and_then(|v| v.as_table())
-            .ok_or_else(|| format!("no table [{}.vector_size]", class.name()))?;
+            .ok_or_else(|| format!("no table [{c}.vector_size]"))?;
         let mut vector_sizes = HashMap::new();
         for kind in KernelKind::ALL {
-            let entry = sizes
-                .get(kind.name())
-                .and_then(|v| v.as_table())
-                .ok_or_else(|| format!("[{}.vector_size] has no {}", class.name(), kind.name()))?;
-            for (bytes, n) in entry {
-                let what = || format!("[{}.vector_size] {} {bytes}", class.name(), kind.name());
-                let bytes: usize = bytes
-                    .parse()
-                    .map_err(|_| format!("{}: not a scalar size", what()))?;
-                let n = n
-                    .as_integer()
-                    .and_then(|n| usize::try_from(n).ok())
-                    .filter(|&n| is_vector_size(n))
-                    .ok_or_else(|| {
-                        format!("{}: not a power of two dividing {VECTOR_PAD}", what())
-                    })?;
-                if kind == KernelKind::Scalar && n != 1 {
-                    return Err(format!("{}: Scalar kernels run at vector size 1", what()));
+            let what = format!("[{c}.vector_size] {}", kind.name());
+            let row = parse_kind_row(sizes, kind, &what, |n| {
+                if !is_vector_size(n) {
+                    Err("not a power of two dividing VECTOR_PAD")
+                } else if kind == KernelKind::Scalar && n != 1 {
+                    Err("Scalar kernels run at vector size 1")
+                } else {
+                    Ok(n)
                 }
-                vector_sizes.insert((kind, bytes), n);
-            }
+            })?;
+            vector_sizes.extend(row.into_iter().map(|(bytes, n)| ((kind, bytes), n)));
         }
+        let cpu_blocks = match (class.is_cpu(), section.get("cpu_block")) {
+            (false, None) => None,
+            (false, Some(_)) => return Err(format!("[{c}.cpu_block] on a GPU class")),
+            (true, None) => return Err(format!("no table [{c}.cpu_block]")),
+            (true, Some(blocks)) => {
+                let blocks = blocks
+                    .as_table()
+                    .ok_or_else(|| format!("[{c}.cpu_block] is not a table"))?;
+                let mut bytes_of = HashMap::new();
+                for kind in KernelKind::ALL {
+                    let what = format!("[{c}.cpu_block] {}", kind.name());
+                    let row = parse_kind_row(blocks, kind, &what, |units| {
+                        units
+                            .checked_mul(CPU_BLOCK_UNIT)
+                            .filter(|&b| is_cpu_block_bytes(b))
+                            .ok_or("not a power of two from 1 to 16 (units of 4 KiB)")
+                    })?;
+                    bytes_of.extend(row.into_iter().map(|(bytes, b)| ((kind, bytes), b)));
+                }
+                Some(bytes_of)
+            }
+        };
         Ok(VectorPolicy {
             vector_sizes,
-            quad_tile,
+            quad_tiles,
+            cpu_blocks,
         })
     }
+}
+
+/// The row of `kind` in the per-kind table `table`, by scalar size, through `check`.
+fn parse_kind_row(
+    table: &toml::Table,
+    kind: KernelKind,
+    what: &str,
+    check: impl Fn(usize) -> Result<usize, &'static str>,
+) -> Result<HashMap<usize, usize>, String> {
+    let row = table
+        .get(kind.name())
+        .and_then(|v| v.as_table())
+        .ok_or_else(|| format!("{what}: missing"))?;
+    parse_sizes(row, what, check)
+}
+
+/// A table `{ <scalar size> = <value> }`, each value through `check`.
+fn parse_sizes(
+    table: &toml::Table,
+    what: &str,
+    check: impl Fn(usize) -> Result<usize, &'static str>,
+) -> Result<HashMap<usize, usize>, String> {
+    let mut out = HashMap::new();
+    for (bytes, v) in table {
+        let what = || format!("{what} {bytes}");
+        let bytes: usize = bytes
+            .parse()
+            .map_err(|_| format!("{}: not a scalar size", what()))?;
+        let v = v
+            .as_integer()
+            .and_then(|v| usize::try_from(v).ok())
+            .ok_or_else(|| format!("{}: not a non-negative integer", what()))?;
+        let v = check(v).map_err(|e| format!("{}: {v} is {e}", what()))?;
+        out.insert(bytes, v);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -440,8 +519,20 @@ mod tests {
     fn invalid_policy_entries_are_rejected() {
         let bad_size = POLICY_TOML.replacen("Fill = { 4 = 1", "Fill = { 4 = 3", 1);
         assert!(VectorPolicy::parse(&bad_size, DeviceClass::CpuSimd128).is_err());
-        let bad_tile = POLICY_TOML.replacen("quad_tile = 16", "quad_tile = 32", 1);
+        let bad_tile = POLICY_TOML.replacen("quad_tile = { 4 = 16", "quad_tile = { 4 = 32", 1);
         assert!(VectorPolicy::parse(&bad_tile, DeviceClass::CpuSimd128).is_err());
+        let scalar_tile = POLICY_TOML.replacen("quad_tile = { 4 = 16", "quad_tile = 16", 1);
+        assert!(VectorPolicy::parse(&scalar_tile, DeviceClass::CpuSimd128).is_err());
+        for units in ["0", "2", "3", "32"] {
+            let bad_block =
+                POLICY_TOML.replacen("Fill = { 4 = 4", &format!("Fill = {{ 4 = {units}"), 1);
+            let accepted = VectorPolicy::parse(&bad_block, DeviceClass::CpuSimd128).is_ok();
+            assert_eq!(accepted, units == "2", "cpu_block {units}");
+        }
+        let no_blocks = POLICY_TOML.replacen("[CpuSimd128.cpu_block]", "[CpuSimd128.other]", 1);
+        assert!(VectorPolicy::parse(&no_blocks, DeviceClass::CpuSimd128).is_err());
+        let gpu_blocks = format!("{POLICY_TOML}[Gpu.cpu_block]\nFill = {{ 4 = 4, 8 = 4 }}\n");
+        assert!(VectorPolicy::parse(&gpu_blocks, DeviceClass::Gpu).is_err());
         let missing = POLICY_TOML.replacen("PullBack = { 4 = 1, 8 = 1 }\n", "", 1);
         assert!(VectorPolicy::parse(&missing, DeviceClass::CpuSimd128).is_err());
         let vector_scalar = POLICY_TOML.replacen("Scalar = { 4 = 1", "Scalar = { 4 = 2", 1);

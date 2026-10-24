@@ -6,12 +6,14 @@ mod common;
 
 use cubecl::ir::DeviceProperties;
 use cubecl::prelude::*;
-use gridcl_device::testing::{with_properties, with_vector_size};
-use gridcl_device::{GridError, KernelKind, LaunchPlan, VECTOR_PAD, VectorSizeOverride};
+use gridcl_device::testing::{with_cpu_block_bytes, with_properties, with_vector_size};
+use gridcl_device::{
+    GridError, KernelKind, LaunchPlan, VECTOR_PAD, VectorPolicy, VectorSizeOverride,
+};
 use gridcl_testing::test_client;
 use proptest::prelude::*;
 
-const KINDS: [KernelKind; 12] = [
+const KINDS: [KernelKind; 13] = [
     KernelKind::Fill,
     KernelKind::Copy,
     KernelKind::Reduce,
@@ -24,6 +26,7 @@ const KINDS: [KernelKind; 12] = [
     KernelKind::EVector,
     KernelKind::GeomFactors,
     KernelKind::PullBack,
+    KernelKind::Scalar,
 ];
 
 /// Cube count of a plan as (x, y, z).
@@ -139,12 +142,17 @@ fn cpu_plan_one_unit_per_thread_whole_lines() {
                                 units,
                                 "{what}: {kind:?}: one unit per hardware thread"
                             );
+                            let target = VectorPolicy::for_client(&client)
+                                .cpu_block_bytes(kind, elem_bytes)
+                                .expect("a CPU class has CPU blocks");
                             let block =
                                 plan.items_per_unit as usize * plan.vector_size * elem_bytes;
                             assert!(
-                                block.is_multiple_of(128) && (8 << 10..=16 << 10).contains(&block),
+                                block.is_multiple_of(128)
+                                    && (target / 2 < block && block <= target),
                                 "{what}: {kind:?}, {elem_bytes}-byte items at vector size {}: \
-                                 a block of {block} bytes is not about 16 KiB of whole 128-byte lines",
+                                 a block of {block} bytes is not about the policy's {target} \
+                                 bytes of whole 128-byte lines",
                                 plan.vector_size
                             );
                         }
@@ -211,16 +219,25 @@ proptest! {
         live in 1usize..=8,
         kind in prop::sample::select(KINDS.to_vec()),
         vector in override_value(),
+        block in prop::option::of(prop::sample::select(vec![4usize << 10, 16 << 10, 64 << 10])),
     ) {
         let client = test_client();
         let props = injected(client.properties(), cpu, units, dim, count, load_width);
         let plan = with_properties(props.clone(), || {
             let make = || LaunchPlan::elementwise(&client, kind, items, elem_bytes, max_vector, live);
-            match vector {
+            let make = || match vector {
                 Some(v) => with_vector_size(v, make),
+                None => make(),
+            };
+            match block {
+                Some(b) => with_cpu_block_bytes(b, make),
                 None => make(),
             }
         });
+        if let (Ok(plan), Some(b), true) = (&plan, block, cpu) {
+            let bytes = plan.items_per_unit as usize * plan.vector_size * elem_bytes;
+            prop_assert!(bytes.is_multiple_of(128) && bytes <= b.max(128), "block {bytes} for {b}");
+        }
         match plan {
             Ok(plan) => check_plan(&plan, &props, items, max_vector),
             Err(GridError::TooLarge) => {

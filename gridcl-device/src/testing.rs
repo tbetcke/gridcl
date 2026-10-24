@@ -2,8 +2,8 @@
 //! part of the stable API; gridcl-testing turns it on for every workspace test.
 //!
 //! The overrides are scoped and thread-local, because gridcl runs one host thread per mesh.
-//! Precedence: the scoped override, then the environment variable (`GRIDCL_VECTOR_SIZE`,
-//! `GRIDCL_QUAD_TILE`), then vector-policy.toml.
+//! Precedence: the scoped per-kind override, then the scoped override, then the environment
+//! variable (`GRIDCL_VECTOR_SIZE`, `GRIDCL_QUAD_TILE`), then vector-policy.toml (ADR-0015).
 //!
 //! Without the feature this module is private and holds only the accessors the rest of the
 //! crate reads its properties through.
@@ -23,6 +23,10 @@ thread_local! {
     static PROPERTIES: RefCell<Option<Arc<DeviceProperties>>> = const { RefCell::new(None) };
     static VECTOR_SIZE: RefCell<Option<VectorSizeOverride>> = const { RefCell::new(None) };
     static QUAD_TILE: RefCell<Option<usize>> = const { RefCell::new(None) };
+    /// The per-kind overrides in scope, innermost last.
+    static KIND_VECTOR_SIZE: RefCell<Option<Vec<(KernelKind, VectorSizeOverride)>>> =
+        const { RefCell::new(None) };
+    static CPU_BLOCK: RefCell<Option<usize>> = const { RefCell::new(None) };
     static PLANS: RefCell<Option<Vec<(KernelKind, LaunchPlan)>>> = const { RefCell::new(None) };
 }
 
@@ -57,6 +61,33 @@ pub(crate) fn properties(client: &Client) -> Arc<DeviceProperties> {
 pub(crate) fn vector_override() -> Option<VectorSizeOverride> {
     #[cfg(feature = "testing")]
     return VECTOR_SIZE.with(|v| *v.borrow());
+    #[cfg(not(feature = "testing"))]
+    None
+}
+
+/// The innermost scoped override of [`with_kind_vector_size`] for `kind`, if any.
+pub(crate) fn kind_vector_override(kind: KernelKind) -> Option<VectorSizeOverride> {
+    #[cfg(feature = "testing")]
+    return KIND_VECTOR_SIZE.with(|v| {
+        v.borrow().as_ref().and_then(|stack| {
+            stack
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == kind)
+                .map(|(_, v)| *v)
+        })
+    });
+    #[cfg(not(feature = "testing"))]
+    {
+        let _ = kind;
+        None
+    }
+}
+
+/// The scoped CPU block override of [`with_cpu_block_bytes`], if any.
+pub(crate) fn cpu_block_override() -> Option<usize> {
+    #[cfg(feature = "testing")]
+    return CPU_BLOCK.with(|b| *b.borrow());
     #[cfg(not(feature = "testing"))]
     None
 }
@@ -179,22 +210,72 @@ pub fn with_quad_tile<R>(tile: usize, f: impl FnOnce() -> R) -> R {
 }
 
 /// Vector size of one family; takes precedence over [`with_vector_size`], the environment and
-/// the policy for that kind. Other kinds are unaffected (ADR-0015).
+/// the policy for that kind. Other kinds are unaffected (ADR-0015). Nested calls for other
+/// kinds add to it; the innermost call for a kind wins. `Fixed(n)` and `Widest` stay clamped
+/// as in [`with_vector_size`].
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::testing::{with_kind_vector_size, with_vector_size};
+/// use gridcl_device::{KernelKind, LaunchPlan, VectorSizeOverride};
+///
+/// let client = gridcl_testing::test_client();
+/// let plan = |kind| LaunchPlan::elementwise(&client, kind, 100, 4, 16, 1).unwrap().vector_size;
+/// let (sort, scan) = with_vector_size(VectorSizeOverride::Fixed(2), || {
+///     with_kind_vector_size(KernelKind::SortDigits, VectorSizeOverride::Scalar, || {
+///         (plan(KernelKind::SortDigits), plan(KernelKind::ScanTile))
+///     })
+/// });
+/// assert_eq!(sort, 1);
+/// assert_eq!(scan, 2.min(client.properties().hardware.max_vector_size));
+/// ```
 #[cfg(feature = "testing")]
 pub fn with_kind_vector_size<R>(
     kind: KernelKind,
     v: VectorSizeOverride,
     f: impl FnOnce() -> R,
 ) -> R {
-    let _ = (kind, v, f);
-    todo!("M3s T5: with_kind_vector_size")
+    if let VectorSizeOverride::Fixed(n) = v {
+        assert!(
+            crate::policy::is_vector_size(n),
+            "with_kind_vector_size: Fixed({n}) is not a power of two dividing VECTOR_PAD"
+        );
+    }
+    let mut stack = KIND_VECTOR_SIZE.with(|s| s.borrow().clone().unwrap_or_default());
+    stack.push((kind, v));
+    scoped(&KIND_VECTOR_SIZE, stack, f)
 }
 
-/// CPU block target, a power of two from 4 to 64 KiB, for plans made inside `f` (ADR-0015).
+/// CPU block target, a power of two from 4 to 64 KiB, for plans made inside `f` (ADR-0015). It
+/// replaces `VectorPolicy::cpu_block_bytes` for every kind on CPU devices and has no effect on
+/// GPUs; plans still round blocks to whole 128-byte lines.
+///
+/// # Panics
+///
+/// If `bytes` is not a power of two from 4 KiB to 64 KiB.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::testing::with_cpu_block_bytes;
+/// use gridcl_device::{DeviceClass, KernelKind, VectorPolicy};
+///
+/// let client = gridcl_testing::test_client();
+/// let block = with_cpu_block_bytes(64 << 10, || {
+///     VectorPolicy::for_client(&client).cpu_block_bytes(KernelKind::Gather, 8)
+/// });
+/// if DeviceClass::for_client(&client) != DeviceClass::Gpu {
+///     assert_eq!(block, Some(64 << 10));
+/// }
+/// ```
 #[cfg(feature = "testing")]
 pub fn with_cpu_block_bytes<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
-    let _ = (bytes, f);
-    todo!("M3s T5: with_cpu_block_bytes")
+    assert!(
+        crate::policy::is_cpu_block_bytes(bytes),
+        "with_cpu_block_bytes: {bytes} is not a power of two from 4 KiB to 64 KiB"
+    );
+    scoped(&CPU_BLOCK, bytes, f)
 }
 
 /// The plans made inside `f`, in order, so a test can assert the vector size it ran at. An

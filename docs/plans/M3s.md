@@ -144,7 +144,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T1
   - Parallel with: T2, T3
   - Risks / notes: –
-- [ ] **T5 Policy block sizes, per-size tiles and the benchmark hooks (gridcl-device)**
+- [x] **T5 Policy block sizes, per-size tiles and the benchmark hooks (gridcl-device)**
   - Goal: the ADR-0015 items of gridcl-device, with no change to any launch.
   - Crates/files: `gridcl-device/src/{policy.rs, plan.rs, testing.rs}`, `gridcl-device/vector-policy.toml`, `gridcl-device/tests/launch_plan.rs`.
   - Public API added or changed: `VectorPolicy::{cpu_block_bytes, quad_tile(elem_bytes)}`; `testing::{with_kind_vector_size, with_cpu_block_bytes}`.
