@@ -1948,6 +1948,7 @@ dependencies = [
  "gridcl-refcell",
  "gridcl-testing",
  "gridcl-topology",
+ "proptest",
  "serde_json",
  "toml",
 ]

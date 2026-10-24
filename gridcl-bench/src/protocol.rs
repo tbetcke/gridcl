@@ -269,14 +269,14 @@ pub fn sync(client: &Client) -> Result<(), String> {
     cubecl::future::block_on(client.sync()).map_err(|e| format!("sync: {e:?}"))
 }
 
-/// Vector sizes the device offers: 1, 2, 4, ... up to `max_vector_size` and `VECTOR_PAD`.
-pub fn vector_sizes(client: &Client) -> Vec<usize> {
-    let widest = client
-        .properties()
-        .hardware
-        .max_vector_size
-        .clamp(1, gridcl_device::VECTOR_PAD);
-    (0..=widest.ilog2()).map(|k| 1 << k).collect()
+/// Vector sizes the sweep requests: 1, 2, 4, ... up to `VECTOR_PAD` on every device. A device
+/// with fewer lanes (Metal: 4) runs the wider requests at its widest size, which the records
+/// show in `vector_size_ran`; so it contributes that time to its class at every size, as
+/// ADR-0015 (item 5) requires when the class's devices are combined.
+pub fn vector_sizes() -> Vec<usize> {
+    (0..=gridcl_device::VECTOR_PAD.ilog2())
+        .map(|k| 1 << k)
+        .collect()
 }
 
 /// Whether `class` is a CPU class, where block sizes apply.

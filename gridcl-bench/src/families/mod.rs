@@ -121,7 +121,7 @@ pub fn sweep(
 ) -> Result<Vec<SweepRecord>, String> {
     let class = machine.class;
     let has_f64 = check_precision::<f64>(client).is_ok();
-    let vector_sizes: Vec<usize> = protocol::vector_sizes(client)
+    let vector_sizes: Vec<usize> = protocol::vector_sizes()
         .into_iter()
         .filter(|v| {
             options
@@ -323,7 +323,7 @@ mod tests {
         let mut seen = 0;
         let records = sweep(&client, &machine, &options, &mut |_| seen += 1).unwrap();
         assert_eq!(seen, records.len());
-        let sizes = protocol::vector_sizes(&client).len();
+        let sizes = protocol::vector_sizes().len();
         let blocks = if is_cpu(machine.class) { 2 } else { 1 };
         let has_f64 = check_precision::<f64>(&client).is_ok();
         let types = |kind: KernelKind| {
@@ -373,7 +373,7 @@ mod tests {
             fallback_reason: None,
         };
         let records = sweep(&client, &machine, &options, &mut |_| ()).unwrap();
-        let sizes = protocol::vector_sizes(&client);
+        let sizes = protocol::vector_sizes();
         let has_f64 = check_precision::<f64>(&client).is_ok();
         let types = if has_f64 { 2 } else { 1 };
         let tet_cells = 6 * 5 * 5 * 5;
