@@ -1948,6 +1948,7 @@ dependencies = [
  "gridcl-device",
  "gridcl-testing",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

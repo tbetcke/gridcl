@@ -1,7 +1,9 @@
 //! Vector-size invariance of the mesh kernels ("Testing and validation"; docs/plans/M3.md,
 //! question 14): TopologyKeys, PermutationInfo and EVector give bitwise identical results at
 //! vector size 1 and at every larger power of two up to 16 that the device offers, for 0, 1, 15,
-//! 16 and 17 cells of every cell type and for 10^6 + 3 P1 triangles.
+//! 16 and 17 cells of every cell type and for 10^6 + 3 P1 triangles. Above size 1, TopologyKeys
+//! and PermutationInfo read a cell-fastest copy of the connectivity, built by a `Scalar`
+//! transpose launched right before each of their launches (ADR-0015, item 8).
 
 mod common;
 
@@ -43,18 +45,39 @@ fn meshes() -> Vec<(String, BoxKind, HostMesh)> {
     out
 }
 
+/// Whether a family reads the cell-fastest copy above vector size 1.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Layout {
+    CellMajor,
+    Transposed,
+}
+
 /// Runs `run` at every vector size and asserts the results equal the size-1 result bitwise.
+/// With `Layout::Transposed`, every plan of `kind` above size 1 must directly follow a
+/// `Scalar` plan, the transpose.
 fn sweep<T: PartialEq + core::fmt::Debug>(
     client: &Client,
     elem_bytes: usize,
     kind: KernelKind,
     launches: bool,
+    layout: Layout,
     what: &str,
     run: impl Fn() -> T,
 ) {
     let mut first: Option<T> = None;
     for n in vector_sizes(client, elem_bytes, 16) {
-        let got = at_vector_size(n, kind, launches, &run);
+        let (got, plans) = at_vector_size_with_plans(n, kind, launches, &run);
+        if layout == Layout::Transposed && n > 1 {
+            for (i, (k, _)) in plans.iter().enumerate() {
+                if *k == kind {
+                    assert!(
+                        i > 0 && plans[i - 1].0 == KernelKind::Scalar,
+                        "{what}: the {kind:?} plan {i} at vector size {n} does not follow a \
+                         Scalar transpose plan"
+                    );
+                }
+            }
+        }
         match &first {
             None => first = Some(got),
             Some(want) => assert!(
@@ -132,14 +155,21 @@ fn topology_keys_sizes() {
     for (what, kind, h) in meshes() {
         let launches = h.num_cells() > 0 && kind.tdim() > 1;
         match kind.tdim() {
-            1 => sweep(&client, 4, KernelKind::TopologyKeys, false, &what, || {
-                entities::<D1, D1>(&h, &client)
-            }),
+            1 => sweep(
+                &client,
+                4,
+                KernelKind::TopologyKeys,
+                false,
+                Layout::Transposed,
+                &what,
+                || entities::<D1, D1>(&h, &client),
+            ),
             2 => sweep(
                 &client,
                 4,
                 KernelKind::TopologyKeys,
                 launches,
+                Layout::Transposed,
                 &what,
                 || entities::<D2, D2>(&h, &client),
             ),
@@ -148,6 +178,7 @@ fn topology_keys_sizes() {
                 4,
                 KernelKind::TopologyKeys,
                 launches,
+                Layout::Transposed,
                 &what,
                 || entities::<D3, D3>(&h, &client),
             ),
@@ -166,6 +197,7 @@ fn permutation_info_sizes() {
                 4,
                 KernelKind::PermutationInfo,
                 false,
+                Layout::Transposed,
                 &what,
                 || permutation_info::<D1, D1>(&h, &client),
             ),
@@ -174,6 +206,7 @@ fn permutation_info_sizes() {
                 4,
                 KernelKind::PermutationInfo,
                 launches,
+                Layout::Transposed,
                 &what,
                 || permutation_info::<D2, D2>(&h, &client),
             ),
@@ -182,6 +215,7 @@ fn permutation_info_sizes() {
                 4,
                 KernelKind::PermutationInfo,
                 launches,
+                Layout::Transposed,
                 &what,
                 || permutation_info::<D3, D3>(&h, &client),
             ),
@@ -197,21 +231,39 @@ fn evector_cases<F: Real>(client: &Client) {
         match kind.tdim() {
             1 => {
                 let mesh = build::<F, D1, D1>(&h, client);
-                sweep(client, bytes, KernelKind::EVector, launches, &what, || {
-                    evectors(&mesh)
-                });
+                sweep(
+                    client,
+                    bytes,
+                    KernelKind::EVector,
+                    launches,
+                    Layout::CellMajor,
+                    &what,
+                    || evectors(&mesh),
+                );
             }
             2 => {
                 let mesh = build::<F, D2, D2>(&h, client);
-                sweep(client, bytes, KernelKind::EVector, launches, &what, || {
-                    evectors(&mesh)
-                });
+                sweep(
+                    client,
+                    bytes,
+                    KernelKind::EVector,
+                    launches,
+                    Layout::CellMajor,
+                    &what,
+                    || evectors(&mesh),
+                );
             }
             _ => {
                 let mesh = build::<F, D3, D3>(&h, client);
-                sweep(client, bytes, KernelKind::EVector, launches, &what, || {
-                    evectors(&mesh)
-                });
+                sweep(
+                    client,
+                    bytes,
+                    KernelKind::EVector,
+                    launches,
+                    Layout::CellMajor,
+                    &what,
+                    || evectors(&mesh),
+                );
             }
         }
     }

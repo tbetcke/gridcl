@@ -24,3 +24,4 @@ gridcl = { path = "../gridcl" }
 gridcl-device = { path = "../gridcl-device" }
 gridcl-testing = { path = "../gridcl-testing", default-features = false }
 serde_json.workspace = true
+toml.workspace = true

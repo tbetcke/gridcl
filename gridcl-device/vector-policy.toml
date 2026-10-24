@@ -19,6 +19,7 @@ PermutationInfo = { 4 = 1, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
 GeomFactors = { 4 = 1, 8 = 1 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
 
 [CpuSimd256]
 quad_tile = 16
@@ -35,6 +36,7 @@ PermutationInfo = { 4 = 1, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
 GeomFactors = { 4 = 1, 8 = 1 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
 
 [CpuSimd512]
 quad_tile = 16
@@ -51,6 +53,7 @@ PermutationInfo = { 4 = 1, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
 GeomFactors = { 4 = 1, 8 = 1 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
 
 [Gpu]
 quad_tile = 16
@@ -67,3 +70,4 @@ PermutationInfo = { 4 = 1, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
 GeomFactors = { 4 = 1, 8 = 1 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }

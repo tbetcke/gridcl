@@ -77,7 +77,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
 
 ## Tasks
 
-- [ ] **T0 Acceptance tests (failing)**
+- [x] **T0 Acceptance tests (failing)**
   - Goal: every acceptance bullet of M3s as an automated test, plus stubs for the ADR-0015 items.
   - Crates/files:
     - `gridcl-bench/tests/perf_record.rs` (new);
@@ -370,6 +370,10 @@ Resolve every row before Status becomes approved.
 | 2026-10-24 | plan | Branch `tbetcke/tbetcke-m3s-simd-vectorization-and-benchmarks`, not `m3s-<slug>`. | Maintainer's worktree branch (question 1). | – |
 | 2026-10-24 | plan | T1–T4 and T14 are M3 review follow-ups (m2, m3, m6, m8–m11), outside M3s's design scope. | Maintainer's follow-up schedule (M3 plan, Review). | – |
 | 2026-10-24 | plan | The plan has an extra "Planned public API and rules" section. | M3's precedent: it fixes what ADR-0015 must decide before T0. | – |
+| 2026-10-24 | T0 | `KernelKind::Scalar` is also swept on CPU targets for its `cpu_block` entries: histogram (u32) gives the 4-byte entry, segmented reduce sum (f64) the 8-byte entry. `perf_record` requires this data, and T9 adds the measurement. | ADR-0015 item 7 chooses Scalar's blocks "from the time of the scalar primitives (histogram, segmented_reduce)", but no task measured them. One type per element size avoids a shared-entry conflict between two different primitives. | ADR-0015 |
+| 2026-10-24 | T0 | How `perf_record` reads the rule where the plan is silent: a configuration's class time is the geometric mean of the devices' medians, so ratios of class times are geometric means of per-device ratios. The 3% condition must hold at both 10^6 and 10^7, like the 10% condition. Records carry `nominal_n` (10^5, 10^6 or 10^7; mesh boxes give approximate cell counts) and a `cube_dim` mode (`Plan` or `PerformanceCores`), and only `Plan` records enter the rule. | The rule names no size for the 3% comparison; the mesh families cannot hit 10^6 cells exactly; question 8 keeps the performance-core `cube_dim` out of the configuration. | – |
+| 2026-10-24 | T0 | The transpose check in `kernel_invariance` is stricter than "a `Scalar` plan before the candidate plan": above size 1, every TopologyKeys and PermutationInfo plan must directly follow a `Scalar` plan. `gridcl/tests/common/mod.rs` gains `at_vector_size_with_plans`. | After T6 other `Scalar` helpers also plan before them; with "directly follows", the mixed box fails until T10. | – |
+| 2026-10-24 | T0 | Records name the Myriad CPU-only target `myriad-cpu`, the remote-test target of T7; the data file stays `m3s-sweep-cpu-myriad-d.json`. T0 also updates `gridcl-geometry/src/field.rs` (rustdoc of `quad_tile`). | Same names as the runner. | – |
 
 ## Review
 

@@ -423,7 +423,7 @@ where
 {
     let client = g.client();
     let gb = g.geometry_block(b);
-    let tile = VectorPolicy::for_client(client).quad_tile();
+    let tile = VectorPolicy::for_client(client).quad_tile(size_of::<F>());
     let layout = GeomLayout::new::<TD, GD>(&gb.element, pts.len(), tile);
     assert_eq!(S::LEN, f.len(&layout), "field shape and factor disagree");
     let num_cells = g.cell_blocks()[b].index_map.num_local();

@@ -9,6 +9,9 @@
 //! Origin ids live on the device as interleaved (hi ^ 0x8000_0000, lo) u32 pairs
 //! ([`encode_origin_ids`]), so unsigned pair order equals i64 order.
 
+#[cfg(feature = "bench")]
+#[doc(hidden)]
+pub mod bench;
 mod cell_block;
 mod connectivity;
 mod emission;

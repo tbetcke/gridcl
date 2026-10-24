@@ -119,7 +119,8 @@ pub(crate) fn chunk_pairs<'a, F: Real, S: FieldShape>(
 }
 
 /// Values at quadrature points of one cell block, in tiles of `tile` cells (1, 2, 4, 8 or 16;
-/// `VectorPolicy::quad_tile`, 16 by default). Component k at point q of cell c is stored at
+/// `VectorPolicy::quad_tile(size_of::<F>())`, 16 by default). Component k at point q of cell c
+/// is stored at
 ///
 /// ```text
 /// ((c / tile) * num_points * LEN + q * LEN + k) * tile + c % tile

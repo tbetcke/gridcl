@@ -167,7 +167,7 @@ pub fn with_vector_size<R>(v: VectorSizeOverride, f: impl FnOnce() -> R) -> R {
 /// use gridcl_device::testing::with_quad_tile;
 ///
 /// let client = gridcl_testing::test_client();
-/// assert_eq!(with_quad_tile(4, || VectorPolicy::for_client(&client).quad_tile()), 4);
+/// assert_eq!(with_quad_tile(4, || VectorPolicy::for_client(&client).quad_tile(8)), 4);
 /// ```
 #[cfg(feature = "testing")]
 pub fn with_quad_tile<R>(tile: usize, f: impl FnOnce() -> R) -> R {
@@ -176,6 +176,25 @@ pub fn with_quad_tile<R>(tile: usize, f: impl FnOnce() -> R) -> R {
         "with_quad_tile: {tile} is not 1, 2, 4, 8 or 16"
     );
     scoped(&QUAD_TILE, tile, f)
+}
+
+/// Vector size of one family; takes precedence over [`with_vector_size`], the environment and
+/// the policy for that kind. Other kinds are unaffected (ADR-0015).
+#[cfg(feature = "testing")]
+pub fn with_kind_vector_size<R>(
+    kind: KernelKind,
+    v: VectorSizeOverride,
+    f: impl FnOnce() -> R,
+) -> R {
+    let _ = (kind, v, f);
+    todo!("M3s T5: with_kind_vector_size")
+}
+
+/// CPU block target, a power of two from 4 to 64 KiB, for plans made inside `f` (ADR-0015).
+#[cfg(feature = "testing")]
+pub fn with_cpu_block_bytes<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
+    let _ = (bytes, f);
+    todo!("M3s T5: with_cpu_block_bytes")
 }
 
 /// The plans made inside `f`, in order, so a test can assert the vector size it ran at. An

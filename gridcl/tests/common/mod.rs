@@ -410,6 +410,16 @@ pub fn at_vector_size<R>(
     expect_launch: bool,
     f: impl FnOnce() -> R,
 ) -> R {
+    at_vector_size_with_plans(n, kind, expect_launch, f).0
+}
+
+/// [`at_vector_size`], also returning every plan made inside `f`, in order.
+pub fn at_vector_size_with_plans<R>(
+    n: usize,
+    kind: KernelKind,
+    expect_launch: bool,
+    f: impl FnOnce() -> R,
+) -> (R, Vec<(KernelKind, LaunchPlan)>) {
     let (result, plans): (R, Vec<(KernelKind, LaunchPlan)>) =
         record_plans(|| with_vector_size(VectorSizeOverride::Fixed(n), f));
     let first = plans.iter().find(|(k, _)| *k == kind);
@@ -423,7 +433,7 @@ pub fn at_vector_size<R>(
     } else {
         assert!(first.is_none(), "an empty block made a {kind:?} plan");
     }
-    result
+    (result, plans)
 }
 
 /// The cell counts of the invariance tests (docs/plans/M3.md, question 14), besides 10^6 + 3.
