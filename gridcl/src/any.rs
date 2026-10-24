@@ -54,6 +54,18 @@ pub enum AnyMeshRef<'a, F: Real, C: Comm = Serial> {
 
 impl<F: Real, C: Comm> AnyMesh<F, C> {
     /// The borrowed view.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let any = AnyMesh::Volume(gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
+    /// let cells = with_mesh!(any.as_ref(), m => m.cell_blocks()[0].index_map.num_local());
+    /// assert_eq!(cells, 1);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn as_ref(&self) -> AnyMeshRef<'_, F, C> {
         match self {
             AnyMesh::Curve1(m) => AnyMeshRef::Curve1(m),
@@ -66,11 +78,33 @@ impl<F: Real, C: Comm> AnyMesh<F, C> {
     }
 
     /// The topological dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let any = AnyMesh::Volume(gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
+    /// assert_eq!(any.tdim(), 3);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn tdim(&self) -> usize {
         crate::with_mesh!(self.as_ref(), m => m.tdim())
     }
 
     /// The geometric dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let any = AnyMesh::Volume(gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
+    /// assert_eq!(any.gdim(), 3);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn gdim(&self) -> usize {
         crate::with_mesh!(self.as_ref(), m => m.gdim())
     }

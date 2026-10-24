@@ -135,7 +135,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T1
   - Parallel with: T2, T4
   - Risks / notes: –
-- [ ] **T4 Rustdoc examples, gridcl (m2, part 2)**
+- [x] **T4 Rustdoc examples, gridcl (m2, part 2)**
   - Goal: examples for `Mesh` (type, aliases, constants, methods) and for `AnyMesh` and `AnyMeshRef` (`as_ref`, `tdim`, `gdim`).
   - Crates/files: `gridcl/src/{mesh.rs, any.rs}`.
   - Public API added or changed: none.
