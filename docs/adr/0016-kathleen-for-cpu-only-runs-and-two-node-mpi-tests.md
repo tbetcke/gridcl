@@ -1,6 +1,6 @@
 # ADR-0016: Kathleen for CPU-only runs and two-node MPI tests; Myriad D nodes as the fallback
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-24
 - **Raised in:** M3s, during T7 (the maintainer's request to add UCL Kathleen as a target)
 - **Design sections affected:** Overview (the "Development and test targets" bullet; decision 10); "Vectorization and CPU execution" (the device table row "Myriad's Xeon Gold CPUs"; "Benchmarks", "Where"); "Testing and validation" (targets table); "Development environment and test targets" (targets table, the CPU-only paragraph, "Remote-test runner" steps 1, 3, 4 and the `--cores` paragraph, the job limit); roadmap acceptance of M3s (bullets 1 and 6), M7 and M8 (the 8-rank runs), M10 (benchmark targets); the closing summary of targets.
@@ -115,4 +115,4 @@ The runner follows `scripts/hpc` and the facts above:
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-24, as proposed (option 2), including the two-node MPI run at every milestone review from M6 on. Applied to docs/design.md and CLAUDE.md in `adr: 0016 apply`; `.claude/skills/hpc-test/SKILL.md` and `.claude/agents/test-runner.md` are left to the maintainer, because the sandbox denies writes there. The `kathleen` target is M3s T19.

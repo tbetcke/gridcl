@@ -34,7 +34,7 @@ The requirements are unchanged from the draft, apart from the development target
 - **Device residency:** all large mesh arrays live on the compute device. The host keeps only metadata and communication bookkeeping.
 - **Backends:** CUDA, HIP, Vulkan and Metal (through wgpu), and the CubeCL CPU runtime. f64 is used where the device supports it; f32 must work everywhere.
 - **CPU performance:** on the CubeCL CPU runtime, kernels use the host's SIMD units through CubeCL vectors where benchmarks show a gain. The same kernel source serves CPUs and GPUs.
-- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Myriad's CPU-only D nodes for x86-64 AVX-512 CPU benchmarks, and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback when Locust is unavailable (ADR-0014). See "Development environment and test targets".
+- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Kathleen (Slurm, Xeon Gold 6248 Cascade Lake with AVX-512) for CPU-only runs and CPU benchmarks (CpuSimd512) and for MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback, and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback when Locust is unavailable (ADR-0014, ADR-0016). See "Development environment and test targets".
 - **Distribution:** MPI-distributed meshes with ownership, ghost layers and parallel partitioning. PT-Scotch is the production default; other partitioners are pluggable.
 - **High order:** geometry of arbitrary polynomial degree, with sub-entity orientation information for later high-order FEM and BEM.
 - **I/O:** Gmsh MSH 4.1 import and export, and VTK export (VTU/PVTU, VTKHDF) including VTK Lagrange cells.
@@ -51,7 +51,7 @@ The requirements are unchanged from the draft, apart from the development target
 7. Canonical orientation is keyed on origin vertex ids (decided in review, Q1).
 8. wgpu and Metal are real targets (Q2).
 9. The CI default partitioner is the built-in block partitioner plus vendored METIS on rank 0; PT-Scotch runs in its own CI job (Q3).
-10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Locust (GH200) is the CUDA platform for routine runs, milestone reviews and benchmarks; Myriad's CPU-only D nodes run the x86-64 AVX-512 CPU benchmarks; Myriad V100 and A100 run multi-GPU tests and architecture comparisons, and are the fallback when Locust is unavailable (ADR-0014).
+10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Locust (GH200) is the CUDA platform for routine runs, milestone reviews and benchmarks; Kathleen runs CPU-only runs, the x86-64 AVX-512 CPU benchmarks and MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback; Myriad V100 and A100 run multi-GPU tests and architecture comparisons, and are the fallback when Locust is unavailable (ADR-0014, ADR-0016).
 11. SIMD is written in CubeCL kernels with `Vector<F, N>`, never with intrinsics or `std::simd` on the host. Vector sizes per kernel family and device class come from benchmarks (M3s); until then every kernel runs at vector size 1.
 
 ### Out of scope
@@ -997,7 +997,7 @@ The development targets report these widths:
 | Device | Register width | Registers | Lanes per register, f32 / f64 | Widest IO-optimized size, f32 / f64 |
 | --- | --- | --- | --- | --- |
 | M3 Max and Locust's Grace CPU (aarch64, NEON) | 128 bits; LLVM keeps fixed 128-bit vectors even where SVE exists | 32 | 4 / 2 | 16 / 8 |
-| Myriad's Xeon Gold CPUs (x86-64, AVX-512) | 512 bits | 32 | 16 / 8 | 16 / 8 |
+| Kathleen's and Myriad's Xeon Gold CPUs (x86-64, AVX-512) | 512 bits | 32 | 16 / 8 | 16 / 8 |
 | x86-64 with AVX2 only (some hosted CI runners) | 256 bits | 16 | 8 / 4 | 16 / 8 |
 | GPUs: CUDA, HIP, Metal, wgpu | 128-bit loads | no register budget | – | 4 / 2 |
 
@@ -1145,7 +1145,7 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 
 - **What it runs:** every candidate family at every vector size the device offers, at QuadField tile widths 1, 4 and 16 for geometry kernels, and on CPUs at block sizes of 4, 16 and 64 KiB. Sizes are 10^5, 10^6 and 10^7 items, in f32, f64 and u32 as the family requires.
 - **What it reports:** the median of ten timed runs after a warm-up launch that absorbs JIT compilation, the effective bandwidth relative to a copy kernel on the same device, and the compile time per vector size. Results are written as JSON.
-- **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus a whole CPU-only Myriad D node (36-core Xeon Gold 6240 with AVX-512, no GPU; `-ac allow=D`) for the CPU runtime as CpuSimd512, which Locust cannot provide; CPU-only nodes queue far shorter than GPU nodes. Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
+- **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus a whole Kathleen node (2 × 20-core Xeon Gold 6248 with AVX-512) for the CPU runtime as CpuSimd512, which Locust cannot provide; a whole CPU-only Myriad D node (36-core Xeon Gold 6240, `-ac allow=D`) only as the fallback (ADR-0016). Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
 - **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
 - **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width and CPU block size follow the same rule. With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015).
 - **Record:** the choices — vector sizes, QuadField tiles per element size, and CPU block sizes per kind and element size in units of 4 KiB — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
@@ -1524,6 +1524,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 | Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU and GPU-aware tests; architecture comparisons; fallback when Locust is unavailable (ADR-0014) |
 | Myriad A100 (sm_80) | CUDA in f32 and f64 | when required (see "Development environment and test targets") |
 | Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review; benchmarks (ADR-0014) |
+| Kathleen (Slurm, x86-64, AVX-512, Omni-Path) | CPU runtime in f32 and f64; MPI on one and two nodes | CPU benchmarks; MPI runs beyond 4 ranks; two-node MPI at every review from M6 (ADR-0016) |
 | Myriad node with a CUDA-aware MPI | GPU-aware halo exchange | from M10 |
 
 - **Tolerances.** Quantities that are exact in exact arithmetic (unit volume, polynomial reproduction) are checked to 10^−12 relative in f64 and 10^−5 in f32. f32 results are also compared with f64 results to 10^−5 relative. Convergence rates are tested in f64 only.
@@ -1564,7 +1565,8 @@ Claude Code runs on the M3 Max and tests there on every change. CUDA work runs o
 | M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
 | Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240, AVX-512) and 2 × V100 (sm_70) each | SGE batch jobs: `-l gpu=N` with `-ac allow=EF` | multi-GPU tests, architecture comparisons and fallback; oldest supported architecture |
 | Myriad A100 | L nodes: 36 cores and 4 × A100 40 GB (sm_80) each | SGE batch jobs: `-l gpu=N` with `-ac allow=L` | second CUDA architecture and CUDA 13; comparisons and fallback |
-| Myriad CPU | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB, no GPU | SGE batch jobs with `-ac allow=D` | every CPU-only Myriad run: CPU benchmarks on AVX-512 (CpuSimd512) (ADR-0014) |
+| Myriad CPU | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB, no GPU | SGE batch jobs with `-ac allow=D` | fallback for CPU-only runs (ADR-0014, ADR-0016) |
+| Kathleen | 190 diskless nodes: 2 × 20 cores (Xeon Gold 6248, Cascade Lake, AVX-512), 192 GB, Omni-Path; RHEL 9 | Slurm batch jobs, whole nodes, at most two nodes per job; QoS `singlenode` (1 node) or `test` (2 nodes) | CPU-only runs and CPU benchmarks (CpuSimd512); MPI runs beyond 4 ranks; two-node MPI at every review from M6 (ADR-0016) |
 | Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU and Hopper GPU (sm_90) | UCL ARC experimental system; SSH to the node, no scheduler (recorded in E0) | CUDA platform for routine runs, milestone reviews and benchmarks; aarch64 host and Hopper GPU |
 | Hosted CI | Linux x86-64 runners | automatic | CPU runtime, Vulkan, both MPI flavours, conformance |
 
@@ -1576,25 +1578,25 @@ Claude Code runs on the M3 Max and tests there on every change. CUDA work runs o
 - when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device or the GPU-aware transport;
 - when the user asks.
 
-CPU-only Myriad runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), which Locust cannot provide, use a D node (`-ac allow=D`), never a GPU node: CPU-only nodes queue far shorter.
+CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), which Locust cannot provide, use one whole Kathleen node. A Myriad D node (`-ac allow=D`, never a GPU node) runs them only as the fallback: when Kathleen is unreachable, a job is still queued after `--max-wait`, or the user asks; the run report says why (ADR-0016). MPI runs beyond the M3 Max's 4 ranks use Kathleen, at most two nodes per job; from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes.
 
 Locust is an experimental system, so its runs are kept short, build with at most half of the node's cores, and never block a milestone when it is unavailable. It is an open multi-user node without a scheduler, so other users' work can share its CPU and GPU at any time.
 
 **Remote-test runner.** Claude and developers run remote tests with one command from the M3 Max:
 
 ```text
-scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
-targets: myriad-v100 | myriad-a100 | locust
+scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--nodes N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
+targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | kathleen
 ```
 
-1. **Configuration.** It reads `scripts/hpc/targets.env`, which is personal and git-ignored and is created from the committed `targets.example.env`. The file holds the SSH host aliases, the remote base directory, the module lines, `CUDA_PATH` and the scheduler kind (`sge` or `direct`).
+1. **Configuration.** It reads `scripts/hpc/targets.env`, which is personal and git-ignored and is created from the committed `targets.example.env`. The file holds the SSH host aliases, the remote base directory, the module lines, `CUDA_PATH` and the scheduler kind (`sge`, `slurm` or `direct`).
 2. **Sync.** It copies the working tree to `<base>/<branch>/` with rsync, respecting `.gitignore`, and records the commit and a dirty flag.
-3. **Fetch.** It fetches crates on the login node, and the LLVM bundle when needed — on Myriad, whose RHEL 7 is too old for the prebuilt bundle, a Spack-built LLVM of the same version in the bundler's layout — because compute nodes have no internet access. Jobs run with `CARGO_NET_OFFLINE=true`.
-4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`. On direct targets the job also records a node-load snapshot immediately before and after the command: GPU utilisation and memory use, the GPU compute processes and their owners, the 1-minute load average (recorded only), and the CPU share of other users' processes over 5 s. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, and other users' processes use less than one core in total.
+3. **Fetch.** It fetches crates on the login node, and the LLVM bundle when needed — on Myriad, whose RHEL 7 is too old for the prebuilt bundle, a Spack-built LLVM of the same version in the bundler's layout; Kathleen's RHEL 9 takes the prebuilt bundle — because Myriad's compute nodes have no internet access, and so that every job runs offline. Jobs run with `CARGO_NET_OFFLINE=true`.
+4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE, `sbatch --parsable` on Slurm, or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`. On direct targets the job also records a node-load snapshot immediately before and after the command: GPU utilisation and memory use, the GPU compute processes and their owners, the 1-minute load average (recorded only), and the CPU share of other users' processes over 5 s. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, and other users' processes use less than one core in total.
 5. **Wait.** It polls the scheduler for up to `--max-wait` (default 3 hours, queue time included). On timeout it deletes the job and exits with status 124.
 6. **Report.** It copies the results to `target/hpc/<target>/<job id>/`, prints a summary of at most 40 lines with the first failure first (on direct targets including a `node load:` line, `idle` or `busy` with the reason, for both snapshots), and exits with the command's exit status.
 
-`--cores` requests CPU cores for the job (all 36 for CPU benchmarks); the job script maps it to the scheduler request recorded in E0. `scripts/hpc/status.sh` lists the user's remote jobs and `scripts/hpc/cancel.sh <job id>` deletes one. At most two scheduler jobs (Myriad) run at a time, and one Locust run may run in parallel with them. Myriad jobs are submitted one after the other, because they sync into one remote tree (ADR-0014).
+`--cores` requests CPU cores for the job (a whole node for CPU benchmarks); the job script maps it to the scheduler request recorded in E0. `--nodes N` (Kathleen only, 1 or 2) requests whole nodes, and `--ranks N` spreads the ranks evenly over them. `scripts/hpc/status.sh` lists the user's remote jobs and `scripts/hpc/cancel.sh <job id>` deletes one. At most two scheduler jobs (Myriad, Kathleen) run at a time, and one Locust run may run in parallel with them. Myriad jobs are submitted one after the other, because they sync into one remote tree (ADR-0014).
 
 **Myriad rules that shape the runner** (UCL Research Computing documentation):
 
@@ -1821,12 +1823,12 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Acceptance:**
 
-- benchmark JSON committed under `docs/perf/data/` for the M3 Max (CPU runtime, Metal), Locust (CPU runtime on Grace, CUDA) and a CPU-only Myriad D node (CPU runtime on its AVX-512 Xeon), plus Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014);
+- benchmark JSON committed under `docs/perf/data/` for the M3 Max (CPU runtime, Metal), Locust (CPU runtime on Grace, CUDA) and a whole Kathleen node (CPU runtime on its AVX-512 Xeon), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
 - `docs/perf/vectorization.md` lists, for every candidate family, device class and scalar type, the measured speedup of each vector size over size 1, the chosen size and the reason;
 - every vector size above 1 in `vector-policy.toml` is at least 10% faster than size 1 at 10^6 and 10^7 items on its device class (the geometric mean over its measured devices), and every chosen configuration (vector size, tile width, block size) is within 3% of the fastest one the 10% rule admits (ADR-0015);
 - a test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass`, and that every value is a power of two from 1 to 16;
 - with the chosen policy, the whole test suite passes on every target, including the vector-size invariance tests;
-- entities created per second and geometric factors per second are recorded on the M3 Max CPU runtime and a Myriad CPU, with the chosen policy and with every kernel scalar.
+- entities created per second and geometric factors per second are recorded on the M3 Max CPU runtime and a Kathleen node, with the chosen policy and with every kernel scalar (ADR-0016).
 
 ### M4 Gmsh I/O (serial)
 
@@ -1872,7 +1874,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Scope:** the distributed dual graph, ptscotch-sys and its wrapper, parmetis-sys and its wrapper (feature-gated), METIS on rank 0 (vendored), Scotch on rank 0, and vertex weights.
 
-**Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Myriad node through `scripts/hpc`):
+**Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Kathleen node through `scripts/hpc`; ADR-0016):
 
 - weighted imbalance ≤ 5%;
 - PT-Scotch's edge cut is within 10% of sequential Scotch on the same graph, and METIS's within 10% of Scotch;
@@ -1885,7 +1887,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Acceptance:**
 
 - the global mesh, compared by origin ids, is identical for 1–8 ranks;
-- reading a 10^7-cell binary file on 8 ranks of one Myriad node keeps peak resident memory per rank below twice the rank's final mesh size plus 256 MiB (measured with getrusage);
+- reading a 10^7-cell binary file on 8 ranks of one Kathleen node keeps peak resident memory per rank below twice the rank's final mesh size plus 256 MiB (measured with getrusage);
 - VTKHDF read back by VTK's Python reader equals the PVTU content;
 - after VTK removes ghost cells, every cell appears exactly once.
 
@@ -1913,7 +1915,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Acceptance:**
 
 - on a Myriad node with a CUDA-aware MPI, the GPU-aware halo exchange is bitwise identical to the host-staged one on 2 ranks (V100 node) and 4 ranks (A100 node);
-- benchmarks (entities created per second, geometric factors per second) are recorded on the M3 Max (CPU runtime, Metal), Locust and a CPU-only Myriad D node (AVX-512), plus Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014);
+- benchmarks (entities created per second, geometric factors per second) are recorded on the M3 Max (CPU runtime, Metal), Locust and a whole Kathleen node (AVX-512), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
 - the M3s study covers every candidate `KernelKind`, including Pack and PullBack; `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
 - every example runs on the CPU runtime and on at least one GPU backend;
 - rustdoc builds without warnings, and every public item is documented.
@@ -2344,7 +2346,7 @@ All 44 findings of the consolidated design review are addressed. The table gives
 **Revision 2 (17 October 2026): development environment.**
 
 - New milestone E0 (development environment), before M0.
-- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Locust (CUDA for routine runs, reviews and benchmarks), Myriad D nodes (AVX-512 CPU benchmarks), Myriad V100 and A100 (multi-GPU, comparisons, fallback), and hosted CI for Linux CPU, Vulkan and MPI.
+- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Locust (CUDA for routine runs, reviews and benchmarks), Kathleen (CPU-only runs, AVX-512 CPU benchmarks, two-node MPI), Myriad D nodes (CPU fallback), Myriad V100 and A100 (multi-GPU, comparisons, fallback), and hosted CI for Linux CPU, Vulkan and MPI.
 - CUDA toolkit and driver rules for V100 and for the driver's PTX JIT.
 - The remote-test runner `scripts/hpc/remote-test.sh` and the probe `tools/env-check/`.
 - Updated: requirements, fixed decisions, supported backends, testing targets, workspace layout, CI matrix, the M0, M7, M8 and M10 acceptance tests, and the risks.

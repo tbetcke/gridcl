@@ -88,10 +88,14 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   idle node; for multi-GPU and GPU-aware MPI tests (`--gpus 2`); to compare
   architecture-dependent results; for CUDA-version- or architecture-specific changes; or when
   the user asks. Say why when you schedule them.
-- CPU-only runs on Myriad (x86-64 AVX-512 CPU benchmarks) use a CPU-only D node
-  (`-ac allow=D`), never a GPU node: shorter queue waits (ADR-0014).
-- CPU benchmarks on Myriad request the whole D node (`--cores 36`); never draw SIMD conclusions
-  from a node shared with other jobs.
+- Kathleen (`kathleen`, Slurm, Xeon Gold 6248 with AVX-512) runs every CPU-only remote run
+  (x86-64 AVX-512 CPU benchmarks, CpuSimd512) on one whole node, and the MPI runs beyond 4 ranks;
+  from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes (ADR-0016).
+  Never more than two nodes per job.
+- Myriad's CPU-only D nodes (`myriad-cpu`, `-ac allow=D`, never a GPU node) run CPU-only work
+  only as the fallback: Kathleen unreachable, a job still queued after `--max-wait`, or the user
+  asks; say why. They request the whole node (`--cores 36`).
+- Never draw SIMD conclusions from a node shared with other jobs.
 - Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
   from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).
 - At most two scheduler jobs (Myriad, Kathleen) at a time. Locust jobs are independent of them:
