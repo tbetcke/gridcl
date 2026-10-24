@@ -139,7 +139,8 @@ sync_prune() {
 
 r_env() { # r_env <scheduler>: the login environment of a non-interactive ssh session
     local f
-    if [ "$1" = sge ] && ! command -v qsub >/dev/null 2>&1 && [ -r /etc/profile ]; then
+    if { { [ "$1" = sge ] && ! command -v qsub >/dev/null 2>&1; } ||
+        { [ "$1" = slurm ] && ! command -v sbatch >/dev/null 2>&1; }; } && [ -r /etc/profile ]; then
         # shellcheck source=/dev/null
         . /etc/profile >/dev/null 2>&1
     fi
@@ -162,6 +163,7 @@ r_env() { # r_env <scheduler>: the login environment of a non-interactive ssh se
 r_job_alive() { # r_job_alive <tree> <job id> <scheduler>: the job is queued or running
     case $3 in
         sge) qstat -j "$2" >/dev/null 2>&1 ;;
+        slurm) [ -n "$(squeue -h -j "$2" -o %i 2>/dev/null)" ] ;;
         direct) r_direct_alive "$1" "$2" ;;
         *) return 0 ;; # unknown kinds count as pending
     esac

@@ -4,14 +4,15 @@
 # through remote-test.sh, never more than one job at a time:
 #   turnaround  env-check x3 on one GPU (--expect-sm, --expect-cuda-major); queue wait and
 #               run time of each, and their medians; the host architecture of the reports.
-#               On myriad-cpu: the CPU runtime on a whole D node (--cores 36), no GPU
+#               On myriad-cpu: the CPU runtime on a whole D node (--cores 36), no GPU;
+#               on kathleen: the CPU runtime on one whole node, no GPU
 #   nvrtc       env-check with the cuda-cpp feature (NVRTC path), plus the CPU runtime
 #   gpus2       --gpus 2 --ranks 2: mpi_allreduce_of_rank_ids, one GPU per rank
 #   fail        a deliberately failing command: exit status 3 and its error as first failure
 #   max-wait    a --max-wait overrun: deleted, exit status 124
 # then checks that status.sh lists no job, and prints the rows for docs/dev-environment.md.
-# Without steps, all of the target's steps run (myriad-cpu: turnaround fail max-wait; nvrtc
-# and gpus2 need GPUs). Exit status 0 iff every step met its expectation.
+# Without steps, all of the target's steps run (myriad-cpu and kathleen: turnaround fail
+# max-wait; nvrtc and gpus2 need GPUs). Exit status 0 iff every step met its expectation.
 #
 # Summaries and the rows: target/hpc/<target>/acceptance-<UTC time>/.
 # Environment: GRIDCL_ACCEPT_CUDA_MAJOR overrides the expected CUDA major version (empty: no
@@ -42,6 +43,11 @@ target_settings() {
             # threads follow the job's slots.
             SM="" CUDA_MAJOR="" FEATURES=cpu NVRTC_FEATURES="" MPI_GPUS="" ARCH=x86_64
             STEPS="turnaround fail max-wait" TURNAROUND_OPTS="--cores 36"
+            ;;
+        kathleen)
+            # Whole nodes of 40 cores, no GPU (ADR-0016): no GPU steps; one node by default.
+            SM="" CUDA_MAJOR="" FEATURES=cpu NVRTC_FEATURES="" MPI_GPUS="" ARCH=x86_64
+            STEPS="turnaround fail max-wait"
             ;;
         myriad-v100)
             SM=70 CUDA_MAJOR=12 FEATURES=cuda NVRTC_FEATURES=cuda-cpp,cpu MPI_GPUS=2 ARCH=x86_64

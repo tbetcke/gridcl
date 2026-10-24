@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Fake Slurm squeue for scripts/hpc/tests: the jobs in $FAKE_STATE/slurm/jobs/. -h drops the
+# header, -j <id> selects one job (nothing for an unknown one), -u is ignored, and -o '%i'
+# prints only the ids; any other format prints "id qos name state time nodes reason".
+set -u
+: "${FAKE_STATE:?fake squeue: FAKE_STATE is not set}"
+jobs=$FAKE_STATE/slurm/jobs
+mkdir -p "$jobs"
+header=1 only="" format=""
+while [ $# -gt 0 ]; do
+    case $1 in
+        -h) header="" ;;
+        -j) only=$2; shift ;;
+        -u) shift ;;
+        -o) format=$2; shift ;;
+    esac
+    shift
+done
+# shellcheck disable=SC2012 # job ids are numbers
+ids=$(ls "$jobs" | sort -n)
+[ -z "$only" ] || ids=$(printf '%s\n' "$ids" | grep -x "$only")
+[ -z "$header" ] || [ "$format" = %i ] || echo "JOBID QOS NAME STATE TIME NODES NODELIST(REASON)"
+for id in $ids; do
+    if [ "$format" = %i ]; then
+        echo "$id"
+    else
+        echo "$id $(cat "$jobs/$id/qos") $(cat "$jobs/$id/name") $(cat "$jobs/$id/state") 0:00 1 (None)"
+    fi
+done

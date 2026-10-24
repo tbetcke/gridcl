@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Fake Slurm scancel for scripts/hpc/tests: removes the jobs from $FAKE_STATE/slurm/jobs/,
+# stops a running one, and logs every cancelled id to $FAKE_STATE/slurm/scancel.log.
+set -u
+: "${FAKE_STATE:?fake scancel: FAKE_STATE is not set}"
+slurm=$FAKE_STATE/slurm
+mkdir -p "$slurm/jobs"
+status=0
+for id in "$@"; do
+    case $id in -*) continue ;; esac
+    if [ -d "$slurm/jobs/$id" ]; then
+        pid=$(cat "$slurm/jobs/$id/pid" 2>/dev/null)
+        if [ -n "$pid" ]; then
+            pkill -TERM -P "$pid" 2>/dev/null
+            kill -TERM "$pid" 2>/dev/null
+        fi
+        rm -rf "${slurm:?}/jobs/$id"
+        echo "$id" >>"$slurm/scancel.log"
+    else
+        echo "scancel: error: Invalid job id specified" >&2
+        status=1
+    fi
+done
+exit "$status"

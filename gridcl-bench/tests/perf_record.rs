@@ -112,10 +112,10 @@ fn benchmark_data_covers_required_targets() {
         check_idle(&r.target, &r.node_load, &what);
         assert_eq!(r.profile, "release", "{what}: record release builds only");
         assert_eq!(r.times_s.len(), 10, "{what}: ten timed runs");
-        if r.backend == "cuda" && r.target.starts_with("myriad-") {
+        if r.target.starts_with("myriad-") {
             assert!(
                 r.fallback_reason.as_deref().is_some_and(|s| !s.is_empty()),
-                "{what}: a Myriad CUDA record needs a fallback_reason (ADR-0014)"
+                "{what}: a Myriad record needs a fallback_reason (ADR-0014, ADR-0016)"
             );
         }
     }
@@ -135,12 +135,22 @@ fn benchmark_data_covers_required_targets() {
     } else {
         "myriad-v100"
     };
+    // CpuSimd512 on a whole Kathleen node; a Myriad D node only as the fallback (ADR-0016).
+    let avx512 = if data
+        .sweeps
+        .iter()
+        .any(|r| r.target == "kathleen" && r.backend == "cpu")
+    {
+        "kathleen"
+    } else {
+        "myriad-cpu"
+    };
     let required = [
         ("m3max", "cpu", DeviceClass::CpuSimd128),
         ("m3max", "metal", DeviceClass::Gpu),
         ("locust", "cpu", DeviceClass::CpuSimd128),
         (cuda, "cuda", DeviceClass::Gpu),
-        ("myriad-cpu", "cpu", DeviceClass::CpuSimd512),
+        (avx512, "cpu", DeviceClass::CpuSimd512),
     ];
     for (target, backend, class) in required {
         let records: Vec<&SweepRecord> = data
@@ -417,7 +427,25 @@ fn throughput_recorded_with_policy_and_scalar() {
             &format!("{} {:?}", r.target, r.measure),
         );
     }
-    for target in ["m3max", "myriad-cpu"] {
+    // A Kathleen node; a Myriad D node only as the fallback, with its reason (ADR-0016).
+    for r in data
+        .throughput
+        .iter()
+        .filter(|r| r.target.starts_with("myriad-"))
+    {
+        assert!(
+            r.fallback_reason.as_deref().is_some_and(|s| !s.is_empty()),
+            "{} {:?}: a Myriad record needs a fallback_reason (ADR-0016)",
+            r.target,
+            r.measure
+        );
+    }
+    let avx512 = if data.throughput.iter().any(|r| r.target == "kathleen") {
+        "kathleen"
+    } else {
+        "myriad-cpu"
+    };
+    for target in ["m3max", avx512] {
         for measure in [Measure::EntitiesPerSecond, Measure::FactorsPerSecond] {
             for over in ["policy", "scalar"] {
                 let what = format!("{target} cpu {measure:?} with {over}");

@@ -67,8 +67,8 @@ pub struct SweepRecord {
     /// Device name as the client reports it.
     pub device: String,
     pub device_class: DeviceClass,
-    /// Machine: `m3max`, or a target of scripts/hpc/remote-test.sh (`locust`, `myriad-cpu`,
-    /// `myriad-v100`, `myriad-a100`).
+    /// Machine: `m3max`, or a target of scripts/hpc/remote-test.sh (`locust`, `kathleen`,
+    /// `myriad-cpu`, `myriad-v100`, `myriad-a100`).
     pub target: String,
     pub family: KernelKind,
     pub scalar: Scalar,
@@ -101,7 +101,8 @@ pub struct SweepRecord {
     /// `release` or `debug`.
     pub profile: String,
     pub cores: Cores,
-    /// Why a Myriad GPU ran in place of Locust (ADR-0014); empty elsewhere.
+    /// Why a Myriad GPU ran in place of Locust (ADR-0014), or a Myriad D node in place of
+    /// Kathleen (ADR-0016); empty elsewhere.
     pub fallback_reason: Option<String>,
     /// Locust's node-load snapshots.
     pub node_load: Option<NodeLoad>,
@@ -139,6 +140,8 @@ pub struct ThroughputRecord {
     pub commit: String,
     pub profile: String,
     pub cores: Cores,
+    /// Why a Myriad D node ran in place of Kathleen (ADR-0016); empty elsewhere.
+    pub fallback_reason: Option<String>,
     pub node_load: Option<NodeLoad>,
 }
 
