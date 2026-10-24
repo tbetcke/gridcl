@@ -169,7 +169,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T5
   - Parallel with: T7
   - Risks / notes: –
-- [ ] **T7 Myriad CPU-only target `myriad-cpu` (ADR-0014 follow-up)**
+- [x] **T7 Myriad CPU-only target `myriad-cpu` (ADR-0014 follow-up)**
   - Goal: `scripts/hpc/remote-test.sh myriad-cpu --cores 36 -- <command>` runs on a D node (`-ac allow=D`, no `-l gpu`) with `GRIDCL_TEST_DEVICE=cpu`.
   - Crates/files: `scripts/hpc/{lib/config.sh, remote-test.sh, jobs/myriad-cpu.sh, targets.example.env, acceptance.sh, tests/run.sh}`, `docs/dev-environment.md` (D-node row), and `.claude/skills/hpc-test/SKILL.md`. The sandbox denies writes to `.claude/skills`, so the maintainer approves or applies that edit.
   - Public API added or changed: none.
@@ -375,6 +375,11 @@ Resolve every row before Status becomes approved.
 | 2026-10-24 | T0 | The transpose check in `kernel_invariance` is stricter than "a `Scalar` plan before the candidate plan": above size 1, every TopologyKeys and PermutationInfo plan must directly follow a `Scalar` plan. `gridcl/tests/common/mod.rs` gains `at_vector_size_with_plans`. | After T6 other `Scalar` helpers also plan before them; with "directly follows", the mixed box fails until T10. | – |
 | 2026-10-24 | T0 | Records name the Myriad CPU-only target `myriad-cpu`, the remote-test target of T7; the data file stays `m3s-sweep-cpu-myriad-d.json`. T0 also updates `gridcl-geometry/src/field.rs` (rustdoc of `quad_tile`). | Same names as the runner. | – |
 | 2026-10-24 | T1 | `cells_without_nodes_read_no_node_memory` moved from `gridcl-geometry/tests/bounds.rs` to a unit test in `gridcl-geometry/src/evector.rs`, which calls the E-vector builder directly, in f32 and, where supported, f64. `bounds.rs` gains `empty_nodes_with_cells_are_rejected` (f32 and f64), and its skipped f64 cases now print why. | m11 makes `Geometry::new` reject exactly the input that test built (no nodes, a non-empty dofmap), so m10's kernel check is reachable only below the public constructor. | – |
+| 2026-10-24 | T7 | T7 committed before its real smoke job ran: Myriad job 10224 (--cores 36, nproc and cargo test --release -p gridcl-device) was still queued after about two hours; its result is recorded when it finishes, and a failure is fixed in a follow-up commit. | Maintainer's decision. | – |
+| 2026-10-24 | T7 | `.claude/skills/hpc-test/SKILL.md` is not edited in this commit; the proposed change goes to the main session, which merges it with ADR-0016's changes. | The sandbox denies writes to `.claude/skills`. | – |
+| 2026-10-24 | T7 | Two files outside the task's list change: `scripts/hpc/lib/submit.sh` exports `GRIDCL_TEST_DEVICE` per target (`cpu` on `myriad-cpu`), and `scripts/hpc/jobs/common.sh` records a prologue line `cpus:` (`nproc` without the OMP variables, online CPUs, `OMP_NUM_THREADS`). The smoke job therefore runs `nproc` in its prologue, and its command stays a plain `cargo test`, so build and run times are recorded separately. | The job settings and the prologue live in those files. | – |
+| 2026-10-24 | T7 | The runner usage in docs/design.md ("Remote-test runner") still lists `targets: myriad-v100 \| myriad-a100 \| locust` and says jobs run with `GRIDCL_TEST_DEVICE=cuda`; the runner now lists `myriad-cpu` and its jobs run with `cpu`. design.md is not edited during implementation; the maintainer updates that block. | ADR-0014 (accepted) adds the target; this plan fixes `GRIDCL_TEST_DEVICE=cpu`. | ADR-0014 |
+| 2026-10-24 | T7 | `myriad-cpu` without `--cores` is accepted with a note on stderr (one slot), not refused or defaulted to 36. `acceptance.sh myriad-cpu` runs `turnaround fail max-wait` (turnaround with `--cores 36`, env-check `--features cpu`, no `--expect-sm`) and refuses `nvrtc` and `gpus2`; it has not been run live. | Short CPU-only checks need no whole node; the GPU steps do not apply. | – |
 
 ## Review
 

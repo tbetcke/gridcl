@@ -4,14 +4,15 @@
 #   GRIDCL_HPC_TARGET, GRIDCL_HPC_SCHEDULER (sge | direct), GRIDCL_HPC_TREE, GRIDCL_HPC_BRANCH, GRIDCL_HPC_COMMIT, GRIDCL_HPC_DIRTY,
 #   GRIDCL_HPC_COMMAND, GRIDCL_HPC_BUILD (may be empty), GRIDCL_HPC_MODULES,
 #   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported CARGO_TARGET_DIR,
-#   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE=cuda and, for --ranks N, GRIDCL_RANKS=N.
+#   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE (cuda; cpu on myriad-cpu) and, for --ranks N,
+#   GRIDCL_RANKS=N.
 # JOB_ID comes from the scheduler, or from the runner on direct targets.
 #
 # The job runs the module lines, exports CUDA_PATH, records the prologue, builds (when
 # GRIDCL_HPC_BUILD is set), runs the command in the tree with bash, and writes
 # <tree>/results/<JOB_ID>/:
-#   prologue.txt   host, date, slots, module lines, nvidia-smi, CUDA toolkit, internet
-#                  access, toolchain versions
+#   prologue.txt   host, date, slots, CPUs (nproc), module lines, nvidia-smi, CUDA toolkit,
+#                  internet access, toolchain versions
 #   times.env      start, build_start, build_end, build_status, run_start, end (epoch s)
 #   output.log     stdout and stderr of the build and the command
 #   exit_status    the command's exit status (the build's, when the build failed)
@@ -188,6 +189,10 @@ gridcl_job_main() {
         echo "job id: $JOB_ID"
         echo "commit: ${GRIDCL_HPC_COMMIT:-} (${GRIDCL_HPC_BRANCH:-}), dirty: ${GRIDCL_HPC_DIRTY:-}"
         echo "slots: ${NSLOTS:-unknown}; ranks: ${GRIDCL_RANKS:-none}"
+        # The CPU runtime's thread count follows the CPUs the job may use (myriad-cpu). nproc
+        # honours OMP_NUM_THREADS, which Rust does not, so it runs without the OMP variables.
+        echo "cpus: nproc $(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null || echo unknown)," \
+            "online $(nproc --all 2>/dev/null || echo unknown); OMP_NUM_THREADS: ${OMP_NUM_THREADS:-unset}"
         echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-}"
         echo "== module lines"
         printf '%s\n' "${GRIDCL_HPC_MODULES:-}"

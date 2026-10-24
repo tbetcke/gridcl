@@ -38,7 +38,8 @@ orig_path=$PATH
 
 SGE_CASES="usage missing_targets_env job_script_sge_lines exit_status_passthrough
 failing_command_first_error summary_header_and_length max_wait_deletes_job results_copied
-results_survive_resync busy_tree_refused cubecl_toml_written"
+results_survive_resync busy_tree_refused cubecl_toml_written myriad_cpu_job_script
+myriad_cpu_rejects_gpus"
 DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
 
@@ -92,7 +93,7 @@ commit_file() { # commit_file <path> <content>
 
 write_targets_env() {
     {
-        for t in MYRIAD_V100 MYRIAD_A100; do
+        for t in MYRIAD_V100 MYRIAD_A100 MYRIAD_CPU; do
             echo "${t}_HOST=fake-myriad"
             echo "${t}_SCHEDULER=sge"
             echo "${t}_BASE='$REMOTE/myriad'"
@@ -103,6 +104,7 @@ write_targets_env() {
         done
         echo "MYRIAD_V100_CUDA_PATH='$REMOTE/cuda-12'"
         echo "MYRIAD_A100_CUDA_PATH='$REMOTE/cuda-13'"
+        echo "MYRIAD_CPU_CUDA_PATH="
         echo "LOCUST_HOST=fake-locust"
         echo "LOCUST_SCHEDULER=direct"
         echo "LOCUST_BASE='$REMOTE/locust'"
@@ -243,7 +245,7 @@ case_usage() {
     rt
     expect_status 2 "no arguments"
     cat "$T/stdout" "$T/stderr" >"$T/both"
-    expect_grep "$T/both" 'targets: myriad-v100 \| myriad-a100 \| locust' "usage lists the targets"
+    expect_grep "$T/both" 'targets: myriad-v100 \| myriad-a100 \| myriad-cpu \| locust' "usage lists the targets"
     rt nowhere -- true
     expect_status 2 "unknown target"
     rt myriad-v100 true
@@ -319,6 +321,52 @@ case_job_script_sge_lines() {
     if grep -Eq '^offline= .*args=(check|build)' "$FAKE_STATE/cargo.log"; then
         fail "login-node check although no feature activates cubecl-llvm"
     fi
+}
+
+case_myriad_cpu_job_script() {
+    # shellcheck disable=SC2016 # expanded by the job, not here
+    rt myriad-cpu --cores 36 --time 00:30:00 -- 'echo "device=$GRIDCL_TEST_DEVICE"'
+    expect_status 0 "myriad-cpu run"
+    local s id
+    id=$(job_id)
+    s=$FAKE_STATE/sge/submitted/$id.sh
+    expect_exists "$s" "rendered job script submitted"
+    expect_no_grep "$s" '^#\$ -l gpu' "no GPU request on a CPU-only node"
+    expect_line "$s" '#$ -ac allow=D' "D nodes"
+    expect_no_grep "$s" '^#\$ -ac allow=(EF|L)$' "no GPU node class"
+    expect_line "$s" '#$ -pe smp 36' "whole node from CORES_REQUEST"
+    expect_line "$s" '#$ -l mem=4G' "memory request from MEM_REQUEST"
+    expect_line "$s" '#$ -l h_rt=00:30:00' "wall-clock request"
+    expect_line "$s" 'export GRIDCL_TEST_DEVICE=cpu' "CPU test device"
+    expect_no_grep "$s" 'GRIDCL_TEST_DEVICE=cuda' "no CUDA test device"
+    expect_line "$s" "GRIDCL_HPC_CUDA_PATH=''" "no CUDA_PATH"
+    expect_grep "$s" "CARGO_TARGET_DIR=$TREE/target/myriad-cpu" "own CARGO_TARGET_DIR in the shared tree"
+    bash -n "$s" || fail "rendered script is not valid bash"
+    awk '/^#\$/ { if (cmd) bad = 1 } /^[^#]/ && NF { cmd = 1 } END { exit bad }' "$s" ||
+        fail "a #$ line follows a command"
+    expect_grep "$T/stdout" '^target: myriad-cpu$' "summary target"
+    expect_no_grep "$T/stdout" '^node load:' "no node-load line on SGE targets"
+    local dir=$LOCAL/target/hpc/myriad-cpu/$id
+    grep -q 'device=cpu' "$dir/output.log" 2>/dev/null || fail "the command did not see GRIDCL_TEST_DEVICE=cpu"
+    expect_grep "$dir/prologue.txt" '^slots: 36;' "prologue records the slots"
+    expect_grep "$dir/prologue.txt" '^cpus: nproc ' "prologue records the CPUs"
+
+    # Without --cores the job has one slot; the runner says so.
+    rt myriad-cpu -- true
+    expect_status 0 "myriad-cpu run without --cores"
+    expect_grep "$T/stderr" 'myriad-cpu without --cores' "note about the slots"
+    s=$FAKE_STATE/sge/submitted/$(job_id).sh
+    expect_no_grep "$s" '^#\$ -pe ' "no cores request"
+    expect_line "$s" '#$ -ac allow=D' "D nodes without --cores"
+}
+
+case_myriad_cpu_rejects_gpus() {
+    rt myriad-cpu --gpus 1 -- true
+    expect_status 2 "--gpus 1 on myriad-cpu"
+    expect_grep "$T/stderr" 'CPU-only' "message names the CPU-only nodes"
+    rt myriad-cpu --cores 36 --gpus=2 -- true
+    expect_status 2 "--gpus=2 on myriad-cpu"
+    expect_absent "$FAKE_STATE/ssh.log" "nothing contacted on usage errors"
 }
 
 case_exit_status_passthrough() {
