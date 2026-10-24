@@ -71,6 +71,11 @@ pub fn tetrahedron_side(cells: usize) -> usize {
     nearest_side(cells, |s| 6 * s * s * s)
 }
 
+/// The side s of the hexahedron box (s³ cells) nearest to `cells`.
+pub fn hexahedron_side(cells: usize) -> usize {
+    nearest_side(cells, |s| s * s * s)
+}
+
 /// The side s of the triangle box (2 s² cells) nearest to `cells`.
 pub fn triangle_side(cells: usize) -> usize {
     nearest_side(cells, |s| 2 * s * s)
@@ -768,6 +773,8 @@ mod tests {
         assert_eq!(tetrahedron_side(1000), 5); // 750 is nearer than 1296
         assert_eq!(tetrahedron_side(100_000), 26); // 105 456
         assert_eq!(tetrahedron_side(10_000_000), 119); // 10 110 954
+        assert_eq!(hexahedron_side(1000), 10);
+        assert_eq!(hexahedron_side(1_000_000), 100);
         assert_eq!(triangle_side(500), 16); // 512
         assert_eq!(triangle_side(5_000_000), 1581);
         assert_eq!(factor_cells(1000), 384 + 512);
