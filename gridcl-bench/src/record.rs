@@ -63,7 +63,7 @@ pub struct NodeLoad {
 /// One measured configuration of the sweep.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SweepRecord {
-    /// CubeCL runtime: `cpu`, `metal`, `cuda`, ...
+    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,

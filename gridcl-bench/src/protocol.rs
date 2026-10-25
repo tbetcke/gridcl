@@ -73,6 +73,15 @@ pub fn commit() -> String {
     }
 }
 
+/// The backend as `GRIDCL_TEST_DEVICE` names it (`cpu` when unset), not the client's name
+/// (`wgpu<msl>` on Metal).
+pub fn backend() -> String {
+    std::env::var(gridcl_testing::TEST_DEVICE_VAR)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "cpu".to_owned())
+}
+
 /// `release` or `debug`.
 pub fn profile() -> &'static str {
     if cfg!(debug_assertions) {

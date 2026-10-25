@@ -93,7 +93,7 @@ pub struct Machine {
 impl Machine {
     pub fn new(client: &Client) -> Machine {
         Machine {
-            backend: client.name().to_owned(),
+            backend: protocol::backend(),
             device: client.properties().identity.name.clone(),
             class: DeviceClass::for_client(client),
             commit: protocol::commit(),
