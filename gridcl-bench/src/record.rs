@@ -89,9 +89,13 @@ pub struct SweepRecord {
     pub cube_dim: CubeDimMode,
     /// Units per cube of the family's plans.
     pub units: u32,
-    /// Every timed run, in seconds.
+    /// Every timed run, as seconds per call.
     pub times_s: Vec<f64>,
     pub median_s: f64,
+    /// Calls per timed run (ADR-0018).
+    pub calls_per_run: usize,
+    /// The untimed calibration call that fixed `calls_per_run`, in seconds.
+    pub calibration_s: f64,
     /// Warm-up time minus the median.
     pub compile_s: f64,
     /// State of CubeCL's persistent kernel cache during the warm-up.
@@ -135,8 +139,13 @@ pub struct ThroughputRecord {
     pub vector_size_override: String,
     /// Entities created, or (cell, point) pairs.
     pub items: usize,
+    /// Every timed run, as seconds per call.
     pub times_s: Vec<f64>,
     pub median_s: f64,
+    /// Calls per timed run (ADR-0018).
+    pub calls_per_run: usize,
+    /// The untimed calibration call that fixed `calls_per_run`, in seconds.
+    pub calibration_s: f64,
     /// `items / median_s`.
     pub per_s: f64,
     pub commit: String,
@@ -365,6 +374,8 @@ impl SweepRecord {
             "units": self.units,
             "times_s": self.times_s,
             "median_s": self.median_s,
+            "calls_per_run": self.calls_per_run,
+            "calibration_s": self.calibration_s,
             "compile_s": self.compile_s,
             "kernel_cache": self.kernel_cache,
             "bandwidth_ratio": self.bandwidth_ratio,
@@ -395,6 +406,8 @@ impl SweepRecord {
             units: o.u32("units")?,
             times_s: o.times("times_s")?,
             median_s: o.f64("median_s")?,
+            calls_per_run: o.usize("calls_per_run")?,
+            calibration_s: o.f64("calibration_s")?,
             compile_s: o.f64("compile_s")?,
             kernel_cache: o.string("kernel_cache")?,
             bandwidth_ratio: o.opt_f64("bandwidth_ratio")?,
@@ -422,6 +435,8 @@ impl ThroughputRecord {
             "items": self.items,
             "times_s": self.times_s,
             "median_s": self.median_s,
+            "calls_per_run": self.calls_per_run,
+            "calibration_s": self.calibration_s,
             "per_s": self.per_s,
             "commit": self.commit,
             "profile": self.profile,
@@ -446,6 +461,8 @@ impl ThroughputRecord {
             items: o.usize("items")?,
             times_s: o.times("times_s")?,
             median_s: o.f64("median_s")?,
+            calls_per_run: o.usize("calls_per_run")?,
+            calibration_s: o.f64("calibration_s")?,
             per_s: o.f64("per_s")?,
             commit: o.string("commit")?,
             profile: o.string("profile")?,
@@ -589,6 +606,8 @@ mod tests {
             units: 12,
             times_s: vec![0.25, 0.5, 0.125],
             median_s: 0.25,
+            calls_per_run: 1,
+            calibration_s: 0.25,
             compile_s: 1.5,
             kernel_cache: "off".to_owned(),
             bandwidth_ratio: Some(0.75),
@@ -617,6 +636,8 @@ mod tests {
             items: 24_000,
             times_s: vec![2.0],
             median_s: 2.0,
+            calls_per_run: 1,
+            calibration_s: 2.5,
             per_s: 12_000.0,
             commit: "abc".to_owned(),
             profile: "release".to_owned(),

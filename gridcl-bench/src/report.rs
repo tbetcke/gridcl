@@ -82,7 +82,10 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
          every device ran the size at m lanes. Size, tile, block and units are the entries of \
          `vector-policy.toml`; f32 and u32 share the 4-byte entries. Units: all hardware \
          threads or the performance cores; a device without a performance-core count gives \
-         both the same time (ADR-0017).\n\n",
+         both the same time (ADR-0017). A reason \"closest, x% slower\" marks an entry where no \
+         admitted configuration is within 3% of the fastest at both sizes, so the rule took the \
+         one with the smallest worst-case ratio, at most 10% slower; \"unresolved\" marks one \
+         where even that is more than 10% slower (ADR-0018).\n\n",
     );
     writeln!(
         out,

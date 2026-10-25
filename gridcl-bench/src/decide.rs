@@ -19,6 +19,10 @@
 //!   it, and must be within 3% for each of them.
 //! - A configuration whose requested size ran narrower on every device is chosen only if no
 //!   other configuration qualifies, so the TOML holds sizes that ran (item 6, register budget).
+//! - Backstop (ADR-0018): if no admitted configuration is within 3% at both sizes (for every
+//!   type of a shared entry), the one with the smallest worst-case ratio is chosen if that ratio
+//!   is at most 1.10, and its reason starts "closest, x% slower". Above 1.10 the entry is
+//!   unresolved: it still holds the closest configuration, and the case goes to the maintainer.
 //! - CpuSimd256 copies the CpuSimd512 table ("Benchmarks", "Where").
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,6 +38,9 @@ pub const RULE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
 pub const ADOPT: f64 = 1.1;
 /// A configuration qualifies if it takes at most this factor of the fastest admitted one.
 pub const WITHIN: f64 = 1.03;
+/// The backstop takes the closest admitted configuration only up to this worst-case ratio
+/// (ADR-0018).
+pub const BACKSTOP: f64 = 1.1;
 /// The element sizes of the policy, in bytes.
 pub const ELEM_BYTES: [usize; 2] = [4, 8];
 /// The unit of `cpu_block` entries in `vector-policy.toml`.
@@ -68,8 +75,24 @@ pub struct Choice {
     pub cpu_block: Option<usize>,
     /// CPU units; `None` on `Gpu`.
     pub cpu_units: Option<CpuUnits>,
+    /// How the rule reached the choice.
+    pub fit: Fit,
     /// Why, in one line for the report.
     pub reason: String,
+}
+
+/// How the rule reached a choice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fit {
+    /// Within 3% of the fastest admitted configuration at both sizes, or the defaults where
+    /// there is no data.
+    Rule,
+    /// The backstop: no admitted configuration is within 3%, and this one is the closest, at
+    /// most 10% slower (ADR-0018).
+    Closest,
+    /// No admitted configuration within 10%: the closest is stored, and the case goes to the
+    /// maintainer.
+    Unresolved,
 }
 
 /// Every entry of the policy.
@@ -91,6 +114,11 @@ impl Decision {
         self.choices
             .iter()
             .find(|c| c.class == class && c.kind == kind && c.elem_bytes == elem_bytes)
+    }
+
+    /// The entries the rule could not resolve (ADR-0018).
+    pub fn unresolved(&self) -> impl Iterator<Item = &Choice> {
+        self.choices.iter().filter(|c| c.fit == Fit::Unresolved)
     }
 
     /// The tile of one class and element size.
@@ -216,6 +244,7 @@ pub fn decide(data: &PerfData) -> Decision {
                             .and_then(|c| c.3)
                             .map_or(CpuUnits::All, units_of)
                     }),
+                    fit: entry.fit,
                     reason: entry.reason,
                 });
             }
@@ -432,12 +461,14 @@ impl TypeView {
 /// The chosen configuration of one entry, `None` for the defaults, with the reason.
 struct Entry {
     config: Option<Config>,
+    fit: Fit,
     reason: String,
 }
 
 fn defaults(reason: impl Into<String>) -> Entry {
     Entry {
         config: None,
+        fit: Fit::Rule,
         reason: reason.into(),
     }
 }
@@ -488,7 +519,7 @@ fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -
         .find(|c| within(c) && !narrower(c))
         .or_else(|| candidates.iter().find(|c| within(c)));
     let Some(&config) = chosen else {
-        // No configuration within 3% for every type at both sizes: the closest one.
+        // No configuration within 3% for every type at both sizes: the backstop (ADR-0018).
         let worst = |c: &Config| {
             views
                 .iter()
@@ -496,23 +527,44 @@ fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -
                 .flatten()
                 .fold(1.0f64, f64::max)
         };
-        let config = candidates
+        let Some(config) = candidates
             .iter()
             .copied()
-            .min_by(|a, b| worst(a).total_cmp(&worst(b)));
-        let text = format!(
-            "no configuration within 3% of the fastest admitted at both sizes; closest: {:.1}% \
-             slower",
-            config.map_or(0.0, |c| (worst(&c) - 1.0) * 100.0)
-        );
+            .min_by(|a, b| worst(a).total_cmp(&worst(b)))
+        else {
+            return Entry {
+                fit: Fit::Unresolved,
+                ..defaults("unresolved: no configuration measured at both sizes for every type")
+            };
+        };
+        let slower = (worst(&config) - 1.0) * 100.0;
+        let (fit, text) = if worst(&config) <= BACKSTOP {
+            (
+                Fit::Closest,
+                format!(
+                    "closest, {slower:.1}% slower: no admitted configuration within 3% of the \
+                     fastest at both sizes (ADR-0018)"
+                ),
+            )
+        } else {
+            (
+                Fit::Unresolved,
+                format!(
+                    "unresolved: the closest admitted configuration is {slower:.1}% slower, \
+                     above the 10% bound (ADR-0018)"
+                ),
+            )
+        };
         return Entry {
-            config,
-            reason: with_partial(&views, text, true),
+            config: Some(config),
+            fit,
+            reason: with_partial(&views, text),
         };
     };
     Entry {
         config: Some(config),
-        reason: with_partial(&views, reason(&views, config, narrower(&config)), false),
+        fit: Fit::Rule,
+        reason: with_partial(&views, reason(&views, config, narrower(&config))),
     }
 }
 
@@ -572,9 +624,8 @@ fn reason(views: &[TypeView], config: Config, narrower: bool) -> String {
     text
 }
 
-/// `text` with a note on the sizes that some 4-byte types admit but not all, before it
-/// (`first`) or after it.
-fn with_partial(views: &[TypeView], text: String, first: bool) -> String {
+/// `text` with a note after it on the sizes that some 4-byte types admit but not all.
+fn with_partial(views: &[TypeView], text: String) -> String {
     let partial: BTreeSet<usize> = views
         .iter()
         .flat_map(|v| v.admitted.iter().copied())
@@ -594,11 +645,7 @@ fn with_partial(views: &[TypeView], text: String, first: bool) -> String {
         sizes.join(", "),
         who.join(", ")
     );
-    if first {
-        format!("{note}; {text}")
-    } else {
-        format!("{text}; {note}")
-    }
+    format!("{text}; {note}")
 }
 
 #[cfg(test)]
@@ -642,6 +689,8 @@ mod tests {
             units: 1,
             times_s: vec![t; 10],
             median_s: t,
+            calls_per_run: 1,
+            calibration_s: t,
             compile_s: 0.0,
             kernel_cache: "off".to_owned(),
             bandwidth_ratio: None,
@@ -937,11 +986,12 @@ mod tests {
         ));
         let d = decide(&data(sweeps.clone()));
         let c = entry(&d, CPU, KernelKind::Gather, 4);
-        assert_eq!(c.vector_size, 1);
+        // Size 1 is 100% slower than f32's fastest: beyond the backstop's bound (ADR-0018).
+        assert_eq!((c.vector_size, c.fit), (1, Fit::Unresolved));
         assert!(
-            c.reason.starts_with(
-                "size 4 admitted for f32 only (shared 4-byte entry); no configuration"
-            ),
+            c.reason.starts_with("unresolved: ")
+                && c.reason
+                    .ends_with("; size 4 admitted for f32 only (shared 4-byte entry)"),
             "{}",
             c.reason
         );
@@ -1020,11 +1070,75 @@ mod tests {
         let d = decide(&data(sweeps));
         let c = entry(&d, CPU, KernelKind::Fill, 8);
         assert_eq!(c.vector_size, 1);
+        // Both blocks are 10% slower than the fastest at one size: the smaller block, at the
+        // bound.
+        assert_eq!(c.cpu_block, Some(1));
+        assert_eq!(c.fit, Fit::Closest, "{}", c.reason);
         assert!(
-            c.reason.starts_with("no configuration within 3%"),
+            c.reason.starts_with("closest, 10.0% slower"),
             "{}",
             c.reason
         );
+        assert_eq!(d.unresolved().count(), 0);
+    }
+
+    /// Times at (10^6, 10^7) for a 4 KiB and a 16 KiB block at size 1.
+    fn two_blocks(t4: (f64, f64), t16: (f64, f64)) -> PerfData {
+        let mut sweeps = Vec::new();
+        for (i, &n) in RULE_SIZES.iter().enumerate() {
+            for (block, t) in [(4 << 10, t4), (16 << 10, t16)] {
+                let t = if i == 0 { t.0 } else { t.1 };
+                sweeps.push(rec(
+                    CPU,
+                    "a",
+                    KernelKind::Fill,
+                    Scalar::F64,
+                    n,
+                    (1, None, Some(block)),
+                    t,
+                ));
+            }
+        }
+        data(sweeps)
+    }
+
+    #[test]
+    fn the_backstop_takes_the_smallest_worst_ratio() {
+        // 4 KiB: 6% slower at 10^7; 16 KiB: 5% slower at 10^6. Neither within 3%.
+        let d = decide(&two_blocks((1.0, 10.6), (1.05, 10.0)));
+        let c = entry(&d, CPU, KernelKind::Fill, 8);
+        assert_eq!(
+            (c.vector_size, c.cpu_block, c.fit),
+            (1, Some(4), Fit::Closest)
+        );
+        assert!(c.reason.starts_with("closest, 5.0% slower"), "{}", c.reason);
+    }
+
+    #[test]
+    fn no_backstop_above_ten_percent() {
+        let d = decide(&two_blocks((1.0, 11.2), (1.12, 10.0)));
+        let c = entry(&d, CPU, KernelKind::Fill, 8);
+        assert_eq!(c.fit, Fit::Unresolved, "{}", c.reason);
+        assert!(
+            c.reason.starts_with("unresolved: the closest"),
+            "{}",
+            c.reason
+        );
+        assert!(c.reason.contains("12.0% slower"), "{}", c.reason);
+        let unresolved: Vec<_> = d
+            .unresolved()
+            .map(|c| (c.class, c.kind, c.elem_bytes))
+            .collect();
+        assert_eq!(unresolved, vec![(CPU, KernelKind::Fill, 8)]);
+    }
+
+    #[test]
+    fn no_backstop_when_a_configuration_meets_three_percent() {
+        // 16 KiB is 2% slower at 10^6 and the fastest at 10^7: within 3% at both sizes.
+        let d = decide(&two_blocks((1.0, 10.6), (1.02, 10.0)));
+        let c = entry(&d, CPU, KernelKind::Fill, 8);
+        assert_eq!((c.cpu_block, c.fit), (Some(4), Fit::Rule), "{}", c.reason);
+        assert!(!c.reason.contains("closest"), "{}", c.reason);
     }
 
     #[test]
@@ -1280,7 +1394,7 @@ mod tests {
                 check(&data, &d, CPU, KernelKind::Scalar, Scalar::U32);
                 check(&data, &d, DeviceClass::Gpu, KernelKind::GeomFactors, Scalar::F64);
                 for c in &d.choices {
-                    prop_assert!(!c.reason.starts_with("no configuration"), "{c:?}");
+                    prop_assert_eq!(c.fit, Fit::Rule, "{:?}", c);
                 }
             }
         }

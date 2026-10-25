@@ -1,5 +1,5 @@
-//! The vector-size sweep of "Benchmarks" (docs/plans/M3s.md, T8) on the device named by
-//! `GRIDCL_TEST_DEVICE`, as JSON records (`gridcl_bench::record::SweepRecord`).
+//! The vector-size sweep of "Benchmarks" (docs/plans/M3s.md, T8; batched runs, ADR-0018) on the
+//! device named by `GRIDCL_TEST_DEVICE`, as JSON records (`gridcl_bench::record::SweepRecord`).
 //!
 //! ```text
 //! cargo run --release -p gridcl-bench --bin vector_sweep -- [--target NAME]
@@ -221,7 +221,8 @@ fn run(args: Args) -> Result<(), Failure> {
     let out = args.out.as_deref();
     let records = families::sweep(&client, &machine, &options, &mut |r| {
         eprintln!(
-            "{:?} {} n = {} v = {} (ran {}) block = {:?} {:?}: median {:.3} ms, compile {:.3} s",
+            "{:?} {} n = {} v = {} (ran {}) block = {:?} {:?}: median {:.3} ms ({} calls a run), \
+             compile {:.3} s",
             r.family,
             r.scalar.name(),
             r.n,
@@ -230,6 +231,7 @@ fn run(args: Args) -> Result<(), Failure> {
             r.block_bytes.map(|b| b >> 10),
             r.cube_dim,
             r.median_s * 1e3,
+            r.calls_per_run,
             r.compile_s
         );
         written.push(r.to_json());

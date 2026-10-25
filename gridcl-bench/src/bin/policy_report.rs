@@ -13,6 +13,9 @@
 //!   appended, and a missing file is created with a title.
 //! - `--check`: writes nothing, and fails if either file differs from what it would write.
 //!
+//! Entries the rule leaves unresolved (no admitted configuration within 10% of the fastest,
+//! ADR-0018) are listed on stderr, and the binary fails after writing.
+//!
 //! Default paths are relative to the workspace root.
 
 use std::path::{Path, PathBuf};
@@ -102,9 +105,26 @@ fn run(args: &Args) -> Result<(), String> {
         data.sweeps.len(),
         data.throughput.len()
     );
-    if stale.is_empty() {
-        Ok(())
-    } else {
+    let unresolved: Vec<String> = decision
+        .unresolved()
+        .map(|c| {
+            format!(
+                "{:?} {:?} {}-byte: {}",
+                c.class, c.kind, c.elem_bytes, c.reason
+            )
+        })
+        .collect();
+    for line in &unresolved {
+        eprintln!("policy_report: {line}");
+    }
+    if !stale.is_empty() {
         Err(format!("stale: {}", stale.join(", ")))
+    } else if !unresolved.is_empty() {
+        Err(format!(
+            "{} unresolved entries; they go to the maintainer (ADR-0018)",
+            unresolved.len()
+        ))
+    } else {
+        Ok(())
     }
 }

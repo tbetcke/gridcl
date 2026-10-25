@@ -270,6 +270,8 @@ fn sweep_record(
         units: measured.units,
         times_s: measured.times_s.clone(),
         median_s,
+        calls_per_run: measured.calls_per_run,
+        calibration_s: measured.calibration_s,
         compile_s: measured.compile_s(),
         kernel_cache: machine.kernel_cache.clone(),
         bandwidth_ratio: work

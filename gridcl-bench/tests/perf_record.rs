@@ -1,6 +1,6 @@
 //! M3s acceptance (docs/design.md, "M3s SIMD vectorization and benchmarks"; ADR-0015,
-//! ADR-0017): the committed benchmark data, the generated report, the policy and the throughput
-//! records.
+//! ADR-0017, ADR-0018): the committed benchmark data, the generated report, the policy and the
+//! throughput records.
 //!
 //! The checks of the decision rule are written here independently of `gridcl_bench::decide`:
 //! they read `vector-policy.toml` with the `toml` crate and recompute the class times from the
@@ -83,6 +83,19 @@ fn is_cpu(class: DeviceClass) -> bool {
     class != DeviceClass::Gpu
 }
 
+/// Each timed run repeats the call k times, k fixed by the calibration call: ⌈20 ms / t_cal⌉ in
+/// whole nanoseconds, at most 10,000 (ADR-0018; docs/plans/M3s.md, T22).
+fn check_calls_per_run(calls_per_run: usize, calibration_s: f64, what: &str) {
+    assert!(calls_per_run >= 1, "{what}: calls_per_run is 0");
+    assert!(calibration_s >= 0.0, "{what}: negative calibration_s");
+    let t_ns = ((calibration_s * 1e9).round() as u64).max(1);
+    let want = 20_000_000u64.div_ceil(t_ns).min(10_000) as usize;
+    assert_eq!(
+        calls_per_run, want,
+        "{what}: calls_per_run {calls_per_run} for a calibration call of {calibration_s:.3e} s"
+    );
+}
+
 /// Both node-load snapshots of a Locust run are `idle` (ADR-0002, ADR-0005).
 fn check_idle(target: &str, node_load: &Option<gridcl_bench::record::NodeLoad>, what: &str) {
     if target != "locust" {
@@ -113,6 +126,7 @@ fn benchmark_data_covers_required_targets() {
         check_idle(&r.target, &r.node_load, &what);
         assert_eq!(r.profile, "release", "{what}: record release builds only");
         assert_eq!(r.times_s.len(), 10, "{what}: ten timed runs");
+        check_calls_per_run(r.calls_per_run, r.calibration_s, &what);
         if r.target.starts_with("myriad-") {
             assert!(
                 r.fallback_reason.as_deref().is_some_and(|s| !s.is_empty()),
@@ -352,6 +366,7 @@ fn policy_follows_the_decision_rule() {
     );
 
     let policy: toml::Table = text.parse().expect("vector-policy.toml parses");
+    let report = read("docs/perf/vectorization.md");
     // CpuSimd256 copies the CpuSimd512 table ("Benchmarks", "Where").
     assert_eq!(
         policy.get("CpuSimd256"),
@@ -410,28 +425,14 @@ fn policy_follows_the_decision_rule() {
                     continue;
                 }
                 // Every 4-byte type measured must admit a shared entry (ADR-0015, item 6).
-                for scalar in with_data {
-                    let what = format!("{what} ({})", scalar.name());
-                    let times: Vec<BTreeMap<Config, f64>> = RULE_SIZES
-                        .iter()
-                        .map(|&size| class_times(&data, class, kind, scalar, size))
-                        .collect();
-                    let speedup = |times: &BTreeMap<Config, f64>, v: usize| -> Option<f64> {
-                        Some(best(times, |m| m == 1)? / best(times, |m| m == v)?)
-                    };
-                    // Admitted sizes: 1, and every size at least 10% faster at both sizes.
-                    let sizes: BTreeSet<usize> = times[0].keys().map(|c| c.0).collect();
-                    let admitted: BTreeSet<usize> = sizes
-                        .into_iter()
-                        .filter(|&v| {
-                            v == 1
-                                || times
-                                    .iter()
-                                    .all(|t| speedup(t, v).is_some_and(|s| s >= 1.1))
-                        })
-                        .collect();
+                let views: Vec<TypeView> = with_data
+                    .iter()
+                    .map(|&scalar| TypeView::new(&data, class, kind, scalar))
+                    .collect();
+                for v in &views {
+                    let what = format!("{what} ({})", v.scalar.name());
                     if n > 1 {
-                        for (t, size) in times.iter().zip(RULE_SIZES) {
+                        for (t, size) in v.times.iter().zip(RULE_SIZES) {
                             let s = speedup(t, n).unwrap_or(0.0);
                             assert!(
                                 s >= 1.1,
@@ -439,32 +440,128 @@ fn policy_follows_the_decision_rule() {
                             );
                         }
                     }
-                    for (t, size) in times.iter().zip(RULE_SIZES) {
-                        let fastest = best(t, |v| admitted.contains(&v)).unwrap();
-                        let got = *t.get(&chosen).unwrap_or_else(|| {
-                            panic!("{what}: the chosen {chosen:?} was not measured at {size}")
-                        });
+                    for (t, size) in v.times.iter().zip(RULE_SIZES) {
                         assert!(
-                            got <= 1.03 * fastest,
-                            "{what}: the chosen {chosen:?} takes {got:.3e} s at {size}, more \
-                             than 3% above the fastest admitted {fastest:.3e} s"
+                            t.contains_key(&chosen),
+                            "{what}: the chosen {chosen:?} was not measured at {size}"
                         );
                     }
+                }
+                let worst = |c: &Config| -> Option<f64> {
+                    let mut worst = 0.0f64;
+                    for v in &views {
+                        for i in 0..2 {
+                            worst = worst.max(v.times[i].get(c)? / v.fastest[i]);
+                        }
+                    }
+                    Some(worst)
+                };
+                let chosen_worst = worst(&chosen).unwrap();
+                if chosen_worst <= 1.03 {
+                    continue;
+                }
+                // The backstop (ADR-0018): no admitted configuration within 3% for every type at
+                // both sizes; the chosen one is the closest, at most 10% slower, and marked.
+                let candidates: Vec<Config> = views[0].times[0]
+                    .keys()
+                    .copied()
+                    .filter(|c| views.iter().all(|v| v.admitted.contains(&c.0)))
+                    .collect();
+                for c in &candidates {
+                    if let Some(w) = worst(c) {
+                        assert!(
+                            w > 1.03,
+                            "{what}: the chosen {chosen:?} is {:.1}% above the fastest admitted, \
+                             but {c:?} is within 3% at both sizes",
+                            (chosen_worst - 1.0) * 100.0
+                        );
+                        assert!(
+                            chosen_worst <= w * (1.0 + 1e-12),
+                            "{what}: the backstop chose {chosen:?} ({chosen_worst:.4}), but \
+                             {c:?} is closer ({w:.4})"
+                        );
+                    }
+                }
+                assert!(
+                    chosen_worst <= 1.1,
+                    "{what}: unresolved: the closest admitted configuration {chosen:?} is \
+                     {:.1}% slower than the fastest, above the 10% bound (ADR-0018)",
+                    (chosen_worst - 1.0) * 100.0
+                );
+                for v in &views {
+                    let row = if kind == KernelKind::Scalar {
+                        format!("| {c} | {} |", v.scalar.name())
+                    } else {
+                        format!("| {k} | {c} | {} |", v.scalar.name())
+                    };
+                    let marked = report
+                        .lines()
+                        .any(|line| line.starts_with(&row) && line.contains("| closest, "));
+                    assert!(
+                        marked,
+                        "{what}: the report does not mark the backstop entry {row} as closest"
+                    );
                 }
             }
         }
     }
 }
 
+/// One scalar type's view of the rule: class times at both rule sizes, the admitted sizes (1,
+/// and every size at least 10% faster at both), and the fastest admitted time at each size.
+struct TypeView {
+    scalar: Scalar,
+    times: Vec<BTreeMap<Config, f64>>,
+    admitted: BTreeSet<usize>,
+    fastest: [f64; 2],
+}
+
+impl TypeView {
+    fn new(data: &PerfData, class: DeviceClass, kind: KernelKind, scalar: Scalar) -> TypeView {
+        let times: Vec<BTreeMap<Config, f64>> = RULE_SIZES
+            .iter()
+            .map(|&size| class_times(data, class, kind, scalar, size))
+            .collect();
+        let sizes: BTreeSet<usize> = times[0].keys().map(|c| c.0).collect();
+        let admitted: BTreeSet<usize> = sizes
+            .into_iter()
+            .filter(|&v| {
+                v == 1
+                    || times
+                        .iter()
+                        .all(|t| speedup(t, v).is_some_and(|s| s >= 1.1))
+            })
+            .collect();
+        let fastest = [0, 1].map(|i| {
+            best(&times[i], |v| admitted.contains(&v)).unwrap_or_else(|| {
+                panic!(
+                    "[{class:?}] {kind:?} {}: nothing admitted at {}",
+                    scalar.name(),
+                    RULE_SIZES[i]
+                )
+            })
+        });
+        TypeView {
+            scalar,
+            times,
+            admitted,
+            fastest,
+        }
+    }
+}
+
+/// Size 1's best class time over size `v`'s best.
+fn speedup(times: &BTreeMap<Config, f64>, v: usize) -> Option<f64> {
+    Some(best(times, |m| m == 1)? / best(times, |m| m == v)?)
+}
+
 #[test]
 fn throughput_recorded_with_policy_and_scalar() {
     let data = data();
     for r in &data.throughput {
-        check_idle(
-            &r.target,
-            &r.node_load,
-            &format!("{} {:?}", r.target, r.measure),
-        );
+        let what = format!("{} {:?}", r.target, r.measure);
+        check_idle(&r.target, &r.node_load, &what);
+        check_calls_per_run(r.calls_per_run, r.calibration_s, &what);
     }
     // A Kathleen node; a Myriad D node only as the fallback, with its reason (ADR-0016).
     for r in data

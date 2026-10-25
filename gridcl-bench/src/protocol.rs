@@ -1,6 +1,7 @@
-//! The measurement protocol of "Benchmarks" (docs/plans/M3s.md, T8): one warm-up launch per
-//! configuration, checked against a host reference, then the median of ten timed runs, each
-//! ending with `client.sync()`.
+//! The measurement protocol of "Benchmarks" (docs/plans/M3s.md, T8; ADR-0018): one warm-up
+//! launch per configuration, checked against a host reference, then one untimed calibration
+//! call that fixes the calls per run, k = ⌈20 ms / t_cal⌉ (at most 10,000), and the median of
+//! ten timed runs of k calls each, as time per call. Every call ends with `client.sync()`.
 //!
 //! A configuration is applied with the scoped overrides of `gridcl_device::testing`
 //! (ADR-0015): `with_kind_vector_size` for the family's vector size, `with_cpu_block_bytes` for
@@ -10,7 +11,7 @@
 
 use std::any::Any;
 use std::process::Command;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use cubecl::config::{CubeClRuntimeConfig, RuntimeConfig};
 use cubecl::prelude::Client;
@@ -24,6 +25,21 @@ use crate::record::{Cores, CubeDimMode};
 
 /// Timed runs per configuration.
 pub const RUNS: usize = 10;
+/// The shortest timed run: a run repeats the call until about this long (ADR-0018).
+pub const MIN_RUN: Duration = Duration::from_millis(20);
+/// The most calls per timed run.
+pub const MAX_CALLS_PER_RUN: usize = 10_000;
+
+/// Calls per timed run for a calibration call of `calibration`: ⌈[`MIN_RUN`] / calibration⌉,
+/// at least 1 and at most [`MAX_CALLS_PER_RUN`] (ADR-0018). Computed in whole nanoseconds, so
+/// a record's `calibration_s` gives back its `calls_per_run`.
+pub fn calls_per_run(calibration: Duration) -> usize {
+    let min_run = MIN_RUN.as_nanos();
+    let t = calibration.as_nanos().max(1);
+    usize::try_from(min_run.div_ceil(t))
+        .unwrap_or(MAX_CALLS_PER_RUN)
+        .clamp(1, MAX_CALLS_PER_RUN)
+}
 
 /// The median of `times`; the mean of the middle two for an even count.
 ///
@@ -141,6 +157,11 @@ pub struct Measured {
     /// Units per cube of the family's plans.
     pub units: u32,
     pub warmup_s: f64,
+    /// The untimed calibration call that fixed `calls_per_run`.
+    pub calibration_s: f64,
+    /// Calls per timed run (ADR-0018).
+    pub calls_per_run: usize,
+    /// Every timed run, as time per call.
     pub times_s: Vec<f64>,
 }
 
@@ -221,9 +242,10 @@ pub trait Workload {
 }
 
 /// The protocol for one configuration: `reset`, a warm-up `run` whose output `check` compares
-/// with the host reference, then `runs` timed `run`s, each ending with `client.sync()`. Every
-/// `run` follows an untimed `prepare` and sync. Only the plans of `kind` made during the
-/// warm-up give the size that ran.
+/// with the host reference, an untimed calibration `run` that fixes the calls per run
+/// ([`calls_per_run`]), then `runs` timed runs of that many `run`s each, recorded as time per
+/// call (ADR-0018). Every `run` ends with `client.sync()` and follows an untimed `prepare` and
+/// sync. Only the plans of `kind` made during the warm-up give the size that ran.
 ///
 /// # Errors
 ///
@@ -252,22 +274,36 @@ pub fn measure(
     let units = first.1.cube_dim.num_elems();
     let vector_size_ran = plans.iter().map(|(_, p)| p.vector_size).max().unwrap_or(1);
 
+    let calibration = timed_call(client, work)?;
+    let calls = calls_per_run(calibration);
     let mut times_s = Vec::with_capacity(runs);
     for _ in 0..runs {
-        work.prepare()?;
-        sync(client)?;
-        let start = Instant::now();
-        let out = work.run()?;
-        sync(client)?;
-        times_s.push(start.elapsed().as_secs_f64());
-        drop(out);
+        let mut run = Duration::ZERO;
+        for _ in 0..calls {
+            run += timed_call(client, work)?;
+        }
+        times_s.push(run.as_secs_f64() / calls as f64);
     }
     Ok(Measured {
         vector_size_ran,
         units,
         warmup_s,
+        calibration_s: calibration.as_secs_f64(),
+        calls_per_run: calls,
         times_s,
     })
+}
+
+/// One `run` after an untimed `prepare` and sync: the time of the `run` and its sync.
+fn timed_call(client: &Client, work: &mut dyn Workload) -> Result<Duration, String> {
+    work.prepare()?;
+    sync(client)?;
+    let start = Instant::now();
+    let out = work.run()?;
+    sync(client)?;
+    let elapsed = start.elapsed();
+    drop(out);
+    Ok(elapsed)
 }
 
 /// Waits for every launch on `client`.
@@ -323,11 +359,101 @@ mod tests {
     }
 
     #[test]
+    fn calls_per_run_fills_twenty_milliseconds_up_to_the_cap() {
+        let ms = Duration::from_millis;
+        assert_eq!(calls_per_run(ms(7)), 3);
+        assert_eq!(calls_per_run(ms(4)), 5);
+        assert_eq!(calls_per_run(Duration::from_micros(4001)), 5);
+        assert_eq!(calls_per_run(Duration::from_micros(3999)), 6);
+        // A call of 20 ms or more is timed alone.
+        assert_eq!(calls_per_run(ms(20)), 1);
+        assert_eq!(calls_per_run(ms(500)), 1);
+        // The cap.
+        assert_eq!(calls_per_run(Duration::from_micros(2)), MAX_CALLS_PER_RUN);
+        assert_eq!(calls_per_run(Duration::from_nanos(1)), MAX_CALLS_PER_RUN);
+        assert_eq!(calls_per_run(Duration::ZERO), MAX_CALLS_PER_RUN);
+    }
+
+    /// A fill of 1000 f32 that also sleeps `delays[i]` in its `i`-th call (warm-up 0,
+    /// calibration 1), and counts its calls.
+    struct Delayed {
+        inner: Box<dyn Workload>,
+        delays: Vec<Duration>,
+        calls: usize,
+    }
+
+    impl Workload for Delayed {
+        fn items(&self) -> usize {
+            self.inner.items()
+        }
+        fn bytes(&self) -> Option<usize> {
+            self.inner.bytes()
+        }
+        fn reset(&mut self) -> Result<(), String> {
+            self.inner.reset()
+        }
+        fn prepare(&mut self) -> Result<(), String> {
+            self.inner.prepare()
+        }
+        fn run(&mut self) -> Result<Box<dyn Any>, String> {
+            let out = self.inner.run()?;
+            if let Some(&delay) = self.delays.get(self.calls) {
+                std::thread::sleep(delay);
+            }
+            self.calls += 1;
+            Ok(out)
+        }
+        fn check(&mut self, out: Box<dyn Any>) -> Result<(), String> {
+            self.inner.check(out)
+        }
+    }
+
+    fn measure_delayed(calibration: Duration) -> (Measured, usize) {
+        let client = gridcl_testing::test_client();
+        let inner =
+            crate::families::workload(&client, KernelKind::Fill, crate::record::Scalar::F32, 1000)
+                .unwrap();
+        let mut work = Delayed {
+            inner,
+            delays: vec![Duration::ZERO, calibration],
+            calls: 0,
+        };
+        let m = measure(&client, KernelKind::Fill, 3, &mut work).unwrap();
+        (m, work.calls)
+    }
+
+    #[test]
+    fn measure_takes_the_calls_per_run_from_the_calibration_call() {
+        // The calibration call takes 8–10 ms, so k = 3, whatever the later calls take.
+        let (m, calls) = measure_delayed(Duration::from_millis(8));
+        assert_eq!(m.calls_per_run, 3, "{m:?}");
+        assert!(m.calibration_s >= 0.008, "{m:?}");
+        assert_eq!(calls_per_run(Duration::from_secs_f64(m.calibration_s)), 3);
+        assert_eq!(
+            calls,
+            2 + 3 * 3,
+            "warm-up, calibration and three runs of three calls"
+        );
+        assert_eq!(m.times_s.len(), 3);
+        // Time per call: the undelayed fills take far less than the calibration call.
+        assert!(m.median_s() < m.calibration_s, "{m:?}");
+    }
+
+    #[test]
+    fn measure_times_calls_of_twenty_milliseconds_alone() {
+        let (m, calls) = measure_delayed(Duration::from_millis(25));
+        assert_eq!(m.calls_per_run, 1, "{m:?}");
+        assert_eq!(calls, 2 + 3);
+    }
+
+    #[test]
     fn compile_time_is_warmup_minus_median_and_never_negative() {
         let m = |warmup_s| Measured {
             vector_size_ran: 1,
             units: 1,
             warmup_s,
+            calibration_s: 1.0,
+            calls_per_run: 1,
             times_s: vec![1.0, 3.0, 2.0],
         };
         assert_eq!(m(5.0).compile_s(), 3.0);

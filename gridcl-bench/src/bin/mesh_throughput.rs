@@ -19,7 +19,7 @@
 //!
 //! Everything runs in f64, with the protocol of `gridcl_bench::protocol`: a warm-up checked
 //! against closed forms (entity counts; the volume and centroid of the unit cube; K J = I),
-//! then the median of `--runs` timed runs (default 10). `--vector-size` chooses
+//! then the median of `--runs` timed runs (default 10), each of at least 20 ms (ADR-0018). `--vector-size` chooses
 //! `with_vector_size(Policy)`, `with_vector_size(Scalar)` or both (default). `--target`,
 //! `--fallback-reason` and `--out` are as in `vector_sweep`; the commit likewise.
 
@@ -237,6 +237,8 @@ fn run(
                 items,
                 times_s: measured.times_s.clone(),
                 median_s,
+                calls_per_run: measured.calls_per_run,
+                calibration_s: measured.calibration_s,
                 per_s: items as f64 / median_s,
                 commit: machine.commit.clone(),
                 profile: protocol::profile().to_owned(),
