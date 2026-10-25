@@ -323,6 +323,16 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T7, T12, T13, T14, T19
   - Parallel with: T15
   - Risks / notes: question 7.
+- [ ] **T21 CPU digit counting without atomics (SortDigits, blocks scheme)**
+  - Goal: the radix sort's digit count on CPUs without shared-memory atomics. T15's profile of one 10^7-key sort (two words, eight passes, CubeCL `[profiling]` log, vector size 1, 16 KiB blocks, all threads) gave `SortDigitsKernel` 1.60 s of 1.99 s (80%; 165–390 ms a pass), `ScatterBlocksKernel` 0.35 s and `ScanTileKernel` 0.03 s. On the CPU runtime a cube's units are threads and every key's `fetch_add` contends for the same 256 shared counters.
+  - Crates/files: `gridcl-device/src/primitives/radix_sort.rs`; `gridcl-device/tests/{primitives_prop.rs, vector_invariance.rs}` if a case is missing; `docs/perf/data/m3s-sweep-cpu-m3max.json` (SortDigits records replaced).
+  - Change: under `Scheme::Blocks`, a counting kernel generic over N in which each unit counts its block into its own shared column (`chunk_digits · cube_dim` u32, the scatter's layout and chunking) and the columns are summed in unit order into `counts[digit · cubes + cube]`. `Scheme::Split` (GPUs) keeps the atomic kernel. The increments stay scalar per lane ("Where vectors apply": the histogram phase stays scalar); no cross-lane operations.
+  - Public API added or changed: none.
+  - Tests: the existing sort tests on the blocks scheme at every vector size, including `radix_sort_both_schemes` with eight-digit chunks and `sort_digits_sizes`; a case with several digit chunks at 10^6 + 3 keys if none exists.
+  - Verify: `cargo test -p gridcl-device`; Metal; Locust CUDA and CPU (`hpc-test`). Then the M3 Max SortDigits sweep again under T15's conditions (`vector_sweep --families sortdigits`), its records replacing T15's, and the profile repeated for the report.
+  - After: T15
+  - Parallel with: T20 (one local cargo job at a time)
+  - Risks / notes: The histogram primitive (`histogram.rs`, Scalar family) has the same pattern, but its bin count is unbounded (connectivity uses one bin per entity), so per-unit columns do not fit in general. It stays as is; a few-bin variant is left to M10. T16's Locust CPU SortDigits part runs after T21, so that both CPU devices measure the same kernel.
 - [ ] **T17 Policy, report and throughput**
   - Goal: apply the rule.
   - Crates/files: `gridcl-device/vector-policy.toml`, `docs/perf/vectorization.md`, `docs/perf/data/m3s-throughput-cpu-{m3max,kathleen}.json`.
@@ -333,7 +343,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - Public API added or changed: none (policy values only).
   - Tests: all four `perf_record` tests and `policy_covers_every_kind_and_class` pass.
   - Verify: `cargo test -p gridcl-bench -p gridcl-device`.
-  - After: T15, T16, T20
+  - After: T15, T16, T20, T21
   - Parallel with: –
   - Risks / notes: –
 - [ ] **T18 Whole suite under the chosen policy on every target; test-time budgets**
@@ -434,6 +444,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-25 | T14, T20 | New task T20 implements ADR-0017; T17 now runs after it. T14's risk note (an ADR delays T15–T17) does not apply: `vector_sweep --cube-dim auto` already measures both unit settings on the M3 Max, so T15 and T16 run in parallel with T20. Acceptance bullets 3 and 4 now name the CPU units (ADR-0017). | Maintainer accepted ADR-0017 (2026-10-25). | ADR-0017 |
 | 2026-10-25 | T8 (found in T15) | `Machine::new` recorded the CubeCL client's name as `backend` (`wgpu<msl>` on Metal), but `SweepRecord::backend` and `perf_record` use the `GRIDCL_TEST_DEVICE` name (`metal`). New `protocol::backend()` reads `GRIDCL_TEST_DEVICE` (`cpu` when unset); fixed in a separate `M3s T8` commit before T15's Metal sweep. CPU records are unchanged (the CPU client is named `cpu`), so T15's CPU sweep at 851b635 stands. | The Metal sweep's records did not match `benchmark_data_covers_required_targets`. | – |
 | 2026-10-25 | T15 | Conditions as run, for T17's report: mains power (100%, charged) and Teams closed, confirmed by the maintainer; `hw.perflevel0.physicalcpu` 12, `hw.perflevel1.physicalcpu` 4 (Mac15,9); release builds, kernel cache off, no other cargo job. Microsoft Defender (system security, cannot be closed) used 0.4–0.7 of a core throughout. One family per part, each started only once the 1-minute load average was below 3 (`uptime` and the top three processes logged before and after each part). CPU: commit 851b635, both `cube_dim` modes (`--cube-dim auto`), 1,800 records, 11:33–12:17 (SortDigits 738 s, GeomFactors 1,156 s, the others 1–65 s), so the planned hours-long runs were not needed. Metal: commit f0aad79 (the backend-name fix), 207 records, 12:25–12:26; sizes 8 and 16 run at 4. The first Metal run (backend `wgpu<msl>`) was discarded. Fill and Copy at 10^5 and 10^6 take 15–150 µs, so their medians are noisy (neighbouring configurations differ by up to 3×); TopologyKeys takes 11.5 ms at 10^6 but only 20 ms at 10^7. | Plan records conditions in the report (T17), which needs them; the scratchpad logs do not persist. | – |
+| 2026-10-25 | T21 | New task T21 before T17: digit counting without atomics on CPUs. T17 now runs after it; T16's Locust CPU SortDigits part waits for it. | T15's profile: the atomic digit count is 80% of the CPU sort (about 20 ns a key, against about 4 ns for the scatter). Maintainer's decision (2026-10-25). No public API or design change ("the histogram and scatter phases stay scalar" still holds). | – |
 
 ## Review
 
