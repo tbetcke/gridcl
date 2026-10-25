@@ -1,6 +1,6 @@
 # ADR-0018: Batched timed runs, and a backstop for the 3% rule
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-25
 - **Raised in:** M3s T17 (trial `policy_report` on the M3 Max and Locust data)
 - **Design sections affected:** "Vectorization and CPU execution", "Benchmarks" ("What it reports", "Decision rule"); roadmap acceptance of M3s (bullet 3).
@@ -92,4 +92,4 @@ Option 2.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer, 2026-10-25, as proposed (20 ms a run, the 1.10 bound). The GPUs (Metal, H100) are swept again as well.
