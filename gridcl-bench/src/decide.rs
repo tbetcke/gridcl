@@ -16,7 +16,8 @@
 //!   of the fastest admitted one at both sizes, the smallest vector size wins, then the smallest
 //!   tile, then the smallest block (item 6), then all hardware threads (ADR-0017).
 //! - A 4-byte entry shared by f32 and u32 takes a size only if every 4-byte type measured admits
-//!   it, and must be within 3% for each of them.
+//!   it, and must be within 3% for each of them, of that type's fastest configuration at a size
+//!   every type admits (ADR-0019).
 //! - A configuration whose requested size ran narrower on every device is chosen only if no
 //!   other configuration qualifies, so the TOML holds sizes that ran (item 6, register budget).
 //! - Backstop (ADR-0018): if no admitted configuration is within 3% at both sizes (for every
@@ -410,7 +411,9 @@ struct TypeView {
     times: [BTreeMap<Config, Timing>; 2],
     /// Sizes measured at 10^6: 1, and the sizes at least 10% faster than 1 at both rule sizes.
     admitted: Vec<usize>,
-    /// The fastest admitted time at each rule size.
+    /// The sizes every type of the entry admits (ADR-0019); `admitted` until [`Self::restrict`].
+    entry: Vec<usize>,
+    /// The fastest time at a size in `entry`, at each rule size.
     fastest: [f64; 2],
 }
 
@@ -438,8 +441,18 @@ impl TypeView {
             scalar,
             fastest: [fastest[0]?, fastest[1]?],
             times,
+            entry: admitted.clone(),
             admitted,
         })
+    }
+
+    /// Measures against the sizes every type of the entry admits (ADR-0019). `None` if none
+    /// of them was measured at both rule sizes.
+    fn restrict(&mut self, entry: &[usize]) -> Option<()> {
+        let fastest = [0, 1].map(|i| best(&self.times[i], |v| entry.contains(&v)));
+        self.fastest = [fastest[0]?, fastest[1]?];
+        self.entry = entry.to_vec();
+        Some(())
     }
 
     /// The configuration's time over the fastest admitted, at each rule size.
@@ -499,6 +512,21 @@ fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -
             None => return defaults(format!("{}: no data at both 10^6 and 10^7", scalar.name())),
         }
     }
+    // A shared entry measures every type against what every type admits (ADR-0019).
+    let entry: Vec<usize> = views[0]
+        .admitted
+        .iter()
+        .copied()
+        .filter(|n| views.iter().all(|v| v.admitted.contains(n)))
+        .collect();
+    for v in &mut views {
+        if v.restrict(&entry).is_none() {
+            return defaults(format!(
+                "{}: no data at both 10^6 and 10^7",
+                v.scalar.name()
+            ));
+        }
+    }
 
     // Configurations every type measured at both sizes, at a size every type admits.
     let candidates: Vec<Config> = views[0].times[0]
@@ -506,9 +534,7 @@ fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -
         .copied()
         .filter(|c| {
             views.iter().all(|v| {
-                v.admitted.contains(&c.0)
-                    && v.times[0].contains_key(c)
-                    && v.times[1].contains_key(c)
+                v.entry.contains(&c.0) && v.times[0].contains_key(c) && v.times[1].contains_key(c)
             })
         })
         .collect();
@@ -596,7 +622,7 @@ fn reason(views: &[TypeView], config: Config, narrower: bool) -> String {
                 .filter_map(|v| {
                     let all = v.times[i]
                         .iter()
-                        .filter(|(c, _)| v.admitted.contains(&c.0))
+                        .filter(|(c, _)| v.entry.contains(&c.0))
                         .filter(|(c, _)| c.3 == Some(CubeDimMode::Plan))
                         .map(|(_, t)| t.time_s)
                         .min_by(f64::total_cmp)?;
@@ -986,15 +1012,27 @@ mod tests {
         ));
         let d = decide(&data(sweeps.clone()));
         let c = entry(&d, CPU, KernelKind::Gather, 4);
-        // Size 1 is 100% slower than f32's fastest: beyond the backstop's bound (ADR-0018).
-        assert_eq!((c.vector_size, c.fit), (1, Fit::Unresolved));
+        // Size 1 is measured against size 1, the only size both admit (ADR-0019).
+        assert_eq!((c.vector_size, c.fit), (1, Fit::Rule), "{}", c.reason);
         assert!(
-            c.reason.starts_with("unresolved: ")
-                && c.reason
-                    .ends_with("; size 4 admitted for f32 only (shared 4-byte entry)"),
+            c.reason
+                .ends_with("; size 4 admitted for f32 only (shared 4-byte entry)"),
             "{}",
             c.reason
         );
+        // With a second block, f32's fastest at size 1 is the reference, not its size 4.
+        let mut blocks = sweeps.clone();
+        for scalar in [Scalar::F32, Scalar::U32] {
+            blocks.extend(family(
+                CPU,
+                "a",
+                KernelKind::Gather,
+                scalar,
+                &[((1, None, Some(4 << 10)), 1.2)],
+            ));
+        }
+        let c = entry(&decide(&data(blocks)), CPU, KernelKind::Gather, 4).clone();
+        assert_eq!((c.vector_size, c.cpu_block, c.fit), (1, Some(4), Fit::Rule));
         // Both admit 4: it is chosen.
         sweeps.extend(family(
             CPU,

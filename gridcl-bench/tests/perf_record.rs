@@ -425,10 +425,21 @@ fn policy_follows_the_decision_rule() {
                     continue;
                 }
                 // Every 4-byte type measured must admit a shared entry (ADR-0015, item 6).
-                let views: Vec<TypeView> = with_data
+                let mut views: Vec<TypeView> = with_data
                     .iter()
                     .map(|&scalar| TypeView::new(&data, class, kind, scalar))
                     .collect();
+                // A shared entry measures each type against its fastest configuration at a size
+                // every type admits (ADR-0019).
+                let entry: BTreeSet<usize> = views[0]
+                    .admitted
+                    .iter()
+                    .copied()
+                    .filter(|n| views.iter().all(|v| v.admitted.contains(n)))
+                    .collect();
+                for v in &mut views {
+                    v.measure_against(&entry, &what);
+                }
                 for v in &views {
                     let what = format!("{what} ({})", v.scalar.name());
                     if n > 1 {
@@ -465,7 +476,7 @@ fn policy_follows_the_decision_rule() {
                 let candidates: Vec<Config> = views[0].times[0]
                     .keys()
                     .copied()
-                    .filter(|c| views.iter().all(|v| v.admitted.contains(&c.0)))
+                    .filter(|c| entry.contains(&c.0))
                     .collect();
                 for c in &candidates {
                     if let Some(w) = worst(c) {
@@ -508,7 +519,8 @@ fn policy_follows_the_decision_rule() {
 }
 
 /// One scalar type's view of the rule: class times at both rule sizes, the admitted sizes (1,
-/// and every size at least 10% faster at both), and the fastest admitted time at each size.
+/// and every size at least 10% faster at both), and the fastest time at each size at a size the
+/// whole entry admits (ADR-0019).
 struct TypeView {
     scalar: Scalar,
     times: Vec<BTreeMap<Config, f64>>,
@@ -532,21 +544,25 @@ impl TypeView {
                         .all(|t| speedup(t, v).is_some_and(|s| s >= 1.1))
             })
             .collect();
-        let fastest = [0, 1].map(|i| {
-            best(&times[i], |v| admitted.contains(&v)).unwrap_or_else(|| {
-                panic!(
-                    "[{class:?}] {kind:?} {}: nothing admitted at {}",
-                    scalar.name(),
-                    RULE_SIZES[i]
-                )
-            })
-        });
         TypeView {
             scalar,
             times,
             admitted,
-            fastest,
+            fastest: [f64::NAN; 2],
         }
+    }
+
+    /// Sets `fastest` from the configurations at the sizes in `entry`.
+    fn measure_against(&mut self, entry: &BTreeSet<usize>, what: &str) {
+        self.fastest = [0, 1].map(|i| {
+            best(&self.times[i], |v| entry.contains(&v)).unwrap_or_else(|| {
+                panic!(
+                    "{what} ({}): nothing admitted at {}",
+                    self.scalar.name(),
+                    RULE_SIZES[i]
+                )
+            })
+        });
     }
 }
 
