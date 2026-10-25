@@ -351,6 +351,7 @@ case_myriad_cpu_job_script() {
     expect_line "$s" 'export GRIDCL_TEST_DEVICE=cpu' "CPU test device"
     expect_no_grep "$s" 'GRIDCL_TEST_DEVICE=cuda' "no CUDA test device"
     expect_line "$s" "GRIDCL_HPC_CUDA_PATH=''" "no CUDA_PATH"
+    expect_line "$s" 'export GRIDCL_HPC_TARGET=myriad-cpu' "target exported for gridcl-bench"
     expect_grep "$s" "CARGO_TARGET_DIR=$TREE/target/myriad-cpu" "own CARGO_TARGET_DIR in the shared tree"
     bash -n "$s" || fail "rendered script is not valid bash"
     awk '/^#\$/ { if (cmd) bad = 1 } /^[^#]/ && NF { cmd = 1 } END { exit bad }' "$s" ||

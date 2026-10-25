@@ -127,7 +127,8 @@ submit_render() {
     printf '%s\n' "$rendered"
     echo
     echo "# --- job settings, rendered by scripts/hpc/remote-test.sh ---"
-    printf 'GRIDCL_HPC_TARGET=%q\n' "$TARGET"
+    # Exported: gridcl-bench's binaries name their records after it.
+    printf 'export GRIDCL_HPC_TARGET=%q\n' "$TARGET"
     printf 'GRIDCL_HPC_SCHEDULER=%q\n' "$CFG_SCHEDULER"
     printf 'GRIDCL_HPC_TREE=%q\n' "$TREE"
     printf 'GRIDCL_HPC_BRANCH=%q\n' "$GIT_BRANCH"

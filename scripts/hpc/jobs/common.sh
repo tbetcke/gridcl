@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Shared part of the job scripts. remote-test.sh appends it to the rendered
 # jobs/<target>.sh, after the scheduler lines and the job settings:
-#   GRIDCL_HPC_TARGET, GRIDCL_HPC_SCHEDULER (sge | slurm | direct), GRIDCL_HPC_TREE, GRIDCL_HPC_BRANCH, GRIDCL_HPC_COMMIT, GRIDCL_HPC_DIRTY,
+#   GRIDCL_HPC_SCHEDULER (sge | slurm | direct), GRIDCL_HPC_TREE, GRIDCL_HPC_BRANCH, GRIDCL_HPC_COMMIT, GRIDCL_HPC_DIRTY,
 #   GRIDCL_HPC_COMMAND, GRIDCL_HPC_BUILD (may be empty), GRIDCL_HPC_MODULES,
-#   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported CARGO_TARGET_DIR,
+#   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported GRIDCL_HPC_TARGET, CARGO_TARGET_DIR,
 #   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE (cuda; cpu on myriad-cpu and kathleen) and, for
 #   --ranks N, GRIDCL_RANKS=N (and on two Kathleen nodes GRIDCL_MPIRUN_FLAGS=--map-by node).
 # JOB_ID comes from the scheduler (SGE; jobs/kathleen.sh sets it from SLURM_JOB_ID), or from
