@@ -1,6 +1,6 @@
 # ADR-0019: Shared 4-byte entries measure 3% against what every type admits
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-25
 - **Raised in:** M3s T22 (trial `policy_report` on the batched sweep data)
 - **Design sections affected:** "Vectorization and CPU execution", "Benchmarks" ("Decision rule"); roadmap acceptance of M3s (bullet 3).
@@ -54,4 +54,4 @@ Option 2. ADR-0015 already makes admission a property of the shared entry ("admi
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer, 2026-10-25, as proposed.
