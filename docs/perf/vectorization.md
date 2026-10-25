@@ -1,8 +1,144 @@
 # Vectorization on gridcl's devices (M3s)
 
-Draft. The protocol, conditions, observations, generated tables and compile times are added in
-M3s T17 (docs/plans/M3s.md); `policy_report` writes the generated part between its marker
-comments.
+This report records how M3s chose `gridcl-device/vector-policy.toml` (docs/design.md,
+"Vectorization and CPU execution", "Benchmarks"). The tables under "Results" are written by
+`cargo run -p gridcl-bench --bin policy_report` from the JSON under `docs/perf/data/`, between
+its marker comments; the rest is written by hand. The CpuSimd512 sweep and the Kathleen
+throughput run wait for Kathleen, which was drained for maintenance during M3s (ADR-0016;
+docs/plans/M3s.md, T16 and T17). Until then CpuSimd512 and CpuSimd256 keep vector size 1, tile
+16, 16 KiB blocks and all hardware threads, and their rows say "no data".
+
+## Protocol
+
+- **Binary:** `vector_sweep` (gridcl-bench), release build, CubeCL's persistent kernel cache
+  off. One timed region per family, the smallest call whose launches all take their shape from
+  the family's plan (docs/plans/M3s.md, question 13): the primitives for Fill, Copy, Reduce
+  and Gather; `inclusive_scan` then `exclusive_scan` for ScanTile; `radix_sort` for SortDigits;
+  the hidden `gridcl_topology::bench` hooks for TopologyKeys and PermutationInfo, which include
+  the cell-fastest transpose at sizes above 1; `DeviceGrid::evector` on a fresh clone for
+  EVector; X, J, det J and K on P2 tetrahedra and P2 triangles in 3D for GeomFactors.
+- **Configurations:** vector sizes 1, 2, 4, 8 and 16 on every device (a device that cannot run
+  a size records the size it ran, "(ran m)"); QuadField tiles 1, 4 and 16 for GeomFactors; on
+  CPUs, blocks of 4, 16 and 64 KiB, and on the M3 Max both CPU unit settings (all 16 threads,
+  or the 12 performance cores; ADR-0017). Sizes 10^5, 10^6 and 10^7 items (cells for the mesh
+  families). `KernelKind::Scalar` is measured on CPUs at vector size 1 only, for its blocks and
+  units: histogram (u32) and segmented reduce (f64).
+- **Timing (ADR-0018):** a warm-up call checked against a host reference in f64; one untimed
+  calibration call that fixes k = ⌈20 ms / its time⌉, at most 10,000; ten timed runs of k calls,
+  each call ending with `client.sync()`; the median of the ten per-call times. The compile time
+  is the warm-up minus that median; the bandwidth ratio is relative to a u32 copy of the same
+  length on the same device.
+- **Decision rule:** "Benchmarks" in docs/design.md, as read in ADR-0015, ADR-0017, ADR-0018 and
+  ADR-0019 (a summary heads the generated tables).
+
+## Conditions
+
+All sweep data were measured at commit 3ab0f31 (M3s T22).
+
+| Device | Class | Run | Records | Conditions |
+| --- | --- | --- | ---: | --- |
+| M3 Max CPU runtime (Mac15,9; 12 performance and 4 efficiency cores) | CpuSimd128 | 2026-10-25 18:05–19:01, one family per part; Reduce repeated 19:12–19:14 | 1,800 | Mains power (100%, charged) and other applications closed, confirmed by the maintainer; each part started below a 1-minute load average of 3. Microsoft Defender (cannot be closed) used 0.3–0.7 of a core, with one burst of 1.7 cores before Fill; Outlook and Docker still ran during the first Reduce part, which was therefore repeated with both closed. |
+| M3 Max Metal | Gpu | 2026-10-25 19:06–19:08; Fill repeated at 19:17 | 207 | As above. Sizes 8 and 16 run at 4. |
+| Locust Grace CPU (Neoverse-V2, 72 threads; no performance-core count) | CpuSimd128 | job 20261025170542-3734076, 825 s | 900 | `node load: idle` before and after. |
+| Locust H100 (GH200) | Gpu | job 20261025180049-1677957, 196 s | 294 | `node load: idle` before and after; no clamped sizes. |
+| Kathleen node (2 × Xeon Gold 6248, AVX-512) | CpuSimd512 | – | – | Not yet measured: every node drained for the `rdss-upgrade` maintenance, and Myriad's D nodes (the fallback) started no job from 2026-10-24 on. |
+
+Batching (ADR-0018) cut the noise of the sub-millisecond calls: the spread of the 3rd to 8th
+sorted run over the median fell, for example, on the M3 Max CPU from 0.24 / 0.08 to
+0.03 / 0.01 (Fill, 10^6 / 10^7) and from 1.03 / 0.52 to 0.38 / 0.40 (Reduce), on Grace from
+0.33 / 0.30 to 0.15 / 0.09 (Gather), and on the H100 to below 0.01. Six entries (nine table
+rows) still have no admitted configuration within 3% of the fastest at both sizes: Fill
+CpuSimd128 4-byte, Reduce Gpu 4- and 8-byte, GeomFactors CpuSimd128 f32 and f64, and Scalar
+CpuSimd128 f64. The rule then takes the closest (3.2–6.7% slower), and the tables mark them
+"closest".
+
+## Observations
+
+- **Streaming kernels on CPUs gain most at 10^7.** Fill and Copy on Grace run 4.3–6.1× faster
+  at sizes 4 to 16 than at 1 for 10^7 items, but only 0.9–1.2× at 10^6, where the data fit in
+  cache and the launch dominates; on the M3 Max they gain up to 1.5× (Copy at 10^7: 0.95–1.08×). The 4-byte
+  entries take 16 (Fill) and 8 (Copy); f64 Fill stays at 1, because Grace does not gain at 10^6.
+- **Barrier-heavy kernels gain on GPUs.** Reduce and ScanTile run 1.3–2.4× faster at sizes 4 to
+  16 on both the H100 and Metal; SortDigits gains 1.8–2.3× on Metal but only 1.1–1.3× on the
+  H100 (0.86× at size 16 and 10^7). The Gpu class takes 16 (Reduce 4-byte), 4 (Reduce f64), 8
+  (ScanTile) and 4 (SortDigits). On CPUs, SortDigits is flat (the scatter phase, scalar by
+  design, takes about 90% of the sort after T21), and Reduce and ScanTile gain 1.1–1.9× on the
+  M3 Max and at most 1.2× on Grace; the class means take the Reduce 4-byte and ScanTile entries
+  to 16.
+- **Gather is latency-bound.** At 10^7 no size makes Gather more than 10% faster on any device
+  (and sizes 8 and 16 slow it on the H100, down to 0.54×); the gains at 10^6 (up to 1.9× on
+  Grace for u32) are not repeated at 10^7, so it stays at 1.
+- **The cell-fastest copy does not pay for itself yet.** At 10^7, TopologyKeys and
+  PermutationInfo are slower at every size above 1 on every device (0.45–0.88×), and at 10^6
+  on every device except the M3 Max CPU for PermutationInfo (up to 1.16×), because the
+  transpose (scalar, `KernelKind::Scalar`) costs more than the vector loads save. They stay at 1, where no copy is
+  made. A persistent cell-fastest layout, which would remove the per-launch transpose, is a
+  question for the M10 re-run.
+- **Geometry on CPUs gains from small tiles and vectors.** GeomFactors runs 2.0–3.0× faster in
+  f32 at size 4 on both CPUs; in f64 it gains 1.6–1.7× on the M3 Max but 0.96–1.13× on Grace.
+  The policy takes size 4 at tile 4 for both types (the tile entry is per class and element
+  size). EVector takes 16 (f32) and 8 (f64) on
+  CpuSimd128, driven by Grace.
+- **Wide vectors hurt geometry on GPUs.** EVector and GeomFactors on the H100 run at 0.02–0.34×
+  at sizes 8 and 16 (register pressure; f64 worst), and Metal's GeomFactors loses 22–29% at
+  size 4. The Gpu
+  class keeps 1 for EVector, GeomFactors, Gather, TopologyKeys and PermutationInfo, and the
+  QuadField tile stays 16.
+
+## CPU units (question 8, ADR-0017)
+
+The sweep measured every CPU configuration with all hardware threads and with the performance
+cores. Grace reports no performance-core count, so it gives both settings the same time and
+the M3 Max decides. The policy takes the performance cores for 12 of the 17 CpuSimd128 entries
+with data, mostly the kernels with barriers or several phases: Reduce (1.6× at 4 bytes; 3.7× /
+1.2× at 8 bytes), ScanTile (1.7× / 2.6×), SortDigits (1.6× / 1.1×), Gather, TopologyKeys,
+PermutationInfo, the 4-byte Fill entry, f64 EVector and both Scalar entries. GeomFactors keeps
+all threads in both types, as T14's preliminary sweep found (below), and so do Copy, f64 Fill
+and f32 EVector. The reasons in
+the tables give each gain over the best admitted all-threads configuration.
+
+## Compile times
+
+The compile time of a configuration is its warm-up minus its median; only the first
+configuration of each vector size compiles, and the first configuration of a family also pays
+one-time setup. Per device, the median over families is a few milliseconds at every size (CPU
+runtime 0.3–3.4 ms, CUDA below 0.1 ms, Metal 0.1–1.0 ms). The largest are the geometry kernels:
+
+| Device | Family | 1 | 2 | 4 | 8 | 16 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| M3 Max CPU | GeomFactors | 2,775 ms | 155 ms | 184 ms | 273 ms | 521 ms |
+| M3 Max CPU | EVector | 105 ms | 28 ms | 45 ms | 86 ms | 241 ms |
+| Grace CPU | GeomFactors | 988 ms | 245 ms | 286 ms | 409 ms | 738 ms |
+| Grace CPU | EVector | 80 ms | 36 ms | 57 ms | 107 ms | 287 ms |
+| H100 | GeomFactors | 216 ms | 210 ms | 216 ms | 243 ms | 295 ms |
+| H100 | EVector | 34 ms | 46 ms | 82 ms | 178 ms | 476 ms |
+| Metal | GeomFactors | 239 ms | 368 ms | 610 ms | (ran 4) | (ran 4) |
+
+Above size 2 the compile time of the geometry kernels grows with the vector size, by about 2–3×
+from 2 to 16 on the CPUs and up to 10× for EVector on the H100; the other families stay below
+about 0.4 s at every size. These are one-time costs per process, which CubeCL's kernel cache
+removes in later runs.
+
+## Throughput (acceptance bullet 6)
+
+`mesh_throughput` (f64, about 10^6 cells, the median of ten runs; ADR-0018 timing), with the
+committed policy and with every kernel at vector size 1 (`--vector-size scalar`; blocks and
+units still from the policy). Entities: edges and faces created by `create_entities(1)` and
+`create_entities(2)` on fresh P1 meshes. Factors: (cell, quadrature point) pairs for which X, J,
+det J and K are computed on P2 tetrahedra with a degree-4 rule.
+
+| Device | Measure | Mesh | Policy | Scalar | Policy / scalar |
+| --- | --- | --- | ---: | ---: | ---: |
+| M3 Max CPU | entities / s | P1 tetrahedra (998,250 cells) | 1.48e7 | 1.41e7 | 1.05 |
+| M3 Max CPU | entities / s | P1 hexahedra | 8.35e6 | 8.46e6 | 0.99 |
+| M3 Max CPU | factors / s | P2 tetrahedra | 3.13e8 | 2.48e8 | 1.26 |
+| Kathleen CPU | – | – | – | – | not yet measured |
+
+M3 Max run: commit b96f49c (the committed policy), 2026-10-25 20:07, 32 s; mains power and
+other applications closed (confirmed by the maintainer); 1-minute load average 2.98 before,
+Microsoft Defender at 0.14 of a core and Spotlight at 0.08. Entity creation is dominated by the
+radix sort and the scalar helpers, which the policy leaves at size 1 on CPUs, so it changes
+little; the geometric factors follow GeomFactors' size-4 entry.
 
 ## CPU `cube_dim` and test times (T14)
 
@@ -81,6 +217,8 @@ the most. GeomFactors, which is compute-bound and has no barriers, is 11–23% s
 units, because it loses the efficiency cores' work. A single rule for every kind would therefore
 cost GeomFactors. ADR-0017 proposes letting the policy choose the unit count per kind and
 element size from T15's data.
+
+## Results
 
 <!-- BEGIN GENERATED by policy_report; do not edit -->
 
