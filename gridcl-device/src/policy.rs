@@ -308,8 +308,8 @@ impl VectorPolicy {
         })
     }
 
-    /// Preferred vector size for one kernel family and scalar size; 1 until benchmarked, and 1
-    /// for scalar sizes the policy does not list.
+    /// Preferred vector size for one kernel family and scalar size, chosen from the M3s
+    /// benchmarks (docs/perf/vectorization.md); 1 for scalar sizes the policy does not list.
     ///
     /// # Example
     ///
@@ -637,27 +637,57 @@ mod tests {
         }
     }
 
+    /// A policy file with every entry at its default (vector size 1, tile 16, 16 KiB blocks, all
+    /// threads), in the layout of vector-policy.toml, for tests that edit entries by text.
+    fn uniform_toml() -> String {
+        fn table(out: &mut String, class: DeviceClass, name: &str, value: &str) {
+            out.push_str(&format!("[{}.{name}]\n", class.name()));
+            for kind in KernelKind::ALL {
+                out.push_str(&format!(
+                    "{} = {{ 4 = {value}, 8 = {value} }}\n",
+                    kind.name()
+                ));
+            }
+        }
+        let mut out = String::new();
+        for class in DeviceClass::ALL {
+            out.push_str(&format!(
+                "[{}]\nquad_tile = {{ 4 = 16, 8 = 16 }}\n",
+                class.name()
+            ));
+            table(&mut out, class, "vector_size", "1");
+            if class.is_cpu() {
+                table(&mut out, class, "cpu_block", "4");
+                table(&mut out, class, "cpu_units", "\"all\"");
+            }
+        }
+        out
+    }
+
     #[test]
     fn invalid_policy_entries_are_rejected() {
-        let bad_size = POLICY_TOML.replacen("Fill = { 4 = 1", "Fill = { 4 = 3", 1);
+        let base = uniform_toml();
+        for class in DeviceClass::ALL {
+            assert!(VectorPolicy::parse(&base, class).is_ok(), "{class:?}");
+        }
+        let bad_size = base.replacen("Fill = { 4 = 1", "Fill = { 4 = 3", 1);
         assert!(VectorPolicy::parse(&bad_size, DeviceClass::CpuSimd128).is_err());
-        let bad_tile = POLICY_TOML.replacen("quad_tile = { 4 = 16", "quad_tile = { 4 = 32", 1);
+        let bad_tile = base.replacen("quad_tile = { 4 = 16", "quad_tile = { 4 = 32", 1);
         assert!(VectorPolicy::parse(&bad_tile, DeviceClass::CpuSimd128).is_err());
-        let scalar_tile = POLICY_TOML.replacen("quad_tile = { 4 = 16", "quad_tile = 16", 1);
+        let scalar_tile = base.replacen("quad_tile = { 4 = 16", "quad_tile = 16", 1);
         assert!(VectorPolicy::parse(&scalar_tile, DeviceClass::CpuSimd128).is_err());
         for units in ["0", "2", "3", "32"] {
-            let bad_block =
-                POLICY_TOML.replacen("Fill = { 4 = 4", &format!("Fill = {{ 4 = {units}"), 1);
+            let bad_block = base.replacen("Fill = { 4 = 4", &format!("Fill = {{ 4 = {units}"), 1);
             let accepted = VectorPolicy::parse(&bad_block, DeviceClass::CpuSimd128).is_ok();
             assert_eq!(accepted, units == "2", "cpu_block {units}");
         }
-        let no_blocks = POLICY_TOML.replacen("[CpuSimd128.cpu_block]", "[CpuSimd128.other]", 1);
+        let no_blocks = base.replacen("[CpuSimd128.cpu_block]", "[CpuSimd128.other]", 1);
         assert!(VectorPolicy::parse(&no_blocks, DeviceClass::CpuSimd128).is_err());
-        let gpu_blocks = format!("{POLICY_TOML}[Gpu.cpu_block]\nFill = {{ 4 = 4, 8 = 4 }}\n");
+        let gpu_blocks = format!("{base}[Gpu.cpu_block]\nFill = {{ 4 = 4, 8 = 4 }}\n");
         assert!(VectorPolicy::parse(&gpu_blocks, DeviceClass::Gpu).is_err());
-        let missing = POLICY_TOML.replacen("PullBack = { 4 = 1, 8 = 1 }\n", "", 1);
+        let missing = base.replacen("PullBack = { 4 = 1, 8 = 1 }\n", "", 1);
         assert!(VectorPolicy::parse(&missing, DeviceClass::CpuSimd128).is_err());
-        let vector_scalar = POLICY_TOML.replacen("Scalar = { 4 = 1", "Scalar = { 4 = 2", 1);
+        let vector_scalar = base.replacen("Scalar = { 4 = 1", "Scalar = { 4 = 2", 1);
         assert!(VectorPolicy::parse(&vector_scalar, DeviceClass::CpuSimd128).is_err());
         for (value, ok) in [
             ("\"performance\"", true),
@@ -666,7 +696,7 @@ mod tests {
             ("\"efficiency\"", false),
             ("1", false),
         ] {
-            let units = POLICY_TOML.replacen(
+            let units = base.replacen(
                 "Reduce = { 4 = \"all\"",
                 &format!("Reduce = {{ 4 = {value}"),
                 1,
@@ -682,10 +712,9 @@ mod tests {
                 assert_eq!(policy.cpu_units(KernelKind::Reduce, 8), Some(CpuUnits::All));
             }
         }
-        let no_units = POLICY_TOML.replacen("[CpuSimd128.cpu_units]", "[CpuSimd128.other]", 1);
+        let no_units = base.replacen("[CpuSimd128.cpu_units]", "[CpuSimd128.other]", 1);
         assert!(VectorPolicy::parse(&no_units, DeviceClass::CpuSimd128).is_err());
-        let gpu_units =
-            format!("{POLICY_TOML}[Gpu.cpu_units]\nFill = {{ 4 = \"all\", 8 = \"all\" }}\n");
+        let gpu_units = format!("{base}[Gpu.cpu_units]\nFill = {{ 4 = \"all\", 8 = \"all\" }}\n");
         assert!(VectorPolicy::parse(&gpu_units, DeviceClass::Gpu).is_err());
     }
 

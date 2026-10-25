@@ -424,15 +424,17 @@ mod tests {
 
     #[test]
     fn measure_takes_the_calls_per_run_from_the_calibration_call() {
-        // The calibration call takes 8–10 ms, so k = 3, whatever the later calls take.
+        // The calibration call takes at least 8 ms, so k is at most 3, whatever the later
+        // calls take; the first call after the warm-up can be a few ms slower than the rest.
         let (m, calls) = measure_delayed(Duration::from_millis(8));
-        assert_eq!(m.calls_per_run, 3, "{m:?}");
+        let k = m.calls_per_run;
         assert!(m.calibration_s >= 0.008, "{m:?}");
-        assert_eq!(calls_per_run(Duration::from_secs_f64(m.calibration_s)), 3);
+        assert_eq!(k, calls_per_run(Duration::from_secs_f64(m.calibration_s)));
+        assert!((1..=3).contains(&k), "{m:?}");
         assert_eq!(
             calls,
-            2 + 3 * 3,
-            "warm-up, calibration and three runs of three calls"
+            2 + 3 * k,
+            "warm-up, calibration and three runs of k calls"
         );
         assert_eq!(m.times_s.len(), 3);
         // Time per call: the undelayed fills take far less than the calibration call.

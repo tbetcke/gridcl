@@ -65,7 +65,7 @@ impl LaunchPlan {
     ///   `VectorPolicy::cpu_units(kind, elem_bytes)` (or `testing::with_cpu_units`) says
     ///   `Performance` and the CPU reports a smaller count (macOS; ADR-0017). Each unit takes
     ///   blocks of `VectorPolicy::cpu_block_bytes(kind, elem_bytes)` of the widest stream
-    ///   (16 KiB until M3s), rounded to whole 128-byte lines (ADR-0015).
+    ///   (4, 16 or 64 KiB), rounded to whole 128-byte lines (ADR-0015).
     /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
     ///
     /// # Errors
@@ -350,24 +350,39 @@ mod tests {
     }
 
     #[test]
-    fn policy_and_scalar_give_one_until_benchmarked() {
+    fn policy_follows_the_entry_and_scalar_gives_one() {
         let props = props();
-        for v in [VectorSizeOverride::Policy, VectorSizeOverride::Scalar] {
-            let plan = plan_for(&props, KernelKind::Reduce, 1 << 20, 4, 16, 2, v).unwrap();
-            assert_eq!(plan.vector_size, 1);
+        let class = DeviceClass::from_properties(&props);
+        for kind in KernelKind::ALL {
+            for elem_bytes in [4, 8] {
+                let entry = VectorPolicy::for_class(class).vector_size(kind, elem_bytes);
+                let registers = props
+                    .vector_sizes_in_registers(elem_bytes, 2)
+                    .next()
+                    .unwrap_or(1);
+                let want = entry
+                    .min(registers)
+                    .min(props.hardware.max_vector_size)
+                    .max(1);
+                let policy = VectorSizeOverride::Policy;
+                let plan = plan_for(&props, kind, 1 << 20, elem_bytes, 16, 2, policy).unwrap();
+                assert_eq!(plan.vector_size, 1 << want.ilog2(), "{kind:?} {elem_bytes}");
+                let scalar = VectorSizeOverride::Scalar;
+                let plan = plan_for(&props, kind, 1 << 20, elem_bytes, 16, 2, scalar).unwrap();
+                assert_eq!(plan.vector_size, 1, "{kind:?} {elem_bytes}");
+            }
         }
     }
 
     #[test]
-    fn cpu_blocks_are_whole_lines_of_about_16_kib() {
+    fn cpu_blocks_are_whole_lines_of_the_policy_block() {
         let policy = VectorPolicy::for_class(DeviceClass::CpuSimd128);
-        for elem_bytes in [4, 8] {
-            let target = policy
-                .cpu_block_bytes(KernelKind::Fill, elem_bytes)
-                .unwrap();
-            assert_eq!(target, 16 << 10, "the policy's block until M3s's data");
-            for n in [1, 2, 4, 8, 16] {
-                let bytes = n * elem_bytes;
+        let blocks = KernelKind::ALL
+            .into_iter()
+            .flat_map(|kind| [4, 8].map(|bytes| policy.cpu_block_bytes(kind, bytes).unwrap()));
+        for target in blocks.chain([4 << 10, 16 << 10, 64 << 10]) {
+            // Vectors of 1 to 16 lanes of 4 or 8 bytes.
+            for bytes in [4, 8, 16, 32, 64, 128] {
                 let block = cpu_items_per_unit(bytes, target) * bytes;
                 assert!(block.is_multiple_of(CPU_LINE_BYTES), "{bytes}: {block}");
                 assert!(block <= target && block > target / 2, "{bytes}: {block}");
