@@ -4,6 +4,7 @@
 //! The overrides are scoped and thread-local, because gridcl runs one host thread per mesh.
 //! Precedence: the scoped per-kind override, then the scoped override, then the environment
 //! variable (`GRIDCL_VECTOR_SIZE`, `GRIDCL_QUAD_TILE`), then vector-policy.toml (ADR-0015).
+//! The CPU units and the performance-core count have scoped overrides only (ADR-0017).
 //!
 //! Without the feature this module is private and holds only the accessors the rest of the
 //! crate reads its properties through.
@@ -16,7 +17,7 @@ use cubecl::prelude::*;
 #[cfg(feature = "testing")]
 use std::cell::RefCell;
 
-use crate::{KernelKind, LaunchPlan, VectorSizeOverride};
+use crate::{CpuUnits, KernelKind, LaunchPlan, VectorSizeOverride};
 
 #[cfg(feature = "testing")]
 thread_local! {
@@ -27,6 +28,9 @@ thread_local! {
     static KIND_VECTOR_SIZE: RefCell<Option<Vec<(KernelKind, VectorSizeOverride)>>> =
         const { RefCell::new(None) };
     static CPU_BLOCK: RefCell<Option<usize>> = const { RefCell::new(None) };
+    static CPU_UNITS: RefCell<Option<CpuUnits>> = const { RefCell::new(None) };
+    /// `Some(cores)` replaces the detected performance-core count.
+    static PERFORMANCE_CORES: RefCell<Option<Option<u32>>> = const { RefCell::new(None) };
     static PLANS: RefCell<Option<Vec<(KernelKind, LaunchPlan)>>> = const { RefCell::new(None) };
 }
 
@@ -90,6 +94,24 @@ pub(crate) fn cpu_block_override() -> Option<usize> {
     return CPU_BLOCK.with(|b| *b.borrow());
     #[cfg(not(feature = "testing"))]
     None
+}
+
+/// The scoped CPU units override of [`with_cpu_units`], if any.
+pub(crate) fn cpu_units_override() -> Option<CpuUnits> {
+    #[cfg(feature = "testing")]
+    return CPU_UNITS.with(|u| *u.borrow());
+    #[cfg(not(feature = "testing"))]
+    None
+}
+
+/// The performance-core count plans use: the scoped one of [`with_performance_cores`], else the
+/// detected one (macOS), else `None`.
+pub(crate) fn performance_cores() -> Option<u32> {
+    #[cfg(feature = "testing")]
+    if let Some(cores) = PERFORMANCE_CORES.with(|c| *c.borrow()) {
+        return cores;
+    }
+    crate::cores::performance_cores()
 }
 
 /// The scoped tile-width override of [`with_quad_tile`], if any.
@@ -276,6 +298,64 @@ pub fn with_cpu_block_bytes<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
         "with_cpu_block_bytes: {bytes} is not a power of two from 4 KiB to 64 KiB"
     );
     scoped(&CPU_BLOCK, bytes, f)
+}
+
+/// CPU units for plans made inside `f`, in place of `VectorPolicy::cpu_units` for every kind
+/// on CPU devices (ADR-0017); no effect on GPUs. `Performance` still uses the
+/// performance-core count only where it is smaller than `max_units_per_cube`.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::testing::{with_cpu_units, with_performance_cores};
+/// use gridcl_device::{CpuUnits, DeviceClass, KernelKind, LaunchPlan};
+///
+/// let client = gridcl_testing::test_client();
+/// let all = LaunchPlan::elementwise(&client, KernelKind::Reduce, 1 << 20, 4, 16, 1).unwrap();
+/// let plan = with_performance_cores(Some(1), || {
+///     with_cpu_units(CpuUnits::Performance, || {
+///         LaunchPlan::elementwise(&client, KernelKind::Reduce, 1 << 20, 4, 16, 1)
+///     })
+/// })
+/// .unwrap();
+/// if DeviceClass::for_client(&client) != DeviceClass::Gpu {
+///     assert_eq!(plan.cube_dim.num_elems(), 1.min(all.cube_dim.num_elems()));
+/// }
+/// ```
+#[cfg(feature = "testing")]
+pub fn with_cpu_units<R>(units: CpuUnits, f: impl FnOnce() -> R) -> R {
+    scoped(&CPU_UNITS, units, f)
+}
+
+/// Replaces the detected performance-core count inside `f`; `None` means the CPU has no
+/// separate performance cores, so `CpuUnits::Performance` keeps all hardware threads.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::testing::{with_cpu_units, with_performance_cores};
+/// use gridcl_device::{CpuUnits, KernelKind, LaunchPlan};
+///
+/// let client = gridcl_testing::test_client();
+/// let units = |cores| {
+///     with_performance_cores(cores, || {
+///         with_cpu_units(CpuUnits::Performance, || {
+///             LaunchPlan::elementwise(&client, KernelKind::Fill, 1000, 4, 16, 1)
+///         })
+///     })
+///     .unwrap()
+///     .cube_dim
+///     .num_elems()
+/// };
+/// let all = with_cpu_units(CpuUnits::All, || {
+///     LaunchPlan::elementwise(&client, KernelKind::Fill, 1000, 4, 16, 1)
+/// })
+/// .unwrap();
+/// assert_eq!(units(None), all.cube_dim.num_elems());
+/// ```
+#[cfg(feature = "testing")]
+pub fn with_performance_cores<R>(cores: Option<u32>, f: impl FnOnce() -> R) -> R {
+    scoped(&PERFORMANCE_CORES, cores, f)
 }
 
 /// The plans made inside `f`, in order, so a test can assert the vector size it ran at. An

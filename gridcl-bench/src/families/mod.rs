@@ -208,15 +208,12 @@ pub fn sweep(
                                 cube_dim,
                             };
                             let what = format!("{kind:?} {} n = {n} {config:?}", scalar.name());
-                            let measured = with_config(
-                                client,
-                                kind,
-                                &config,
-                                machine.cores.performance,
-                                || measure(client, kind, options.runs, work.as_mut()),
-                            )
-                            .and_then(|m| m)
-                            .map_err(|e| format!("{what}: {e}"))?;
+                            let measured =
+                                with_config(kind, &config, machine.cores.performance, || {
+                                    measure(client, kind, options.runs, work.as_mut())
+                                })
+                                .and_then(|m| m)
+                                .map_err(|e| format!("{what}: {e}"))?;
                             let record = sweep_record(
                                 machine,
                                 options,

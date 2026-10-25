@@ -4,8 +4,9 @@
 //!
 //! A configuration is applied with the scoped overrides of `gridcl_device::testing`
 //! (ADR-0015): `with_kind_vector_size` for the family's vector size, `with_cpu_block_bytes` for
-//! the CPU block, `with_quad_tile` for the QuadField tile, and `with_properties` for the
-//! performance-core `cube_dim`. The size that actually ran comes from `record_plans`.
+//! the CPU block, `with_quad_tile` for the QuadField tile, and `with_cpu_units` with
+//! `with_performance_cores` for the CPU units (ADR-0017). The size that actually ran comes from
+//! `record_plans`.
 
 use std::any::Any;
 use std::process::Command;
@@ -14,9 +15,10 @@ use std::time::Instant;
 use cubecl::config::{CubeClRuntimeConfig, RuntimeConfig};
 use cubecl::prelude::Client;
 use gridcl_device::testing::{
-    record_plans, with_cpu_block_bytes, with_kind_vector_size, with_properties, with_quad_tile,
+    record_plans, with_cpu_block_bytes, with_cpu_units, with_kind_vector_size,
+    with_performance_cores, with_quad_tile,
 };
-use gridcl_device::{DeviceClass, KernelKind, VectorSizeOverride};
+use gridcl_device::{CpuUnits, DeviceClass, KernelKind, VectorSizeOverride};
 
 use crate::record::{Cores, CubeDimMode};
 
@@ -153,14 +155,14 @@ impl Measured {
     }
 }
 
-/// Runs `f` under `config`'s overrides for `kind`. `performance_cores` is the count that
-/// `CubeDimMode::PerformanceCores` lowers `max_units_per_cube` and `max_cube_dim.0` to.
+/// Runs `f` under `config`'s overrides for `kind`. `CubeDimMode::Plan` forces all hardware
+/// threads and `CubeDimMode::PerformanceCores` the performance cores, `performance_cores` of
+/// them, whatever the policy says (ADR-0017); both have no effect on GPUs.
 ///
 /// # Errors
 ///
 /// If `config` asks for the performance-core `cube_dim` without a count.
 pub fn with_config<R>(
-    client: &Client,
     kind: KernelKind,
     config: &Config,
     performance_cores: Option<u32>,
@@ -180,14 +182,13 @@ pub fn with_config<R>(
         None => f(),
     };
     match config.cube_dim {
-        CubeDimMode::Plan => Ok(f()),
+        CubeDimMode::Plan => Ok(with_cpu_units(CpuUnits::All, f)),
         CubeDimMode::PerformanceCores => {
             let cores = performance_cores
                 .ok_or("cube_dim = performance cores needs the performance-core count")?;
-            let mut props = client.properties().clone();
-            props.hardware.max_units_per_cube = cores;
-            props.hardware.max_cube_dim.0 = cores;
-            Ok(with_properties(props, f))
+            Ok(with_performance_cores(Some(cores), || {
+                with_cpu_units(CpuUnits::Performance, f)
+            }))
         }
     }
 }

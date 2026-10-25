@@ -6,7 +6,7 @@ use cubecl::prelude::*;
 use crate::buffer::pad_len;
 use crate::policy::is_vector_size;
 use crate::{
-    DeviceClass, GridError, KernelKind, Result, VectorPolicy, VectorSizeOverride, testing,
+    CpuUnits, DeviceClass, GridError, KernelKind, Result, VectorPolicy, VectorSizeOverride, testing,
 };
 
 /// Units per cube on GPUs, or `max_units_per_cube` if that is smaller.
@@ -61,9 +61,11 @@ impl LaunchPlan {
     /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` (at most `max_cube_dim.0`) if
     ///   that is smaller; `items_per_unit` is 1.
     /// - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`,
-    ///   ADR-0011), one unit per hardware thread, and each unit takes blocks of
-    ///   `VectorPolicy::cpu_block_bytes(kind, elem_bytes)` of the widest stream (16 KiB until
-    ///   M3s), rounded to whole 128-byte lines (ADR-0015).
+    ///   ADR-0011), one unit per hardware thread, or the performance-core count where
+    ///   `VectorPolicy::cpu_units(kind, elem_bytes)` (or `testing::with_cpu_units`) says
+    ///   `Performance` and the CPU reports a smaller count (macOS; ADR-0017). Each unit takes
+    ///   blocks of `VectorPolicy::cpu_block_bytes(kind, elem_bytes)` of the widest stream
+    ///   (16 KiB until M3s), rounded to whole 128-byte lines (ADR-0015).
     /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
     ///
     /// # Errors
@@ -139,13 +141,18 @@ fn plan_for(
     let num_vectors = pad_len(items)? / n;
     let num_vectors_u32 = u32::try_from(num_vectors).map_err(|_| GridError::TooLarge)?;
 
-    let cpu_block = VectorPolicy::for_class(class).cpu_block_bytes(kind, elem_bytes);
+    let policy = VectorPolicy::for_class(class);
+    let cpu_block = policy.cpu_block_bytes(kind, elem_bytes);
     let (cube_dim, items_per_unit) = if let Some(block) = cpu_block {
         let bytes = n.checked_mul(elem_bytes).ok_or(GridError::TooLarge)?;
-        (
-            hw.max_units_per_cube.min(hw.max_cube_dim.0),
-            cpu_items_per_unit(bytes, block),
-        )
+        let all = hw.max_units_per_cube.min(hw.max_cube_dim.0);
+        let units = match policy.cpu_units(kind, elem_bytes) {
+            Some(CpuUnits::Performance) => testing::performance_cores()
+                .filter(|&p| p >= 1 && p < all)
+                .unwrap_or(all),
+            _ => all,
+        };
+        (units, cpu_items_per_unit(bytes, block))
     } else {
         (
             GPU_CUBE_DIM
@@ -463,6 +470,121 @@ mod tests {
             testing::with_kind_vector_size(KernelKind::Fill, Fixed(3), || ())
         });
         assert!(result.is_err(), "Fixed(3) accepted");
+    }
+
+    /// CPU properties with 16 units per cube.
+    fn cpu16() -> DeviceProperties {
+        let mut props = props();
+        props.hardware.num_cpu_cores = Some(16);
+        props.hardware.max_units_per_cube = 16;
+        props.hardware.max_cube_dim = (16, 16, 16);
+        props.hardware.load_width = 128;
+        props
+    }
+
+    /// The units per cube of a scalar Reduce plan under `props`.
+    fn units(props: &DeviceProperties) -> u32 {
+        plan_for(
+            props,
+            KernelKind::Reduce,
+            1 << 20,
+            4,
+            16,
+            1,
+            VectorSizeOverride::Scalar,
+        )
+        .unwrap()
+        .cube_dim
+        .num_elems()
+    }
+
+    /// `Performance` uses the performance-core count only where it is smaller than the units
+    /// the plan would use otherwise, so a lower injected limit stays (ADR-0017).
+    #[test]
+    fn performance_uses_the_core_count_only_when_smaller() {
+        let mut props = cpu16();
+        let perf = |cores, props: &DeviceProperties| {
+            testing::with_performance_cores(cores, || {
+                testing::with_cpu_units(CpuUnits::Performance, || units(props))
+            })
+        };
+        assert_eq!(perf(Some(12), &props), 12);
+        assert_eq!(perf(Some(1), &props), 1);
+        assert_eq!(perf(Some(16), &props), 16);
+        assert_eq!(perf(Some(24), &props), 16);
+        assert_eq!(perf(Some(0), &props), 16);
+        props.hardware.max_units_per_cube = 8;
+        assert_eq!(
+            perf(Some(12), &props),
+            8,
+            "with_properties' lower limit stays"
+        );
+        props.hardware.max_units_per_cube = 16;
+        props.hardware.max_cube_dim.0 = 4;
+        assert_eq!(perf(Some(12), &props), 4, "at most max_cube_dim.0");
+        // No effect on GPUs.
+        let mut gpu = cpu16();
+        gpu.hardware.num_cpu_cores = None;
+        assert_eq!(perf(Some(12), &gpu), 16.min(GPU_CUBE_DIM));
+    }
+
+    /// `with_cpu_units` takes precedence over the policy for every kind; `All` keeps every
+    /// hardware thread whatever the core count.
+    #[test]
+    fn cpu_units_override_takes_precedence_over_the_policy() {
+        let props = cpu16();
+        let policy = VectorPolicy::for_class(DeviceClass::CpuSimd128);
+        testing::with_performance_cores(Some(12), || {
+            for kind in KernelKind::ALL {
+                for bytes in [4usize, 8] {
+                    let plan = |units: Option<CpuUnits>| {
+                        let make = || {
+                            plan_for(&props, kind, 1000, bytes, 16, 1, VectorSizeOverride::Scalar)
+                                .unwrap()
+                                .cube_dim
+                                .num_elems()
+                        };
+                        match units {
+                            Some(u) => testing::with_cpu_units(u, make),
+                            None => make(),
+                        }
+                    };
+                    let from_policy = match policy.cpu_units(kind, bytes) {
+                        Some(CpuUnits::Performance) => 12,
+                        _ => 16,
+                    };
+                    assert_eq!(plan(None), from_policy, "{kind:?} {bytes}");
+                    assert_eq!(plan(Some(CpuUnits::All)), 16, "{kind:?} {bytes}");
+                    assert_eq!(plan(Some(CpuUnits::Performance)), 12, "{kind:?} {bytes}");
+                }
+            }
+            testing::with_cpu_units(CpuUnits::Performance, || {
+                assert_eq!(
+                    policy.cpu_units(KernelKind::Fill, 4),
+                    Some(CpuUnits::Performance)
+                );
+                let gpu = VectorPolicy::for_class(DeviceClass::Gpu);
+                assert_eq!(gpu.cpu_units(KernelKind::Fill, 4), None);
+            });
+        });
+        assert_eq!(testing::cpu_units_override(), None);
+    }
+
+    /// `with_performance_cores(None)`: a CPU without separate performance cores keeps all
+    /// hardware threads under `Performance`; the override is restored afterwards.
+    #[test]
+    fn no_performance_core_count_keeps_all_threads() {
+        let props = cpu16();
+        let detected = testing::performance_cores();
+        testing::with_performance_cores(None, || {
+            assert_eq!(testing::performance_cores(), None);
+            testing::with_cpu_units(CpuUnits::Performance, || assert_eq!(units(&props), 16));
+            testing::with_performance_cores(Some(4), || {
+                assert_eq!(testing::performance_cores(), Some(4));
+            });
+            assert_eq!(testing::performance_cores(), None);
+        });
+        assert_eq!(testing::performance_cores(), detected);
     }
 
     #[test]

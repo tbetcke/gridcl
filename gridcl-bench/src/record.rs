@@ -35,9 +35,10 @@ impl Scalar {
     }
 }
 
-/// How the CPU `cube_dim` was chosen: the plan's (one unit per hardware thread) or the
-/// performance-core count (M3 Max only; reported, not part of a configuration).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// How the CPU `cube_dim` was chosen: one unit per hardware thread (`CpuUnits::All`) or the
+/// performance-core count (`CpuUnits::Performance`, where the OS reports one; ADR-0017). The
+/// order puts all hardware threads first, which the decision rule prefers on ties.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CubeDimMode {
     Plan,
     PerformanceCores,

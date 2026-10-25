@@ -1,10 +1,12 @@
-# Vector policy of gridcl-device (docs/design.md, "Launch plans and the vector policy"; ADR-0015).
+# Vector policy of gridcl-device (docs/design.md, "Launch plans and the vector policy"; ADR-0015,
+# ADR-0017).
 #
 # Per device class: the QuadField tile width by scalar size in bytes; the vector size per kernel
 # family and scalar size; on CPU classes, the CPU block per kernel family and scalar size of the
-# widest stream, in units of 4 KiB. Changed only with benchmark data in
-# docs/perf/vectorization.md; until M3s every family runs at vector size 1, the tile width is 16
-# and every CPU block is 16 KiB.
+# widest stream, in units of 4 KiB, and the CPU units (all hardware threads or the performance
+# cores). Changed only with benchmark data in docs/perf/vectorization.md; until M3s every family
+# runs at vector size 1 on all hardware threads, the tile width is 16 and every CPU block is
+# 16 KiB.
 
 [CpuSimd128]
 quad_tile = { 4 = 16, 8 = 16 }
@@ -36,6 +38,20 @@ EVector = { 4 = 4, 8 = 4 }
 GeomFactors = { 4 = 4, 8 = 4 }
 PullBack = { 4 = 4, 8 = 4 }
 Scalar = { 4 = 4, 8 = 4 }
+[CpuSimd128.cpu_units]
+Fill = { 4 = "all", 8 = "all" }
+Copy = { 4 = "all", 8 = "all" }
+Reduce = { 4 = "all", 8 = "all" }
+ScanTile = { 4 = "all", 8 = "all" }
+SortDigits = { 4 = "all", 8 = "all" }
+Gather = { 4 = "all", 8 = "all" }
+Pack = { 4 = "all", 8 = "all" }
+TopologyKeys = { 4 = "all", 8 = "all" }
+PermutationInfo = { 4 = "all", 8 = "all" }
+EVector = { 4 = "all", 8 = "all" }
+GeomFactors = { 4 = "all", 8 = "all" }
+PullBack = { 4 = "all", 8 = "all" }
+Scalar = { 4 = "all", 8 = "all" }
 
 [CpuSimd256]
 quad_tile = { 4 = 16, 8 = 16 }
@@ -67,6 +83,20 @@ EVector = { 4 = 4, 8 = 4 }
 GeomFactors = { 4 = 4, 8 = 4 }
 PullBack = { 4 = 4, 8 = 4 }
 Scalar = { 4 = 4, 8 = 4 }
+[CpuSimd256.cpu_units]
+Fill = { 4 = "all", 8 = "all" }
+Copy = { 4 = "all", 8 = "all" }
+Reduce = { 4 = "all", 8 = "all" }
+ScanTile = { 4 = "all", 8 = "all" }
+SortDigits = { 4 = "all", 8 = "all" }
+Gather = { 4 = "all", 8 = "all" }
+Pack = { 4 = "all", 8 = "all" }
+TopologyKeys = { 4 = "all", 8 = "all" }
+PermutationInfo = { 4 = "all", 8 = "all" }
+EVector = { 4 = "all", 8 = "all" }
+GeomFactors = { 4 = "all", 8 = "all" }
+PullBack = { 4 = "all", 8 = "all" }
+Scalar = { 4 = "all", 8 = "all" }
 
 [CpuSimd512]
 quad_tile = { 4 = 16, 8 = 16 }
@@ -98,6 +128,20 @@ EVector = { 4 = 4, 8 = 4 }
 GeomFactors = { 4 = 4, 8 = 4 }
 PullBack = { 4 = 4, 8 = 4 }
 Scalar = { 4 = 4, 8 = 4 }
+[CpuSimd512.cpu_units]
+Fill = { 4 = "all", 8 = "all" }
+Copy = { 4 = "all", 8 = "all" }
+Reduce = { 4 = "all", 8 = "all" }
+ScanTile = { 4 = "all", 8 = "all" }
+SortDigits = { 4 = "all", 8 = "all" }
+Gather = { 4 = "all", 8 = "all" }
+Pack = { 4 = "all", 8 = "all" }
+TopologyKeys = { 4 = "all", 8 = "all" }
+PermutationInfo = { 4 = "all", 8 = "all" }
+EVector = { 4 = "all", 8 = "all" }
+GeomFactors = { 4 = "all", 8 = "all" }
+PullBack = { 4 = "all", 8 = "all" }
+Scalar = { 4 = "all", 8 = "all" }
 
 [Gpu]
 quad_tile = { 4 = 16, 8 = 16 }

@@ -1,16 +1,16 @@
 //! The generated tables of `docs/perf/vectorization.md`: for every candidate family, device
 //! class and scalar type, the speedup of each vector size over size 1, the chosen size and the
-//! reason; the same speedups per device (ADR-0015, item 5); and the CPU blocks of the scalar
-//! kernels.
+//! reason; the same speedups per device (ADR-0015, item 5); and the CPU blocks and units of the
+//! scalar kernels (ADR-0017).
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use gridcl_device::{DeviceClass, KernelKind, VECTOR_PAD};
+use gridcl_device::{CpuUnits, DeviceClass, KernelKind, VECTOR_PAD};
 
 use crate::decide::{
     BLOCK_UNIT, Config, Decision, RULE_SIZES, Timing, class_times, device_times, scalars_of,
-    speedup,
+    speedup, units_name,
 };
 use crate::record::{CLASSES, KINDS, PerfData, Scalar};
 
@@ -48,7 +48,7 @@ fn speedups(times: &[BTreeMap<Config, Timing>; 2], v: usize) -> String {
         .collect();
     let ran = times[0]
         .iter()
-        .filter(|((n, _, _), _)| *n == v)
+        .filter(|((n, ..), _)| *n == v)
         .map(|(_, t)| t.ran)
         .max();
     match ran {
@@ -63,6 +63,10 @@ fn block(units: Option<usize>) -> String {
     })
 }
 
+fn units(units: Option<CpuUnits>) -> &'static str {
+    units.map_or("–", units_name)
+}
+
 /// The generated tables, without the markers.
 pub fn render(data: &PerfData, decision: &Decision) -> String {
     let wide = wide_sizes();
@@ -73,19 +77,21 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
     out.push_str(
         "### Vector sizes\n\n\
          Speedup of each vector size over size 1 at 10^6 / 10^7 items: the best time over tiles \
-         and blocks at size 1 over the best at that size; for a class measured on several \
-         devices, the geometric mean of the per-device ratios (ADR-0015). \"(ran m)\": every \
-         device ran the size at m lanes. Size, tile and block are the entries of \
-         `vector-policy.toml`; f32 and u32 share the 4-byte entries.\n\n",
+         blocks and CPU units at size 1 over the best at that size; for a class measured on \
+         several devices, the geometric mean of the per-device ratios (ADR-0015). \"(ran m)\": \
+         every device ran the size at m lanes. Size, tile, block and units are the entries of \
+         `vector-policy.toml`; f32 and u32 share the 4-byte entries. Units: all hardware \
+         threads or the performance cores; a device without a performance-core count gives \
+         both the same time (ADR-0017).\n\n",
     );
     writeln!(
         out,
-        "| Family | Class | Type |{size_heads} Size | Tile | Block | Reason |"
+        "| Family | Class | Type |{size_heads} Size | Tile | Block | Units | Reason |"
     )
     .unwrap();
     writeln!(
         out,
-        "| --- | --- | --- |{size_rule} ---: | ---: | ---: | --- |"
+        "| --- | --- | --- |{size_rule} ---: | ---: | ---: | --- | --- |"
     )
     .unwrap();
     for kind in KINDS.into_iter().filter(|&k| k != KernelKind::Scalar) {
@@ -105,10 +111,11 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
                 };
                 writeln!(
                     out,
-                    "| {kind:?} | {class:?} | {} |{cells} {} | {tile} | {} | {} |",
+                    "| {kind:?} | {class:?} | {} |{cells} {} | {tile} | {} | {} | {} |",
                     scalar.name(),
                     choice.map_or(1, |c| c.vector_size),
                     block(choice.and_then(|c| c.cpu_block)),
+                    units(choice.and_then(|c| c.cpu_units)),
                     choice.map_or("", |c| c.reason.as_str()),
                 )
                 .unwrap();
@@ -153,18 +160,19 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
 
     out.push_str(
         "\n### Scalar kernels\n\n\
-         CPU blocks of `KernelKind::Scalar` (vector size 1), from histogram (u32) and segmented \
-         reduce (f64) (ADR-0015, item 7).\n\n",
+         CPU blocks and units of `KernelKind::Scalar` (vector size 1), from histogram (u32) and \
+         segmented reduce (f64) (ADR-0015, item 7; ADR-0017).\n\n",
     );
-    out.push_str("| Class | Type | Block | Reason |\n| --- | --- | ---: | --- |\n");
+    out.push_str("| Class | Type | Block | Units | Reason |\n| --- | --- | ---: | --- | --- |\n");
     for class in CLASSES.into_iter().filter(|&c| c != DeviceClass::Gpu) {
         for scalar in scalars_of(KernelKind::Scalar) {
             let choice = decision.choice(class, KernelKind::Scalar, scalar.bytes());
             writeln!(
                 out,
-                "| {class:?} | {} | {} | {} |",
+                "| {class:?} | {} | {} | {} | {} |",
                 scalar.name(),
                 block(choice.and_then(|c| c.cpu_block)),
+                units(choice.and_then(|c| c.cpu_units)),
                 choice.map_or("", |c| c.reason.as_str()),
             )
             .unwrap();
@@ -216,8 +224,13 @@ mod tests {
                 }
             }
         }
-        assert!(text.contains("| PullBack | Gpu | f64 | – | – | – | – | 1 | – | – | no kernel"));
-        assert!(text.contains("| CpuSimd512 | f64 | 16 KiB | no data |"));
+        assert!(
+            text.contains("| PullBack | Gpu | f64 | – | – | – | – | 1 | – | – | – | no kernel")
+        );
+        assert!(
+            text.contains("| Fill | CpuSimd128 | f64 | – | – | – | – | 1 | – | 16 KiB | all |")
+        );
+        assert!(text.contains("| CpuSimd512 | f64 | 16 KiB | all | no data |"));
     }
 
     #[test]

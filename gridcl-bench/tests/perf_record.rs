@@ -1,5 +1,6 @@
-//! M3s acceptance (docs/design.md, "M3s SIMD vectorization and benchmarks"; ADR-0015): the
-//! committed benchmark data, the generated report, the policy and the throughput records.
+//! M3s acceptance (docs/design.md, "M3s SIMD vectorization and benchmarks"; ADR-0015,
+//! ADR-0017): the committed benchmark data, the generated report, the policy and the throughput
+//! records.
 //!
 //! The checks of the decision rule are written here independently of `gridcl_bench::decide`:
 //! they read `vector-policy.toml` with the `toml` crate and recompute the class times from the
@@ -251,12 +252,16 @@ fn report_lists_every_family_class_and_type() {
     }
 }
 
-/// A configuration: (requested vector size, tile, CPU block in bytes).
-type Config = (usize, Option<usize>, Option<usize>);
+/// A configuration: (requested vector size, tile, CPU block in bytes, CPU units on CPUs:
+/// `"all"` or `"performance"`).
+type Config = (usize, Option<usize>, Option<usize>, Option<&'static str>);
 
 /// The class time of every configuration of (class, kind, scalar) at `size`: the geometric
 /// mean over the class's devices of their medians, for the configurations every device
 /// measured (ADR-0015, item 5). Ratios of class times are geometric means of per-device ratios.
+/// On CPUs, all-threads records (`cube_dim` `plan`) give the units `all` and performance-core
+/// records `performance`; a device without a performance-core count gives both its
+/// all-threads time (ADR-0017).
 fn class_times(
     data: &PerfData,
     class: DeviceClass,
@@ -264,18 +269,27 @@ fn class_times(
     scalar: Scalar,
     size: usize,
 ) -> BTreeMap<Config, f64> {
+    let cpu = is_cpu(class);
     let mut per_device: BTreeMap<(String, String), BTreeMap<Config, f64>> = BTreeMap::new();
+    let mut neutral = Vec::new();
     for r in data.sweeps.iter().filter(|r| {
         r.device_class == class
             && r.family == kind
             && r.scalar == scalar
             && r.nominal_n == size
-            && r.cube_dim == CubeDimMode::Plan
+            && (cpu || r.cube_dim == CubeDimMode::Plan)
     }) {
-        let config = (r.vector_size, r.tile, r.block_bytes);
-        let times = per_device
-            .entry((r.target.clone(), r.backend.clone()))
-            .or_default();
+        let units = match r.cube_dim {
+            CubeDimMode::Plan => "all",
+            CubeDimMode::PerformanceCores => "performance",
+        };
+        let config = (r.vector_size, r.tile, r.block_bytes, cpu.then_some(units));
+        let device = (r.target.clone(), r.backend.clone());
+        if cpu && units == "all" && r.cores.performance.is_none() {
+            let same = (r.vector_size, r.tile, r.block_bytes, Some("performance"));
+            neutral.push((device.clone(), same, r.median_s));
+        }
+        let times = per_device.entry(device).or_default();
         assert!(
             times.insert(config, r.median_s).is_none(),
             "{} {} {kind:?} {} at {size}: configuration {config:?} recorded twice",
@@ -283,6 +297,13 @@ fn class_times(
             r.backend,
             scalar.name()
         );
+    }
+    for (device, config, t) in neutral {
+        per_device
+            .entry(device)
+            .or_default()
+            .entry(config)
+            .or_insert(t);
     }
     let devices = per_device.len();
     let mut out = BTreeMap::new();
@@ -306,7 +327,7 @@ fn class_times(
 fn best(times: &BTreeMap<Config, f64>, keep: impl Fn(usize) -> bool) -> Option<f64> {
     times
         .iter()
-        .filter(|((n, _, _), _)| keep(*n))
+        .filter(|((n, ..), _)| keep(*n))
         .map(|(_, &t)| t)
         .min_by(f64::total_cmp)
 }
@@ -359,7 +380,21 @@ fn policy_follows_the_decision_rule() {
                     entry(&policy, &[&c, "quad_tile", &b])
                         .unwrap_or_else(|| panic!("[{c}] no quad_tile {bytes}"))
                 });
-                let chosen: Config = (n, tile, block);
+                let units = is_cpu(class).then(|| {
+                    let v = policy
+                        .get(&c)
+                        .and_then(|t| t.get("cpu_units"))
+                        .and_then(|t| t.get(&k))
+                        .and_then(|t| t.get(&b))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_else(|| panic!("{what}: no cpu_units"));
+                    match v {
+                        "all" => "all",
+                        "performance" => "performance",
+                        _ => panic!("{what}: cpu_units {v:?} is not all or performance"),
+                    }
+                });
+                let chosen: Config = (n, tile, block, units);
                 let with_data: Vec<Scalar> = scalars
                     .iter()
                     .copied()
@@ -368,6 +403,10 @@ fn policy_follows_the_decision_rule() {
                     .collect();
                 if with_data.is_empty() {
                     assert_eq!(n, 1, "{what}: vector size above 1 without data");
+                    assert!(
+                        units.is_none_or(|u| u == "all"),
+                        "{what}: performance cores without data"
+                    );
                     continue;
                 }
                 // Every 4-byte type measured must admit a shared entry (ADR-0015, item 6).

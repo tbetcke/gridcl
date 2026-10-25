@@ -1,9 +1,11 @@
 //! The decision rule of "Benchmarks" as ADR-0015 reads it (items 5 and 6): per kernel family,
-//! device class and element size, the vector size, CPU block and QuadField tile written to
-//! `gridcl-device/vector-policy.toml`.
+//! device class and element size, the vector size, CPU block, CPU units and QuadField tile
+//! written to `gridcl-device/vector-policy.toml`.
 //!
-//! - A configuration is (vector size, tile, CPU block); only records with the plan's `cube_dim`
-//!   enter the rule (docs/plans/M3s.md, question 8).
+//! - A configuration is (vector size, tile, CPU block, CPU units) (ADR-0017). On CPUs the units
+//!   are all hardware threads (`CubeDimMode::Plan` records) or the performance cores
+//!   (`PerformanceCores` records). A device without a performance-core count gives both
+//!   settings the same time, its all-threads time. On GPUs the units are `None`.
 //! - The class time of a configuration is the geometric mean, over the class's devices, of
 //!   their medians, for the configurations every device measured; ratios of class times are
 //!   then geometric means of per-device ratios (item 5). A device with fewer lanes contributes
@@ -12,7 +14,7 @@
 //! - A size above 1 is admitted if its best class time over tiles and blocks is at least 10%
 //!   below size 1's best, at 10^6 and at 10^7 items. Among the admitted configurations within 3%
 //!   of the fastest admitted one at both sizes, the smallest vector size wins, then the smallest
-//!   tile, then the smallest block (item 6).
+//!   tile, then the smallest block (item 6), then all hardware threads (ADR-0017).
 //! - A 4-byte entry shared by f32 and u32 takes a size only if every 4-byte type measured admits
 //!   it, and must be within 3% for each of them.
 //! - A configuration whose requested size ran narrower on every device is chosen only if no
@@ -21,7 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use gridcl_device::{DeviceClass, KernelKind};
+use gridcl_device::{CpuUnits, DeviceClass, KernelKind};
 
 use crate::families;
 use crate::record::{CLASSES, CubeDimMode, KINDS, PerfData, Scalar};
@@ -40,8 +42,8 @@ pub const BLOCK_UNIT: usize = 4 << 10;
 pub const DEFAULT_TILE: usize = 16;
 pub const DEFAULT_BLOCK_BYTES: usize = 16 << 10;
 
-/// A configuration: (requested vector size, tile, CPU block in bytes).
-pub type Config = (usize, Option<usize>, Option<usize>);
+/// A configuration: (requested vector size, tile, CPU block in bytes, CPU units).
+pub type Config = (usize, Option<usize>, Option<usize>, Option<CubeDimMode>);
 
 /// A device of a class: (target, backend).
 pub type Device = (String, String);
@@ -64,6 +66,8 @@ pub struct Choice {
     pub vector_size: usize,
     /// CPU block in units of 4 KiB; `None` on `Gpu`.
     pub cpu_block: Option<usize>,
+    /// CPU units; `None` on `Gpu`.
+    pub cpu_units: Option<CpuUnits>,
     /// Why, in one line for the report.
     pub reason: String,
 }
@@ -121,13 +125,24 @@ impl Decision {
                     });
                     out.push_str(&format!("{kind:?} = {row}\n"));
                 }
+                out.push_str(&format!("[{c}.cpu_units]\n"));
+                for kind in KINDS {
+                    let row = self.row(|bytes| {
+                        let units = self
+                            .choice(class, kind, bytes)
+                            .and_then(|c| c.cpu_units)
+                            .unwrap_or(CpuUnits::All);
+                        format!("\"{}\"", units_name(units))
+                    });
+                    out.push_str(&format!("{kind:?} = {row}\n"));
+                }
             }
         }
         out
     }
 
     /// `{ 4 = a, 8 = b }`.
-    fn row(&self, value: impl Fn(usize) -> usize) -> String {
+    fn row<T: std::fmt::Display>(&self, value: impl Fn(usize) -> T) -> String {
         let entries: Vec<String> = ELEM_BYTES
             .iter()
             .map(|&bytes| format!("{bytes} = {}", value(bytes)))
@@ -141,9 +156,26 @@ const TOML_HEADER: &str = "\
 #
 # Per device class: the QuadField tile width by scalar size in bytes; the vector size per kernel
 # family and scalar size; on CPU classes, the CPU block per kernel family and scalar size of the
-# widest stream, in units of 4 KiB. Written by `cargo run -p gridcl-bench --bin policy_report`
-# from docs/perf/data/ with the decision rule of docs/perf/vectorization.md; do not edit by hand.
+# widest stream, in units of 4 KiB, and the CPU units (all hardware threads or the performance
+# cores; ADR-0017). Written by `cargo run -p gridcl-bench --bin policy_report` from
+# docs/perf/data/ with the decision rule of docs/perf/vectorization.md; do not edit by hand.
 ";
+
+/// The value of a `cpu_units` entry: `all` or `performance`.
+pub fn units_name(units: CpuUnits) -> &'static str {
+    match units {
+        CpuUnits::All => "all",
+        CpuUnits::Performance => "performance",
+    }
+}
+
+/// The CPU units a sweep record's `cube_dim` mode measured.
+pub fn units_of(mode: CubeDimMode) -> CpuUnits {
+    match mode {
+        CubeDimMode::Plan => CpuUnits::All,
+        CubeDimMode::PerformanceCores => CpuUnits::Performance,
+    }
+}
 
 /// The decision for `data`.
 ///
@@ -162,7 +194,7 @@ pub fn decide(data: &PerfData) -> Decision {
             for kind in KINDS {
                 let entry = choose(data, class, kind, bytes);
                 if kind == KernelKind::GeomFactors
-                    && let Some((_, Some(t), _)) = entry.config
+                    && let Some((_, Some(t), ..)) = entry.config
                 {
                     tile = t;
                 }
@@ -177,6 +209,12 @@ pub fn decide(data: &PerfData) -> Decision {
                             .and_then(|c| c.2)
                             .unwrap_or(DEFAULT_BLOCK_BYTES)
                             / BLOCK_UNIT
+                    }),
+                    cpu_units: (class != DeviceClass::Gpu).then(|| {
+                        entry
+                            .config
+                            .and_then(|c| c.3)
+                            .map_or(CpuUnits::All, units_of)
                     }),
                     reason: entry.reason,
                 });
@@ -224,7 +262,8 @@ pub fn scalars_of(kind: KernelKind) -> Vec<Scalar> {
         .unwrap_or_default()
 }
 
-/// What each device of `class` measured for `kind` in `scalar` at `size`, by configuration.
+/// What each device of `class` measured for `kind` in `scalar` at `size`, by configuration. A
+/// CPU without a performance-core count gives its all-threads time to both unit settings.
 ///
 /// # Panics
 ///
@@ -236,23 +275,37 @@ pub fn device_times(
     scalar: Scalar,
     size: usize,
 ) -> BTreeMap<Device, BTreeMap<Config, Timing>> {
+    let cpu = class != DeviceClass::Gpu;
     let mut per_device: BTreeMap<Device, BTreeMap<Config, Timing>> = BTreeMap::new();
+    let mut neutral = Vec::new();
     for r in data.sweeps.iter().filter(|r| {
         r.device_class == class
             && r.family == kind
             && r.scalar == scalar
             && r.nominal_n == size
-            && r.cube_dim == CubeDimMode::Plan
+            && (cpu || r.cube_dim == CubeDimMode::Plan)
     }) {
-        let config = (r.vector_size, r.tile, r.block_bytes);
+        let config = (
+            r.vector_size,
+            r.tile,
+            r.block_bytes,
+            cpu.then_some(r.cube_dim),
+        );
         let timing = Timing {
             time_s: r.median_s,
             ran: r.vector_size_ran,
         };
-        let previous = per_device
-            .entry((r.target.clone(), r.backend.clone()))
-            .or_default()
-            .insert(config, timing);
+        let device = (r.target.clone(), r.backend.clone());
+        if cpu && r.cube_dim == CubeDimMode::Plan && r.cores.performance.is_none() {
+            let same = (
+                config.0,
+                config.1,
+                config.2,
+                Some(CubeDimMode::PerformanceCores),
+            );
+            neutral.push((device.clone(), same, timing));
+        }
+        let previous = per_device.entry(device).or_default().insert(config, timing);
         assert!(
             previous.is_none(),
             "{} {} {kind:?} {} at {size}: configuration {config:?} recorded twice",
@@ -260,6 +313,13 @@ pub fn device_times(
             r.backend,
             scalar.name()
         );
+    }
+    for (device, config, timing) in neutral {
+        per_device
+            .entry(device)
+            .or_default()
+            .entry(config)
+            .or_insert(timing);
     }
     per_device
 }
@@ -305,7 +365,7 @@ pub fn class_times(
 pub fn best(times: &BTreeMap<Config, Timing>, keep: impl Fn(usize) -> bool) -> Option<f64> {
     times
         .iter()
-        .filter(|((n, _, _), _)| keep(*n))
+        .filter(|((n, ..), _)| keep(*n))
         .map(|(_, t)| t.time_s)
         .min_by(f64::total_cmp)
 }
@@ -476,6 +536,31 @@ fn reason(views: &[TypeView], config: Config, narrower: bool) -> String {
     } else {
         "no size at least 10% faster than 1 at 10^6 and 10^7".to_owned()
     };
+    if config.3 == Some(CubeDimMode::PerformanceCores) {
+        // The best admitted all-threads time over the chosen time, the smallest over the types.
+        let gain = [0, 1].map(|i| {
+            views
+                .iter()
+                .filter_map(|v| {
+                    let all = v.times[i]
+                        .iter()
+                        .filter(|(c, _)| v.admitted.contains(&c.0))
+                        .filter(|(c, _)| c.3 == Some(CubeDimMode::Plan))
+                        .map(|(_, t)| t.time_s)
+                        .min_by(f64::total_cmp)?;
+                    Some(all / v.times[i].get(&config)?.time_s)
+                })
+                .fold(f64::INFINITY, f64::min)
+        });
+        if gain.iter().all(|g| g.is_finite()) {
+            text.push_str(&format!(
+                "; performance cores, {:.2}x / {:.2}x over all threads",
+                gain[0], gain[1]
+            ));
+        } else {
+            text.push_str("; performance cores");
+        }
+    }
     if narrower {
         let ran = views
             .iter()
@@ -521,14 +606,18 @@ mod tests {
     use super::*;
     use crate::record::{Cores, SweepRecord};
 
-    /// A record of `target` (backend from the class) with median `t`.
+    /// What a record measured: (requested vector size, tile, CPU block in bytes).
+    type Spec = (usize, Option<usize>, Option<usize>);
+
+    /// A record of `target` (backend from the class) with median `t`, on all hardware threads
+    /// of a CPU without a performance-core count.
     fn rec(
         class: DeviceClass,
         target: &str,
         kind: KernelKind,
         scalar: Scalar,
         n: usize,
-        (v, tile, block): Config,
+        (v, tile, block): Spec,
         t: f64,
     ) -> SweepRecord {
         SweepRecord {
@@ -577,7 +666,7 @@ mod tests {
         target: &str,
         kind: KernelKind,
         scalar: Scalar,
-        times: &[(Config, f64)],
+        times: &[(Spec, f64)],
     ) -> Vec<SweepRecord> {
         RULE_SIZES
             .iter()
@@ -590,7 +679,7 @@ mod tests {
             .collect()
     }
 
-    fn sizes(times: &[(usize, f64)]) -> Vec<(Config, f64)> {
+    fn sizes(times: &[(usize, f64)]) -> Vec<(Spec, f64)> {
         times.iter().map(|&(v, t)| ((v, None, K16), t)).collect()
     }
 
@@ -626,6 +715,21 @@ mod tests {
                 c.cpu_block,
                 (c.class != DeviceClass::Gpu).then_some(4),
                 "{c:?}"
+            );
+            assert_eq!(
+                c.cpu_units,
+                (c.class != DeviceClass::Gpu).then_some(CpuUnits::All),
+                "{c:?}"
+            );
+        }
+        for class in CLASSES {
+            let units = policy[&format!("{class:?}")]
+                .get("cpu_units")
+                .map(|u| u["GeomFactors"]["4"].as_str());
+            assert_eq!(
+                units,
+                (class != DeviceClass::Gpu).then_some(Some("all")),
+                "{class:?}"
             );
         }
         assert!(d.quad_tiles.iter().all(|&(_, _, t)| t == DEFAULT_TILE));
@@ -790,8 +894,8 @@ mod tests {
             Scalar::F32,
             RULE_SIZES[0],
         );
-        assert!((times[&none(4)].time_s - 1.3f64.sqrt()).abs() < 1e-12);
-        assert_eq!(times[&none(8)].ran, 8);
+        assert!((times[&(4, None, None, None)].time_s - 1.3f64.sqrt()).abs() < 1e-12);
+        assert_eq!(times[&(8, None, None, None)].ran, 8);
         assert!(!d.to_toml().contains("[Gpu.cpu_block]"));
     }
 
@@ -931,20 +1035,131 @@ mod tests {
         decide(&data(sweeps));
     }
 
+    /// Records of `target` on a CPU with 12 performance cores: all hardware threads at the
+    /// given times, and the performance cores at `factor` times them.
+    fn split_cores(
+        target: &str,
+        kind: KernelKind,
+        times: &[(Spec, f64)],
+        factor: f64,
+    ) -> Vec<SweepRecord> {
+        let all = family(CPU, target, kind, Scalar::F64, times);
+        let perf: Vec<SweepRecord> = all
+            .iter()
+            .map(|r| SweepRecord {
+                cube_dim: CubeDimMode::PerformanceCores,
+                median_s: r.median_s * factor,
+                units: 12,
+                ..r.clone()
+            })
+            .collect();
+        all.into_iter()
+            .chain(perf)
+            .map(|r| SweepRecord {
+                cores: Cores {
+                    performance: Some(12),
+                    efficiency: Some(4),
+                    threads: 16,
+                },
+                ..r
+            })
+            .collect()
+    }
+
+    /// A gain of the performance cores within 3% stays at all hardware threads (ADR-0017).
     #[test]
-    fn performance_core_records_do_not_enter() {
-        let mut sweeps = family(
-            CPU,
-            "a",
-            KernelKind::Fill,
-            Scalar::F64,
-            &sizes(&[(1, 1.0), (4, 0.5)]),
-        );
-        for r in &mut sweeps {
-            r.cube_dim = CubeDimMode::PerformanceCores;
-        }
+    fn a_units_gain_within_three_percent_stays_all() {
+        let sweeps = split_cores("a", KernelKind::Reduce, &sizes(&[(1, 1.0), (4, 0.5)]), 0.98);
         let d = decide(&data(sweeps));
-        assert_eq!(entry(&d, CPU, KernelKind::Fill, 8).reason, "no data");
+        let c = entry(&d, CPU, KernelKind::Reduce, 8);
+        assert_eq!(
+            (c.vector_size, c.cpu_units),
+            (4, Some(CpuUnits::All)),
+            "{}",
+            c.reason
+        );
+        assert!(!c.reason.contains("performance cores"), "{}", c.reason);
+    }
+
+    /// A larger gain chooses the performance cores, which the TOML and the reason show.
+    #[test]
+    fn a_larger_units_gain_chooses_performance() {
+        let sweeps = split_cores("a", KernelKind::Reduce, &sizes(&[(1, 1.0), (4, 0.5)]), 0.5);
+        let d = decide(&data(sweeps));
+        let c = entry(&d, CPU, KernelKind::Reduce, 8);
+        assert_eq!(
+            (c.vector_size, c.cpu_units),
+            (4, Some(CpuUnits::Performance)),
+            "{}",
+            c.reason
+        );
+        assert!(
+            c.reason
+                .ends_with("; performance cores, 2.00x / 2.00x over all threads"),
+            "{}",
+            c.reason
+        );
+        assert_eq!(
+            entry(&d, CPU, KernelKind::Reduce, 4).cpu_units,
+            Some(CpuUnits::All)
+        );
+        assert!(
+            d.to_toml()
+                .contains("[CpuSimd128.cpu_units]\nFill = { 4 = \"all\", 8 = \"all\" }\nCopy = { 4 = \"all\", 8 = \"all\" }\nReduce = { 4 = \"all\", 8 = \"performance\" }\n")
+        );
+        // The performance cores also count for the size-1 baseline: 4 must beat 1 on them.
+        let sweeps = split_cores("a", KernelKind::Fill, &sizes(&[(1, 1.0), (4, 0.95)]), 0.5);
+        let c = entry(&decide(&data(sweeps)), CPU, KernelKind::Fill, 8).clone();
+        assert_eq!(
+            (c.vector_size, c.cpu_units),
+            (1, Some(CpuUnits::Performance)),
+            "{}",
+            c.reason
+        );
+    }
+
+    /// A device without a performance-core count (Grace) gives both settings its time: alone it
+    /// keeps all threads; with a split device it halves that device's gain in the geometric mean.
+    #[test]
+    fn devices_without_a_core_count_are_neutral() {
+        let grace = family(
+            CPU,
+            "grace",
+            KernelKind::Reduce,
+            Scalar::F64,
+            &sizes(&[(1, 1.0)]),
+        );
+        let d = decide(&data(grace.clone()));
+        let c = entry(&d, CPU, KernelKind::Reduce, 8);
+        assert_eq!(c.cpu_units, Some(CpuUnits::All), "{}", c.reason);
+        let times = class_times(
+            &data(grace.clone()),
+            CPU,
+            KernelKind::Reduce,
+            Scalar::F64,
+            RULE_SIZES[0],
+        );
+        assert_eq!(
+            times[&(1, None, K16, Some(CubeDimMode::Plan))],
+            times[&(1, None, K16, Some(CubeDimMode::PerformanceCores))]
+        );
+
+        // M3 Max-like device: 1.25x on the performance cores; the class mean is about 1.12x.
+        let mut sweeps = split_cores("m3", KernelKind::Reduce, &sizes(&[(1, 1.0)]), 0.8);
+        sweeps.extend(grace.clone());
+        let d = decide(&data(sweeps));
+        let c = entry(&d, CPU, KernelKind::Reduce, 8);
+        assert_eq!(c.cpu_units, Some(CpuUnits::Performance), "{}", c.reason);
+        assert!(
+            c.reason.contains("1.12x / 1.12x over all threads"),
+            "{}",
+            c.reason
+        );
+        // At 1.05x on the split device the class mean is within 3%: all threads.
+        let mut sweeps = split_cores("m3", KernelKind::Reduce, &sizes(&[(1, 1.0)]), 1.0 / 1.05);
+        sweeps.extend(grace);
+        let c = entry(&decide(&data(sweeps)), CPU, KernelKind::Reduce, 8).clone();
+        assert_eq!(c.cpu_units, Some(CpuUnits::All), "{}", c.reason);
     }
 
     mod prop {
@@ -969,7 +1184,16 @@ mod tests {
             let c = d.choice(class, kind, scalar.bytes()).unwrap();
             let tile =
                 (kind == KernelKind::GeomFactors).then(|| d.quad_tile(class, scalar.bytes()));
-            let chosen = (c.vector_size, tile, c.cpu_block.map(|b| b * BLOCK_UNIT));
+            let units = c.cpu_units.map(|u| match u {
+                CpuUnits::All => CubeDimMode::Plan,
+                CpuUnits::Performance => CubeDimMode::PerformanceCores,
+            });
+            let chosen = (
+                c.vector_size,
+                tile,
+                c.cpu_block.map(|b| b * BLOCK_UNIT),
+                units,
+            );
             for size in RULE_SIZES {
                 let t = class_times(data, class, kind, scalar, size);
                 let s1 = best(&t, |v| v == 1).unwrap();
@@ -997,10 +1221,11 @@ mod tests {
             #[test]
             fn decisions_satisfy_both_inequalities(
                 a in times(),
+                a_perf in times(),
                 b in times(),
                 tiles in times(),
             ) {
-                let configs: Vec<Config> = [1usize, 2, 4, 8, 16]
+                let configs: Vec<Spec> = [1usize, 2, 4, 8, 16]
                     .into_iter()
                     .flat_map(|v| [4usize, 16, 64].into_iter().map(move |k| (v, None, Some(k << 10))))
                     .collect();
@@ -1025,6 +1250,29 @@ mod tests {
                             sweeps.push(rec(DeviceClass::Gpu, "g", KernelKind::GeomFactors, Scalar::F64, n, (v, Some(tile), None), t * scale));
                         }
                     }
+                }
+                // Device a also has 12 performance cores, measured with their own times; b has no
+                // count.
+                let perf: Vec<SweepRecord> = sweeps
+                    .iter()
+                    .filter(|r| r.target == "a")
+                    .map(|r| {
+                        let i = configs
+                            .iter()
+                            .position(|c| *c == (r.vector_size, r.tile, r.block_bytes))
+                            .unwrap();
+                        let (t, e) = a_perf[i];
+                        let scale = if r.nominal_n == RULE_SIZES[0] { 1.0 } else { 10.0 * (1.0 + e) };
+                        SweepRecord {
+                            cube_dim: CubeDimMode::PerformanceCores,
+                            median_s: t * scale,
+                            ..r.clone()
+                        }
+                    })
+                    .collect();
+                sweeps.extend(perf);
+                for r in sweeps.iter_mut().filter(|r| r.target == "a") {
+                    r.cores.performance = Some(12);
                 }
                 let data = data(sweeps);
                 let d = decide(&data);

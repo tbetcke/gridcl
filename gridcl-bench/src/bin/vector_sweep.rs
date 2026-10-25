@@ -16,7 +16,7 @@
 //!   offers. Family names are the policy keys, in any case.
 //! - `--blocks`: CPU block targets in KiB (default 4, 16, 64); ignored on GPUs.
 //! - `--cube-dim`: `plan` (one unit per hardware thread), `perf` (the performance-core count
-//!   from `sysctl`, through `with_properties`), `both`, or `auto` (default: `both` where the
+//!   from `sysctl`, through `with_cpu_units`), `both`, or `auto` (default: `both` where the
 //!   performance-core count is known on a CPU, else `plan`).
 //! - `--out`: rewritten after every record, so an interrupted sweep keeps what it measured;
 //!   default stdout at the end.

@@ -19,6 +19,10 @@ cubecl.workspace = true
 cubecl-runtime = { workspace = true, optional = true }
 toml.workspace = true
 
+# The macOS performance-core count (`sysctlbyname`, ADR-0017).
+[target.'cfg(target_os = "macos")'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 gridcl-testing = { path = "../gridcl-testing" }
 proptest.workspace = true
