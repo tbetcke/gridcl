@@ -12,7 +12,7 @@
   - "Development environment and test targets" (Kathleen, Myriad CPU D node as the fallback, Locust conditions, remote-test runner; ADR-0016);
   - "Workspace layout": crate table (gridcl-bench), "Cargo features", CI matrix (the local job's vector-size variants).
 - **Depends on:** M3 (done, PR #6, merged in 1c03fda; plan `Status: done` in 5882b8c)
-- **Accepted ADRs that apply:** ADR-0002 (amended by ADR-0005), ADR-0003, ADR-0004, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014. ADR-0015 (accepted 2026-10-24, applied to docs/design.md). ADR-0016 (accepted 2026-10-24, applied): Kathleen for CPU-only runs and two-node MPI; Myriad D nodes as the fallback. ADR-0017 (accepted 2026-10-25, applied): CPU units per kind and element size, all hardware threads or the performance cores (T20).
+- **Accepted ADRs that apply:** ADR-0002 (amended by ADR-0005), ADR-0003, ADR-0004, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014. ADR-0015 (accepted 2026-10-24, applied to docs/design.md). ADR-0016 (accepted 2026-10-24, applied): Kathleen for CPU-only runs and two-node MPI; Myriad D nodes as the fallback. ADR-0017 (accepted 2026-10-25, applied): CPU units per kind and element size, all hardware threads or the performance cores (T20). ADR-0018 (accepted 2026-10-25, applied): batched timed runs of at least 20 ms and a backstop for the 3% rule (T22).
 
 <!--
 Rules for this file (do not delete):
@@ -333,6 +333,23 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T15
   - Parallel with: T20 (one local cargo job at a time)
   - Risks / notes: The histogram primitive (`histogram.rs`, Scalar family) has the same pattern, but its bin count is unbounded (connectivity uses one bin per entity), so per-unit columns do not fit in general. It stays as is; a few-bin variant is left to M10. T16's Locust CPU SortDigits part runs after T21, so that both CPU devices measure the same kernel.
+- [ ] **T22 Batched timed runs and the 3% backstop (ADR-0018)**
+  - Goal: timings precise enough for the 3% rule, and the bounded backstop; all sweep data measured again under the new protocol.
+  - Crates/files:
+    - `gridcl-bench/src/{protocol.rs, record.rs, decide.rs, report.rs, families/*.rs, bin/vector_sweep.rs, bin/mesh_throughput.rs}`, `gridcl-bench/tests/perf_record.rs`;
+    - `docs/perf/data/m3s-sweep-{cpu,metal}-m3max.json`, `docs/perf/data/m3s-sweep-{cpu,cuda}-locust.json` (replaced).
+  - Rules (ADR-0018): after the checked warm-up, one untimed calibration call fixes k = ⌈20 ms / t_cal⌉, at most 10,000; each of the ten timed runs makes k calls, each ending with `client.sync()`, with `prepare` and its sync untimed before each call; the run's time is the timed sum over k. Records gain `calls_per_run`. The compile time stays the warm-up minus the median. Backstop: if no admitted configuration is within 3% at both sizes (for every type of a shared entry), the one with the smallest worst-case ratio is chosen when that ratio is at most 1.10, and the report marks it "closest, x% slower"; above 1.10 the entry stays unresolved.
+  - Public API added or changed: none (unpublished crate).
+  - Tests:
+    - unit tests of `measure`: k from the calibration call, the cap, k = 1 for calls of 20 ms or more;
+    - `decide` unit tests: backstop at ratio 1.10 and above it; no backstop when a configuration meets 3%;
+    - `perf_record::policy_follows_the_decision_rule` accepts a marked backstop entry within 1.10 only when no admitted configuration meets 3%; `benchmark_data_covers_required_targets` checks `calls_per_run` ≥ 1 and `calls_per_run` × median ≥ 20 ms when `calls_per_run` > 1;
+    - the existing smoke runs.
+  - Data: the sweeps of T15 (M3 Max CPU, both `cube_dim` modes, and Metal; T15's conditions, confirmed again by the maintainer) and T16 (Locust CPU and CUDA, idle before and after) repeated at this task's commit; the old records are replaced.
+  - Verify: `cargo test -p gridcl-bench`; the trial `policy_report` leaves no unresolved entry for CpuSimd128 and Gpu.
+  - After: T16 (Locust part), T21
+  - Parallel with: –
+  - Risks / notes: two commits, as in T21: the protocol first, then the data (the records name the commit they measured). The outstanding CpuSimd512 sweep (T16) uses the new protocol from the start.
 - [ ] **T17 Policy, report and throughput**
   - Goal: apply the rule.
   - Crates/files: `gridcl-device/vector-policy.toml`, `docs/perf/vectorization.md`, `docs/perf/data/m3s-throughput-cpu-{m3max,kathleen}.json`.
@@ -343,7 +360,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - Public API added or changed: none (policy values only).
   - Tests: all four `perf_record` tests and `policy_covers_every_kind_and_class` pass.
   - Verify: `cargo test -p gridcl-bench -p gridcl-device`.
-  - After: T15, T16, T20, T21
+  - After: T15, T16, T20, T21, T22
   - Parallel with: –
   - Risks / notes: –
 - [ ] **T18 Whole suite under the chosen policy on every target; test-time budgets**
@@ -408,7 +425,7 @@ Resolve every row before Status becomes approved.
 | 14 | Granularity of tiles: `quad_tile()` is one value per class (Listing S2), but the rule decides per scalar type, so f32 and f64 GeomFactors may prefer different tiles and bullet 3 could fail for one of them. Also, which tile is "size 1"'s baseline? (ADR-0012: tile 1 forces N = 1.) | Listing S2; "Benchmarks" | `quad_tile(elem_bytes)` with per-size TOML entries (ADR-0015). The baseline is the best size-1 configuration over all tiles and blocks. Alternative: one tile per class, chosen jointly, with a logged exception to bullet 3 if f32 and f64 disagree. | answered (maintainer, 2026-10-24: `quad_tile(elem_bytes)`); ADR-0015 (accepted) |
 | 15 | The maintainer asked (2026-10-24) to add UCL Kathleen (Slurm, Xeon Gold 6248 with AVX-512) for CPU jobs, whose nodes are easier to get than Myriad's, and for multi-node tests on at most two nodes. Acceptance bullets 1 and 6 name a Myriad D node, and the runner has no Slurm support. | "Benchmarks", "Where"; "Development environment and test targets"; acceptance bullets 1 and 6 | Kathleen for CPU-only runs (CpuSimd512 sweeps, throughput, the suite) and for two-node MPI runs, with the D nodes of T7 as the fallback; a new task adds the `kathleen` target. | answered (maintainer, 2026-10-24: accepted); ADR-0016 (accepted) |
 | 16 | T14: the policy "may choose" `cube_dim` = the performance-core count ("Benchmarks", "Conditions"), but there is no policy key, no API and no detection (an FFI call outside the allowed crates). T14's preliminary sweep favours 12 units over 16 for most families (Reduce, ScanTile, SortDigits up to 9×) and 16 for GeomFactors (11–23%). | "CPUs"; "Benchmarks"; question 8; acceptance bullets 3 and 4; FFI rule | A per-kind, per-element-size `cpu_units` entry (`all` or `performance`), chosen by the 3% rule with ties to `all`; macOS detection through `sysctlbyname` in gridcl-device; a new task before T17. T15 and T16 are unaffected (the sweep measures both settings). | answered (maintainer, 2026-10-25: as proposed); ADR-0017 (accepted) |
-| 17 | T17: with the M3 Max and Locust data, 9 policy entries have no admitted configuration within 3% of the fastest at both 10^6 and 10^7 (Fill and Gather CpuSimd128, Reduce Gpu f32/u32, Scalar CpuSimd128 f64), so `policy_follows_the_decision_rule` fails. The cause is CPU timing noise: IQR/median 10–100% at 10^6 and up to 50% at 10^7 for sub-millisecond to few-millisecond launches, with Locust idle. | "Benchmarks" ("What it reports", "Decision rule"); acceptance bullet 3 | Ten timed runs of k calls each, k chosen for at least 20 ms a run, time per call; a backstop that takes the closest admitted configuration if it is at most 10% slower, marked in the report; all four devices swept again. | ADR-0018 (proposed; direction chosen by the maintainer, 2026-10-25) |
+| 17 | T17: with the M3 Max and Locust data, 9 policy entries have no admitted configuration within 3% of the fastest at both 10^6 and 10^7 (Fill and Gather CpuSimd128, Reduce Gpu f32/u32, Scalar CpuSimd128 f64), so `policy_follows_the_decision_rule` fails. The cause is CPU timing noise: IQR/median 10–100% at 10^6 and up to 50% at 10^7 for sub-millisecond to few-millisecond launches, with Locust idle. | "Benchmarks" ("What it reports", "Decision rule"); acceptance bullet 3 | Ten timed runs of k calls each, k chosen for at least 20 ms a run, time per call; a backstop that takes the closest admitted configuration if it is at most 10% slower, marked in the report; all four devices swept again. | answered (maintainer, 2026-10-25: accepted, GPUs swept again too); ADR-0018 (accepted), T22 |
 
 ## Deviations log
 
