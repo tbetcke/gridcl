@@ -12,7 +12,7 @@
   - "Development environment and test targets" (Kathleen, Myriad CPU D node as the fallback, Locust conditions, remote-test runner; ADR-0016);
   - "Workspace layout": crate table (gridcl-bench), "Cargo features", CI matrix (the local job's vector-size variants).
 - **Depends on:** M3 (done, PR #6, merged in 1c03fda; plan `Status: done` in 5882b8c)
-- **Accepted ADRs that apply:** ADR-0002 (amended by ADR-0005), ADR-0003, ADR-0004, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014. ADR-0015 (accepted 2026-10-24, applied to docs/design.md). ADR-0016 (accepted 2026-10-24, applied): Kathleen for CPU-only runs and two-node MPI; Myriad D nodes as the fallback.
+- **Accepted ADRs that apply:** ADR-0002 (amended by ADR-0005), ADR-0003, ADR-0004, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014. ADR-0015 (accepted 2026-10-24, applied to docs/design.md). ADR-0016 (accepted 2026-10-24, applied): Kathleen for CPU-only runs and two-node MPI; Myriad D nodes as the fallback. ADR-0017 (accepted 2026-10-25, applied): CPU units per kind and element size, all hardware threads or the performance cores (T20).
 
 <!--
 Rules for this file (do not delete):
@@ -281,6 +281,23 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - After: T11
   - Parallel with: T12, T13
   - Risks / notes: an ADR here delays T15–T17, because the measurements must use the final CPU rule.
+- [ ] **T20 CPU units in the policy (ADR-0017)**
+  - Goal: the policy chooses, per CPU class, kind and element size, between all hardware threads and the performance cores, with no change to any launch until T17.
+  - Crates/files:
+    - `gridcl-device/src/{policy.rs, plan.rs, testing.rs, lib.rs}`, a new private `gridcl-device/src/cores.rs` (the macOS `sysctlbyname("hw.perflevel0.physicalcpu")` read, once per process, behind a safe wrapper with a SAFETY comment; `None` elsewhere and on any error), `gridcl-device/Cargo.toml` (`libc`, macOS only), `gridcl-device/vector-policy.toml` (`[<Class>.cpu_units]`, every entry `"all"`), `gridcl-device/tests/launch_plan.rs`;
+    - `gridcl-bench/src/{decide.rs, report.rs, protocol.rs}`, `gridcl-bench/tests/perf_record.rs`.
+  - Public API added or changed: `CpuUnits`, `VectorPolicy::cpu_units`, `testing::{with_cpu_units, with_performance_cores}` (ADR-0017).
+  - Rules: on CPUs, `cube_dim` is the performance-core count p when the entry (or `with_cpu_units`) says `Performance` and p < `max_units_per_cube`, else `max_units_per_cube`; plans inside `with_properties` keep a lower limit. `decide` treats units as a fourth configuration component, chosen by the 3% rule among the admitted configurations, ties going to `All`; a device with no performance-core count gives both settings the same time. `vector_sweep`'s `PerformanceCores` mode uses `with_cpu_units` instead of `with_properties`.
+  - Tests:
+    - `policy_covers_every_kind_and_class` checks the `cpu_units` entries (`all` or `performance`, CPU classes only);
+    - new unit tests: `Performance` uses p only when it is smaller; `with_cpu_units` takes precedence over the policy; `with_performance_cores(None)` keeps all threads;
+    - `cpu_plan_one_unit_per_thread_whole_lines` follows the entry; `prop_plan_respects_injected_limits` also runs under `with_performance_cores` and both unit settings;
+    - `decide` unit tests: a units gain within 3% stays `All`; a larger gain chooses `Performance`; Grace-like devices without a count are neutral;
+    - `perf_record::policy_follows_the_decision_rule` reads both `cube_dim` modes and checks the TOML's units.
+  - Verify: `cargo test -p gridcl-device -p gridcl-bench`; Metal; Locust CUDA and CPU `cargo test --release -p gridcl-device` (launch shapes).
+  - After: T14
+  - Parallel with: T15, T16
+  - Risks / notes: T15 and T16 need no change, because `vector_sweep --cube-dim auto` already measures both settings on the M3 Max and only `all` elsewhere.
 - [ ] **T15 Measurements on the M3 Max (CPU runtime and Metal)**
   - Goal: the M3 Max sweep JSON.
   - Crates/files: `docs/perf/data/m3s-sweep-{cpu,metal}-m3max.json`.
@@ -316,7 +333,7 @@ Listing S2 changes shape except as stated in questions 2, 6 and 14.
   - Public API added or changed: none (policy values only).
   - Tests: all four `perf_record` tests and `policy_covers_every_kind_and_class` pass.
   - Verify: `cargo test -p gridcl-bench -p gridcl-device`.
-  - After: T15, T16
+  - After: T15, T16, T20
   - Parallel with: –
   - Risks / notes: –
 - [ ] **T18 Whole suite under the chosen policy on every target; test-time budgets**
@@ -341,8 +358,8 @@ Every acceptance bullet of the milestone in docs/design.md appears exactly once.
 | --- | --- | --- | --- |
 | Benchmark JSON under `docs/perf/data/` for the M3 Max (CPU, Metal), Locust (Grace CPU, CUDA) and a Kathleen node (AVX-512 CPU), plus a Myriad D node if Kathleen was unavailable and V100/A100 if Locust was unavailable (ADR-0016) | `gridcl-bench/tests/perf_record.rs::benchmark_data_covers_required_targets` | T0, T7, T8, T9, T11, T15, T16, T19 | data: M3 Max CPU f32/f64/u32 and Metal f32/u32; Locust CPU and CUDA f32/f64/u32 (idle); Kathleen CPU f32/f64/u32 (one whole node); test: M3 Max CPU, hosted cpu |
 | `vectorization.md` lists, per family, device class and scalar type, the speedup of each size over 1, the chosen size and the reason | `…::report_lists_every_family_class_and_type` | T0, T12, T17 | M3 Max CPU; hosted cpu |
-| Every size above 1 is ≥ 10% faster than 1 at 10^6 and 10^7; every chosen (vector size, tile, block) is within 3% of the fastest | `…::policy_follows_the_decision_rule` | T0, T12, T17 | M3 Max CPU; hosted cpu |
-| A test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass` with powers of two from 1 to 16 | `gridcl-device/src/policy.rs::tests::policy_covers_every_kind_and_class` | T0, T5, T17 | M3 Max CPU; hosted cpu |
+| Every size above 1 is ≥ 10% faster than 1 at 10^6 and 10^7; every chosen (vector size, tile, block) is within 3% of the fastest | `…::policy_follows_the_decision_rule` | T0, T12, T20, T17 | M3 Max CPU; hosted cpu |
+| A test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass` with powers of two from 1 to 16 | `gridcl-device/src/policy.rs::tests::policy_covers_every_kind_and_class` | T0, T5, T20, T17 | M3 Max CPU; hosted cpu |
 | With the chosen policy, the whole suite passes on every target, the vector-size invariance tests included | `cargo test --workspace` and the invariance tests below, under the committed policy and `GRIDCL_VECTOR_SIZE` = `policy`, `scalar`, `widest` | T18 | M3 Max: CPU f32/f64 (debug and release), Metal f32, MPI 1–4 ranks; Locust: CUDA f32/f64 and Grace CPU; Kathleen: CPU f32/f64 (CpuSimd512); hosted CI: cpu, vulkan, MPICH, Open MPI |
 | Entities created per second and geometric factors per second on the M3 Max CPU runtime and a Kathleen node, with the chosen policy and with every kernel scalar (ADR-0016) | `…::throughput_recorded_with_policy_and_scalar` | T0, T13, T17, T19 | data: M3 Max CPU f64, Kathleen CPU f64 (one whole node); test: M3 Max CPU, hosted cpu |
 
@@ -380,7 +397,7 @@ Resolve every row before Status becomes approved.
 | 13 | SortDigits and ScanTile kernels are part of larger primitives, so their gains are diluted, as TopologyKeys' are. | "Benchmarks" | Time the smallest call whose launches all take the family's plan (ADR-0009: one partition per primitive). The policy entry then changes exactly the time measured. No hooks in gridcl-device. `radix_sort`'s inner `exclusive_scan` stays at its default through `with_kind_vector_size`. | answered (proposed) |
 | 14 | Granularity of tiles: `quad_tile()` is one value per class (Listing S2), but the rule decides per scalar type, so f32 and f64 GeomFactors may prefer different tiles and bullet 3 could fail for one of them. Also, which tile is "size 1"'s baseline? (ADR-0012: tile 1 forces N = 1.) | Listing S2; "Benchmarks" | `quad_tile(elem_bytes)` with per-size TOML entries (ADR-0015). The baseline is the best size-1 configuration over all tiles and blocks. Alternative: one tile per class, chosen jointly, with a logged exception to bullet 3 if f32 and f64 disagree. | answered (maintainer, 2026-10-24: `quad_tile(elem_bytes)`); ADR-0015 (accepted) |
 | 15 | The maintainer asked (2026-10-24) to add UCL Kathleen (Slurm, Xeon Gold 6248 with AVX-512) for CPU jobs, whose nodes are easier to get than Myriad's, and for multi-node tests on at most two nodes. Acceptance bullets 1 and 6 name a Myriad D node, and the runner has no Slurm support. | "Benchmarks", "Where"; "Development environment and test targets"; acceptance bullets 1 and 6 | Kathleen for CPU-only runs (CpuSimd512 sweeps, throughput, the suite) and for two-node MPI runs, with the D nodes of T7 as the fallback; a new task adds the `kathleen` target. | answered (maintainer, 2026-10-24: accepted); ADR-0016 (accepted) |
-| 16 | T14: the policy "may choose" `cube_dim` = the performance-core count ("Benchmarks", "Conditions"), but there is no policy key, no API and no detection (an FFI call outside the allowed crates). T14's preliminary sweep favours 12 units over 16 for most families (Reduce, ScanTile, SortDigits up to 9×) and 16 for GeomFactors (11–23%). | "CPUs"; "Benchmarks"; question 8; acceptance bullets 3 and 4; FFI rule | A per-kind, per-element-size `cpu_units` entry (`all` or `performance`), chosen by the 3% rule with ties to `all`; macOS detection through `sysctlbyname` in gridcl-device; a new task before T17. T15 and T16 are unaffected (the sweep measures both settings). | ADR-0017 (proposed) |
+| 16 | T14: the policy "may choose" `cube_dim` = the performance-core count ("Benchmarks", "Conditions"), but there is no policy key, no API and no detection (an FFI call outside the allowed crates). T14's preliminary sweep favours 12 units over 16 for most families (Reduce, ScanTile, SortDigits up to 9×) and 16 for GeomFactors (11–23%). | "CPUs"; "Benchmarks"; question 8; acceptance bullets 3 and 4; FFI rule | A per-kind, per-element-size `cpu_units` entry (`all` or `performance`), chosen by the 3% rule with ties to `all`; macOS detection through `sysctlbyname` in gridcl-device; a new task before T17. T15 and T16 are unaffected (the sweep measures both settings). | answered (maintainer, 2026-10-25: as proposed); ADR-0017 (accepted) |
 
 ## Deviations log
 
@@ -414,6 +431,7 @@ Resolve every row before Status becomes approved.
 | 2026-10-25 | T12 | How `decide` reads the rule where ADR-0015 is silent: (a) a requested size that ran narrower on every device of the class is chosen only if no other qualifying configuration exists, and its reason then says `runs at m` (item 6, register budget); (b) if no admitted configuration is within 3% at both 10^6 and 10^7 (or, for a shared 4-byte entry, for every type), it takes the one with the smallest worst ratio and says so in the reason, and `policy_follows_the_decision_rule` then fails and the case goes to the maintainer; (c) entries without data keep size 1, tile 16 and 16 KiB; (d) CpuSimd256 always copies CpuSimd512, as `perf_record` requires. Files outside the task's list: `gridcl-bench/Cargo.toml` (proptest dev-dependency), `report::splice` for the marker replacement, and `policy_report --check`. `vector-policy.toml`'s header becomes "Written by … policy_report"; the file itself is rewritten in T17. | The rule does not cover these cases; `perf_record`'s reading fixes (d). | – |
 | 2026-10-25 | T13 | `mesh_throughput` as built: f64 only (the acceptance data are f64; it fails without f64); `--vector-size policy\|scalar\|both` maps to `with_vector_size(Policy)` and `(Scalar)`, both by default; it reuses the protocol's `measure` (warm-up check, median of `--runs`). Entities: the box sides nearest to `--cells` (tetrahedra 6 s³, hexahedra s³), each run on a `try_clone` made outside the timing; the check compares the edge and face counts with closed forms (Euler's formula for the tetrahedra). Factors: one P2 tetrahedron box, each field dropped after its call; the mesh is reused, so the E-vector and tabulations are cached by the warm-up; the check repeats the calls and compares the unit cube's volume and centroid (Σ w det J, Σ w det J X, within n ε) and K J = I. `record.rs` needed no change; `families/mesh.rs` gains `hexahedron_side`. Throughput records get no node-load annotation: they run on the M3 Max and Kathleen, not on Locust. | The plan defined the measures but not the checks, the fresh-mesh rule for the factors, or the override mapping. | – |
 | 2026-10-25 | T14 | The temporary `cube_dim` cap read an environment variable, so the runs at 16, 12 and 4 shared one debug build; the workspace runs used `--no-fail-fast`, because the four `perf_record` tests fail until T17. Two measurements beyond the plan: test threads 4 and 1 at `cube_dim` 16, which separate oversubscription from the cube size, and a preliminary release sweep (`vector_sweep --cube-dim both`, vector sizes 1 and 4, 16 KiB blocks), recorded in docs/perf/vectorization.md but not in docs/perf/data/. The results support a rule change (`cube_dim` 12 meets the budget and speeds up most families; GeomFactors slows down), so ADR-0017 is drafted for the maintainer. The m6 budget on the hosted cpu job (4 vCPUs, no efficiency cores) is not addressed by a `cube_dim` rule; only test-thread limits can help it, and T18 re-measures it. | Separating the two causes needed the test-thread runs; the ADR needed per-family evidence before T15. | ADR-0017 |
+| 2026-10-25 | T14, T20 | New task T20 implements ADR-0017; T17 now runs after it. T14's risk note (an ADR delays T15–T17) does not apply: `vector_sweep --cube-dim auto` already measures both unit settings on the M3 Max, so T15 and T16 run in parallel with T20. Acceptance bullets 3 and 4 now name the CPU units (ADR-0017). | Maintainer accepted ADR-0017 (2026-10-25). | ADR-0017 |
 
 ## Review
 

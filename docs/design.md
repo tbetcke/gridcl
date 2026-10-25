@@ -1057,7 +1057,15 @@ impl VectorPolicy {
     /// CPU block of one kind and element size in bytes (vector-policy.toml stores units of
     /// 4 KiB); None on Gpu.
     pub fn cpu_block_bytes(&self, kind: KernelKind, elem_bytes: usize) -> Option<usize>;
+    /// CPU units of one kind and element size: all hardware threads or the performance
+    /// cores (ADR-0017); None on Gpu.
+    pub fn cpu_units(&self, kind: KernelKind, elem_bytes: usize) -> Option<CpuUnits>;
 }
+
+/// The CPU units a launch uses: one per hardware thread, or one per performance core where
+/// the CPU reports a smaller performance-core count (macOS; ADR-0017).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CpuUnits { All, Performance }
 
 /// Shape of one launch on the current device. Not Copy: CubeCount is not Copy in CubeCL 0.11.
 #[derive(Clone, Debug)]
@@ -1097,6 +1105,10 @@ pub mod testing {
                                     f: impl FnOnce() -> R) -> R;
     /// CPU block target, a power of two from 4 to 64 KiB, for plans made inside f.
     pub fn with_cpu_block_bytes<R>(bytes: usize, f: impl FnOnce() -> R) -> R;
+    /// CPU units for plans made inside f, in place of the policy's (ADR-0017).
+    pub fn with_cpu_units<R>(units: CpuUnits, f: impl FnOnce() -> R) -> R;
+    /// Replaces the detected performance-core count (None: no split) inside f.
+    pub fn with_performance_cores<R>(cores: Option<u32>, f: impl FnOnce() -> R) -> R;
     /// The plans made inside `f`, so a test can assert the vector size it ran at.
     pub fn record_plans<R>(f: impl FnOnce() -> R) -> (R, Vec<(KernelKind, LaunchPlan)>);
 }
@@ -1104,7 +1116,7 @@ pub mod testing {
 
 - **Vector size:** the largest power of two not above the policy's size, `max_vector`, the device's `hardware.max_vector_size` (ADR-0011), and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
 - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
-- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), one unit per hardware thread. The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
+- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), or the performance-core count where `VectorPolicy::cpu_units` says `Performance` and the device reports a smaller count (macOS); one unit per thread (ADR-0017). The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
 ### Padding and tiles
@@ -1146,9 +1158,9 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 - **What it runs:** every candidate family at every vector size the device offers, at QuadField tile widths 1, 4 and 16 for geometry kernels, and on CPUs at block sizes of 4, 16 and 64 KiB. Sizes are 10^5, 10^6 and 10^7 items, in f32, f64 and u32 as the family requires.
 - **What it reports:** the median of ten timed runs after a warm-up launch that absorbs JIT compilation, the effective bandwidth relative to a copy kernel on the same device, and the compile time per vector size. Results are written as JSON.
 - **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus a whole Kathleen node (2 × 20-core Xeon Gold 6248 with AVX-512) for the CPU runtime as CpuSimd512, which Locust cannot provide; a whole CPU-only Myriad D node (36-core Xeon Gold 6240, `-ac allow=D`) only as the fallback (ADR-0016). Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
-- **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
-- **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width and CPU block size follow the same rule. With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015).
-- **Record:** the choices — vector sizes, QuadField tiles per element size, and CPU block sizes per kind and element size in units of 4 KiB — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
+- **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy chooses between the two per kind and element size (ADR-0017).
+- **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width, CPU block size and CPU units follow the same rule; ties in units go to all hardware threads (ADR-0017). With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015).
+- **Record:** the choices — vector sizes, QuadField tiles per element size, CPU block sizes per kind and element size in units of 4 KiB, and CPU units per kind and element size — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
 
 ## Topology construction on the device
 
@@ -1614,7 +1626,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- |
 | gridcl-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
 | gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
-| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); dev: proptest |
+| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); libc (macOS, ADR-0017); dev: proptest |
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
@@ -1825,8 +1837,8 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - benchmark JSON committed under `docs/perf/data/` for the M3 Max (CPU runtime, Metal), Locust (CPU runtime on Grace, CUDA) and a whole Kathleen node (CPU runtime on its AVX-512 Xeon), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
 - `docs/perf/vectorization.md` lists, for every candidate family, device class and scalar type, the measured speedup of each vector size over size 1, the chosen size and the reason;
-- every vector size above 1 in `vector-policy.toml` is at least 10% faster than size 1 at 10^6 and 10^7 items on its device class (the geometric mean over its measured devices), and every chosen configuration (vector size, tile width, block size) is within 3% of the fastest one the 10% rule admits (ADR-0015);
-- a test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass`, and that every value is a power of two from 1 to 16;
+- every vector size above 1 in `vector-policy.toml` is at least 10% faster than size 1 at 10^6 and 10^7 items on its device class (the geometric mean over its measured devices), and every chosen configuration (vector size, tile width, block size, CPU units) is within 3% of the fastest one the 10% rule admits (ADR-0015);
+- a test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass`, and that every numeric value is a power of two from 1 to 16 and every `cpu_units` value is `all` or `performance` (ADR-0017);
 - with the chosen policy, the whole test suite passes on every target, including the vector-size invariance tests;
 - entities created per second and geometric factors per second are recorded on the M3 Max CPU runtime and a Kathleen node, with the chosen policy and with every kernel scalar (ADR-0016).
 
@@ -2000,7 +2012,7 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
   checks of gather and scatter, and the host-staged halo exchange.
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
-  gridcl-device (GPU-aware), behind safe wrappers. Every unsafe block needs a SAFETY comment.
+  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.

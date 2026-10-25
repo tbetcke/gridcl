@@ -1,9 +1,9 @@
 # ADR-0017: CPU units per kind: all hardware threads or the performance cores
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-25
 - **Raised in:** M3s T14 (the m6 follow-up; docs/plans/M3s.md question 8)
-- **Design sections affected:** "Vectorization and CPU execution": Listing S2 (`VectorPolicy`, `testing`), the "CPUs" bullet of `LaunchPlan`, "Benchmarks" ("Conditions", "Decision rule", "Record"); "Development rules" (the FFI rule, mirrored in CLAUDE.md); roadmap acceptance of M3s (bullets 3 and 4).
+- **Design sections affected:** "Vectorization and CPU execution": Listing S2 (`VectorPolicy`, `testing`), the "CPUs" bullet of `LaunchPlan`, "Benchmarks" ("Conditions", "Decision rule", "Record"); "Development rules" (the FFI rule, mirrored in CLAUDE.md); "Workspace layout" (the gridcl-device row of the crate table); roadmap acceptance of M3s (bullets 3 and 4).
 
 ## Context
 
@@ -73,4 +73,4 @@ Option 3. The design already says that the policy may choose the performance-cor
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-25, as proposed (option 3), after a discussion of per-system compromise rules, which the maintainer decided against in favour of ADR-0015's per-kind scheme. Applied to docs/design.md and CLAUDE.md in `adr: 0017 apply`; the gridcl-device row of the crate table (the `libc` dependency) was added to the affected sections when applying. Implemented by M3s T20.
