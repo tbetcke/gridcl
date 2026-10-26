@@ -609,7 +609,7 @@ case_kathleen_job_script() {
     local ktree=$REMOTE/kathleen/dev_e0-test
     # shellcheck disable=SC2016 # expanded by the job, not here
     rt kathleen --cores 36 --time 00:30:00 -- \
-        'echo "device=$GRIDCL_TEST_DEVICE step=${SLURM_STEP_ID:-unset} tid=$PSM2_TID flags=${GRIDCL_MPIRUN_FLAGS:-none}"'
+        'echo "device=$GRIDCL_TEST_DEVICE step=${SLURM_STEP_ID:-unset} tid=$PSM2_TID flags=${GRIDCL_MPIRUN_FLAGS:-none} job=${JOB_ID:-unset}"'
     expect_status 0 "kathleen run"
     expect_grep "$T/stderr" '--cores ignored' "--cores is ignored on whole nodes"
     local s id dir
@@ -631,8 +631,8 @@ case_kathleen_job_script() {
     expect_grep "$T/stdout" '^target: kathleen$' "summary target"
     expect_line "$T/stdout" 'exit status: 0' "summary exit status"
     dir=$LOCAL/target/hpc/kathleen/$id
-    expect_grep "$dir/output.log" 'device=cpu step=unset tid=0 flags=none' \
-        "the command sees the CPU device, no batch step id and PSM2_TID=0"
+    expect_grep "$dir/output.log" "device=cpu step=unset tid=0 flags=none job=$id" \
+        "the command sees the CPU device, no batch step id, PSM2_TID=0 and JOB_ID"
     expect_grep "$dir/prologue.txt" '^slots: 40;' "prologue records the tasks"
     expect_grep "$dir/prologue.txt" '^slurm: qos singlenode, 1 node' "prologue records QoS and nodes"
     expect_exists "$dir/slurm.log" "Slurm output moved into the results"

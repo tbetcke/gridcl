@@ -17,8 +17,8 @@
 #SBATCH --chdir=@TREE@
 #SBATCH --output=@TREE@/results/slurm-%j.log
 #@REQUESTS@
-# shellcheck disable=SC2034 # read by the appended jobs/common.sh
-JOB_ID=$SLURM_JOB_ID
+# Exported, as SGE and the direct runner do, so that a command can name results/$JOB_ID/.
+export JOB_ID=$SLURM_JOB_ID
 # In the batch step Slurm sets SLURM_STEP_ID=-5; Open MPI 4.1 then takes every MPI singleton
 # (a test executable that cargo test starts) for an srun launch, and it aborts in MPI_Init.
 case ${SLURM_STEP_ID:-} in
