@@ -1,6 +1,6 @@
 # ADR-0021: A wider backstop for shared 4-byte entries whose types disagree
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-26
 - **Raised in:** M3s T16/T17 (Kathleen sweep on one socket, trial `policy_report`)
 - **Design sections affected:** "Vectorization and CPU execution", "Benchmarks" ("Decision rule"); roadmap acceptance of M3s (bullet 3).
@@ -59,4 +59,4 @@ Option 2. Admission already makes a shared entry follow its most conservative ty
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer, 2026-10-26, as proposed.
