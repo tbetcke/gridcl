@@ -1,6 +1,6 @@
 # ADR-0020: CpuSimd512 benchmarks on one socket of a Kathleen node
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-26
 - **Raised in:** M3s T16/T17 (Kathleen sweep, trial `policy_report`)
 - **Design sections affected:** "Vectorization and CPU execution", "Benchmarks" ("Where", "Conditions"); "Development environment and test targets" (Kathleen paragraph); roadmap acceptance of M3s (bullets 1 and 6) and of M10 (benchmark bullet).
@@ -73,4 +73,4 @@ Option 2. The outliers come from thread placement across two sockets, which the 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer, 2026-10-26, as proposed.
