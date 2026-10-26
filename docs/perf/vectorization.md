@@ -41,16 +41,18 @@ existed, so the helpers inside the timed calls ran the same kernels.
 | M3 Max Metal | Gpu | 2026-10-25 19:06–19:08; Fill repeated at 19:17 | 207 | As above. Sizes 8 and 16 run at 4. |
 | Locust Grace CPU (Neoverse-V2, 72 threads; no performance-core count) | CpuSimd128 | job 20261025170542-3734076, 825 s | 900 | `node load: idle` before and after. |
 | Locust H100 (GH200) | Gpu | job 20261025180049-1677957, 196 s | 294 | `node load: idle` before and after; no clamped sizes. |
-| Kathleen, socket 0 of node-c11a-024 (Xeon Gold 6248, 20 cores, AVX-512) | CpuSimd512 | job 608520, 2026-10-26 14:16–14:49, 1,985 s | 900 | The whole node reserved (80 hardware threads allocated, no other job on the node); the sweep bound with `numactl --physcpubind=0-19 --membind=0`, so the CPU runtime ran 20 threads (ADR-0020). No performance-core count, so `plan` only. A second Fill sweep in the same job agreed within 0.76–1.08× at 10^7. |
+| Kathleen, socket 0 of one node (Xeon Gold 6248, 20 cores, AVX-512) | CpuSimd512 | job 608520, 2026-10-26 14:16–14:49, 1,985 s | 900 | The whole node reserved (80 hardware threads allocated, no other job on the node); the sweep bound with `numactl --physcpubind=0-19 --membind=0`, so the CPU runtime ran 20 threads (ADR-0020). No performance-core count, so `plan` only. A second Fill sweep in the same job agreed within 0.76–1.08× at 10^7. |
 
 Batching (ADR-0018) cut the noise of the sub-millisecond calls: the spread of the 3rd to 8th
 sorted run over the median fell, for example, on the M3 Max CPU from 0.24 / 0.08 to
 0.03 / 0.01 (Fill, 10^6 / 10^7) and from 1.03 / 0.52 to 0.38 / 0.40 (Reduce), on Grace from
-0.33 / 0.30 to 0.15 / 0.09 (Gather), and on the H100 to below 0.01. Six entries (nine table
-rows) still have no admitted configuration within 3% of the fastest at both sizes: Fill
-CpuSimd128 4-byte, Reduce Gpu 4- and 8-byte, GeomFactors CpuSimd128 f32 and f64, and Scalar
-CpuSimd128 f64. The rule then takes the closest (3.2–6.7% slower), and the tables mark them
-"closest".
+0.33 / 0.30 to 0.15 / 0.09 (Gather), and on the H100 to below 0.01. Ten entries (14 table
+rows, not counting the CpuSimd256 copies) still have no admitted configuration within 3% of
+the fastest at both sizes: Fill CpuSimd128 4-byte, GeomFactors CpuSimd128 f32 and f64, Scalar
+CpuSimd128 f64, Reduce Gpu 4- and 8-byte, and Copy 4-byte and Gather 4- and 8-byte on
+CpuSimd512. The rule then takes the closest (3.2–6.8% slower; ADR-0018), and the tables mark
+them "closest". CpuSimd512 Fill 4-byte is 14.7% slower, because f32 and u32 admit different
+sizes and prefer different blocks; it is marked "closest across types" (ADR-0021).
 
 ## Observations
 
@@ -160,7 +162,7 @@ radix sort and the scalar helpers, which the policy leaves at size 1 on CPUs, so
 little; the geometric factors follow GeomFactors' size-4 entry.
 
 Kathleen run: job 608596 at commit adc4917 (the committed policy), 2026-10-26 16:12–16:17,
-269 s, node-c11b-048 reserved whole (no other job on it), bound to socket 0 with
+269 s, a node reserved whole (no other job on it), bound to socket 0 with
 `numactl --physcpubind=0-19 --membind=0` (20 threads; ADR-0020). The factors follow
 GeomFactors' size-16 entry (1.95×). Entity creation takes about ten times as long as on the M3
 Max (2.15 s against 0.22 s for the tetrahedra), on 20 x86-64 cores against 16 Apple cores; its
@@ -257,31 +259,31 @@ Speedup of each vector size over size 1 at 10^6 / 10^7 items: the best time over
 | Fill | CpuSimd128 | f32 | 1.19 / 1.45 | 1.28 / 2.53 | 1.24 / 2.80 | 1.26 / 2.85 | 16 | – | 64 KiB | performance | closest, 3.9% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Fill | CpuSimd128 | f64 | 1.07 / 1.37 | 1.05 / 2.19 | 1.08 / 2.35 | 1.06 / 2.28 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | Fill | CpuSimd128 | u32 | 1.19 / 1.47 | 1.28 / 2.81 | 1.25 / 2.93 | 1.23 / 2.87 | 16 | – | 64 KiB | performance | closest, 3.9% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
-| Fill | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
+| Fill | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4 for f32 and 8, 16 for u32 admitted, not by every type (shared 4-byte entry) |
 | Fill | CpuSimd256 | f64 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
-| Fill | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
-| Fill | CpuSimd512 | f32 | 1.28 / 1.43 | 1.10 / 1.85 | 0.96 / 1.89 | 0.87 / 2.03 | 1 | – | 16 KiB | all | closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
+| Fill | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4 for f32 and 8, 16 for u32 admitted, not by every type (shared 4-byte entry) |
+| Fill | CpuSimd512 | f32 | 1.28 / 1.43 | 1.10 / 1.85 | 0.96 / 1.89 | 0.87 / 2.03 | 1 | – | 16 KiB | all | closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4 for f32 and 8, 16 for u32 admitted, not by every type (shared 4-byte entry) |
 | Fill | CpuSimd512 | f64 | 1.21 / 1.03 | 1.14 / 1.03 | 1.15 / 1.01 | 1.15 / 1.03 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
-| Fill | CpuSimd512 | u32 | 1.07 / 2.36 | 1.00 / 2.64 | 1.34 / 2.76 | 1.15 / 2.84 | 1 | – | 16 KiB | all | closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
-| Fill | Gpu | f32 | 0.98 / 1.28 | 1.08 / 1.41 | 1.02 / 1.15 | 1.00 / 1.06 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7; size 2 admitted for u32 only (shared 4-byte entry) |
+| Fill | CpuSimd512 | u32 | 1.07 / 2.36 | 1.00 / 2.64 | 1.34 / 2.76 | 1.15 / 2.84 | 1 | – | 16 KiB | all | closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4 for f32 and 8, 16 for u32 admitted, not by every type (shared 4-byte entry) |
+| Fill | Gpu | f32 | 0.98 / 1.28 | 1.08 / 1.41 | 1.02 / 1.15 | 1.00 / 1.06 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7; size 2 for u32 admitted, not by every type (shared 4-byte entry) |
 | Fill | Gpu | f64 | 1.06 / 1.10 | 0.87 / 0.68 | 0.83 / 0.57 | 0.76 / 0.28 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
-| Fill | Gpu | u32 | 1.11 / 1.28 | 1.09 / 1.42 | 1.04 / 1.19 | 1.02 / 1.02 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7; size 2 admitted for u32 only (shared 4-byte entry) |
+| Fill | Gpu | u32 | 1.11 / 1.28 | 1.09 / 1.42 | 1.04 / 1.19 | 1.02 / 1.02 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7; size 2 for u32 admitted, not by every type (shared 4-byte entry) |
 | Copy | CpuSimd128 | u32 | 1.34 / 1.06 | 1.39 / 2.06 | 1.43 / 2.27 | 1.38 / 2.17 | 8 | – | 64 KiB | all | 1.43x / 2.27x over size 1; smallest admitted size within 3% of the fastest |
 | Copy | CpuSimd256 | u32 | – | – | – | – | 1 | – | 4 KiB | all | copies CpuSimd512: closest, 6.6% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Copy | CpuSimd512 | u32 | 1.34 / 1.03 | 1.31 / 1.07 | 1.09 / 1.09 | 1.35 / 1.09 | 1 | – | 4 KiB | all | closest, 6.6% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Copy | Gpu | u32 | 1.12 / 1.07 | 1.11 / 1.14 | 1.10 / 1.14 | 1.07 / 1.01 | 4 | – | – | – | 1.11x / 1.14x over size 1; smallest admitted size within 3% of the fastest |
-| Reduce | CpuSimd128 | f32 | 1.08 / 1.19 | 1.16 / 1.31 | 1.26 / 1.39 | 1.17 / 1.43 | 16 | – | 64 KiB | performance | 1.17x / 1.17x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.58x / 1.57x over all threads; size 8 admitted for f32 only (shared 4-byte entry) |
+| Reduce | CpuSimd128 | f32 | 1.08 / 1.19 | 1.16 / 1.31 | 1.26 / 1.39 | 1.17 / 1.43 | 16 | – | 64 KiB | performance | 1.17x / 1.17x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.58x / 1.57x over all threads; size 8 for f32 admitted, not by every type (shared 4-byte entry) |
 | Reduce | CpuSimd128 | f64 | 1.07 / 0.99 | 1.17 / 1.07 | 1.03 / 1.05 | 1.16 / 0.99 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 3.67x / 1.22x over all threads |
-| Reduce | CpuSimd128 | u32 | 1.16 / 1.10 | 1.24 / 1.11 | 1.35 / 1.09 | 1.37 / 1.17 | 16 | – | 64 KiB | performance | 1.17x / 1.17x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.58x / 1.57x over all threads; size 8 admitted for f32 only (shared 4-byte entry) |
-| Reduce | CpuSimd256 | f32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
+| Reduce | CpuSimd128 | u32 | 1.16 / 1.10 | 1.24 / 1.11 | 1.35 / 1.09 | 1.37 / 1.17 | 16 | – | 64 KiB | performance | 1.17x / 1.17x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.58x / 1.57x over all threads; size 8 for f32 admitted, not by every type (shared 4-byte entry) |
+| Reduce | CpuSimd256 | f32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 for f32 admitted, not by every type (shared 4-byte entry) |
 | Reduce | CpuSimd256 | f64 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
-| Reduce | CpuSimd256 | u32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
-| Reduce | CpuSimd512 | f32 | 1.28 / 1.21 | 1.43 / 1.31 | 1.52 / 1.33 | 1.45 / 1.31 | 8 | – | 64 KiB | all | 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
+| Reduce | CpuSimd256 | u32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 for f32 admitted, not by every type (shared 4-byte entry) |
+| Reduce | CpuSimd512 | f32 | 1.28 / 1.21 | 1.43 / 1.31 | 1.52 / 1.33 | 1.45 / 1.31 | 8 | – | 64 KiB | all | 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 for f32 admitted, not by every type (shared 4-byte entry) |
 | Reduce | CpuSimd512 | f64 | 1.13 / 1.05 | 1.19 / 1.07 | 1.21 / 1.05 | 1.20 / 1.06 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
-| Reduce | CpuSimd512 | u32 | 1.12 / 0.99 | 1.17 / 1.00 | 1.23 / 1.12 | 1.22 / 1.10 | 8 | – | 64 KiB | all | 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
-| Reduce | Gpu | f32 | 1.03 / 1.50 | 1.65 / 1.96 | 1.48 / 2.07 | 1.63 / 2.19 | 16 | – | – | – | closest, 6.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018); size 2 admitted for u32 only (shared 4-byte entry) |
+| Reduce | CpuSimd512 | u32 | 1.12 / 0.99 | 1.17 / 1.00 | 1.23 / 1.12 | 1.22 / 1.10 | 8 | – | 64 KiB | all | 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 for f32 admitted, not by every type (shared 4-byte entry) |
+| Reduce | Gpu | f32 | 1.03 / 1.50 | 1.65 / 1.96 | 1.48 / 2.07 | 1.63 / 2.19 | 16 | – | – | – | closest, 6.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018); size 2 for u32 admitted, not by every type (shared 4-byte entry) |
 | Reduce | Gpu | f64 | 1.05 / 1.39 | 1.36 / 1.60 | 1.34 / 1.57 | 1.29 / 1.65 | 4 | – | – | – | closest, 3.2% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
-| Reduce | Gpu | u32 | 1.28 / 1.47 | 1.43 / 1.86 | 1.56 / 2.02 | 1.47 / 1.89 | 16 | – | – | – | closest, 6.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018); size 2 admitted for u32 only (shared 4-byte entry) |
+| Reduce | Gpu | u32 | 1.28 / 1.47 | 1.43 / 1.86 | 1.56 / 2.02 | 1.47 / 1.89 | 16 | – | – | – | closest, 6.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018); size 2 for u32 admitted, not by every type (shared 4-byte entry) |
 | ScanTile | CpuSimd128 | u32 | 1.11 / 1.05 | 1.08 / 1.11 | 1.14 / 1.12 | 1.21 / 1.11 | 16 | – | 64 KiB | performance | 1.21x / 1.11x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.71x / 2.61x over all threads |
 | ScanTile | CpuSimd256 | u32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.40x / 1.18x over size 1; smallest admitted size within 3% of the fastest |
 | ScanTile | CpuSimd512 | u32 | 1.23 / 1.06 | 1.36 / 1.10 | 1.40 / 1.18 | 1.36 / 1.13 | 8 | – | 64 KiB | all | 1.40x / 1.18x over size 1; smallest admitted size within 3% of the fastest |

@@ -680,16 +680,22 @@ fn with_partial(views: &[TypeView], text: String) -> String {
     if partial.is_empty() {
         return text;
     }
-    let sizes: Vec<String> = partial.iter().map(usize::to_string).collect();
-    let who: Vec<&str> = views
+    // Per type, the sizes it admits that another type does not.
+    let per_type: Vec<String> = views
         .iter()
-        .filter(|v| v.admitted.iter().any(|a| partial.contains(a)))
-        .map(|v| v.scalar.name())
+        .filter_map(|v| {
+            let sizes: Vec<String> = v
+                .admitted
+                .iter()
+                .filter(|a| partial.contains(a))
+                .map(usize::to_string)
+                .collect();
+            (!sizes.is_empty()).then(|| format!("{} for {}", sizes.join(", "), v.scalar.name()))
+        })
         .collect();
     let note = format!(
-        "size {} admitted for {} only (shared 4-byte entry)",
-        sizes.join(", "),
-        who.join(", ")
+        "size {} admitted, not by every type (shared 4-byte entry)",
+        per_type.join(" and ")
     );
     format!("{text}; {note}")
 }
@@ -1036,7 +1042,7 @@ mod tests {
         assert_eq!((c.vector_size, c.fit), (1, Fit::Rule), "{}", c.reason);
         assert!(
             c.reason
-                .ends_with("; size 4 admitted for f32 only (shared 4-byte entry)"),
+                .ends_with("; size 4 for f32 admitted, not by every type (shared 4-byte entry)"),
             "{}",
             c.reason
         );

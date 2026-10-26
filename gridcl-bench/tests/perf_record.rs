@@ -97,6 +97,13 @@ fn check_calls_per_run(calls_per_run: usize, calibration_s: f64, what: &str) {
 }
 
 /// Both node-load snapshots of a Locust run are `idle` (ADR-0002, ADR-0005).
+/// Kathleen benchmarks run on one socket, 20 threads (ADR-0020).
+fn check_kathleen_socket(target: &str, threads: u32, what: &str) {
+    if target == "kathleen" {
+        assert_eq!(threads, 20, "{what}: not bound to one socket (ADR-0020)");
+    }
+}
+
 fn check_idle(target: &str, node_load: &Option<gridcl_bench::record::NodeLoad>, what: &str) {
     if target != "locust" {
         return;
@@ -127,6 +134,7 @@ fn benchmark_data_covers_required_targets() {
         assert_eq!(r.profile, "release", "{what}: record release builds only");
         assert_eq!(r.times_s.len(), 10, "{what}: ten timed runs");
         check_calls_per_run(r.calls_per_run, r.calibration_s, &what);
+        check_kathleen_socket(&r.target, r.cores.threads, &what);
         if r.target.starts_with("myriad-") {
             assert!(
                 r.fallback_reason.as_deref().is_some_and(|s| !s.is_empty()),
@@ -177,6 +185,16 @@ fn benchmark_data_covers_required_targets() {
         for r in &records {
             assert_eq!(r.device_class, class, "{target} {backend}: device class");
         }
+        // A CPU with a performance-core count is swept on its performance cores too (ADR-0017);
+        // the M3 Max has one.
+        let has_performance = |r: &&SweepRecord| r.cores.performance.is_some_and(|p| p > 0);
+        if (target, backend) == ("m3max", "cpu") {
+            assert!(
+                records.iter().all(has_performance),
+                "m3max cpu: records without the performance-core count"
+            );
+        }
+        let performance = is_cpu(class) && records.iter().any(has_performance);
         for (kind, scalars) in kinds() {
             if !measured(kind) || (kind == KernelKind::Scalar && !is_cpu(class)) {
                 continue;
@@ -199,6 +217,14 @@ fn benchmark_data_covers_required_targets() {
                     };
                     let scalar_runs = at(1);
                     assert!(!scalar_runs.is_empty(), "{what}: nothing at {size}");
+                    if performance {
+                        assert!(
+                            of.iter().any(|r| r.nominal_n == size
+                                && r.vector_size == 1
+                                && r.cube_dim == CubeDimMode::PerformanceCores),
+                            "{what} at {size}: no performance-core runs (ADR-0017)"
+                        );
+                    }
                     if is_cpu(class) {
                         for block in BLOCKS {
                             assert!(
@@ -468,18 +494,29 @@ fn policy_follows_the_decision_rule() {
                     Some(worst)
                 };
                 let chosen_worst = worst(&chosen).unwrap();
+                let candidates: Vec<Config> = views[0].times[0]
+                    .keys()
+                    .copied()
+                    .filter(|c| entry.contains(&c.0))
+                    .collect();
                 if chosen_worst <= 1.03 {
+                    // Ties go to the smallest vector size, tile and block, then `all` (ADR-0015,
+                    // ADR-0017): no smaller configuration is within 3% too.
+                    for c in candidates.iter().filter(|&&c| c < chosen) {
+                        if let Some(w) = worst(c) {
+                            assert!(
+                                w > 1.03 * (1.0 - 1e-12),
+                                "{what}: {c:?} is within 3% ({w:.4}) and precedes the chosen \
+                                 {chosen:?} in the tie order"
+                            );
+                        }
+                    }
                     continue;
                 }
                 // The backstop (ADR-0018): no admitted configuration within 3% for every type at
                 // both sizes; the chosen one is the closest, at most 10% slower, and marked. A
                 // shared entry with more than one type measured may go up to 25%, marked "closest
                 // across types" above 10% (ADR-0021).
-                let candidates: Vec<Config> = views[0].times[0]
-                    .keys()
-                    .copied()
-                    .filter(|c| entry.contains(&c.0))
-                    .collect();
                 for c in &candidates {
                     if let Some(w) = worst(c) {
                         assert!(
@@ -590,6 +627,13 @@ fn throughput_recorded_with_policy_and_scalar() {
         let what = format!("{} {:?}", r.target, r.measure);
         check_idle(&r.target, &r.node_load, &what);
         check_calls_per_run(r.calls_per_run, r.calibration_s, &what);
+        check_kathleen_socket(&r.target, r.cores.threads, &what);
+        assert_eq!(r.times_s.len(), 10, "{what}: ten timed runs");
+        assert_eq!(
+            r.scalar,
+            Scalar::F64,
+            "{what}: throughput is measured in f64"
+        );
     }
     // A Kathleen node; a Myriad D node only as the fallback, with its reason (ADR-0016).
     for r in data
