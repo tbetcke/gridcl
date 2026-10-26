@@ -5,7 +5,11 @@
 //! The section parsers are written once against it. Counts are checked against the bytes
 //! left before anything is allocated from them ([`Cursor::count`]).
 
+mod binary;
+
 use std::path::Path;
+
+use binary::Binary;
 
 use gridcl_device::{GridError, Result};
 
@@ -18,6 +22,8 @@ use super::{
 struct Cursor<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// The encoding of the values of a binary file, set by `$MeshFormat`; `None` for text.
+    binary: Option<Binary>,
 }
 
 /// The smallest number of bytes one ASCII token takes: a digit and a separator.
@@ -25,7 +31,11 @@ const TOKEN: usize = 2;
 
 impl<'a> Cursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Cursor { bytes, pos: 0 }
+        Cursor {
+            bytes,
+            pos: 0,
+            binary: None,
+        }
     }
 
     /// `Parse` at byte `offset`.
@@ -79,19 +89,57 @@ impl<'a> Cursor<'a> {
             .map_err(|_| self.error_at(at, format!("expected {what}, found {text:?}")))
     }
 
+    /// The next `n` bytes of a binary value.
+    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+        if self.remaining() < n {
+            return Err(self.error("unexpected end of file"));
+        }
+        let b = &self.bytes[self.pos..self.pos + n];
+        self.pos += n;
+        Ok(b)
+    }
+
+    /// The next `N` bytes of a binary value.
+    fn take_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        Ok(self.take(N)?.try_into().expect("N bytes"))
+    }
+
     /// An `int` of the format.
     fn int(&mut self) -> Result<i32> {
-        self.parse("an integer")
+        match self.binary {
+            Some(b) => Ok(b.int(self.take_array()?)),
+            None => self.parse("an integer"),
+        }
     }
 
     /// A `size_t` of the format.
     fn size(&mut self) -> Result<u64> {
-        self.parse("an unsigned integer")
+        match self.binary {
+            Some(b) => Ok(b.size(self.take(b.size_t)?)),
+            None => self.parse("an unsigned integer"),
+        }
     }
 
     /// A `double` of the format.
     fn float(&mut self) -> Result<f64> {
-        self.parse("a number")
+        match self.binary {
+            Some(b) => Ok(b.float(self.take_array()?)),
+            None => self.parse("a number"),
+        }
+    }
+
+    /// Consumes the line break after a section header; binary data starts after it.
+    fn header_end(&mut self) -> Result<()> {
+        if self.binary.is_some() {
+            if self.bytes.get(self.pos) == Some(&b'\r') {
+                self.pos += 1;
+            }
+            if self.bytes.get(self.pos) != Some(&b'\n') {
+                return Err(self.error("expected a line break after the section header"));
+            }
+            self.pos += 1;
+        }
+        Ok(())
     }
 
     /// A dimension 0–3, stored as an `int`.
@@ -128,7 +176,10 @@ impl<'a> Cursor<'a> {
 
     /// The bytes one value of each kind takes at least: (int, size_t, double).
     fn widths(&self) -> (usize, usize, usize) {
-        (TOKEN, TOKEN, TOKEN)
+        match self.binary {
+            Some(b) => (4, b.size_t, 8),
+            None => (TOKEN, TOKEN, TOKEN),
+        }
     }
 
     /// Expects the line `$End<section>`.
@@ -154,7 +205,8 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// `$MeshFormat`: version 4.1, ASCII.
+/// `$MeshFormat`: version 4.1; for binary files the endianness marker, which sets the
+/// encoding of the cursor.
 fn mesh_format(c: &mut Cursor<'_>) -> Result<()> {
     let (at, version) = c.token()?;
     if version != "4.1" {
@@ -163,19 +215,40 @@ fn mesh_format(c: &mut Cursor<'_>) -> Result<()> {
     let at = c.pos;
     let file_type = c.int()?;
     let data_size = c.int()?;
-    match file_type {
-        0 => {}
-        1 => return Err(c.error_at(at, "binary files are not supported yet (M4 T6)")),
-        _ => return Err(c.error_at(at, format!("file type {file_type} is not 0 or 1"))),
-    }
     if data_size != 4 && data_size != 8 {
         return Err(c.error_at(at, format!("data size {data_size} is not 4 or 8")));
+    }
+    match file_type {
+        0 => {}
+        1 => {
+            // The line break, then the int 1 in the file's byte order.
+            c.binary = Some(Binary {
+                big_endian: false,
+                size_t: data_size as usize,
+            });
+            c.header_end()?;
+            let at = c.pos;
+            let one = c.take_array()?;
+            c.binary = Some(
+                Binary::from_marker(one, data_size as usize)
+                    .ok_or_else(|| c.error_at(at, "an endianness marker that is not 1"))?,
+            );
+        }
+        _ => return Err(c.error_at(at, format!("file type {file_type} is not 0 or 1"))),
     }
     c.end("MeshFormat")
 }
 
-/// `$PhysicalNames`: always text.
+/// `$PhysicalNames`: text in binary files too.
 fn physical_names(c: &mut Cursor<'_>) -> Result<Vec<PhysicalName>> {
+    let binary = c.binary.take();
+    let names = physical_name_list(c);
+    c.binary = binary;
+    names
+}
+
+/// The entries of `$PhysicalNames`, read as text.
+fn physical_name_list(c: &mut Cursor<'_>) -> Result<Vec<PhysicalName>> {
     let n = c.count(3 * TOKEN + 2)?;
     let mut names = Vec::with_capacity(n);
     for _ in 0..n {
@@ -458,11 +531,12 @@ pub fn parse(bytes: &[u8]) -> Result<MshFile> {
         let Some(section) = header.strip_prefix('$') else {
             return Err(c.error_at(at, format!("expected a section, found {header:?}")));
         };
+        c.header_end()?;
         match section {
             "PhysicalNames" => file.physical_names.extend(physical_names(&mut c)?),
             "Entities" => file.entities = Some(entities(&mut c)?),
             "PartitionedEntities" => {
-                file.partitioned_entities = Some(partitioned_entities(&mut c)?);
+                file.partitioned_entities = Some(partitioned_entities(&mut c)?)
             }
             "Periodic" => file.periodic.extend(periodic(&mut c)?),
             "Nodes" => file.node_blocks.extend(nodes(&mut c)?),

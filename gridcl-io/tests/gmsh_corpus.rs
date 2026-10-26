@@ -3,10 +3,11 @@
 //! with mshio, the test oracle (ADR-0022).
 
 mod common;
+mod encode;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::{Fixture, REQUIRED_TYPES, manifest};
+use common::{Expect, Fixture, REQUIRED_TYPES, manifest};
 use gridcl_io::gmsh::{self, MshFile};
 
 fn read(f: &Fixture) -> MshFile {
@@ -102,16 +103,30 @@ fn corpus_covers_every_element_type() {
     );
 }
 
-/// Nodes and elements agree with mshio on every fixture: node blocks (entity, coordinates and
-/// tags), element blocks (entity, type, tags and node tags).
+/// The Gmsh type mshio 0.4.2 cannot read: it gives the 18-node prism 28 nodes (ADR-0023).
+const MSHIO_UNREADABLE_TYPE: i32 = 13;
+
+/// Nodes and elements agree with mshio on every fixture mshio can read: node blocks (entity,
+/// coordinates and tags), element blocks (entity, type, tags and node tags). mshio must fail on
+/// exactly the files with 18-node prisms (ADR-0023).
 #[test]
 fn nodes_and_elements_agree_with_mshio() {
     let manifest = manifest();
+    let mut exempt = 0;
     for f in &manifest.files {
         let bytes = std::fs::read(f.path()).unwrap_or_else(|e| panic!("{}: {e}", f.file));
         let ours = read(f);
-        let theirs =
-            mshio::parse_msh_bytes(&bytes).unwrap_or_else(|e| panic!("{}: mshio: {e:?}", f.file));
+        let parsed = mshio::parse_msh_bytes(&bytes);
+        if f.element_counts.contains_key(&MSHIO_UNREADABLE_TYPE) {
+            assert!(
+                parsed.is_err(),
+                "{}: mshio reads 18-node prisms now; remove the ADR-0023 exemption",
+                f.file
+            );
+            exempt += 1;
+            continue;
+        }
+        let theirs = parsed.unwrap_or_else(|e| panic!("{}: mshio: {e:?}", f.file));
         let name = &f.file;
 
         // Nodes. mshio keeps the tags of a block only when the file's tags are sparse; dense
@@ -131,16 +146,27 @@ fn nodes_and_elements_agree_with_mshio() {
                 assert_eq!(*x, [y.x, y.y, y.z], "{name}: node coordinates");
             }
             if let Some(map) = &b.node_tags {
-                for (i, &t) in a.tags.iter().enumerate() {
-                    assert_eq!(map.get(&(t as u64)), Some(&i), "{name}: node tag {t}");
+                // Repeated tags (the duplicate-tag fixture) map to one of their positions.
+                for &t in &a.tags {
+                    let i = map[&(t as u64)];
+                    assert_eq!(a.tags[i], t, "{name}: node tag {t}");
                 }
             }
             all_tags.extend_from_slice(&a.tags);
         }
-        if nodes.node_blocks.iter().all(|b| b.node_tags.is_none()) && !all_tags.is_empty() {
+        let range = nodes.min_node_tag as i64..=nodes.max_node_tag as i64;
+        assert!(
+            all_tags.iter().all(|t| range.contains(t)),
+            "{name}: node tag range"
+        );
+        let dense = nodes.node_blocks.iter().all(|b| b.node_tags.is_none());
+        if dense && f.expect == Expect::Mesh {
             all_tags.sort_unstable();
-            let dense: Vec<i64> = (nodes.min_node_tag as i64..=nodes.max_node_tag as i64).collect();
-            assert_eq!(all_tags, dense, "{name}: dense node tags");
+            assert_eq!(
+                all_tags,
+                range.collect::<Vec<_>>(),
+                "{name}: dense node tags"
+            );
         }
 
         // Elements.
@@ -170,6 +196,77 @@ fn nodes_and_elements_agree_with_mshio() {
                     a.nodes[i * k..(i + 1) * k],
                     nodes[..],
                     "{name}: element nodes"
+                );
+            }
+        }
+    }
+    assert!(exempt > 0, "the corpus has no 18-node prisms");
+}
+
+/// Every binary fixture, re-encoded in both byte orders and with 4- and 8-byte `size_t`, parses
+/// to the same model; re-encoded as Gmsh wrote it (little-endian, 8 bytes) it has Gmsh's bytes.
+#[test]
+fn binary_byte_orders_and_size_t_widths() {
+    let manifest = manifest();
+    let mut seen = 0;
+    for f in manifest.files.iter().filter(|f| f.binary) {
+        let bytes = std::fs::read(f.path()).unwrap_or_else(|e| panic!("{}: {e}", f.file));
+        let model = read(f);
+        assert_eq!(
+            encode::encode_binary(&model, false, 8),
+            bytes,
+            "{}: re-encoded bytes",
+            f.file
+        );
+        for (big_endian, size_t) in [(false, 4), (true, 4), (true, 8)] {
+            let copy = encode::encode_binary(&model, big_endian, size_t);
+            let parsed = gmsh::parse(&copy).unwrap_or_else(|e| {
+                panic!("{} (big-endian {big_endian}, size_t {size_t}): {e}", f.file)
+            });
+            assert_eq!(
+                parsed, model,
+                "{} (big-endian {big_endian}, size_t {size_t})",
+                f.file
+            );
+        }
+        seen += 1;
+    }
+    assert!(seen > 0, "no binary fixtures");
+}
+
+/// Truncated binary files never panic, and fail with `Parse` when cut inside `$Nodes` or
+/// `$Elements`: every prefix of a small binary fixture, in both byte orders.
+#[test]
+fn binary_truncated_files() {
+    let manifest = manifest();
+    let f = manifest
+        .files
+        .iter()
+        .find(|f| f.file == "two_regions_p1-binary.msh")
+        .expect("two_regions_p1-binary.msh");
+    let model = read(f);
+    for big_endian in [false, true] {
+        let bytes = encode::encode_binary(&model, big_endian, 8);
+        let nodes = bytes
+            .windows(7)
+            .position(|w| w == b"$Nodes\n")
+            .expect("$Nodes");
+        let end = bytes
+            .windows(13)
+            .position(|w| w == b"$EndElements\n")
+            .expect("$EndElements");
+        // A prefix that ends right after `$EndNodes` is a file without elements.
+        let between = bytes
+            .windows(10)
+            .position(|w| w == b"$EndNodes\n")
+            .expect("$EndNodes")
+            + 9;
+        for len in 0..bytes.len() {
+            let result = gmsh::parse(&bytes[..len]);
+            if (nodes + 7..end).contains(&len) && len != between && len != between + 1 {
+                assert!(
+                    matches!(result, Err(gridcl_device::GridError::Parse { .. })),
+                    "prefix of {len} bytes (big-endian {big_endian})"
                 );
             }
         }
