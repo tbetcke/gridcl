@@ -491,4 +491,61 @@ Resolve every row before Status becomes approved.
 
 ## Review
 
-<Filled by /review-milestone: reviewer findings and how each was resolved, test evidence per target and backend (command, job id for remote runs, result), follow-ups for later milestones.>
+Reviewed 2026-10-26 on `main...HEAD` (main 5882b8c) by two design-reviewer passes: the library crates (gridcl-device, gridcl-topology, gridcl-geometry, gridcl), and gridcl-bench, `scripts/hpc`, the docs, ADRs 0015–0021 and the design edits. No Blockers.
+
+### Findings and resolution
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| M1 | Major | `cancel.sh` took any user's job with the id (`qstat -j`, `squeue -j`): with Kathleen's Slurm ids beside Myriad's SGE ids it could delete our job on the wrong scheduler, or stop at another user's SGE job and never reach Slurm. | 4a3a342: both helpers look the id up among the user's jobs; new runner case `cancel_only_own_jobs` (fails on the old code). Re-reviewed: resolved. |
+| L1 | Minor | `factor_invariance` never compared the shipped tile (4 on CpuSimd128) with the reference. | 0dd91a0: the sweep adds the policy's tile. |
+| L2 | Minor | `performance_cores_match_the_os` failed on Macs without `hw.perflevel0`. | 0dd91a0: a count is required on Apple silicon only. |
+| L3 | Minor | `KernelKind::Scalar` reached size 1 only through its callers' `max_vector = 1` (Listing S2: "always vector size 1"). | 0dd91a0: `vector_size` returns 1 for `Scalar`; test `scalar_kind_is_always_one`. |
+| L4 | Minor | `LaunchPlan` rustdoc named only 4, 16 and 64 KiB blocks. | 0dd91a0. |
+| L5 | Minor | `quad_tile` fell back to 1 for unlisted sizes, Listing B4b says 16. | 0dd91a0: fallback 16 (no size is unlisted today). |
+| L6 | Minor | Prism and pyramid blocks are transposed twice for faces at N > 1 (time only; TopologyKeys ships at 1). | Follow-up (M10). |
+| B1 | Minor | The report's backstop paragraph predated the Kathleen data. | e96d61b. |
+| B2 | Minor | The shared-entry note merged sizes across types. | e96d61b: per type; report regenerated, policy unchanged. |
+| B3 | Minor | The 1.25 bound applies whenever a shared 4-byte entry has more than one type measured (code, ADR-0021), design.md "Decision rule" says when the types disagree. | Maintainer: keep code and ADR-0021; design text follow-up. |
+| B4 | Minor | `perf_record` did not check the tie order or the M3 Max performance-core records independently. | e96d61b. |
+| B5 | Minor | The throughput test checked less than the sweep test (ten runs, f64, Kathleen binding). | e96d61b; Kathleen sweep records also checked for 20 threads. |
+| B6 | Minor | Kathleen compute-node names in committed docs. | e96d61b, cd8fc50: replaced (they remain in git history). |
+| B7 | Minor | hpc-test skill: no socket binding for the D-node fallback, no `--fallback-reason`, no `ssh kathleen true`. | cd8fc50. |
+| B8 | Minor | Kathleen `TMPDIR` is not on `/dev/shm` as ADR-0016 says. | cd8fc50: Deviations log. |
+| B9 | Minor | dev-environment.md still expected job 10224's smoke result. | cd8fc50. |
+| B10 | Minor | design.md runner step 4 still says `GRIDCL_TEST_DEVICE=cuda` for every target. | Follow-up (design edit). |
+| B11 | Minor | design.md's crate table lacks gridcl-bench's gridcl-refcell dependency and proptest dev-dependency. | Follow-up (ADR). |
+| B12 | Minor | `decide.rs` proptests never generate a shared entry or a backstop. | Follow-up. |
+| B13 | Minor | With our own Myriad and Kathleen jobs of the same number, `cancel.sh` cancels the SGE one first. | Follow-up (`cancel.sh --target`). |
+
+### Test evidence
+
+At cd8fc50 (the code of the review; only this section changed since):
+
+| Target | Command | Job | Result |
+| --- | --- | --- | --- |
+| M3 Max | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings` | – | clean |
+| M3 Max, CPU | `cargo test --workspace` (debug) | – | 574 passed, 14:39 |
+| M3 Max, CPU | `GRIDCL_VECTOR_SIZE=policy cargo test --release --workspace` | – | 572 passed |
+| M3 Max, CPU | `GRIDCL_VECTOR_SIZE=scalar …` | – | 571 passed, 1 failed: doctest `entity::Connectivity::try_clone` killed by SIGSEGV inside CubeCL's LLVM JIT (`llvm::PMTopLevelManager::schedulePass` under `cubecl_llvm::cpu::jit::PlironEngine::compile`, macOS crash report `rust_out-2026-10-26-185750`); passed on two reruns of `GRIDCL_VECTOR_SIZE=scalar cargo test --release -p gridcl-topology --doc`; the only such failure in the 18 workspace runs of T18 and this review |
+| M3 Max, CPU | `GRIDCL_VECTOR_SIZE=widest …` | – | 572 passed |
+| M3 Max, CPU | `GRIDCL_QUAD_TILE=1 …` | – | 572 passed |
+| M3 Max, Metal | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` (unsandboxed) | – | 574 passed |
+| M3 Max, MPI | `scripts/mpi-test.sh 1 2 3 4` (Open MPI) | – | passed at 1–4 ranks |
+| Locust, H100 | `cargo test --release --workspace --features gridcl-testing/cuda` | 20261026182326-1984295 | 572 passed (node load: busy before, CPU only, GPU at 0%; idle after) |
+| Locust, Grace CPU | `env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` | 20261026182649-1990730 | 572 passed (idle before and after) |
+| Kathleen, one whole node | `cargo test --release --workspace` (unbound, `nproc` 40; CpuSimd512) | 608672 | 572 passed |
+| Hosted CI | cpu, vulkan, mpi-mpich, mpi-openmpi | run 40377206223 | all passed; cpu job 18:31 |
+
+The four `perf_record` tests and `policy_covers_every_kind_and_class` are part of every run above. T18's runs at 18ef5a2 (Deviations log) passed on the same targets before the review fixes. Not run: conformance (neither `conformance/` nor gridcl-refcell changed), Myriad (no fallback was needed, and M3s needs no multi-GPU test), two-node Kathleen MPI (required from M6). The debug count is two higher than release: the debug-only index checks of `primitives_prop`.
+
+Test-time budgets (question 11, T18): debug workspace 12:58 at T18 (14:39 here, with the machine in use), within about 15 min; hosted cpu job 32:41 at T18 with a cache save, 18:31 here.
+
+### Follow-ups
+
+- M10: L6 (one transpose per block per `emit_keys` call); the CPU runtime's thread placement (ADR-0020); the scatter's own counting phase (T21 deviation).
+- Maintainer, design text: B3 (design.md "Decision rule": the 1.25 bound as ADR-0021 states it), B10 (runner step 4: `cpu` on CPU-only targets).
+- ADR: B11 (gridcl-bench's dependencies in the crate table).
+- Tests and tooling: B12 (two-type `decide` proptest), B13 (`cancel.sh --target`); `myriad-cpu` has never run a job live (its first fallback run is its smoke check).
+- CubeCL: if the LLVM JIT SIGSEGV in `PMTopLevelManager::schedulePass` recurs, report it upstream with the crash report.
+- Hosted cpu budget: watch the job time with a cold cache (32:41 at T18).
