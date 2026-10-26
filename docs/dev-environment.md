@@ -176,11 +176,11 @@ Re-run env-check on a target after its maintenance window or a module change, an
 
 ## Hosted CI
 
-GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu-24.04`, the toolchain of `rust-toolchain.toml`, and caches the cargo registry, `target/` and, where the CPU runtime builds, its LLVM bundle in `$XDG_DATA_HOME/tracel`. Actions are pinned by commit SHA.
+GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu-24.04` and the toolchain of `rust-toolchain.toml`. `Swatinem/rust-cache` caches the cargo registry, the dependencies in `target/` (not the workspace crates) and, where the CPU runtime builds, its LLVM bundle in `$XDG_DATA_HOME/tracel`; caches are saved from `main` only, and other branches restore them, because all workflows share 10 GB per repository and larger caches evicted each other on every run. The ci workflow builds tests without debug info (`CARGO_PROFILE_DEV_DEBUG=0`). System packages come through `scripts/ci-apt-install.sh`, which gives each attempt 4 min and retries twice, because the runners' mirror sometimes stalls for 10–30 min. Actions are pinned by commit SHA.
 
 | Workflow | Jobs | Trigger | System packages |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push and pull request; manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools` |
+| `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push (a pull request shows its head commit's checks); manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools` |
 | `.github/workflows/conformance.yml` | conformance | nightly; pushes touching `conformance/` or `gridcl-refcell/`; manual | `libopenblas-dev` |
 | `.github/workflows/ptscotch.yml` | ptscotch (skeleton until M7) | nightly; pushes touching `gridcl-partition/` or `ptscotch-sys/`; manual | `libptscotch-dev` |
 
