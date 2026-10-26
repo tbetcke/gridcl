@@ -13,6 +13,23 @@ use crate::emission::{EmissionPlan, emission_plans, sub_entity_vertices};
 use crate::keys::emit_keys;
 
 /// The entities of one type and dimension (Listing T1).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+/// mesh.create_entities(1)?;
+/// let edges = &mesh.entity_blocks(1)?[0];
+/// assert_eq!(edges.cell, CellType::Interval);
+/// // The square's four sides and its diagonal, two vertices each.
+/// assert_eq!(edges.index_map.num_local(), 5);
+/// assert_eq!((edges.vertices.stride, edges.vertices.data.len()), (2, 10));
+/// assert_eq!(edges.offset, 0);
+/// # Ok::<(), GridError>(())
+/// ```
 pub struct EntityBlock {
     /// The entity type, e.g. `Triangle`.
     pub cell: CellType,
@@ -30,6 +47,21 @@ impl EntityBlock {
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// mesh.create_entities(1)?;
+    /// let edges = &mesh.entity_blocks(1)?[0];
+    /// let copy = edges.try_clone(mesh.comm())?;
+    /// assert_eq!(copy.vertices.data.to_host()?, edges.vertices.data.to_host()?);
+    /// assert_eq!(copy.index_map.num_local(), 5);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
         Ok(EntityBlock {
             cell: self.cell,
@@ -41,6 +73,28 @@ impl EntityBlock {
 }
 
 /// A stored connectivity (Listing T1).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+/// mesh.create_connectivity(2, 1)?;
+/// let Connectivity::Downward(blocks) = mesh.connectivity(ConnKey { from: 2, to: 1 })? else {
+///     unreachable!("cell -> edge is downward")
+/// };
+/// // Three edges per triangle.
+/// assert_eq!((blocks[0].stride, blocks[0].data.len()), (3, 6));
+/// mesh.create_connectivity(1, 2)?;
+/// let Connectivity::Upward(csr) = mesh.connectivity(ConnKey { from: 1, to: 2 })? else {
+///     unreachable!("edge -> cell is upward")
+/// };
+/// // Five edges; only the diagonal has two cells.
+/// assert_eq!((csr.offsets.len(), csr.indices.len()), (6, 6));
+/// # Ok::<(), GridError>(())
+/// ```
 #[allow(clippy::large_enum_variant)] // Listing T1's layout; one value per stored key
 pub enum Connectivity {
     /// One strided array per cell block (cell -> edges, cell -> faces, ...), flat indices.
@@ -55,6 +109,20 @@ impl Connectivity {
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// mesh.create_connectivity(2, 1)?;
+    /// let copy = mesh.connectivity(ConnKey { from: 2, to: 1 })?.try_clone()?;
+    /// let Connectivity::Downward(blocks) = copy else { unreachable!("cell -> edge is downward") };
+    /// assert_eq!(blocks[0].data.len(), 6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn try_clone(&self) -> Result<Self> {
         Ok(match self {
             Connectivity::Downward(blocks) => Connectivity::Downward(
@@ -321,7 +389,7 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
             words,
             fast,
         };
-        let launch = LaunchPlan::elementwise(client, KernelKind::Gather, count, 4, 1, 1)?;
+        let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, count, 4, 1, 1)?;
         debug_assert_bindings(client, 5);
         // SAFETY: groups g < count read first[g] (count ≤ runs entries); a head in this block's
         // range [start, end) decodes to cell c < padded with sub-entity index < local.len().
@@ -372,6 +440,20 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
     })
 }
 
+/// The cell type and cell count of each cell block.
+pub(crate) fn cell_counts(cells: &[(CellType, &DeviceStrided<u32>)]) -> Vec<(CellType, usize)> {
+    cells
+        .iter()
+        .map(|(c, rows)| (*c, rows.data.len() / rows.stride.max(1) as usize))
+        .collect()
+}
+
+/// The largest vertex index the kernels read for the origin ids `ids`: ids.len() / 2 − 1, or 0
+/// when there are no vertices.
+pub(crate) fn last_vertex(ids: &DeviceBuffer<u32>) -> Result<u32> {
+    Ok(fit(ids.len() / 2)?.saturating_sub(1))
+}
+
 /// The entity blocks of dimension `dim` ≥ 1 and the downward connectivity (tdim, dim) of the
 /// cell blocks `cells` (cell type and vertex rows), over vertices with origin ids `ids`.
 pub(crate) fn create_dimension(
@@ -382,10 +464,7 @@ pub(crate) fn create_dimension(
     fast: bool,
     dim: usize,
 ) -> Result<(Vec<EntityBlock>, Vec<DeviceStrided<u32>>)> {
-    let counts: Vec<(CellType, usize)> = cells
-        .iter()
-        .map(|(c, rows)| (*c, rows.data.len() / rows.stride.max(1) as usize))
-        .collect();
+    let counts = cell_counts(cells);
     let plans = emission_plans(&counts, dim)?;
     let mut types = Vec::with_capacity(plans.len());
     let cell_offsets: Vec<usize> = counts
@@ -403,7 +482,7 @@ pub(crate) fn create_dimension(
         ids,
         fast,
         dim,
-        last_vertex: fit(ids.len() / 2)?.saturating_sub(1),
+        last_vertex: last_vertex(ids)?,
         cell_offsets: &cell_offsets,
     };
     let mut offset = 0usize;
@@ -464,7 +543,7 @@ pub(crate) fn create_dimension(
                 }
             };
             let offset1 = used.get(1).map_or(0, |&p1| types[p1].block.offset);
-            let launch = LaunchPlan::elementwise(client, KernelKind::Gather, n, 4, 1, 1)?;
+            let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, n, 4, 1, 1)?;
             debug_assert_bindings(client, 3);
             // SAFETY: cells c < n write out[c · k + i] < n · k (checked to fit u32 above), the
             // length of `out`; each read flat_s[start + j · padded + c] lies in the block's

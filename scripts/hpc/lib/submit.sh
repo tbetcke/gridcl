@@ -1,6 +1,7 @@
 # shellcheck shell=bash disable=SC2034,SC2153 # globals are shared between remote-test.sh and the libs
 # Fetch, job script, submission and waiting (scripts/hpc, steps 3-5). Submission is SGE's
-# here; direct targets start their job with lib/direct.sh and share the rest.
+# (qsub) or Slurm's (sbatch) here; direct targets start their job with lib/direct.sh and
+# share the rest.
 
 # submit_manifests <command>: the Cargo manifests to fetch for, one per line: every
 # --manifest-path of the command, or "." (the root Cargo.toml) when it names none and the
@@ -83,7 +84,9 @@ submit_build_command() {
 
 # submit_render: the job script of this submission on stdout: jobs/<target>.sh with its
 # placeholders replaced and the requests of targets.env added (SGE), the job settings, and
-# jobs/common.sh.
+# jobs/common.sh. GRIDCL_TEST_DEVICE is cuda, or cpu on myriad-cpu and kathleen
+# (hpc_target_device). Slurm jobs get @NODES@ and @QOS@; on two nodes mpirun maps the ranks
+# by node (GRIDCL_MPIRUN_FLAGS), so that a two-node run spreads over both nodes.
 submit_render() {
     local template=$HPC_DIR/jobs/$TARGET.sh requests="" rendered
     [ -f "$template" ] || hpc_die 125 "no job script $template"
@@ -95,7 +98,7 @@ submit_render() {
     fi
     rendered=$(
         R_NAME="gridcl-$TARGET" R_GPUS=$OPT_GPUS R_TIME=$OPT_TIME R_TREE=$TREE \
-            R_REQUESTS=$requests awk '
+            R_NODES=${OPT_NODES:-1} R_QOS=${JOB_QOS:-} R_REQUESTS=$requests awk '
             function rep(s, key, val,    out, i) {
                 out = ""
                 while ((i = index(s, key)) > 0) {
@@ -113,16 +116,19 @@ submit_render() {
                 l = rep(l, "@GPUS@", ENVIRON["R_GPUS"])
                 l = rep(l, "@TIME@", ENVIRON["R_TIME"])
                 l = rep(l, "@TREE@", ENVIRON["R_TREE"])
+                l = rep(l, "@NODES@", ENVIRON["R_NODES"])
+                l = rep(l, "@QOS@", ENVIRON["R_QOS"])
                 print l
             }' "$template"
     ) || hpc_die 125 "cannot render $template"
-    if printf '%s\n' "$rendered" | grep -Eq '^#\$.*@[A-Z_]+@'; then
+    if printf '%s\n' "$rendered" | grep -Eq '^#(\$|SBATCH).*@[A-Z_]+@'; then
         hpc_die 125 "$template has a placeholder the runner does not know"
     fi
     printf '%s\n' "$rendered"
     echo
     echo "# --- job settings, rendered by scripts/hpc/remote-test.sh ---"
-    printf 'GRIDCL_HPC_TARGET=%q\n' "$TARGET"
+    # Exported: gridcl-bench's binaries name their records after it.
+    printf 'export GRIDCL_HPC_TARGET=%q\n' "$TARGET"
     printf 'GRIDCL_HPC_SCHEDULER=%q\n' "$CFG_SCHEDULER"
     printf 'GRIDCL_HPC_TREE=%q\n' "$TREE"
     printf 'GRIDCL_HPC_BRANCH=%q\n' "$GIT_BRANCH"
@@ -134,9 +140,13 @@ submit_render() {
     printf 'GRIDCL_HPC_CUDA_PATH=%q\n' "$CFG_CUDA_PATH"
     printf 'export CARGO_TARGET_DIR=%q\n' "$TREE/target/$TARGET"
     echo "export CARGO_NET_OFFLINE=true"
-    echo "export GRIDCL_TEST_DEVICE=cuda"
+    echo "export GRIDCL_TEST_DEVICE=$(hpc_target_device "$TARGET")"
     if [ -n "$OPT_RANKS" ]; then
         echo "export GRIDCL_RANKS=$OPT_RANKS"
+    fi
+    if [ "${OPT_NODES:-1}" -gt 1 ]; then
+        # shellcheck disable=SC2016 # expanded by the job, not here
+        echo 'export GRIDCL_MPIRUN_FLAGS="${GRIDCL_MPIRUN_FLAGS:+$GRIDCL_MPIRUN_FLAGS }--map-by node"'
     fi
     echo
     echo "# --- scripts/hpc/jobs/common.sh ---"
@@ -154,17 +164,19 @@ submit_fetch() {
     hpc_remote_check $? "the fetch step"
 }
 
-# submit_job: submits the rendered job script; sets JOB_ID and JOB_SUBMITTED.
+# submit_job: submits the rendered job script (qsub on SGE, sbatch on Slurm); sets JOB_ID
+# and JOB_SUBMITTED.
 submit_job() {
-    local script meta out
+    local script meta out tool=qsub
+    [ "$CFG_SCHEDULER" != slurm ] || tool=sbatch
     script=$(submit_render) || exit 125
-    meta="$(printf 'target=%q\nscheduler=sge\n' "$TARGET")"$'\n'"$(sync_state_env)"
-    out=$(hpc_remote r_submit "$TREE" "$script" "$meta" "$(printf 'command=%q' "$CMD")")
-    hpc_remote_check $? "qsub"
+    meta="$(printf 'target=%q\nscheduler=%s\n' "$TARGET" "$CFG_SCHEDULER")"$'\n'"$(sync_state_env)"
+    out=$(hpc_remote r_submit "$TREE" "$script" "$meta" "$(printf 'command=%q' "$CMD")" "$CFG_SCHEDULER")
+    hpc_remote_check $? "$tool"
     JOB_ID=$(printf '%s\n' "$out" | sed -n 's/^job_id=//p' | head -n 1)
     JOB_SUBMITTED=$(printf '%s\n' "$out" | sed -n 's/^submitted=//p' | head -n 1)
     case $JOB_ID in
-        '' | *[!0-9]*) hpc_die 125 "qsub returned no job id: $out" ;;
+        '' | *[!0-9]*) hpc_die 125 "$tool returned no job id: $out" ;;
     esac
     JOB_SUBMITTED_LOCAL=$SECONDS
     hpc_msg "submitted job $JOB_ID to $TARGET"
@@ -234,7 +246,7 @@ submit_wait() {
 # submit_delete: deletes the job (after --max-wait or on a signal).
 submit_delete() {
     case $CFG_SCHEDULER in
-        sge) hpc_remote r_delete "$TREE" "$JOB_ID" >/dev/null ;;
+        sge | slurm) hpc_remote r_delete "$TREE" "$JOB_ID" "$CFG_SCHEDULER" >/dev/null ;;
         direct) hpc_remote r_direct_stop "$TREE" "$JOB_ID" >/dev/null ;;
     esac
 }
@@ -299,22 +311,31 @@ r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> <features> [ma
     fi
 }
 
-r_submit() { # r_submit <tree> <job script> <job lines> <command line>: prints job_id=, submitted=
-    local tree=$1 file out id now rc
-    r_env sge
+# r_submit <tree> <job script> <job lines> <command line> [scheduler]: prints job_id=,
+# submitted=. The scheduler is sge (qsub -terse; the default) or slurm (sbatch --parsable,
+# which prints <id> or <id>;<cluster>).
+r_submit() {
+    local tree=$1 scheduler=${5:-sge} file out id now rc tool
+    r_env "$scheduler"
     mkdir -p "$tree/results" "$tree/.gridcl-hpc/jobs" || return 1
     file=$tree/.gridcl-hpc/submit-$$.sh
     printf '%s\n' "$2" >"$file" || return 1
-    out=$(cd "$tree" && qsub -terse "$file" </dev/null)
+    if [ "$scheduler" = slurm ]; then
+        tool="sbatch --parsable"
+        out=$(cd "$tree" && sbatch --parsable "$file" </dev/null)
+    else
+        tool="qsub -terse"
+        out=$(cd "$tree" && qsub -terse "$file" </dev/null)
+    fi
     rc=$?
     rm -f "$file"
     if [ "$rc" != 0 ]; then
-        echo "qsub failed (status $rc): $out" >&2
+        echo "$tool failed (status $rc): $out" >&2
         return 1
     fi
-    id=$(printf '%s\n' "$out" | sed -n 's/^\([0-9][0-9]*\)\([.].*\)\{0,1\}$/\1/p' | tail -n 1)
+    id=$(printf '%s\n' "$out" | sed -n 's/^\([0-9][0-9]*\)\([.;].*\)\{0,1\}$/\1/p' | tail -n 1)
     if [ -z "$id" ]; then
-        echo "qsub -terse printed no job id: $out" >&2
+        echo "$tool printed no job id: $out" >&2
         return 1
     fi
     now=$(date +%s)
@@ -345,9 +366,13 @@ r_poll() {
     fi
 }
 
-r_delete() { # r_delete <tree> <job id>
-    r_env sge
-    qdel "$2" </dev/null
+r_delete() { # r_delete <tree> <job id> [scheduler]: qdel (sge, the default) or scancel (slurm)
+    r_env "${3:-sge}"
+    if [ "${3:-sge}" = slurm ]; then
+        scancel "$2" </dev/null
+    else
+        qdel "$2" </dev/null
+    fi
 }
 
 r_status_sge() { # r_status_sge: the user's SGE jobs (qstat; nothing when there are none)
@@ -355,14 +380,26 @@ r_status_sge() { # r_status_sge: the user's SGE jobs (qstat; nothing when there 
     qstat -u "${USER:-$(id -un)}" </dev/null
 }
 
+r_status_slurm() { # r_status_slurm: the user's Slurm jobs (squeue; nothing when there are none)
+    local out
+    r_env slurm
+    out=$(squeue -h -u "${USER:-$(id -un)}" -o '%.10i %.9q %.12j %.8T %.10M %.6D %R' </dev/null) || return 1
+    [ -n "$out" ] || return 0
+    printf '%10s %9s %12s %8s %10s %6s %s\n' JOBID QOS NAME STATE TIME NODES 'NODELIST(REASON)'
+    printf '%s\n' "$out"
+}
+
 # r_cancel_sge <job id> <marker> <base>...: writes the marker to results/<id>/cancelled of the
 # tree below the bases that submitted the job (so its runner reports the cancellation), then
-# deletes the job. Status 0 deleted, 1 qdel failed, 4 no such job.
+# deletes the job. Only the user's own jobs count: another user's job with the same id (or a
+# Slurm id that SGE also has) is "no such job", so cancel.sh tries the next scheduler.
+# Status 0 deleted, 1 qdel failed, 4 no such job.
 r_cancel_sge() {
     local id=$1 marker=$2 b f tree
     shift 2
     r_env sge
-    qstat -j "$id" >/dev/null 2>&1 || return 4
+    qstat -u "${USER:-$(id -un)}" </dev/null 2>/dev/null |
+        awk -v id="$id" '$1 == id { found = 1 } END { exit !found }' || return 4
     for b in "$@"; do
         for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
             [ -f "$f" ] || continue
@@ -371,4 +408,20 @@ r_cancel_sge() {
         done
     done
     qdel "$id" </dev/null >/dev/null
+}
+
+# r_cancel_slurm <job id> <marker> <base>...: as r_cancel_sge, with squeue and scancel.
+r_cancel_slurm() {
+    local id=$1 marker=$2 b f tree
+    shift 2
+    r_env slurm
+    [ -n "$(squeue -h -u "${USER:-$(id -un)}" -j "$id" -o %i 2>/dev/null </dev/null)" ] || return 4
+    for b in "$@"; do
+        for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
+            [ -f "$f" ] || continue
+            tree=${f%/.gridcl-hpc/*}
+            mkdir -p "$tree/results/$id" && echo "$marker" >"$tree/results/$id/cancelled"
+        done
+    done
+    scancel "$id" </dev/null >/dev/null
 }

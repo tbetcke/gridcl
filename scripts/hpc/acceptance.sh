@@ -3,13 +3,16 @@
 # Live E0 acceptance driver for a remote target (docs/plans/E0.md, T7-T9). Runs the steps
 # through remote-test.sh, never more than one job at a time:
 #   turnaround  env-check x3 on one GPU (--expect-sm, --expect-cuda-major); queue wait and
-#               run time of each, and their medians; the host architecture of the reports
+#               run time of each, and their medians; the host architecture of the reports.
+#               On myriad-cpu: the CPU runtime on a whole D node (--cores 36), no GPU;
+#               on kathleen: the CPU runtime on one whole node, no GPU
 #   nvrtc       env-check with the cuda-cpp feature (NVRTC path), plus the CPU runtime
 #   gpus2       --gpus 2 --ranks 2: mpi_allreduce_of_rank_ids, one GPU per rank
 #   fail        a deliberately failing command: exit status 3 and its error as first failure
 #   max-wait    a --max-wait overrun: deleted, exit status 124
 # then checks that status.sh lists no job, and prints the rows for docs/dev-environment.md.
-# Without steps, all of them run. Exit status 0 iff every step met its expectation.
+# Without steps, all of the target's steps run (myriad-cpu and kathleen: turnaround fail
+# max-wait; nvrtc and gpus2 need GPUs). Exit status 0 iff every step met its expectation.
 #
 # Summaries and the rows: target/hpc/<target>/acceptance-<UTC time>/.
 # Environment: GRIDCL_ACCEPT_CUDA_MAJOR overrides the expected CUDA major version (empty: no
@@ -24,15 +27,28 @@ ALL_STEPS="turnaround nvrtc gpus2 fail max-wait"
 MANIFEST=tools/env-check/Cargo.toml
 
 usage() {
-    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 msg() { echo "acceptance.sh: $*" >&2; }
 
 # Per-target expectations: compute capability, CUDA major version, features of the main and
-# the NVRTC runs, GPUs of the MPI step, host architecture.
+# the NVRTC runs, GPUs of the MPI step, host architecture; the target's steps and the
+# resource options of the turnaround runs.
 target_settings() {
+    STEPS=$ALL_STEPS TURNAROUND_OPTS=""
     case $1 in
+        myriad-cpu)
+            # CPU-only D node: no GPU steps, and the whole node, since the CPU runtime's
+            # threads follow the job's slots.
+            SM="" CUDA_MAJOR="" FEATURES=cpu NVRTC_FEATURES="" MPI_GPUS="" ARCH=x86_64
+            STEPS="turnaround fail max-wait" TURNAROUND_OPTS="--cores 36"
+            ;;
+        kathleen)
+            # Whole nodes of 40 cores, no GPU (ADR-0016): no GPU steps; one node by default.
+            SM="" CUDA_MAJOR="" FEATURES=cpu NVRTC_FEATURES="" MPI_GPUS="" ARCH=x86_64
+            STEPS="turnaround fail max-wait"
+            ;;
         myriad-v100)
             SM=70 CUDA_MAJOR=12 FEATURES=cuda NVRTC_FEATURES=cuda-cpp,cpu MPI_GPUS=2 ARCH=x86_64
             ;;
@@ -46,7 +62,7 @@ target_settings() {
         *) return 1 ;;
     esac
     CUDA_MAJOR=${GRIDCL_ACCEPT_CUDA_MAJOR-$CUDA_MAJOR}
-    EXPECT="--expect-sm $SM${CUDA_MAJOR:+ --expect-cuda-major $CUDA_MAJOR}"
+    EXPECT="${SM:+--expect-sm $SM}${CUDA_MAJOR:+ --expect-cuda-major $CUDA_MAJOR}"
 }
 
 # run_step <name> <expected status> <runner options and command ...>: one remote-test.sh
@@ -73,8 +89,8 @@ step_turnaround() {
     local i rc=0
     for i in 1 2 3; do
         # A plain cargo command, so the job records build and command times separately.
-        # shellcheck disable=SC2086 # EXPECT is a list of options
-        run_step "turnaround-$i" 0 --max-wait "$MAX_WAIT" -- \
+        # shellcheck disable=SC2086 # EXPECT and TURNAROUND_OPTS are lists of options
+        run_step "turnaround-$i" 0 $TURNAROUND_OPTS --max-wait "$MAX_WAIT" -- \
             cargo run --release --manifest-path "$MANIFEST" --features "$FEATURES" -- $EXPECT || rc=1
     done
     check_arch turnaround-1 turnaround-2 turnaround-3 || rc=1
@@ -218,8 +234,9 @@ if main:
     row("Rust toolchain", host["rustc_version"])
     modules = prologue("turnaround-1", "module lines")
     row("Module lines for jobs", "`%s`" % modules[0] if modules else "?")
-    row("CUDA toolkit and `CUDA_PATH`", "%s (%s), `%s`" % (cuda.get("toolkit_version"), cuda.get("toolkit_source"), cuda.get("cuda_path")))
-    row("Driver version and its CUDA version (`nvidia-smi`)", "%s, CUDA %s; toolkit not newer: %s" % (cuda.get("driver_version"), cuda.get("driver_cuda_version"), cuda.get("toolkit_not_newer_than_driver")))
+    if cuda:  # none on myriad-cpu
+        row("CUDA toolkit and `CUDA_PATH`", "%s (%s), `%s`" % (cuda.get("toolkit_version"), cuda.get("toolkit_source"), cuda.get("cuda_path")))
+        row("Driver version and its CUDA version (`nvidia-smi`)", "%s, CUDA %s; toolkit not newer: %s" % (cuda.get("driver_version"), cuda.get("driver_cuda_version"), cuda.get("toolkit_not_newer_than_driver")))
     if gpu:
         row("Compute capability (env-check)", "%s (`%s`; nvidia-smi %s)" % (", ".join(cuda.get("compute_capability") or []), gpu["fingerprint"], ", ".join(cuda.get("nvidia_smi_compute_capability") or [])))
         checks = ", ".join("%s %s x%d %s %s ms" % (c["kernel"], c["precision"], c["vector_size"], c["status"], c["millis"]) for c in gpu["checks"])
@@ -230,14 +247,16 @@ if main:
     internet = [l for l in prologue("turnaround-1", "internet access") if l.startswith("internet:")]
     row("Internet access on compute nodes", internet[0] if internet else "?")
 if nvrtc:
-    cpu = next((d for d in nvrtc["devices"] if d["runtime"] == "cpu"), None)
     cuda = nvrtc.get("cuda") or {}
     gpu = next((d for d in nvrtc["devices"] if d["runtime"] == "cuda"), None)
     if gpu:
         row("NVRTC path (`cuda-cpp`)", "compiler %s, passed %s" % (cuda.get("compiler"), gpu["passed"]))
-    if cpu:
-        checks = ", ".join("%s %s x%d %s %s ms" % (c["kernel"], c["precision"], c["vector_size"], c["status"], c["millis"]) for c in cpu["checks"])
-        row("CPU runtime: `load_width`, vector registers, hardware threads", "%s bits, %s, %s (job slots); plane size %d; IO-optimized sizes f32 %s, f64 %s; %s" % (cpu["load_width"], cpu["vector_register_count"], nvrtc["host"]["hardware_threads"], cpu["plane_size_min"], cpu["io_vector_sizes_f32"], cpu["io_vector_sizes_f64"], checks))
+# The CPU runtime from the NVRTC run, or from the main runs where they include it (myriad-cpu).
+cpu_report = next((r for r in (nvrtc, main) if r and any(d["runtime"] == "cpu" for d in r["devices"])), None)
+if cpu_report:
+    cpu = next(d for d in cpu_report["devices"] if d["runtime"] == "cpu")
+    checks = ", ".join("%s %s x%d %s %s ms" % (c["kernel"], c["precision"], c["vector_size"], c["status"], c["millis"]) for c in cpu["checks"])
+    row("CPU runtime: `load_width`, vector registers, hardware threads", "%s bits, %s, %s (job slots); plane size %d; IO-optimized sizes f32 %s, f64 %s; %s" % (cpu["load_width"], cpu["vector_register_count"], cpu_report["host"]["hardware_threads"], cpu["plane_size_min"], cpu["io_vector_sizes_f32"], cpu["io_vector_sizes_f64"], checks))
 ranks = []
 mpi_dir = os.path.join(results, job("gpus2")) if job("gpus2") else ""
 for name in sorted(os.listdir(mpi_dir)) if os.path.isdir(mpi_dir) else []:
@@ -282,12 +301,12 @@ main() {
         msg "unknown target '$TARGET'"
         return 2
     }
-    steps=${*:-$ALL_STEPS}
+    steps=${*:-$STEPS}
     for step in $steps; do
-        case " $ALL_STEPS " in
+        case " $STEPS " in
             *" $step "*) ;;
             *)
-                msg "unknown step '$step' (steps: $ALL_STEPS)"
+                msg "unknown step '$step' (steps of $TARGET: $STEPS)"
                 return 2
                 ;;
         esac

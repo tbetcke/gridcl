@@ -423,7 +423,7 @@ where
 {
     let client = g.client();
     let gb = g.geometry_block(b);
-    let tile = VectorPolicy::for_client(client).quad_tile();
+    let tile = VectorPolicy::for_client(client).quad_tile(size_of::<F>());
     let layout = GeomLayout::new::<TD, GD>(&gb.element, pts.len(), tile);
     assert_eq!(S::LEN, f.len(&layout), "field shape and factor disagree");
     let num_cells = g.cell_blocks()[b].index_map.num_local();
@@ -455,14 +455,15 @@ where
         debug_assert_bindings(client, 5);
         // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD and the
         // E-vector stride, so the vector offsets below are exact. The kernel handles vectors
-        // v < padded_cells / n: it reads E-vector vectors (k·G + g)·stride/n + x_first_cell/n
-        // + v < K·G·stride/n, inside the E-vector chunk (x_first_cell + padded_cells ≤
-        // stride); it reads `tab` below num_points · K · tdim, `extra` below gdim (the origin)
-        // or num_points · tdim (reference normals), and `flags` at cells
-        // ≤ last_cell = min(num_cells, flags.len()) − 1 (word 0 of the allocation of at least
-        // VECTOR_PAD words when `flags` is empty); it writes tiles
-        // out_first_cell/tile + v/(tile/n), which lie inside the field chunk's padded cells, at
-        // vector offsets below the chunk's padded_cells · num_points · LEN / n.
+        // v < padded_cells / n, and for each of them:
+        // - it reads E-vector vectors (k·G + g)·stride/n + x_first_cell/n + v < K·G·stride/n,
+        //   inside the E-vector chunk (x_first_cell + padded_cells ≤ stride);
+        // - it reads `tab` below num_points · K · tdim, and `extra` below gdim (the origin) or
+        //   num_points · tdim (reference normals);
+        // - it reads `flags` at cells ≤ last_cell = min(num_cells, flags.len()) − 1, which is
+        //   word 0 of the allocation of at least VECTOR_PAD words when `flags` is empty;
+        // - it writes tiles out_first_cell/tile + v/(tile/n), which lie inside the field
+        //   chunk's padded cells, at vector offsets below padded_cells · num_points · LEN / n.
         unsafe {
             factor_kernel::launch_unchecked::<F>(
                 client,

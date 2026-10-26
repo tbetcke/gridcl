@@ -1,0 +1,551 @@
+# M3s SIMD vectorization and benchmarks — plan
+
+- **Status:** implemented
+- **Branch:** tbetcke/tbetcke-m3s-simd-vectorization-and-benchmarks (question 1)
+- **Base commit:** 5882b8c8c8dc9b17ab7d635da43a6ef98bc8cc9a
+- **Design sections:**
+  - "Implementation roadmap / M3s SIMD vectorization and benchmarks", and M10 for the re-run;
+  - "Vectorization and CPU execution": all of it (CubeCL's vector model, how the CPU runtime runs a kernel, Listing S2, the bullets after it, "Padding and tiles", "Where vectors apply", "Determinism across vector sizes", "Benchmarks");
+  - "Topology construction on the device": "Entity creation" step 1 (key emission), and "Permutation info";
+  - "Geometry": "Geometric factors", and "Coordinate element and storage" (E-vectors, tiled `QuadField`);
+  - "Testing and validation" (vector-size invariance, tolerances);
+  - "Development environment and test targets" (Kathleen, Myriad CPU D node as the fallback, Locust conditions, remote-test runner; ADR-0016);
+  - "Workspace layout": crate table (gridcl-bench), "Cargo features", CI matrix (the local job's vector-size variants).
+- **Depends on:** M3 (done, PR #6, merged in 1c03fda; plan `Status: done` in 5882b8c)
+- **Accepted ADRs that apply:** ADR-0002 (amended by ADR-0005), ADR-0003, ADR-0004, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014. ADR-0015 (accepted 2026-10-24, applied to docs/design.md). ADR-0016 (accepted 2026-10-24, applied): Kathleen for CPU-only runs and two-node MPI; Myriad D nodes as the fallback. ADR-0017 (accepted 2026-10-25, applied): CPU units per kind and element size, all hardware threads or the performance cores (T20). ADR-0018 (accepted 2026-10-25, applied): batched timed runs of at least 20 ms and a backstop for the 3% rule (T22). ADR-0019 (accepted 2026-10-25, applied): for a shared 4-byte entry the 3% rule and the backstop measure each type against its fastest configuration at a size every type admits (T22). ADR-0020 (accepted 2026-10-26, applied): CpuSimd512 benchmarks on one socket of a Kathleen node, one thread per core (T16, T17). ADR-0021 (accepted 2026-10-26, applied): the backstop bound is 1.25 for a shared 4-byte entry with more than one type measured (T17).
+
+<!--
+Rules for this file (do not delete):
+- Status moves draft -> approved (maintainer) -> implemented (/implement-milestone) -> done (maintainer, after merge).
+- Every task is one commit. T0 is always the acceptance tests.
+- The plan references design sections; it never restates or changes requirements.
+- Tick a task ([x]) in the same commit that completes it.
+-->
+
+## Scope summary
+
+M3s fills in gridcl-bench with the protocol of "Vectorization and CPU execution / Benchmarks". It
+measures every candidate family that exists after M3 (Fill, Copy, Reduce, ScanTile, SortDigits,
+Gather, TopologyKeys, PermutationInfo, EVector and GeomFactors) at every vector size, QuadField
+tile width and CPU block size. For TopologyKeys and PermutationInfo it adds the cell-fastest
+connectivity copy behind the policy and measures it including the transpose. It applies the
+decision rule per family, device class and scalar type, and writes `vector-policy.toml` and
+`docs/perf/vectorization.md` from the data. Pack and PullBack do not exist until M6 and M9, so
+they stay at 1 until the M10 re-run. The M3 review follow-ups that the maintainer scheduled for
+M3s come first (M3 plan, "Follow-up schedule"): m9, m10, m11, m3, m2 and the small m8 items in
+T1–T4, m8's kinds in T6, and m6 in T14.
+
+## Planned public API and rules (ADR-0015, question 2)
+
+This section follows M3's precedent: it fixes what ADR-0015 must decide before T0. No type of
+Listing S2 changes shape except as stated in questions 2, 6 and 14.
+
+- **gridcl-device, `testing` module** (feature `testing`):
+  - `pub fn with_kind_vector_size<R>(kind: KernelKind, v: VectorSizeOverride, f: impl FnOnce() -> R) -> R`: a scoped override for one family. For that kind it takes precedence over `with_vector_size` and `GRIDCL_VECTOR_SIZE`.
+  - `pub fn with_cpu_block_bytes<R>(bytes: usize, f: impl FnOnce() -> R) -> R`: replaces the CPU block target ("CPUs": about 16 KiB of the widest stream) for plans made inside `f`. The value must be a power of two from 4 KiB to 64 KiB; anything else panics.
+  - `cube_dim` = performance-core count is measured with the existing `with_properties`, by lowering `max_units_per_cube` and `max_cube_dim.0`. No new hook (question 8).
+- **gridcl-device, `VectorPolicy` and `vector-policy.toml`:**
+  - Each CPU class gets `[<Class>.cpu_block]`, laid out like `vector_size`: one entry per `KernelKind` and element size, in units of 4 KiB (1, 4 or 16). Every value then stays a power of two from 1 to 16 (acceptance bullet 4).
+  - `pub fn cpu_block_bytes(&self, kind: KernelKind, elem_bytes: usize) -> Option<usize>`, `None` on `Gpu`. `LaunchPlan::elementwise` reads it on CPUs instead of the private 16 KiB constant.
+  - The values start at 4 (16 KiB), so T5 changes no launch.
+- **gridcl-device, `quad_tile`** (question 14): `pub fn quad_tile(&self, elem_bytes: usize) -> usize`, with `quad_tile = { 4 = 16, 8 = 16 }` per class. The f32 and f64 factor kernels can then choose their tiles separately. `with_quad_tile` and `GRIDCL_QUAD_TILE` override both sizes.
+- **gridcl-device, `KernelKind::Scalar`** (question 6): for kernels that are not on the candidate list and plan with `max_vector = 1`. Its `vector_size` entries are fixed at 1, which `parse` enforces; its block entries come from the policy like any other kind.
+- **gridcl-topology, feature `bench`** (off by default; only gridcl-bench enables it; question 3):
+  - `#[doc(hidden)] pub mod bench` with `emit_keys(topology: &Topology, dim: usize) -> Result<BenchOutput>` and `permutation_info(topology: &Topology, b: usize) -> Result<BenchOutput>`.
+  - Each runs exactly the family's launch sequence, the cell-fastest copy included, on inputs already on the device. It returns an opaque owner of the outputs, so the caller syncs, times and drops it.
+  - `Topology::new` is not used for timing, because it also uploads origin ids and builds an `IndexMap`.
+  - gridcl-bench's crate-table row gains gridcl-topology (feature `bench`) and `toml`. Feature unification turns `bench` on in `--workspace` builds; the module is hidden and only adds functions.
+- **Decision rule as applied** (question 4):
+  - A configuration is (vector size, tile, block); on the M3 Max the performance-core `cube_dim` is reported but not part of it (question 8).
+  - The speedup of size n is the best time over size-1 configurations divided by the best time over size-n configurations.
+  - A class measured on several devices (CpuSimd128: the M3 Max and Grace; Gpu: Metal and H100) uses the geometric mean of the per-device time ratios. A device that cannot run size n (Metal above 4 lanes, or without f64) contributes its time at the size it clamps to, or nothing if it lacks the type.
+  - The 3% rule picks among the configurations the 10% rule admits: size 1, plus every larger size that is at least 10% faster at 10^6 and 10^7 items. Read literally, the two acceptance bullets conflict when a larger size is 3–10% faster, because size 1 is then not within 3% of the fastest yet may not be replaced.
+  - A 4-byte entry shared by f32 and u32 (Fill, Reduce, Gather) must pass for every 4-byte type measured, or it takes the smaller size.
+  - CpuSimd256 copies the CpuSimd512 table ("Benchmarks", "Where").
+  - Under `Policy` the register budget can clamp a size, so the TOML stores the size that `record_plans` shows actually ran under the chosen policy. Bullet 3 then checks what runs.
+- **One timed region per family** (question 13): the smallest call whose launches all take their shape from the family's plan.
+  - Fill, Copy, Reduce, Gather: the primitive.
+  - ScanTile: `inclusive_scan` and `exclusive_scan`, which plan every phase with ScanTile (ADR-0009, "One partition per primitive").
+  - SortDigits: `radix_sort`. All its phases use the SortDigits plan, except the `exclusive_scan` it calls, which stays at its own default through `with_kind_vector_size`.
+  - TopologyKeys, PermutationInfo: the `bench` hooks.
+  - EVector: `DeviceGrid::evector` on a fresh `try_clone`, the clone outside the timing.
+  - GeomFactors: the block functions.
+- **Cell-fastest connectivity** (question 5): private to gridcl-topology.
+  - At N > 1, TopologyKeys and PermutationInfo build a transient cell-fastest copy, `[local vertex][padded cell]`, of the cell–vertex connectivity (and of the origin-id words for PermutationInfo), read it with vector loads, and drop it.
+  - At N = 1 they read the cell-major connectivity, as they do now.
+  - The transpose is an indirect copy, so it is scalar and plans as `KernelKind::Scalar`. Its time still counts towards the family, because the `bench` hooks time the whole sequence.
+
+## Tasks
+
+- [x] **T0 Acceptance tests (failing)**
+  - Goal: every acceptance bullet of M3s as an automated test, plus stubs for the ADR-0015 items.
+  - Crates/files:
+    - `gridcl-bench/tests/perf_record.rs` (new);
+    - `gridcl-bench/src/{lib.rs, record.rs, decide.rs, report.rs}` (stubs);
+    - `gridcl-bench/Cargo.toml` (adds `toml`);
+    - `gridcl-device/src/{policy.rs, testing.rs}` and `gridcl-device/vector-policy.toml`;
+    - `gridcl-topology/{Cargo.toml, src/bench.rs}` (stubs);
+    - `gridcl/tests/kernel_invariance.rs`.
+  - Stubs (`todo!()` bodies):
+    - `with_kind_vector_size`, `with_cpu_block_bytes`, `VectorPolicy::cpu_block_bytes`;
+    - `bench::{emit_keys, permutation_info}`;
+    - `record::{SweepRecord, ThroughputRecord, load_dir}`, `decide::{decide, Decision}`, `report::render`.
+    - `KernelKind::Scalar` is added for real, with its `Scalar = { 4 = 1, 8 = 1 }` rows in every class, because `parse` requires every kind (policy.rs:325) and a missing row would break every test.
+    - `quad_tile(elem_bytes)` keeps returning the single value for now, with every caller updated.
+  - Tests:
+    - `gridcl-bench/tests/perf_record.rs::benchmark_data_covers_required_targets`: `docs/perf/data/` holds M3s sweep JSON for the M3 Max (`cpu`, `metal`), Locust (`cpu`, `cuda`) and a Myriad D node (`cpu`, CpuSimd512). A Myriad V100 or A100 CUDA record counts only with a non-empty `fallback_reason` (question 7). Every Locust record carries both node-load snapshots, and both are `idle`.
+    - `…::report_lists_every_family_class_and_type`: the generated tables of `docs/perf/vectorization.md` (between marker comments) equal `report::render(data, policy)`. `render` lists, for every candidate family, device class and scalar type, the speedup of each vector size over 1, the chosen size and the reason.
+    - `…::policy_follows_the_decision_rule`: `gridcl-device/vector-policy.toml` equals `decide::decide(data)`. Independently of `decide`, every size above 1 is at least 10% faster than 1 at 10^6 and 10^7, and every chosen (vector size, tile, block) is within 3% of the fastest, as read in question 4.
+    - `…::throughput_recorded_with_policy_and_scalar`: throughput JSON for the M3 Max CPU runtime and a Myriad D node, with `vector_size_override` `policy` and `scalar`, holding entities per second and geometric factors per second.
+    - `gridcl-device/src/policy.rs::tests::policy_covers_every_kind_and_class` (unit test, because the list of all kinds is private). It replaces `the_policy_file_parses_with_one_and_sixteen_everywhere`. Every `KernelKind` and `DeviceClass` has `vector_size`, `quad_tile` and (CPU classes) `cpu_block` entries, every value is a power of two from 1 to 16, and `Scalar` is 1. It fails until T5 adds `cpu_block` and the per-size `quad_tile`.
+    - `gridcl/tests/kernel_invariance.rs::{topology_keys_sizes, permutation_info_sizes}`: above size 1, `record_plans` must show a `Scalar` transpose plan before the candidate plan. Fails until T10.
+  - Verify: `cargo test --workspace --no-run` compiles. The new tests fail with `not yet implemented`, a missing-data message, or the missing policy entries; every other test passes.
+  - After: –
+  - Parallel with: –
+  - Risks / notes: larger than about 600 lines only if the stubs are; data-dependent tests fail until T17.
+- [x] **T1 M3 review follow-ups m9, m10, m11 and the small m8 items**
+  - Goal: close the follow-ups the maintainer scheduled first.
+  - Crates/files:
+    - `gridcl-topology/src/topology.rs` (m9): `Topology::new`'s rustdoc states that kernels clamp out-of-range indices and that (tdim, 0) returns the input unchanged.
+    - `gridcl-geometry/tests/bounds.rs` (m10): `cells_without_nodes_read_no_node_memory` in f32 and, where supported, f64; skipped f64 cases print why, as `tests/field.rs` does.
+    - `gridcl-geometry/src/geometry.rs` (m11): `Geometry::new` returns `LengthMismatch` for zero nodes with a non-empty dofmap.
+    - `gridcl-geometry/src/layout.rs` (m8: SAFETY comment wrapping) and `gridcl-geometry/src/point_set.rs` (m8: "Gauss–Jacobi" in the `len` example).
+    - `gridcl/Cargo.toml` and `gridcl-geometry/Cargo.toml` (m8): drop the unused `proptest` dev-dependency.
+  - Public API added or changed: none. `Geometry::new` rejects one more invalid input, as the M3 review did for `Topology::new`.
+  - Tests: new `gridcl-geometry/tests/bounds.rs::empty_nodes_with_cells_are_rejected`; the m10 changes.
+  - Verify: `cargo test -p gridcl-topology -p gridcl-geometry -p gridcl`; the same on Metal.
+  - After: T0
+  - Parallel with: T5, T7
+  - Risks / notes: –
+- [x] **T2 Property tests at 256 cases (m3)**
+  - Goal: `prop_entities_invariant_under_shuffles` and `prop_bits_match_orientation_bits` run 256 cases.
+  - Crates/files: `gridcl-topology/tests/{entities.rs, permutation.rs}`. Also `.github/workflows/ci.yml`, only if the tests become release-only: the hosted cpu job has no release step.
+  - Public API added or changed: none.
+  - Tests: those two property tests.
+  - Verify: `cargo test -p gridcl-topology` in debug, timed.
+  - After: T0
+  - Parallel with: T3, T4, T5, T7
+  - Risks / notes: if they add more than about 2 min in debug on the M3 Max, they get `#[cfg_attr(debug_assertions, ignore = "release only")]`, and a release step for them is added to the hosted cpu job. Logged.
+- [x] **T3 Rustdoc examples, gridcl-geometry and gridcl-topology (m2, part 1)**
+  - Goal: examples for `DeviceGrid`, `EVector`, `QuadChunk`, `BlockFields`, the `QuadField` methods, the shape types, the six block functions, `EntityBlock` and `Connectivity`.
+  - Crates/files: `gridcl-geometry/src/{grid.rs, evector.rs, field.rs, shape.rs, points_jac.rs, detj_pinv.rs, facets.rs}`, `gridcl-topology/src/entity.rs`.
+  - Public API added or changed: none.
+  - Tests: doctests.
+  - Verify: `cargo test --doc -p gridcl-geometry -p gridcl-topology`; `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`.
+  - After: T1
+  - Parallel with: T2, T4
+  - Risks / notes: –
+- [x] **T4 Rustdoc examples, gridcl (m2, part 2)**
+  - Goal: examples for `Mesh` (type, aliases, constants, methods) and for `AnyMesh` and `AnyMeshRef` (`as_ref`, `tdim`, `gdim`).
+  - Crates/files: `gridcl/src/{mesh.rs, any.rs}`.
+  - Public API added or changed: none.
+  - Tests: doctests.
+  - Verify: `cargo test --doc -p gridcl`.
+  - After: T1
+  - Parallel with: T2, T3
+  - Risks / notes: –
+- [x] **T5 Policy block sizes, per-size tiles and the benchmark hooks (gridcl-device)**
+  - Goal: the ADR-0015 items of gridcl-device, with no change to any launch.
+  - Crates/files: `gridcl-device/src/{policy.rs, plan.rs, testing.rs}`, `gridcl-device/vector-policy.toml`, `gridcl-device/tests/launch_plan.rs`.
+  - Public API added or changed: `VectorPolicy::{cpu_block_bytes, quad_tile(elem_bytes)}`; `testing::{with_kind_vector_size, with_cpu_block_bytes}`.
+  - Tests:
+    - makes `policy_covers_every_kind_and_class` pass;
+    - new unit tests: the kind override takes precedence over the global override and the environment; the block override is bounded, and rounds to whole lines at 4, 16 and 64 KiB;
+    - `cpu_blocks_are_whole_lines_of_about_16_kib` and `cpu_plan_one_unit_per_thread_whole_lines` read the policy's block;
+    - `prop_plan_respects_injected_limits` also runs under block overrides.
+  - Verify: `cargo test -p gridcl-device`; Metal; Locust CUDA and CPU `cargo test --release -p gridcl-device` (launch shapes).
+  - After: T0
+  - Parallel with: T1, T2, T7
+  - Risks / notes: the `quad_tile` callers in gridcl-geometry pass `size_of::<F>()` from T0 on.
+- [x] **T6 Scalar helper kernels plan as `KernelKind::Scalar` (m8)**
+  - Goal: `record_plans`, per-kind overrides and block entries attribute only candidate kernels to candidate families.
+  - Crates/files:
+    - `gridcl-device/src/primitives/{histogram.rs, segmented.rs, gather.rs (scatter), unique.rs}`;
+    - `gridcl-topology/src/{entity.rs, renumber.rs, connectivity.rs}`;
+    - `gridcl-geometry/src/measure.rs`.
+  - Public API added or changed: none. Primitives with a vectorized phase (radix sort, scan) keep one plan for every phase (ADR-0009).
+  - Tests: unit tests assert the kinds `record_plans` reports for `histogram`, `create_entities(1)` and `measure`; the existing suites.
+  - Verify: `cargo test -p gridcl-device -p gridcl-topology -p gridcl-geometry -p gridcl`; Metal; Locust CUDA and CPU for the same crates (launch code changes).
+  - After: T5
+  - Parallel with: T7
+  - Risks / notes: –
+- [x] **T7 Myriad CPU-only target `myriad-cpu` (ADR-0014 follow-up)**
+  - Goal: `scripts/hpc/remote-test.sh myriad-cpu --cores 36 -- <command>` runs on a D node (`-ac allow=D`, no `-l gpu`) with `GRIDCL_TEST_DEVICE=cpu`.
+  - Crates/files: `scripts/hpc/{lib/config.sh, remote-test.sh, jobs/myriad-cpu.sh, targets.example.env, acceptance.sh, tests/run.sh}`, `docs/dev-environment.md` (D-node row), and `.claude/skills/hpc-test/SKILL.md`. The sandbox denies writes to `.claude/skills`, so the maintainer approves or applies that edit.
+  - Public API added or changed: none.
+  - Tests:
+    - new fake-SGE cases in `scripts/hpc/tests/run.sh`: no GPU request, `allow=D`, and `--gpus` rejected;
+    - one real smoke job with `--cores 36` running `nproc` and `cargo test --release -p gridcl-device`.
+  - Verify: `bash scripts/hpc/tests/run.sh`, `shellcheck`, and the smoke job's report.
+  - After: T0
+  - Parallel with: T1–T6, T8–T10
+  - Risks / notes: CPU-runtime thread detection on Myriad follows the job's slots, so CPU work always requests `--cores 36`.
+- [x] **T19 Kathleen target `kathleen` (ADR-0016)**
+  - Goal: `scripts/hpc/remote-test.sh kathleen [--nodes 1|2] [--ranks N] [--time …] -- <command>` runs a Slurm job of whole Kathleen nodes with `GRIDCL_TEST_DEVICE=cpu`; the M3s acceptance data reads Kathleen as the CpuSimd512 target.
+  - Crates/files:
+    - `scripts/hpc/{lib/config.sh, lib/submit.sh, remote-test.sh, status.sh, cancel.sh, jobs/kathleen.sh, targets.example.env, acceptance.sh, tests/run.sh, tests/fake-bin/}` (scheduler kind `slurm`);
+    - `docs/dev-environment.md` (a Kathleen section: setup, layout under Scratch, QoS, the job environment);
+    - `gridcl-bench/tests/perf_record.rs` and `gridcl-bench/src/record.rs` (target names);
+    - `.claude/skills/hpc-test/SKILL.md` (the maintainer applies it; sandbox).
+  - Rules (ADR-0016): at most two nodes per job; QoS `singlenode` for 1 node, `test` for 2 nodes up to 1 h, else `small`; `--gpus` rejected; `--cores` ignored (whole nodes); crates fetched on the login node, jobs offline; temporary files and Open MPI's session directory on `/dev/shm`; `PSM2_TID=0`; `SLURM_STEP_ID` unset in the batch step; the gcc runtime first on `LD_LIBRARY_PATH`; the remote base under Scratch in `targets.env` only; one tree (quota).
+  - Public API added or changed: none.
+  - Tests:
+    - new fake-Slurm cases in `scripts/hpc/tests/run.sh`: `sbatch` arguments for 1 and 2 nodes, `--nodes 3` and `--gpus` rejected, polling through `squeue`/`sacct`, exit status and `--max-wait` cancel;
+    - `perf_record.rs`: `kathleen` CPU sweep and throughput records required; `myriad-cpu` records count only with a non-empty `fallback_reason`;
+    - real smoke jobs: one node, `nproc` and `cargo test --release -p gridcl-device`; two nodes, `--ranks 4`, `scripts/mpi-test.sh 2 4`.
+  - Verify: `bash scripts/hpc/tests/run.sh`, `shellcheck`, both smoke reports; `cargo test -p gridcl-bench --test perf_record` still fails only for missing data.
+  - After: T7
+  - Parallel with: T8–T10
+  - Risks / notes: half of Kathleen's nodes were down on 2026-10-24 (ADR-0016); one-time setup of the toolchain on the login node (downloads only).
+- [x] **T8 gridcl-bench protocol, records, and Fill, Copy, Reduce**
+  - Goal: the protocol of "Benchmarks" and the first three families.
+  - Crates/files: `gridcl-bench/src/{lib.rs, protocol.rs, record.rs, families/mod.rs, families/device.rs, bin/vector_sweep.rs}`.
+  - Public API added or changed: none (unpublished crate).
+  - Protocol:
+    - one warm-up launch per configuration, checked against a host reference (host maths in f64 with `widen`, as CLAUDE.md requires);
+    - the median of ten timed runs, each ending with `client.sync()`;
+    - compile time per vector size: the warm-up time minus the median, with CubeCL's persistent kernel cache off, or the cache state recorded;
+    - bandwidth relative to `copy` at the same size on the same device;
+    - sizes 10^5, 10^6 and 10^7, and CPU blocks of 4, 16 and 64 KiB;
+    - on the M3 Max also `cube_dim` = the performance-core count, through `with_properties`, with the count read by the binary from `sysctl`.
+  - Configurations are set with `with_kind_vector_size(Fixed(n))` and `with_cpu_block_bytes`; the size that actually ran comes from `record_plans`.
+  - Each record holds: backend, device, device class, target, family, scalar type, n, vector size, tile, block, units, `times_s`, `median_s`, compile time, bandwidth ratio, commit (`GRIDCL_BENCH_COMMIT`), profile, core counts, `fallback_reason`, and the node-load snapshot lines when present.
+  - The CLI filters by family, type and size, so a busy part can be repeated.
+  - Tests: unit tests of the median, the JSON round trip and the bandwidth formulas; a smoke run at 10^4 in `cargo test -p gridcl-bench`.
+  - Verify: `cargo test -p gridcl-bench`; `cargo run --release -p gridcl-bench --bin vector_sweep -- --families fill --sizes 100000 --out $TMPDIR/x.json`.
+  - After: T5, T6
+  - Parallel with: T10
+  - Risks / notes: –
+- [x] **T9 gridcl-bench: ScanTile, SortDigits, Gather**
+  - Goal: the remaining device-primitive families.
+  - Crates/files: `gridcl-bench/src/families/device.rs`.
+  - Scalar types: u32 for ScanTile and SortDigits; f32, f64 and u32 for Gather, with random in-range u32 indices.
+  - Public API added or changed: none.
+  - Tests: smoke runs at 10^4.
+  - Verify: `cargo test -p gridcl-bench`.
+  - After: T8
+  - Parallel with: T10, T12
+  - Risks / notes: –
+- [x] **T10 Cell-fastest connectivity and the topology `bench` hooks**
+  - Goal: the copy of "Where vectors apply", behind the policy, plus `bench::{emit_keys, permutation_info}`.
+  - Crates/files: `gridcl-topology/src/{keys.rs, permutation.rs, transpose.rs (new), bench.rs, lib.rs}`, `gridcl-topology/Cargo.toml` (feature `bench`).
+  - Public API added or changed: the hidden `gridcl_topology::bench` module (feature `bench`).
+  - Kernel rules (CLAUDE.md): generic over N and correct at N = 1; lanes are cells; arithmetic masks for padding lanes; at most six buffers; shape from `LaunchPlan`, with overflow-checked sizes; the transpose plans as `Scalar`.
+  - Tests:
+    - makes the T0 additions to `kernel_invariance` pass;
+    - new unit test `transpose_round_trips` for 0, 1, 15, 16, 17 and 10^6 + 3 cells;
+    - `every_vector_size_gives_the_same_keys` and `every_vector_size_gives_the_same_bits` cover both layouts.
+  - Verify: `cargo test -p gridcl-topology -p gridcl`; Metal; `GRIDCL_VECTOR_SIZE=widest` on the CPU runtime; Locust CUDA and CPU for `-p gridcl-topology -p gridcl` (kernel change).
+  - After: T6
+  - Parallel with: T7, T8, T9
+  - Risks / notes: the transient copy costs one extra buffer of the connectivity's size per launch at N > 1.
+- [x] **T11 gridcl-bench: TopologyKeys, PermutationInfo, EVector, GeomFactors**
+  - Goal: the sweep for the mesh families, at tile widths 1, 4 and 16 for GeomFactors.
+  - Crates/files: `gridcl-bench/src/families/mesh.rs`, `gridcl-bench/Cargo.toml` (gridcl-topology with `bench`), and possibly `gridcl-testing/src/meshes/` (question 9).
+  - Workloads (question 9): items are cells, at 10^5, 10^6 and 10^7. EVector and GeomFactors run in f32 and f64; the topology families use u32.
+  - Public API added or changed: none.
+  - Tests: a smoke run at 10^3 cells, checking the records' cell counts.
+  - Verify: `cargo test -p gridcl-bench`; a short local sweep.
+  - After: T9, T10
+  - Parallel with: T12
+  - Risks / notes: –
+- [x] **T12 Decision rule and report generator**
+  - Goal: `decide` and `report::render` implement the rule as read in question 4. `bin/policy_report.rs` writes `vector-policy.toml` and the generated tables of `docs/perf/vectorization.md` from `docs/perf/data/`.
+  - Crates/files: `gridcl-bench/src/{decide.rs, report.rs, bin/policy_report.rs}`.
+  - Public API added or changed: none.
+  - Tests:
+    - unit tests on synthetic data: 3–10% gains stay at 1; a 10% gain at only one size stays at 1; the smallest size within 3% wins; tile and block ties; multi-device geometric means with clamped sizes and missing f64; f32/u32 disagreement; families with no data (Pack, PullBack); CpuSimd256 copies CpuSimd512; element sizes no family uses;
+    - a proptest that every decision satisfies both acceptance inequalities on random data.
+  - Verify: `cargo test -p gridcl-bench --lib`.
+  - After: T8
+  - Parallel with: T9, T10, T11
+  - Risks / notes: –
+- [x] **T13 End-to-end throughput binary**
+  - Goal: entities created per second and geometric factors per second, with the chosen policy and with every kernel scalar (`--vector-size policy|scalar`).
+  - Crates/files: `gridcl-bench/src/bin/mesh_throughput.rs`, `gridcl-bench/src/record.rs`.
+  - Measures (question 10):
+    - entities per second: entities created by `create_entities(d)` for every 0 < d < tdim on P1 tetrahedron and P1 hexahedron boxes of about 10^6 cells, over the time of those calls, on fresh meshes;
+    - factors per second: (cell, quadrature point) pairs for which X, J, det J and K are computed on P2 tetrahedra with a degree-4 rule, over the time of the four mesh-level calls.
+  - Public API added or changed: none.
+  - Tests: a smoke run at 10^3 cells.
+  - Verify: `cargo test -p gridcl-bench`; a local run.
+  - After: T11, T19
+  - Parallel with: T12
+  - Risks / notes: –
+- [x] **T14 CPU `cube_dim` and test-time study (m6, question 11)**
+  - Goal: the M2/M3 follow-up on the `sync_cube` slowness of 16-unit CPU cubes and on the test-time budgets.
+  - Crates/files: a section of `docs/perf/vectorization.md` (draft) and this plan's Deviations log. Nothing is committed to library code.
+  - Method: debug `primitives_prop` and debug `cargo test --workspace` on the idle M3 Max, timed at `cube_dim` 16, 12 and 4 through a temporary, uncommitted cap in `plan.rs`.
+  - Public API added or changed: none. If a smaller CPU `cube_dim` meets the budgets and the sweep's `cube_dim` data (T8, T11) supports it, the maintainer decides on an ADR that changes the "CPUs" rule before T15. Otherwise the results are recorded and the follow-up is closed or handed on to M10.
+  - Verify: the timings in the report.
+  - After: T11
+  - Parallel with: T12, T13
+  - Risks / notes: an ADR here delays T15–T17, because the measurements must use the final CPU rule.
+- [x] **T20 CPU units in the policy (ADR-0017)**
+  - Goal: the policy chooses, per CPU class, kind and element size, between all hardware threads and the performance cores, with no change to any launch until T17.
+  - Crates/files:
+    - `gridcl-device/src/{policy.rs, plan.rs, testing.rs, lib.rs}`, a new private `gridcl-device/src/cores.rs` (the macOS `sysctlbyname("hw.perflevel0.physicalcpu")` read, once per process, behind a safe wrapper with a SAFETY comment; `None` elsewhere and on any error), `gridcl-device/Cargo.toml` (`libc`, macOS only), `gridcl-device/vector-policy.toml` (`[<Class>.cpu_units]`, every entry `"all"`), `gridcl-device/tests/launch_plan.rs`;
+    - `gridcl-bench/src/{decide.rs, report.rs, protocol.rs}`, `gridcl-bench/tests/perf_record.rs`.
+  - Public API added or changed: `CpuUnits`, `VectorPolicy::cpu_units`, `testing::{with_cpu_units, with_performance_cores}` (ADR-0017).
+  - Rules: on CPUs, `cube_dim` is the performance-core count p when the entry (or `with_cpu_units`) says `Performance` and p < `max_units_per_cube`, else `max_units_per_cube`; plans inside `with_properties` keep a lower limit. `decide` treats units as a fourth configuration component, chosen by the 3% rule among the admitted configurations, ties going to `All`; a device with no performance-core count gives both settings the same time. `vector_sweep`'s `PerformanceCores` mode uses `with_cpu_units` instead of `with_properties`.
+  - Tests:
+    - `policy_covers_every_kind_and_class` checks the `cpu_units` entries (`all` or `performance`, CPU classes only);
+    - new unit tests: `Performance` uses p only when it is smaller; `with_cpu_units` takes precedence over the policy; `with_performance_cores(None)` keeps all threads;
+    - `cpu_plan_one_unit_per_thread_whole_lines` follows the entry; `prop_plan_respects_injected_limits` also runs under `with_performance_cores` and both unit settings;
+    - `decide` unit tests: a units gain within 3% stays `All`; a larger gain chooses `Performance`; Grace-like devices without a count are neutral;
+    - `perf_record::policy_follows_the_decision_rule` reads both `cube_dim` modes and checks the TOML's units.
+  - Verify: `cargo test -p gridcl-device -p gridcl-bench`; Metal; Locust CUDA and CPU `cargo test --release -p gridcl-device` (launch shapes).
+  - After: T14
+  - Parallel with: T15, T16
+  - Risks / notes: T15 and T16 need no change, because `vector_sweep --cube-dim auto` already measures both settings on the M3 Max and only `all` elsewhere.
+- [x] **T15 Measurements on the M3 Max (CPU runtime and Metal)**
+  - Goal: the M3 Max sweep JSON.
+  - Crates/files: `docs/perf/data/m3s-sweep-{cpu,metal}-m3max.json`.
+  - Public API added or changed: none.
+  - Conditions ("Benchmarks"):
+    - mains power and other applications closed, which the maintainer confirms;
+    - release build, and no other cargo job running;
+    - `sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu` recorded.
+    - The sandbox blocks Metal and `sysctl`, so these commands run outside it, with approval.
+  - Verify: the M3 Max part of `benchmark_data_covers_required_targets`.
+  - After: T12, T13, T14
+  - Parallel with: T16
+  - Risks / notes: the full CPU sweep may take hours; it runs in parts by family.
+- [x] **T16 Measurements on Locust (Grace CPU, H100) and a Kathleen node (AVX-512 CPU)**
+  - Goal: the remote sweep JSON, under the idle rule.
+  - Crates/files: `docs/perf/data/m3s-sweep-{cpu,cuda}-locust.json`, `docs/perf/data/m3s-sweep-cpu-kathleen.json` (ADR-0016).
+  - Public API added or changed: none.
+  - Runs:
+    - Locust: `remote-test.sh locust -- 'env GRIDCL_TEST_DEVICE=cpu GRIDCL_BENCH_COMMIT=<sha> cargo run --release -p gridcl-bench --bin vector_sweep -- --families … --out results/$JOB_ID/…'`, and the same with `--features cuda`, in short parts by family. A part counts only if both snapshots are `idle`; otherwise it is repeated (ADR-0002, ADR-0005).
+    - Kathleen: `remote-test.sh kathleen --time …` (one whole node, QoS `singlenode`), in parts by family; at most two scheduler jobs. A Myriad D node (`myriad-cpu --cores 36`) only as the fallback, with `fallback_reason` (ADR-0016).
+    - Fallback (question 7): if Locust's GPU stays busy, a Myriad V100 or A100 CUDA run, with `fallback_reason`.
+  - Verify: `benchmark_data_covers_required_targets` passes.
+  - After: T7, T12, T13, T14, T19
+  - Parallel with: T15
+  - Risks / notes: question 7.
+- [x] **T21 CPU digit counting without atomics (SortDigits, blocks scheme)**
+  - Goal: the radix sort's digit count on CPUs without shared-memory atomics. T15's profile of one 10^7-key sort (two words, eight passes, CubeCL `[profiling]` log, vector size 1, 16 KiB blocks, all threads) gave `SortDigitsKernel` 1.60 s of 1.99 s (80%; 165–390 ms a pass), `ScatterBlocksKernel` 0.35 s and `ScanTileKernel` 0.03 s. On the CPU runtime a cube's units are threads and every key's `fetch_add` contends for the same 256 shared counters.
+  - Crates/files: `gridcl-device/src/primitives/radix_sort.rs`; `gridcl-device/tests/{primitives_prop.rs, vector_invariance.rs}` if a case is missing; `docs/perf/data/m3s-sweep-cpu-m3max.json` (SortDigits records replaced).
+  - Change: under `Scheme::Blocks`, a counting kernel generic over N in which each unit counts its block into its own shared column (`chunk_digits · cube_dim` u32, the scatter's layout and chunking) and the columns are summed in unit order into `counts[digit · cubes + cube]`. `Scheme::Split` (GPUs) keeps the atomic kernel. The increments stay scalar per lane ("Where vectors apply": the histogram phase stays scalar); no cross-lane operations.
+  - Public API added or changed: none.
+  - Tests: the existing sort tests on the blocks scheme at every vector size, including `radix_sort_both_schemes` with eight-digit chunks and `sort_digits_sizes`; a case with several digit chunks at 10^6 + 3 keys if none exists.
+  - Verify: `cargo test -p gridcl-device`; Metal; Locust CUDA and CPU (`hpc-test`). Then the M3 Max SortDigits sweep again under T15's conditions (`vector_sweep --families sortdigits`), its records replacing T15's, and the profile repeated for the report.
+  - After: T15
+  - Parallel with: T20 (one local cargo job at a time)
+  - Risks / notes: The histogram primitive (`histogram.rs`, Scalar family) has the same pattern, but its bin count is unbounded (connectivity uses one bin per entity), so per-unit columns do not fit in general. It stays as is; a few-bin variant is left to M10. T16's Locust CPU SortDigits part runs after T21, so that both CPU devices measure the same kernel.
+- [x] **T22 Batched timed runs and the 3% backstop (ADR-0018)**
+  - Goal: timings precise enough for the 3% rule, and the bounded backstop; all sweep data measured again under the new protocol.
+  - Crates/files:
+    - `gridcl-bench/src/{protocol.rs, record.rs, decide.rs, report.rs, families/*.rs, bin/vector_sweep.rs, bin/mesh_throughput.rs}`, `gridcl-bench/tests/perf_record.rs`;
+    - `docs/perf/data/m3s-sweep-{cpu,metal}-m3max.json`, `docs/perf/data/m3s-sweep-{cpu,cuda}-locust.json` (replaced).
+  - Rules (ADR-0018): after the checked warm-up, one untimed calibration call fixes k = ⌈20 ms / t_cal⌉, at most 10,000; each of the ten timed runs makes k calls, each ending with `client.sync()`, with `prepare` and its sync untimed before each call; the run's time is the timed sum over k. Records gain `calls_per_run`. The compile time stays the warm-up minus the median. Backstop: if no admitted configuration is within 3% at both sizes (for every type of a shared entry), the one with the smallest worst-case ratio is chosen when that ratio is at most 1.10, and the report marks it "closest, x% slower"; above 1.10 the entry stays unresolved.
+  - Public API added or changed: none (unpublished crate).
+  - Tests:
+    - unit tests of `measure`: k from the calibration call, the cap, k = 1 for calls of 20 ms or more;
+    - `decide` unit tests: backstop at ratio 1.10 and above it; no backstop when a configuration meets 3%;
+    - `perf_record::policy_follows_the_decision_rule` accepts a marked backstop entry within 1.10 only when no admitted configuration meets 3%; `benchmark_data_covers_required_targets` checks `calls_per_run` ≥ 1 and `calls_per_run` × median ≥ 20 ms when `calls_per_run` > 1;
+    - the existing smoke runs.
+  - Data: the sweeps of T15 (M3 Max CPU, both `cube_dim` modes, and Metal; T15's conditions, confirmed again by the maintainer) and T16 (Locust CPU and CUDA, idle before and after) repeated at this task's commit; the old records are replaced.
+  - Verify: `cargo test -p gridcl-bench`; the trial `policy_report` leaves no unresolved entry for CpuSimd128 and Gpu.
+  - After: T16 (Locust part), T21
+  - Parallel with: –
+  - Risks / notes: two commits, as in T21: the protocol first, then the data (the records name the commit they measured). The outstanding CpuSimd512 sweep (T16) uses the new protocol from the start.
+- [x] **T17 Policy, report and throughput**
+  - Goal: apply the rule.
+  - Crates/files: `gridcl-device/vector-policy.toml`, `docs/perf/vectorization.md`, `docs/perf/data/m3s-throughput-cpu-{m3max,kathleen}.json`.
+  - Steps:
+    - `policy_report` writes the TOML and the generated tables;
+    - the hand-written parts of the report: protocol, conditions with job ids and node load, observations, the `cube_dim` result (question 8), compile times and T14;
+    - `mesh_throughput` runs on the M3 Max and a Kathleen node, with `policy` and with `scalar`.
+  - Public API added or changed: none (policy values only).
+  - Tests: all four `perf_record` tests and `policy_covers_every_kind_and_class` pass.
+  - Verify: `cargo test -p gridcl-bench -p gridcl-device`.
+  - After: T15, T16, T20, T21, T22
+  - Parallel with: –
+  - Risks / notes: –
+- [x] **T18 Whole suite under the chosen policy on every target; test-time budgets**
+  - Goal: acceptance bullet 5, and the m6 budgets re-measured.
+  - Crates/files: this plan (Deviations), plus fixes found by the runs, each logged.
+  - Public API added or changed: none.
+  - Runs, through the test-runner subagent:
+    - M3 Max: `cargo test --workspace` (debug, timed); release under `GRIDCL_VECTOR_SIZE` = `policy`, `scalar` and `widest`; `GRIDCL_QUAD_TILE=1`; Metal; `scripts/mpi-test.sh 1 2 3 4`.
+    - Locust: CUDA and the CPU runtime.
+    - Kathleen (one node): the CPU runtime, the only run that exercises the CpuSimd512 table.
+    - Hosted CI: cpu, vulkan, mpi-mpich and mpi-openmpi.
+  - Verify: the runs above.
+  - After: T17
+  - Parallel with: –
+  - Risks / notes: –
+
+## Acceptance coverage
+
+Every acceptance bullet of the milestone in docs/design.md appears exactly once.
+
+| Acceptance criterion (docs/design.md) | Test name(s) | Task(s) | Targets and backends |
+| --- | --- | --- | --- |
+| Benchmark JSON under `docs/perf/data/` for the M3 Max (CPU, Metal), Locust (Grace CPU, CUDA) and a Kathleen node (AVX-512 CPU), plus a Myriad D node if Kathleen was unavailable and V100/A100 if Locust was unavailable (ADR-0016) | `gridcl-bench/tests/perf_record.rs::benchmark_data_covers_required_targets` | T0, T7, T8, T9, T11, T15, T16, T19 | data: M3 Max CPU f32/f64/u32 and Metal f32/u32; Locust CPU and CUDA f32/f64/u32 (idle); Kathleen CPU f32/f64/u32 (one whole node); test: M3 Max CPU, hosted cpu |
+| `vectorization.md` lists, per family, device class and scalar type, the speedup of each size over 1, the chosen size and the reason | `…::report_lists_every_family_class_and_type` | T0, T12, T17 | M3 Max CPU; hosted cpu |
+| Every size above 1 is ≥ 10% faster than 1 at 10^6 and 10^7; every chosen (vector size, tile, block) is within 3% of the fastest | `…::policy_follows_the_decision_rule` | T0, T12, T20, T17 | M3 Max CPU; hosted cpu |
+| A test checks that `vector-policy.toml` covers every `KernelKind` and `DeviceClass` with powers of two from 1 to 16 | `gridcl-device/src/policy.rs::tests::policy_covers_every_kind_and_class` | T0, T5, T20, T17 | M3 Max CPU; hosted cpu |
+| With the chosen policy, the whole suite passes on every target, the vector-size invariance tests included | `cargo test --workspace` and the invariance tests below, under the committed policy and `GRIDCL_VECTOR_SIZE` = `policy`, `scalar`, `widest` | T18 | M3 Max: CPU f32/f64 (debug and release), Metal f32, MPI 1–4 ranks; Locust: CUDA f32/f64 and Grace CPU; Kathleen: CPU f32/f64 (CpuSimd512); hosted CI: cpu, vulkan, MPICH, Open MPI |
+| Entities created per second and geometric factors per second on the M3 Max CPU runtime and a Kathleen node, with the chosen policy and with every kernel scalar (ADR-0016) | `…::throughput_recorded_with_policy_and_scalar` | T0, T13, T17, T19 | data: M3 Max CPU f64, Kathleen CPU f64 (one whole node); test: M3 Max CPU, hosted cpu |
+
+Vector-size invariance of every candidate kernel. These tests exist from M2 and M3; T10 extends
+the topology tests to the cell-fastest path, and T18 reruns all of them under the chosen policy.
+Pack and PullBack get theirs in M6 and M9.
+
+| Family | Test | Lengths |
+| --- | --- | --- |
+| Fill, Copy, Reduce, ScanTile, Gather | `gridcl-device/tests/vector_invariance.rs::{fill,copy,reduce,scan,gather}_sizes` | 0, 1, 15, 16, 17, 10^6 + 3 |
+| SortDigits | `gridcl-device/tests/vector_invariance.rs::sort_digits_sizes` | as above |
+| TopologyKeys | `gridcl/tests/kernel_invariance.rs::topology_keys_sizes`; `gridcl-topology/src/keys.rs::every_vector_size_gives_the_same_keys` | 0, 1, 15, 16, 17 cells of every type; 10^6 + 3 triangles |
+| PermutationInfo | `gridcl/tests/kernel_invariance.rs::permutation_info_sizes`; `gridcl-topology/tests/permutation.rs::every_vector_size_gives_the_same_bits` | as above |
+| EVector | `gridcl/tests/kernel_invariance.rs::evector_sizes` (f32, f64) | as above |
+| GeomFactors | `gridcl/tests/factor_invariance.rs::factor_kernels_match_lvector_reference` | tiles 1 and 16; as above |
+
+## Open questions and ADR candidates
+
+Resolve every row before Status becomes approved.
+
+| # | Question or conflict | Design section | Proposed resolution | Status |
+| --- | --- | --- | --- | --- |
+| 1 | The branch `tbetcke/tbetcke-m3s-simd-vectorization-and-benchmarks` is not named `m3s-<slug>`. | CLAUDE.md Workflow | Keep it and log it, as M0–M3 did. | answered (precedent) |
+| 2 | Listing S2 has no hook for the CPU block size or for a per-kind vector size, and the policy has no field for block sizes. "Benchmarks" nevertheless measures block sizes, the rule chooses them, and "the choices go to `vector-policy.toml`". | Listing S2; "Benchmarks"; acceptance bullet 4 | ADR-0015 before T0, covering "Planned public API and rules". Blocks are stored per (kind, element size) in units of 4 KiB (1, 4, 16), so bullet 4 holds literally and the 3% rule can hold per family. | answered (maintainer, 2026-10-24: per kind and size); ADR-0015 (accepted) |
+| 3 | TopologyKeys runs inside `create_entities`, where the sort dominates (about 2 s for 10^7 keys on the M3 Max CPU runtime). `Topology::new` also uploads ids and builds an `IndexMap` around PermutationInfo. Timed end to end, a kernel gain falls below the 10% threshold. | "Benchmarks"; "Cargo features"; crate table | (a) The hidden `bench` feature with `emit_keys` and `permutation_info` (ADR-0015). Alternatives: (b) per-kernel times from CubeCL 0.11's profiling log (`[profiling] logger`, level `basic`), with no API change but unknown accuracy on the CPU runtime; (c) time the public calls end to end and accept the dilution. | answered (maintainer, 2026-10-24: (a)); ADR-0015 (accepted) |
+| 4 | The decision rule (a) leaves open how one class measured on two devices decides (CpuSimd128: M3 Max and Grace; Gpu: Metal and H100), and (b) conflicts with acceptance bullet 3 when a larger size is 3–10% faster. | "Benchmarks", decision rule; acceptance bullets 3 and 1 | (a) Geometric mean of the per-device time ratios, with clamped or missing sizes as in "Planned public API"; per-device numbers in the report. Alternative reading: "on its device class" means on every device of the class (stricter; adopts less). (b) The 3% rule applies among the configurations the 10% rule admits. Both go into ADR-0015, because they fix how acceptance bullets read. | answered (maintainer, 2026-10-24: geometric mean; 3% among admitted); ADR-0015 (accepted) |
+| 5 | Lifetime and location of the cell-fastest copy. | "Where vectors apply"; ADR-0012 | Transient and private, built per launch at N > 1, with the transpose planned as `Scalar` but timed with the family. M3's lane-by-lane path at N > 1 is replaced. No public type changes. | answered (maintainer approved the plan, 2026-10-24) |
+| 6 | m8: scalar helper kernels plan with candidate kinds, which misattributes them in `record_plans` and would give them a family's block size. | Listing S2 (`KernelKind`); ADR-0009 | Add `KernelKind::Scalar` (ADR-0015). Alternative: keep the kinds and filter in gridcl-bench by `max_vector`; no API change, but attribution stays misleading and the block entries stay shared. | answered (maintainer, 2026-10-24: `KernelKind::Scalar`); ADR-0015 (accepted) |
+| 7 | Locust was busy in all three M2 benchmark runs. Bullet 1 requires Locust's Grace CPU data, which Myriad cannot replace (x86-64). Bullet 1 also names "Myriad's V100 and A100 nodes" for the fallback. | "Benchmarks", "Conditions"; ADR-0002, ADR-0014 | Repeat busy parts at different times over at least three days. CUDA falls back to a V100 or A100, with the reason recorded; one of the two is read as sufficient. If the Grace CPU never runs idle, stop and draft an ADR for the acceptance change (CpuSimd128 decided from the M3 Max alone). | answered (maintainer approved the plan, 2026-10-24) |
+| 8 | `cube_dim` = performance-core count: the policy "may choose it", but no `DeviceProperties` field gives the performance-core count, and reading `hw.perflevel0.physicalcpu` in the library would be FFI outside the crates CLAUDE.md allows. | "Benchmarks", "Conditions"; CLAUDE.md (FFI) | Measure it with `with_properties`; the gridcl-bench binary reads `sysctl`. If it passes the rule on the M3 Max, draft a separate ADR for detection and a policy key (with T14). Otherwise record it and change nothing. | answered (maintainer approved the plan, 2026-10-24) |
+| 9 | Workloads for the mesh families, and the slow host generation of 10^7-cell boxes (node deduplication through a `HashMap`). | "Benchmarks", "What it runs" | Items are cells. GeomFactors: X, J, det J and K (`physical_points_block`, `jacobians_block`, `detj_block`, `pseudo_inverse_block`), summed, on P2 tetrahedra and P2 triangles in 3D with a degree-4 rule. Normals and facet normals are left out: they need M9's `orient` for meaningful flags and share J's operation sequence. TopologyKeys and PermutationInfo: P1 tetrahedra. EVector: P2 tetrahedra. Meshes are built once per size. If building takes more than about a minute, T11 adds a lattice generator to gridcl-testing that needs no map. | answered (proposed) |
+| 10 | Definitions of "entities created per second" and "geometric factors per second". | Acceptance bullet 6 | As in T13. | answered (proposed) |
+| 11 | m6: the test-time budgets (hosted cpu 35:17 against about 30 min; debug workspace 16:01 against about 15 min) were to be revisited through the CPU `cube_dim`, which "CPUs" fixes at `max_units_per_cube`. | "CPUs"; M3 plan, question 20 | T14 measures the effect. A rule change is an ADR candidate, decided before T15; T18 re-measures. | answered (maintainer approved the plan, 2026-10-24); ADR only if T14 proposes a rule change |
+| 12 | Element sizes that no family uses: Copy moves u32 words, and ScanTile, SortDigits, TopologyKeys and PermutationInfo are u32 only, so their 8-byte entries never apply. | "Where vectors apply" | Keep 1, with "not used" as the reason in the report. | answered (proposed) |
+| 13 | SortDigits and ScanTile kernels are part of larger primitives, so their gains are diluted, as TopologyKeys' are. | "Benchmarks" | Time the smallest call whose launches all take the family's plan (ADR-0009: one partition per primitive). The policy entry then changes exactly the time measured. No hooks in gridcl-device. `radix_sort`'s inner `exclusive_scan` stays at its default through `with_kind_vector_size`. | answered (proposed) |
+| 14 | Granularity of tiles: `quad_tile()` is one value per class (Listing S2), but the rule decides per scalar type, so f32 and f64 GeomFactors may prefer different tiles and bullet 3 could fail for one of them. Also, which tile is "size 1"'s baseline? (ADR-0012: tile 1 forces N = 1.) | Listing S2; "Benchmarks" | `quad_tile(elem_bytes)` with per-size TOML entries (ADR-0015). The baseline is the best size-1 configuration over all tiles and blocks. Alternative: one tile per class, chosen jointly, with a logged exception to bullet 3 if f32 and f64 disagree. | answered (maintainer, 2026-10-24: `quad_tile(elem_bytes)`); ADR-0015 (accepted) |
+| 15 | The maintainer asked (2026-10-24) to add UCL Kathleen (Slurm, Xeon Gold 6248 with AVX-512) for CPU jobs, whose nodes are easier to get than Myriad's, and for multi-node tests on at most two nodes. Acceptance bullets 1 and 6 name a Myriad D node, and the runner has no Slurm support. | "Benchmarks", "Where"; "Development environment and test targets"; acceptance bullets 1 and 6 | Kathleen for CPU-only runs (CpuSimd512 sweeps, throughput, the suite) and for two-node MPI runs, with the D nodes of T7 as the fallback; a new task adds the `kathleen` target. | answered (maintainer, 2026-10-24: accepted); ADR-0016 (accepted) |
+| 16 | T14: the policy "may choose" `cube_dim` = the performance-core count ("Benchmarks", "Conditions"), but there is no policy key, no API and no detection (an FFI call outside the allowed crates). T14's preliminary sweep favours 12 units over 16 for most families (Reduce, ScanTile, SortDigits up to 9×) and 16 for GeomFactors (11–23%). | "CPUs"; "Benchmarks"; question 8; acceptance bullets 3 and 4; FFI rule | A per-kind, per-element-size `cpu_units` entry (`all` or `performance`), chosen by the 3% rule with ties to `all`; macOS detection through `sysctlbyname` in gridcl-device; a new task before T17. T15 and T16 are unaffected (the sweep measures both settings). | answered (maintainer, 2026-10-25: as proposed); ADR-0017 (accepted) |
+| 17 | T17: with the M3 Max and Locust data, 9 policy entries have no admitted configuration within 3% of the fastest at both 10^6 and 10^7 (Fill and Gather CpuSimd128, Reduce Gpu f32/u32, Scalar CpuSimd128 f64), so `policy_follows_the_decision_rule` fails. The cause is CPU timing noise: IQR/median 10–100% at 10^6 and up to 50% at 10^7 for sub-millisecond to few-millisecond launches, with Locust idle. | "Benchmarks" ("What it reports", "Decision rule"); acceptance bullet 3 | Ten timed runs of k calls each, k chosen for at least 20 ms a run, time per call; a backstop that takes the closest admitted configuration if it is at most 10% slower, marked in the report; all four devices swept again. | answered (maintainer, 2026-10-25: accepted, GPUs swept again too); ADR-0018 (accepted), T22 |
+| 18 | T22: shared 4-byte entries (f32/u32) are unresolved by construction when one type admits a size and the other does not: ADR-0015 item 6 keeps the smaller size, and bullet 3 measures it against the faster size of the admitting type. Gpu Fill 4-byte: 53%, then 28% after Metal Fill was repeated (the admitting type flipped); Gather CpuSimd128 4-byte had 74% in the old data. | "Benchmarks", "Decision rule"; acceptance bullet 3; ADR-0015 item 6 | For a shared entry, the 3% rule and the backstop measure each type against its fastest configuration at a size every type admits. | answered (maintainer, 2026-10-25: accepted); ADR-0019 (accepted, applied), T22 |
+| 19 | T16/T17: on Kathleen's two sockets the CPU runtime's times are bimodal per configuration (up to 4×, from thread placement; interleaved memory does not help, one socket does), so CpuSimd512 Fill stays unresolved and which entry fails changes between runs (8-byte in job 608437, 4-byte in 608489). | "Benchmarks" ("Where", "Conditions"); acceptance bullets 1, 3 and 6 | Bind the Kathleen sweep and throughput runs to one socket and its memory, one thread per core (`numactl --physcpubind=0-19 --membind=0`), on a node still reserved whole; sweep Kathleen again. | answered (maintainer, 2026-10-26: accepted); ADR-0020 (accepted, applied), T16, T17 |
+| 20 | T16/T17: after ADR-0020, CpuSimd512 Fill 4-byte is still unresolved (14.7%; 12.6% with both Fill runs combined): f32 and u32 Fill really differ on Kathleen (u32 at size 1 is about 1.6× slower and gains 2.4–3.1× from vectors at 10^7), f32 admits sizes 2 and 4, u32 8 and 16, and at size 1 they prefer different blocks. | "Benchmarks", "Decision rule"; acceptance bullet 3; ADR-0015 item 6, ADR-0018 | A backstop bound of 1.25 for shared 4-byte entries with more than one type measured, marked "closest across types" (maintainer's direction, 2026-10-26). | answered (maintainer, 2026-10-26: accepted); ADR-0021 (accepted, applied), T17 |
+
+## Deviations log
+
+| Date | Task | Deviation from plan or design | Reason | ADR |
+| --- | --- | --- | --- | --- |
+| 2026-10-24 | plan | Branch `tbetcke/tbetcke-m3s-simd-vectorization-and-benchmarks`, not `m3s-<slug>`. | Maintainer's worktree branch (question 1). | – |
+| 2026-10-24 | plan | T1–T4 and T14 are M3 review follow-ups (m2, m3, m6, m8–m11), outside M3s's design scope. | Maintainer's follow-up schedule (M3 plan, Review). | – |
+| 2026-10-24 | plan | The plan has an extra "Planned public API and rules" section. | M3's precedent: it fixes what ADR-0015 must decide before T0. | – |
+| 2026-10-24 | T0 | `KernelKind::Scalar` is also swept on CPU targets for its `cpu_block` entries: histogram (u32) gives the 4-byte entry, segmented reduce sum (f64) the 8-byte entry. `perf_record` requires this data, and T9 adds the measurement. | ADR-0015 item 7 chooses Scalar's blocks "from the time of the scalar primitives (histogram, segmented_reduce)", but no task measured them. One type per element size avoids a shared-entry conflict between two different primitives. | ADR-0015 |
+| 2026-10-24 | T0 | How `perf_record` reads the rule where the plan is silent: a configuration's class time is the geometric mean of the devices' medians, so ratios of class times are geometric means of per-device ratios. The 3% condition must hold at both 10^6 and 10^7, like the 10% condition. Records carry `nominal_n` (10^5, 10^6 or 10^7; mesh boxes give approximate cell counts) and a `cube_dim` mode (`Plan` or `PerformanceCores`), and only `Plan` records enter the rule. | The rule names no size for the 3% comparison; the mesh families cannot hit 10^6 cells exactly; question 8 keeps the performance-core `cube_dim` out of the configuration. | – |
+| 2026-10-24 | T0 | The transpose check in `kernel_invariance` is stricter than "a `Scalar` plan before the candidate plan": above size 1, every TopologyKeys and PermutationInfo plan must directly follow a `Scalar` plan. `gridcl/tests/common/mod.rs` gains `at_vector_size_with_plans`. | After T6 other `Scalar` helpers also plan before them; with "directly follows", the mixed box fails until T10. | – |
+| 2026-10-24 | T0 | Records name the Myriad CPU-only target `myriad-cpu`, the remote-test target of T7; the data file stays `m3s-sweep-cpu-myriad-d.json`. T0 also updates `gridcl-geometry/src/field.rs` (rustdoc of `quad_tile`). | Same names as the runner. | – |
+| 2026-10-24 | T1 | `cells_without_nodes_read_no_node_memory` moved from `gridcl-geometry/tests/bounds.rs` to a unit test in `gridcl-geometry/src/evector.rs`, which calls the E-vector builder directly, in f32 and, where supported, f64. `bounds.rs` gains `empty_nodes_with_cells_are_rejected` (f32 and f64), and its skipped f64 cases now print why. | m11 makes `Geometry::new` reject exactly the input that test built (no nodes, a non-empty dofmap), so m10's kernel check is reachable only below the public constructor. | – |
+| 2026-10-24 | T7, T19 | Kathleen replaces the Myriad D node as the CpuSimd512 and throughput target; D nodes become the fallback. New task T19 adds the `kathleen` target; T13, T16, T17 and T18 and the acceptance-coverage rows 1 and 6 now name Kathleen. T7 continues: `myriad-cpu` is the fallback target. | Maintainer's request; T7's smoke job waited about two hours for a D node. | ADR-0016 |
+| 2026-10-24 | T7 | T7 committed before its real smoke job ran: Myriad job 10224 (--cores 36, nproc and cargo test --release -p gridcl-device) was still queued after about two hours; its result is recorded when it finishes, and a failure is fixed in a follow-up commit. | Maintainer's decision. | – |
+| 2026-10-24 | T7 | `.claude/skills/hpc-test/SKILL.md` is not edited in this commit; the proposed change goes to the main session, which merges it with ADR-0016's changes. | The sandbox denies writes to `.claude/skills`. | – |
+| 2026-10-24 | T7 | Two files outside the task's list change: `scripts/hpc/lib/submit.sh` exports `GRIDCL_TEST_DEVICE` per target (`cpu` on `myriad-cpu`), and `scripts/hpc/jobs/common.sh` records a prologue line `cpus:` (`nproc` without the OMP variables, online CPUs, `OMP_NUM_THREADS`). The smoke job therefore runs `nproc` in its prologue, and its command stays a plain `cargo test`, so build and run times are recorded separately. | The job settings and the prologue live in those files. | – |
+| 2026-10-24 | T7 | The runner usage in docs/design.md ("Remote-test runner") still lists `targets: myriad-v100 \| myriad-a100 \| locust` and says jobs run with `GRIDCL_TEST_DEVICE=cuda`; the runner now lists `myriad-cpu` and its jobs run with `cpu`. design.md is not edited during implementation; the maintainer updates that block. | ADR-0014 (accepted) adds the target; this plan fixes `GRIDCL_TEST_DEVICE=cpu`. `adr: 0016 apply` (2843d4a) has since updated the target list; the `GRIDCL_TEST_DEVICE=cuda` sentence of step 4 remains. | ADR-0014 |
+| 2026-10-24 | T7 | `myriad-cpu` without `--cores` is accepted with a note on stderr (one slot), not refused or defaulted to 36. `acceptance.sh myriad-cpu` runs `turnaround fail max-wait` (turnaround with `--cores 36`, env-check `--features cpu`, no `--expect-sm`) and refuses `nvrtc` and `gpus2`; it has not been run live. | Short CPU-only checks need no whole node; the GPU steps do not apply. | – |
+| 2026-10-24 | T19 | T19 committed before its real smoke jobs ran. Every Kathleen node had failed the health check and was drained or draining ahead of the `rdss-upgrade` maintenance (all nodes from 2026-10-27 08:00, no end date set). The one-node job 608316 stayed pending (`ReqNodeNotAvail`) and was cancelled with `cancel.sh`. The one-node and two-node smoke jobs run when Kathleen accepts jobs again, before T16. Until then CPU-only remote runs (T13, T16–T18) use `myriad-cpu` with that fallback reason. | Maintainer's decision (2026-10-24): Kathleen may not accept jobs for several days; Myriad is the only option meanwhile. | ADR-0016 |
+| 2026-10-24 | T19 | Files outside the task's list: `scripts/hpc/lib/{sync.sh, report.sh}` (Slurm liveness through `squeue`; the Slurm log moved into the results), `scripts/hpc/tests/fake-bin/{sbatch, squeue, scancel}`, and `ThroughputRecord::fallback_reason` in `gridcl-bench/src/record.rs`. The one-time setup on Kathleen's login node (root directories, rustup) ran as recorded commands in `docs/dev-environment.md`, not as a committed script. `acceptance.sh kathleen` (`turnaround fail max-wait`) has not run live. | Needed for the Slurm kind and the fallback rule; the setup is two commands. | – |
+| 2026-10-24 | T7 | Job 10224 kept queued without its runner (stopped with SIGKILL at about 20:30, before its 5 h `--max-wait` would delete it); its results are copied back by hand from `results/10224/` of the T7 tree on Myriad. A second smoke job with `--cores 8` (10309) runs alongside: part of a D node may start sooner and still checks `-ac allow=D`, no GPU and `GRIDCL_TEST_DEVICE=cpu`. | Kathleen is drained, so the D-node queue is the only CPU path; maintainer's decision (2026-10-24). | ADR-0016 |
+| 2026-10-24 | T8 | Additions to the planned design: the `Workload` trait sits in `protocol.rs` and `measure` takes it; `gridcl-bench` enables gridcl-device's `testing` feature directly; `vector_sweep --target` defaults to `GRIDCL_HPC_TARGET`, else `local` (so T15 passes `--target m3max`); `--cube-dim auto` adds the performance-core runs wherever `sysctl` reports a count; `--out` is rewritten after every record; a subcommand `vector_sweep annotate --node-load results/<job> FILE...` adds the runner's node-load snapshots afterwards, because the "after" snapshot is taken once the command has finished. The bandwidth reference is a u32 copy of the same length under the policy, measured once per size. Compile time is non-zero only for the first configuration of each vector size, because the block size does not change the kernel; the report takes the largest value per vector size. | The plan did not say how the snapshots or the copy reference reach the records. | – |
+| 2026-10-24 | T9 | T9 also measures `KernelKind::Scalar` (histogram, u32, 256 bins; `segmented_reduce` sum, f64, segments of 0 to 16 values), on CPUs only and at vector size 1, as the T0 row requires. ScanTile times `inclusive_scan` then `exclusive_scan` as one region, so each configuration has one record. `with_cpu_block_bytes` applies to every kind, so a SortDigits block also reaches `radix_sort`'s inner `exclusive_scan` (and the Fill and Scalar helpers inside the timed calls); only the vector size stays per kind. SortDigits records have no bandwidth ratio (several passes). | Per-kind block overrides do not exist (ADR-0015 has one scoped block for all kinds); the policy entry of a family then changes the measured time together with the helpers' blocks, which the M10 re-run can revisit. | – |
+| 2026-10-24 | T7, T16–T19 | The x86-64 AVX-512 work moves to after the `rdss-upgrade` maintenance: T7's D-node smoke job, T19's one- and two-node smoke jobs, T16's CpuSimd512 sweep, T17's AVX-512 throughput runs and its second `policy_report` run (which changes only the CpuSimd512 and CpuSimd256 tables), and T18's Kathleen suite run. Until then development and measurements run on the M3 Max and Locust only: T10–T15, T16's Locust part, and T17 for the CpuSimd128 and Gpu tables, with CpuSimd512 and CpuSimd256 left at 1 for lack of data. Myriad jobs 10224 and 10309 were cancelled with `cancel.sh` before they started. `benchmark_data_covers_required_targets` and `throughput_recorded_with_policy_and_scalar` stay red until the AVX-512 data exists, so `Status: implemented` waits for it. | Kathleen is drained for the maintenance, and Myriad's scheduler started no job after 2026-10-24 11:42 (558 running, 3,820 pending, 633 free slots at 22:21), so no AVX-512 node is reachable, not even the fallback. Each device class has its own table, so the AVX-512 data cannot change the CpuSimd128 or Gpu choices. Maintainer's decision (2026-10-24). | ADR-0016 |
+| 2026-10-24 | T10 | The `Scalar` plan of the cell-fastest copy is made before the candidate plan at every vector size, and launched only when the candidate plan's size is above 1; at size 1 `record_plans` therefore lists a `Scalar` plan that did not launch. | The candidate plan's vector size decides whether the copy is needed, `kernel_invariance` requires the copy's plan directly before it, and no gridcl-device function gives the vector size without making a plan. Planning costs only host arithmetic. | – |
+| 2026-10-24 | T10 | Files outside the task's list: `gridcl-topology/src/{entity.rs, topology.rs}` gain the crate-private helpers `cell_counts`, `last_vertex` and `Topology::cell_rows`, shared by `create_entities` and the `bench` hooks; `gridcl-topology/tests/permutation.rs` runs `every_vector_size_gives_the_same_bits` on both id paths and checks the copy's plan. The PermutationInfo copy holds the vertices' origin-id words (lo planes, then hi planes unless every id fits in u32), not the vertex indices, so the vectorized kernel reads only vector loads. | Shared code instead of copies; the plan names the origin-id words as the copied data. | – |
+| 2026-10-24 | T11 | Files outside the task's list: `gridcl-topology/src/bench.rs` gains `BenchOutput::to_host` (the hidden module's outputs were opaque, so no check could read them); `gridcl-bench/src/protocol.rs` gains `Workload::prepare`, an untimed step before every call, warm-up included, which EVector uses for its fresh `try_clone`; `gridcl-bench/src/families/mod.rs` adds the families and the tile loop; `gridcl-bench/Cargo.toml` also adds gridcl-refcell for the host references (`gauss_rule`, `orientation_bits`, `sub_entities`). No lattice generator: a 10^7-cell P2 tetrahedron box builds in seconds (question 9). | Needed for the protocol's check and EVector's timed region. | – |
+| 2026-10-24 | T11 | Workloads as built (question 9): TopologyKeys times the key emission of edges and faces (dimensions 1 and 2) as one region. Vertex origin ids are a random permutation of the node indices, so they fit u32. GeomFactors is one timed region over a P2 tetrahedron box and a P2 triangle surface (the square box on the plane z = (x + 2y)/4) of about n/2 cells each; each field is dropped after its call. It skips vector sizes above the tile, which run at the tile's size (ADR-0012). Checks compare up to about 20 000 cells (an odd stride, so every lane position is covered) and the padding with host references in f64. The GeomFactors check repeats the four calls at the same configuration, one field at a time, instead of keeping the warm-up's fields (about 30 GB at 10^7 cells in f64). J, det J and K are compared within the CLAUDE.md tolerance times κ = 4 · nodes per cell · box side, which allows for the cancellation in J = Σ x_k ∇φ_k; X uses the plain tolerance. | The plan named the meshes and factors but not how they are combined into one record per configuration or checked. Without κ, f32 J on fine boxes fails the 1e-5 tolerance by rounding alone. | – |
+| 2026-10-25 | T12 | `protocol::vector_sizes` now requests every size 1, 2, …, `VECTOR_PAD` on every device (it took `max_vector_size`, 4 on Metal), and loses its `client` argument (`families/mod.rs` updated). A narrow device then records its clamped runs (`vector_size_ran` < `vector_size`). | ADR-0015 item 5 lets a device that cannot run size n contribute its time at the size it clamps to, but `perf_record` combines a class's devices only over the configurations every device measured; without Metal records at 8 and 16, the Gpu class could never choose them although the H100 runs them. | ADR-0015 |
+| 2026-10-25 | T12 | How `decide` reads the rule where ADR-0015 is silent: (a) a requested size that ran narrower on every device of the class is chosen only if no other qualifying configuration exists, and its reason then says `runs at m` (item 6, register budget); (b) if no admitted configuration is within 3% at both 10^6 and 10^7 (or, for a shared 4-byte entry, for every type), it takes the one with the smallest worst ratio and says so in the reason, and `policy_follows_the_decision_rule` then fails and the case goes to the maintainer; (c) entries without data keep size 1, tile 16 and 16 KiB; (d) CpuSimd256 always copies CpuSimd512, as `perf_record` requires. Files outside the task's list: `gridcl-bench/Cargo.toml` (proptest dev-dependency), `report::splice` for the marker replacement, and `policy_report --check`. `vector-policy.toml`'s header becomes "Written by … policy_report"; the file itself is rewritten in T17. | The rule does not cover these cases; `perf_record`'s reading fixes (d). | – |
+| 2026-10-25 | T13 | `mesh_throughput` as built: f64 only (the acceptance data are f64; it fails without f64); `--vector-size policy\|scalar\|both` maps to `with_vector_size(Policy)` and `(Scalar)`, both by default; it reuses the protocol's `measure` (warm-up check, median of `--runs`). Entities: the box sides nearest to `--cells` (tetrahedra 6 s³, hexahedra s³), each run on a `try_clone` made outside the timing; the check compares the edge and face counts with closed forms (Euler's formula for the tetrahedra). Factors: one P2 tetrahedron box, each field dropped after its call; the mesh is reused, so the E-vector and tabulations are cached by the warm-up; the check repeats the calls and compares the unit cube's volume and centroid (Σ w det J, Σ w det J X, within n ε) and K J = I. `record.rs` needed no change; `families/mesh.rs` gains `hexahedron_side`. Throughput records get no node-load annotation: they run on the M3 Max and Kathleen, not on Locust. | The plan defined the measures but not the checks, the fresh-mesh rule for the factors, or the override mapping. | – |
+| 2026-10-25 | T14 | The temporary `cube_dim` cap read an environment variable, so the runs at 16, 12 and 4 shared one debug build; the workspace runs used `--no-fail-fast`, because the four `perf_record` tests fail until T17. Two measurements beyond the plan: test threads 4 and 1 at `cube_dim` 16, which separate oversubscription from the cube size, and a preliminary release sweep (`vector_sweep --cube-dim both`, vector sizes 1 and 4, 16 KiB blocks), recorded in docs/perf/vectorization.md but not in docs/perf/data/. The results support a rule change (`cube_dim` 12 meets the budget and speeds up most families; GeomFactors slows down), so ADR-0017 is drafted for the maintainer. The m6 budget on the hosted cpu job (4 vCPUs, no efficiency cores) is not addressed by a `cube_dim` rule; only test-thread limits can help it, and T18 re-measures it. | Separating the two causes needed the test-thread runs; the ADR needed per-family evidence before T15. | ADR-0017 |
+| 2026-10-25 | T14, T20 | New task T20 implements ADR-0017; T17 now runs after it. T14's risk note (an ADR delays T15–T17) does not apply: `vector_sweep --cube-dim auto` already measures both unit settings on the M3 Max, so T15 and T16 run in parallel with T20. Acceptance bullets 3 and 4 now name the CPU units (ADR-0017). | Maintainer accepted ADR-0017 (2026-10-25). | ADR-0017 |
+| 2026-10-25 | T8 (found in T15) | `Machine::new` recorded the CubeCL client's name as `backend` (`wgpu<msl>` on Metal), but `SweepRecord::backend` and `perf_record` use the `GRIDCL_TEST_DEVICE` name (`metal`). New `protocol::backend()` reads `GRIDCL_TEST_DEVICE` (`cpu` when unset); fixed in a separate `M3s T8` commit before T15's Metal sweep. CPU records are unchanged (the CPU client is named `cpu`), so T15's CPU sweep at 851b635 stands. | The Metal sweep's records did not match `benchmark_data_covers_required_targets`. | – |
+| 2026-10-25 | T15 | Conditions as run, for T17's report: mains power (100%, charged) and Teams closed, confirmed by the maintainer; `hw.perflevel0.physicalcpu` 12, `hw.perflevel1.physicalcpu` 4 (Mac15,9); release builds, kernel cache off, no other cargo job. Microsoft Defender (system security, cannot be closed) used 0.4–0.7 of a core throughout. One family per part, each started only once the 1-minute load average was below 3 (`uptime` and the top three processes logged before and after each part). CPU: commit 851b635, both `cube_dim` modes (`--cube-dim auto`), 1,800 records, 11:33–12:17 (SortDigits 738 s, GeomFactors 1,156 s, the others 1–65 s), so the planned hours-long runs were not needed. Metal: commit f0aad79 (the backend-name fix), 207 records, 12:25–12:26; sizes 8 and 16 run at 4. The first Metal run (backend `wgpu<msl>`) was discarded. Fill and Copy at 10^5 and 10^6 take 15–150 µs, so their medians are noisy (neighbouring configurations differ by up to 3×); TopologyKeys takes 11.5 ms at 10^6 but only 20 ms at 10^7. | Plan records conditions in the report (T17), which needs them; the scratchpad logs do not persist. | – |
+| 2026-10-25 | T21 | New task T21 before T17: digit counting without atomics on CPUs. T17 now runs after it; T16's Locust CPU SortDigits part waits for it. | T15's profile: the atomic digit count is 80% of the CPU sort (about 20 ns a key, against about 4 ns for the scatter). Maintainer's decision (2026-10-25). No public API or design change ("the histogram and scatter phases stay scalar" still holds). | – |
+| 2026-10-25 | T21 | The counting kernel's shared columns are unit-major (`UNIT_POS · chunk_digits + d`), not the scatter's digit-major layout (`d · cube_dim + u`); the chunking is the scatter's. The scatter kernel is unchanged. A lane adds `select(inside, 1, 0)` at a clamped slot instead of branching on its digit. `radix_sort_both_schemes` gains 10^6 + 3 keys on the blocks scheme (eight-digit chunks, 32 chunks a pass) at every vector size. | On the CPU runtime a cube's units are threads, and digit-major columns put every unit's counter of one digit in the same cache line. Quick checks at 10^7 keys (two words, 16 KiB blocks, all threads, vector sizes 1 and 4, machine not idle): atomics 1.97 s (T15), digit-major 0.58–0.60 s, unit-major 0.43–0.45 s. The same false sharing likely slows the scatter's own counting phase; left to M10. | – |
+| 2026-10-25 | T21 | Two commits: the kernel and its test first, then the SortDigits sweep data, the profile and the tick. | The sweep records the commit it measured (`GRIDCL_BENCH_COMMIT`), so the kernel must be committed before the sweep runs. | – |
+| 2026-10-25 | T21 | Conditions and results as run, for T17's report: T15's conditions, confirmed again by the maintainer (mains power, 100%, charged; applications closed); `hw.perflevel0.physicalcpu` 12, `hw.perflevel1.physicalcpu` 4. SortDigits sweep at commit 5567171, `--cube-dim auto`, 90 records, 13:49–13:52 (T15: 738 s); load average 2.56 before; Microsoft Defender at 0.3–0.6 of a core, Activity Monitor at 0.08. The 90 SortDigits records of `m3s-sweep-cpu-m3max.json` are replaced in place, the other 1,710 unchanged. Every configuration is 2.3–9.9× faster than in T15; best at 10^7: 0.230 s (performance cores, 64 KiB) against 1.50 s, and 0.269 s with all threads (64 KiB) against 1.84 s; vector size changes little. Profile (CubeCL `[profiling.logger] level = "basic"`, one timed 10^7-key sort, two words, vector size 1, 16 KiB, all threads, load average 5.7 from the sweep just before): `ScatterBlocksKernel` 348 ms (91%), `SortDigitsBlocksKernel` 26 ms (T15: 1.60 s), `ScanTileKernel` 7 ms; total 381 ms (T15: 1.99 s). | The plan asks for the profile "for the report"; the scratchpad logs do not persist. | – |
+| 2026-10-25 | T16 | `scripts/hpc/lib/submit.sh` now exports `GRIDCL_HPC_TARGET` in the job settings (`jobs/common.sh` comment and a `tests/run.sh` check updated). The variable was set but not exported, so `vector_sweep` and `mesh_throughput` named their records `local`; T16's first Locust CPU parts (20261025155800-2566027 and the cancelled 20261025155938-2636441) were discarded and rerun with `--target locust`. | T8's deviation says the target defaults to `GRIDCL_HPC_TARGET` "set in runner jobs"; the runner did not pass it on. | – |
+| 2026-10-25 | T16 | Locust part committed before the AVX-512 part; T16 stays unticked. Runs as made, for T17's report (all `node load: idle` before and after, release builds): Grace CPU (Neoverse-V2, 72 threads, no performance-core count, so `plan` only) in two parts, every family except GeomFactors in job 20261025160053-2718894 at 45d7309 (260 s, 738 records) and GeomFactors in 20261025160538-2952568 at 83f5deb (377 s, 162 records), merged into `m3s-sweep-cpu-locust.json` (900 records); H100 (GH200) every family in one part, 20261025161221-3293484 at 83f5deb (159 s, 294 records, no clamped sizes), `m3s-sweep-cuda-locust.json`. The two commits differ only in `scripts/hpc` and the plan. SortDigits ran after T21, as planned. Kathleen was still drained (105 nodes `drain`, 84 `drng`, `rdss-upgrade` from 2026-10-27) and Myriad had started no job since 2026-10-24 (375 running, 4,098 pending), so the CpuSimd512 sweep still waits. | Whole parts in one job each were short enough (the plan expected parts by family); the AVX-512 deferral is the 2026-10-24 decision. | ADR-0016 |
+| 2026-10-25 | T20 | How T20 reads ADR-0017 where it is silent: (a) the units are the fourth component of the tie order, so among qualifying configurations the smallest vector size, tile and block come first, then `all`; (b) a device "without a performance-core count" is one whose records have `cores.performance` empty, and its all-threads time also stands for `performance` (in `decide` and in `perf_record`'s independent check); (c) `vector_sweep`'s `Plan` mode now forces `with_cpu_units(All)`, so a sweep measures all threads whatever the policy says, and `PerformanceCores` sets `with_performance_cores` to the `sysctl` count it records; `protocol::with_config` loses its `client` argument; (d) the report gains a Units column in the main and scalar-kernel tables, and a reason that chooses `performance` gives its gain over the best admitted all-threads configuration; (e) a performance-core count of 0 counts as none. Files outside the task's list: `Cargo.toml` (`libc` in `[workspace.dependencies]`), `Cargo.lock`, `gridcl-bench/src/record.rs` (`CubeDimMode` orders `Plan` first), `gridcl-bench/src/families/mod.rs` and `bin/vector_sweep.rs` (call and usage text). A trial `policy_report` on the M3 Max and Metal data (not committed) chooses `performance` for most CpuSimd128 entries and `all` for GeomFactors; several noisy entries (Fill, Gather, GeomFactors f64) fall back to "no configuration within 3%", which T17 has to resolve with the Locust data or the maintainer. | ADR-0017 leaves the tie order, the neutral-device test and the sweep's override for `Plan` open. | ADR-0017 |
+| 2026-10-25 | T22 | Records also gain `calibration_s`, the calibration call's time. `benchmark_data_covers_required_targets` (and the throughput test) check `calls_per_run` = min(⌈20 ms / `calibration_s`⌉, 10,000), in whole nanoseconds, instead of `calls_per_run` × median ≥ 20 ms. | With one calibration call, k × median falls below 20 ms whenever the calibration call is slower than the later calls' median, which CPU noise makes common. Maintainer's decision (2026-10-25). | ADR-0018 |
+| 2026-10-25 | T22 | How T22 reads ADR-0018: `decide::Choice` gains `fit` (`Rule`, `Closest`, `Unresolved`) and `Decision::unresolved()`; an unresolved entry still stores the closest admitted configuration; `policy_report` lists unresolved entries on stderr and fails after writing; the note on sizes only some 4-byte types admit now always follows the reason, so a backstop reason starts "closest, x% slower". A shared 4-byte entry where one type admits a larger size and another does not keeps size 1 (ADR-0015, item 6) and is unresolved when size 1 is more than 10% slower than that type's fastest admitted. `perf_record::policy_follows_the_decision_rule` accepts a backstop entry only if no admitted configuration is within 3% for every type at both sizes, its worst ratio is the smallest and at most 1.10, and the report row of every type of the entry says "closest, ". | ADR-0018 leaves these details open. | – |
+| 2026-10-25 | T22 | Two commits: the protocol and the backstop first, then the data and the tick. Between them `perf_record` cannot read the old records, which lack `calls_per_run`. | The records name the commit they measured. | – |
+| 2026-10-25 | T22 | Data as run at 3ab0f31, for T17's report (release builds, kernel cache off). Locust (idle before and after both): Grace CPU, every family in one part, job 20261025170542-3734076 (825 s, 900 records); H100, 20261025180049-1677957 (196 s, 294 records). M3 Max (maintainer confirmed T15's conditions; `hw.perflevel0.physicalcpu` 12, `hw.perflevel1.physicalcpu` 4; one family per part, each started below a 1-minute load of 3): CPU, both `cube_dim` modes, 18:05–19:01, 1,800 records (GeomFactors 1,212 s, EVector 287 s, SortDigits 236 s, the others 23–91 s); Metal 19:06–19:08, 207 records. Outlook (0.4 of a core before Reduce, 0.2 before ScanTile), Docker (0.2 before ScanTile) and a Microsoft Defender burst (1.7 cores before Fill) were still running, so the Reduce part was repeated at 19:12–19:14 with both closed, and its 270 records replace the first ones; Metal Fill was repeated too (19:17, 30 records), for the unresolved Gpu Fill entry. Batching cut the noise measure (spread of the 3rd to 8th sorted run over the median) for example on the M3 Max CPU from 0.24 / 0.08 to 0.03 / 0.01 (Fill, 10^6 / 10^7) and from 1.03 / 0.52 to 0.38 / 0.40 (Reduce), on Grace from 0.33 / 0.30 to 0.15 / 0.09 (Gather), on the H100 to below 0.01. The trial `policy_report` then marks 11 entries "closest" and leaves one unresolved: Gpu Fill 4-byte, 28% (first run: 53%), where one 4-byte type admits size 2 and the other just misses the 10% threshold, so ADR-0015 item 6 keeps size 1, which is then far from that type's fastest. T22 stays unticked for the ADR this needs. | ADR-0018's data; the shared-entry case is structural, not noise (the old data had it for Gather CpuSimd128, 74%). | ADR-0018 |
+| 2026-10-25 | T22 | Third commit for ADR-0019 (accepted): `decide` and `perf_record::policy_follows_the_decision_rule` measure each type of a shared 4-byte entry against its fastest configuration at a size every type admits; `a_shared_four_byte_entry_needs_every_type` now expects size 1 within the rule. Verify as run: the trial `policy_report` on the T22 data leaves no unresolved entry (9 marked "closest", 3.2–7.6%); with its trial TOML and report put in place temporarily, `policy_follows_the_decision_rule` and `report_lists_every_family_class_and_type` pass and the `calls_per_run` check passes on all 3,201 records; the other two `perf_record` tests fail only for the CpuSimd512 sweep (T16) and the throughput records (T17). The committed TOML and report are written in T17. | ADR-0019. | ADR-0019 |
+| 2026-10-25 | T17 | T17 in commits: first the policy and generated tables from the M3 Max and Locust data (CpuSimd512 and CpuSimd256 at 1, "no data"), so the throughput records name a commit that holds the policy they ran; then the M3 Max throughput data; the Kathleen throughput, the CpuSimd512 tables and the tick wait for Kathleen (2026-10-24 deferral). Tests that read the shipped policy's values change with it: `plan::tests::policy_and_scalar_give_one_until_benchmarked` becomes `policy_follows_the_entry_and_scalar_gives_one`, `cpu_blocks_are_whole_lines_of_about_16_kib` becomes `cpu_blocks_are_whole_lines_of_the_policy_block` (every policy block, and 4, 16 and 64 KiB), `invalid_policy_entries_are_rejected` edits a generated uniform policy instead of the shipped file, and `measure_takes_the_calls_per_run_from_the_calibration_call` checks k against its calibration call (k ≤ 3) instead of k = 3: under the new Fill entry (size 16, performance cores) the first call after the warm-up takes about 2 ms more. | The tests asserted the pre-M3s defaults. Kathleen fully drained on 2026-10-25 19:20 (105 `drain`, 84 `drng`, `rdss-upgrade` from 2026-10-27, no end); Myriad had started no job since 2026-10-24 (368 running, 4,164 pending). | ADR-0016 |
+| 2026-10-25 | T17 | M3 Max throughput as run, for the record: `mesh_throughput --target m3max` at b96f49c (the committed policy), 20:07, 32 s, 6 records; the maintainer confirmed T15's conditions again; 1-minute load 2.98 before (Defender 0.14 of a core), no other cargo job. Policy over scalar: entities 1.05× (tetrahedra) and 0.99× (hexahedra), factors 1.26×. The report's hand-written parts (protocol, conditions with job ids, observations, CPU units, compile times, throughput) are written; the Kathleen rows say "not yet measured". Six policy entries (nine report rows) are marked "closest", 3.2–6.7% (the T22 row's "9 marked" counted rows). | Data for acceptance bullet 6 on the M3 Max; the Kathleen half waits for the maintenance. | ADR-0016 |
+| 2026-10-26 | T19 | Real smoke jobs as run, once Kathleen accepted jobs again (2026-10-26 12:43: 42 nodes idle, the `rdss-upgrade` reservation gone), at 3d7d53b: one node, job 608431 (`nproc && cargo test --release -p gridcl-device`; `nproc` 40 of 80 online, QoS `singlenode`; passed, 613 s); two nodes, job 608438 (`--ranks 4`, `scripts/mpi-test.sh 2 4`; QoS `test`, `--map-by node`; `allreduce_smoke` passed at 2 and 4 ranks under Open MPI 4.1.6, 220 s). Bug found by T16's sweep (job 608437) and fixed in a follow-up `M3s T19` commit: `jobs/kathleen.sh` set `JOB_ID` without exporting it, so a command's `results/$JOB_ID/` became `results/` and the runner did not copy the file back (fetched by hand). `tests/run.sh` (`kathleen_job_script`) now checks that the command sees `JOB_ID`. | SGE exports `JOB_ID` and the direct runner exports it; the Slurm job script did not. | ADR-0016 |
+| 2026-10-26 | T16 | Kathleen part as run: job 608437 at 3d7d53b (`vector_sweep --target kathleen`, every family, `plan` only: no performance-core count), Kathleen node A (Xeon Gold 6248, 40 cores, `nproc` 40; Slurm allocated all 80 hardware threads and ran no other job on the node from 12:50 to 13:30), 12:57–13:28, 1,887 s, 900 records, `m3s-sweep-cpu-kathleen.json`. The JSON was written to `results/sweep-cpu.json` (the T19 `JOB_ID` bug) and fetched by hand; its 900 records match the 900 timed lines of the job's log. The commit is T17's policy commit, not T22's protocol commit 3ab0f31: the protocol is unchanged since, and CpuSimd512 kept every default entry until this data existed, so the helpers inside timed calls (radix sort's inner scan, the u32 copy reference) ran as at 3ab0f31. No Myriad fallback was needed. With these data, `policy_report` leaves one entry unresolved, CpuSimd512 (and CpuSimd256) Fill 8-byte: the closest admitted configuration is 22.4% slower than the fastest, because 64 KiB blocks are 2.5–3× faster at 10^7 and 1.2× slower at 10^6; it goes to the maintainer before T17 (ADR-0018). | Kathleen accepted jobs again on 2026-10-26. | ADR-0016, ADR-0018 |
+| 2026-10-26 | T16 | Kathleen Fill repeated (maintainer's decision, for the unresolved Fill 8-byte entry): job 608489 at 9feef5a, Kathleen node A (80 hardware threads allocated, no other job), 45 s; its 135 records replace the Fill records of `m3s-sweep-cpu-kathleen.json` in place (the other 765 unchanged). Fill 8-byte then resolves, but Fill 4-byte becomes unresolved (13.7%). Diagnostic job 608494 (not in docs/perf/data/; Fill at 10^7, plain twice, `numactl --interleave=all`, and `numactl --cpunodebind=0 --membind=0`) shows the cause: on two sockets the CPU runtime's times are bimodal per configuration (up to 4×, unchanged by interleaved memory), on one socket they are not. ADR-0020 is drafted. | The two-socket timings decide which Fill entry fails. | ADR-0018, ADR-0020 |
+| 2026-10-26 | T16 | Kathleen swept again under ADR-0020: job 608520 at 55deca2, Kathleen node A (80 hardware threads allocated, no other job), `numactl --physcpubind=0-19 --membind=0` (the job log shows CPUs 0–19, node 0, `nproc` 20), 14:16–14:49, 1,985 s; 900 records (20 threads, 20 units) replace `m3s-sweep-cpu-kathleen.json`, and a second Fill sweep in the same job (`sweep-fill-check.json`, not in docs/perf/data/) agrees within 0.76–1.08× at 10^7 (median 0.97; no 3–4× outliers), 0.71–1.55× at 10^6. The trial `policy_report` still leaves CpuSimd512 (and CpuSimd256) Fill 4-byte unresolved, 14.7%: at 10^7 every size above 1 is 1.4–2.8× faster for both types, but at 10^6 f32 admits 2 and 4 and u32 admits 8 and 16, so the shared entry keeps size 1 (ADR-0015 item 6), where the types prefer different blocks. With the check run's Fill records it resolves; with the geometric mean of both runs it is unresolved at 12.6%, because u32 Fill at size 1 is about 1.6× slower than f32 at 10^7 and gains more from vectors. Goes to the maintainer. | ADR-0020's sweep; the shared-entry conflict remains. | ADR-0015, ADR-0018, ADR-0020 |
+| 2026-10-26 | T17 | ADR-0021 as built: `decide::SHARED_BACKSTOP` = 1.25 applies when a shared 4-byte entry has more than one type measured; an entry between 1.10 and 1.25 gets the reason "closest across types, x% slower", and the unresolved reason names the bound that applies (10% and ADR-0018, or 25% and ADR-0021); `perf_record::policy_follows_the_decision_rule` checks the same bounds and markings; new unit test `a_shared_entry_whose_types_disagree_backstops_up_to_25_percent` (1.20 resolves, 1.30 and a single-type 1.20 stay unresolved); the report's legend names both markings. `policy_report` then writes CpuSimd512 and CpuSimd256 from the one-socket Kathleen data with no unresolved entry: Fill 4-byte size 1, 16 KiB, "closest across types, 14.7%"; Reduce and ScanTile 4-byte 8; PermutationInfo 4-byte 16; GeomFactors 16 in both types; every entry all threads (no performance-core count). | ADR-0021. | ADR-0021 |
+| 2026-10-26 | T17 | Kathleen throughput as run: job 608596 at adc4917 (the committed policy), Kathleen node B (80 hardware threads allocated, no other job), bound with `numactl --physcpubind=0-19 --membind=0` (job log: CPUs 0–19, node 0, `nproc` 20; ADR-0020), 269 s, 6 records, `m3s-throughput-cpu-kathleen.json`. Policy over scalar: entities 1.00× (tetrahedra) and 1.03× (hexahedra), factors 1.95×. The M3 Max throughput (b96f49c) stands: the CpuSimd128 and Gpu tables are unchanged since. The report's hand-written parts now cover Kathleen (conditions, observations on AVX-512, two sockets and the f32/u32 Fill disagreement, compile times, throughput). All four `perf_record` tests and `policy_covers_every_kind_and_class` pass. | – | ADR-0020, ADR-0021 |
+| 2026-10-26 | T18 | Runs as made, all at 18ef5a2 (clean tree), all passed with no failures and nothing ignored. M3 Max, one cargo run at a time: `cargo test --workspace` (debug, after `--no-run`) 573 passed in 12:58; release under `GRIDCL_VECTOR_SIZE` = `policy` (9:34), `scalar` (7:26) and `widest` (8:40), and `GRIDCL_QUAD_TILE=1` (8:28), 571 passed each (the two debug-only index-check tests of `primitives_prop` account for the difference); Metal (`GRIDCL_TEST_DEVICE=metal`, unsandboxed) 573 passed in 3:50; `scripts/mpi-test.sh 1 2 3 4` (Open MPI) passed; fmt and clippy clean. Locust: CUDA, job 20261026162734-1282489 (194 s; node load busy before and after, other users' processes, so not a timing basis), and the Grace CPU runtime, 20261026163105-1596054 (700 s, idle before and after), 571 passed each. Kathleen: one whole node, unbound, job 608610 on Kathleen node B (`nproc` 40, 988 s), 571 passed; the only run of the CpuSimd512 table. Hosted CI run 40357900519: cpu, vulkan, mpi-mpich and mpi-openmpi passed. A first Metal attempt inside the sandbox failed with `DeviceUnavailable` and left four `.proptest-regressions` files (every case shrank to empty input); they were deleted and the run repeated unsandboxed. | The plan names the runs but not the sandbox's effect on Metal. | – |
+| 2026-10-26 | T18 | m6 budgets re-measured (question 11): debug `cargo test --workspace` on the M3 Max 12:58, within the budget of about 15 min (M3: 16:01); `primitives_prop` is still the slowest binary (349 s, M3: 545 s), then `unit_volume` (80 s). The hosted cpu job took 32:41, still over its budget of about 30 min (M3: 35:17): `cargo test --workspace` 24:07 (M3: 27:08), clippy 3:01 (M3: 4:11), the cache save 5:11. Nothing is changed in M3s; the hosted budget goes to the review. | T14 found that no `cube_dim` rule helps the 4-vCPU hosted runner. | – |
+| 2026-10-26 | T19 (found in review) | Kathleen jobs keep Slurm's `TMPDIR`; only Open MPI's session directory goes to `/dev/shm` (`OMPI_MCA_orte_tmpdir_base`, `scripts/hpc/jobs/kathleen.sh`). ADR-0016 puts temporary files on `/dev/shm`. Cargo builds and test output stay in the tree's `target/`. | The suite (job 608610), the sweeps and the two-node MPI smoke job ran with it unchanged; moving `TMPDIR` is left to the first job that runs short of space. | ADR-0016 |
+
+## Review
+
+Reviewed 2026-10-26 on `main...HEAD` (main 5882b8c) by two design-reviewer passes: the library crates (gridcl-device, gridcl-topology, gridcl-geometry, gridcl), and gridcl-bench, `scripts/hpc`, the docs, ADRs 0015–0021 and the design edits. No Blockers.
+
+### Findings and resolution
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| M1 | Major | `cancel.sh` took any user's job with the id (`qstat -j`, `squeue -j`): with Kathleen's Slurm ids beside Myriad's SGE ids it could delete our job on the wrong scheduler, or stop at another user's SGE job and never reach Slurm. | 4a3a342: both helpers look the id up among the user's jobs; new runner case `cancel_only_own_jobs` (fails on the old code). Re-reviewed: resolved. |
+| L1 | Minor | `factor_invariance` never compared the shipped tile (4 on CpuSimd128) with the reference. | 0dd91a0: the sweep adds the policy's tile. |
+| L2 | Minor | `performance_cores_match_the_os` failed on Macs without `hw.perflevel0`. | 0dd91a0: a count is required on Apple silicon only. |
+| L3 | Minor | `KernelKind::Scalar` reached size 1 only through its callers' `max_vector = 1` (Listing S2: "always vector size 1"). | 0dd91a0: `vector_size` returns 1 for `Scalar`; test `scalar_kind_is_always_one`. |
+| L4 | Minor | `LaunchPlan` rustdoc named only 4, 16 and 64 KiB blocks. | 0dd91a0. |
+| L5 | Minor | `quad_tile` fell back to 1 for unlisted sizes, Listing B4b says 16. | 0dd91a0: fallback 16 (no size is unlisted today). |
+| L6 | Minor | Prism and pyramid blocks are transposed twice for faces at N > 1 (time only; TopologyKeys ships at 1). | Follow-up (M10). |
+| B1 | Minor | The report's backstop paragraph predated the Kathleen data. | e96d61b. |
+| B2 | Minor | The shared-entry note merged sizes across types. | e96d61b: per type; report regenerated, policy unchanged. |
+| B3 | Minor | The 1.25 bound applies whenever a shared 4-byte entry has more than one type measured (code, ADR-0021), design.md "Decision rule" says when the types disagree. | Maintainer: keep code and ADR-0021; design text follow-up. |
+| B4 | Minor | `perf_record` did not check the tie order or the M3 Max performance-core records independently. | e96d61b. |
+| B5 | Minor | The throughput test checked less than the sweep test (ten runs, f64, Kathleen binding). | e96d61b; Kathleen sweep records also checked for 20 threads. |
+| B6 | Minor | Kathleen compute-node names in committed docs. | e96d61b, cd8fc50: replaced (they remain in git history). |
+| B7 | Minor | hpc-test skill: no socket binding for the D-node fallback, no `--fallback-reason`, no `ssh kathleen true`. | cd8fc50. |
+| B8 | Minor | Kathleen `TMPDIR` is not on `/dev/shm` as ADR-0016 says. | cd8fc50: Deviations log. |
+| B9 | Minor | dev-environment.md still expected job 10224's smoke result. | cd8fc50. |
+| B10 | Minor | design.md runner step 4 still says `GRIDCL_TEST_DEVICE=cuda` for every target. | Follow-up (design edit). |
+| B11 | Minor | design.md's crate table lacks gridcl-bench's gridcl-refcell dependency and proptest dev-dependency. | Follow-up (ADR). |
+| B12 | Minor | `decide.rs` proptests never generate a shared entry or a backstop. | Follow-up. |
+| B13 | Minor | With our own Myriad and Kathleen jobs of the same number, `cancel.sh` cancels the SGE one first. | Follow-up (`cancel.sh --target`). |
+
+### Test evidence
+
+At cd8fc50 (the code of the review; only this section changed since):
+
+| Target | Command | Job | Result |
+| --- | --- | --- | --- |
+| M3 Max | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings` | – | clean |
+| M3 Max, CPU | `cargo test --workspace` (debug) | – | 574 passed, 14:39 |
+| M3 Max, CPU | `GRIDCL_VECTOR_SIZE=policy cargo test --release --workspace` | – | 572 passed |
+| M3 Max, CPU | `GRIDCL_VECTOR_SIZE=scalar …` | – | 571 passed, 1 failed: doctest `entity::Connectivity::try_clone` killed by SIGSEGV inside CubeCL's LLVM JIT (`llvm::PMTopLevelManager::schedulePass` under `cubecl_llvm::cpu::jit::PlironEngine::compile`, macOS crash report `rust_out-2026-10-26-185750`); passed on two reruns of `GRIDCL_VECTOR_SIZE=scalar cargo test --release -p gridcl-topology --doc`; the only such failure in the 18 workspace runs of T18 and this review |
+| M3 Max, CPU | `GRIDCL_VECTOR_SIZE=widest …` | – | 572 passed |
+| M3 Max, CPU | `GRIDCL_QUAD_TILE=1 …` | – | 572 passed |
+| M3 Max, Metal | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` (unsandboxed) | – | 574 passed |
+| M3 Max, MPI | `scripts/mpi-test.sh 1 2 3 4` (Open MPI) | – | passed at 1–4 ranks |
+| Locust, H100 | `cargo test --release --workspace --features gridcl-testing/cuda` | 20261026182326-1984295 | 572 passed (node load: busy before, CPU only, GPU at 0%; idle after) |
+| Locust, Grace CPU | `env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` | 20261026182649-1990730 | 572 passed (idle before and after) |
+| Kathleen, one whole node | `cargo test --release --workspace` (unbound, `nproc` 40; CpuSimd512) | 608672 | 572 passed |
+| Hosted CI | cpu, vulkan, mpi-mpich, mpi-openmpi | run 40377206223 | all passed; cpu job 18:31 |
+
+The four `perf_record` tests and `policy_covers_every_kind_and_class` are part of every run above. T18's runs at 18ef5a2 (Deviations log) passed on the same targets before the review fixes. Not run: conformance (neither `conformance/` nor gridcl-refcell changed), Myriad (no fallback was needed, and M3s needs no multi-GPU test), two-node Kathleen MPI (required from M6). The debug count is two higher than release: the debug-only index checks of `primitives_prop`.
+
+Test-time budgets (question 11, T18): debug workspace 12:58 at T18 (14:39 here, with the machine in use), within about 15 min; hosted cpu job 32:41 at T18 with a cache save, 18:31 here.
+
+### Follow-ups
+
+- M10: L6 (one transpose per block per `emit_keys` call); the CPU runtime's thread placement (ADR-0020); the scatter's own counting phase (T21 deviation).
+- Maintainer, design text: B3 (design.md "Decision rule": the 1.25 bound as ADR-0021 states it), B10 (runner step 4: `cpu` on CPU-only targets).
+- ADR: B11 (gridcl-bench's dependencies in the crate table).
+- Tests and tooling: B12 (two-type `decide` proptest), B13 (`cancel.sh --target`); `myriad-cpu` has never run a job live (its first fallback run is its smoke check).
+- CubeCL: if the LLVM JIT SIGSEGV in `PMTopLevelManager::schedulePass` recurs, report it upstream with the crash report.
+- Hosted cpu budget: watch the job time with a cold cache (32:41 at T18).

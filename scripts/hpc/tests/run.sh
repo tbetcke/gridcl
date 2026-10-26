@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Tests of the remote-test runner (scripts/hpc) against fake ssh, rsync and SGE.
+# Tests of the remote-test runner (scripts/hpc) against fake ssh, rsync, SGE and Slurm.
 #
-# usage: scripts/hpc/tests/run.sh [sge | direct | <case>...]
+# usage: scripts/hpc/tests/run.sh [sge | direct | slurm | <case>...]
 #   sge      the SGE-path cases (E0 T3)
 #   direct   the direct-kind, status, cancel and pruning cases (E0 T4)
+#   slurm    the Slurm-path cases of the kathleen target (M3s T19, ADR-0016)
 #   default  every case
 # KEEP=1 keeps the scratch directories; CASE_TIMEOUT (seconds, default 120) limits a case.
 #
 # Each case gets a scratch directory with
 #   local/        a git repository holding a copy of scripts/hpc: the working tree to sync
 #   remote/       the fake remote file system: the base directories of the targets
-#   state/        the fake scheduler (state/sge/) and the logs of the shims
+#   state/        the fake schedulers (state/sge/, state/slurm/) and the logs of the shims
 #   targets.env   personal settings, passed to the runner through GRIDCL_TARGETS_ENV
 # fake-bin/ stands in for ssh (runs the remote command locally), rsync (drops the host
-# part), qsub, qstat and qdel; fake-bin/remote/ holds the commands of the remote nodes
+# part), qsub, qstat, qdel, sbatch, squeue and scancel; fake-bin/remote/ holds the commands of the remote nodes
 # (cargo, rustup, rustc, nvidia-smi, curl), which log to state/. GRIDCL_HPC_POLL sets the
 # runner's polling interval in seconds.
 #
@@ -38,8 +39,11 @@ orig_path=$PATH
 
 SGE_CASES="usage missing_targets_env job_script_sge_lines exit_status_passthrough
 failing_command_first_error summary_header_and_length max_wait_deletes_job results_copied
-results_survive_resync busy_tree_refused cubecl_toml_written"
+results_survive_resync busy_tree_refused cubecl_toml_written myriad_cpu_job_script
+myriad_cpu_rejects_gpus"
 DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees"
+SLURM_CASES="kathleen_job_script kathleen_two_nodes kathleen_rejects kathleen_max_wait_cancels
+kathleen_status_and_cancel cancel_only_own_jobs"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
 
 # --- assertions -------------------------------------------------------------------
@@ -92,7 +96,7 @@ commit_file() { # commit_file <path> <content>
 
 write_targets_env() {
     {
-        for t in MYRIAD_V100 MYRIAD_A100; do
+        for t in MYRIAD_V100 MYRIAD_A100 MYRIAD_CPU; do
             echo "${t}_HOST=fake-myriad"
             echo "${t}_SCHEDULER=sge"
             echo "${t}_BASE='$REMOTE/myriad'"
@@ -103,6 +107,7 @@ write_targets_env() {
         done
         echo "MYRIAD_V100_CUDA_PATH='$REMOTE/cuda-12'"
         echo "MYRIAD_A100_CUDA_PATH='$REMOTE/cuda-13'"
+        echo "MYRIAD_CPU_CUDA_PATH="
         echo "LOCUST_HOST=fake-locust"
         echo "LOCUST_SCHEDULER=direct"
         echo "LOCUST_BASE='$REMOTE/locust'"
@@ -111,6 +116,14 @@ write_targets_env() {
         echo "LOCUST_CUDA_PATH='$REMOTE/cuda-12'"
         echo "LOCUST_CORES_REQUEST="
         echo "LOCUST_MEM_REQUEST="
+        echo "KATHLEEN_HOST=fake-kathleen"
+        echo "KATHLEEN_SCHEDULER=slurm"
+        echo "KATHLEEN_BASE='$REMOTE/kathleen'"
+        echo "KATHLEEN_LOGIN_MODULES=:"
+        echo "KATHLEEN_MODULES=:"
+        echo "KATHLEEN_CUDA_PATH="
+        echo "KATHLEEN_CORES_REQUEST="
+        echo "KATHLEEN_MEM_REQUEST="
     } >"$T/targets.env"
 }
 
@@ -133,7 +146,7 @@ setup() {
     write_targets_env
     export FAKE_STATE GRIDCL_TARGETS_ENV=$T/targets.env GRIDCL_HPC_POLL=0.2
     export PATH="$here/fake-bin:$orig_path"
-    unset FAKE_SGE_HOLD FAKE_SGE_QUEUE_DELAY FAKE_SSH_UNREACHABLE
+    unset FAKE_SGE_HOLD FAKE_SGE_QUEUE_DELAY FAKE_SSH_UNREACHABLE FAKE_SLURM_HOLD FAKE_SLURM_QUEUE_DELAY
     RT=$LOCAL/scripts/hpc/remote-test.sh
     STATUS=$LOCAL/scripts/hpc/status.sh
     CANCEL=$LOCAL/scripts/hpc/cancel.sh
@@ -243,7 +256,7 @@ case_usage() {
     rt
     expect_status 2 "no arguments"
     cat "$T/stdout" "$T/stderr" >"$T/both"
-    expect_grep "$T/both" 'targets: myriad-v100 \| myriad-a100 \| locust' "usage lists the targets"
+    expect_grep "$T/both" 'targets: myriad-v100 \| myriad-a100 \| myriad-cpu \| locust \| kathleen' "usage lists the targets"
     rt nowhere -- true
     expect_status 2 "unknown target"
     rt myriad-v100 true
@@ -319,6 +332,53 @@ case_job_script_sge_lines() {
     if grep -Eq '^offline= .*args=(check|build)' "$FAKE_STATE/cargo.log"; then
         fail "login-node check although no feature activates cubecl-llvm"
     fi
+}
+
+case_myriad_cpu_job_script() {
+    # shellcheck disable=SC2016 # expanded by the job, not here
+    rt myriad-cpu --cores 36 --time 00:30:00 -- 'echo "device=$GRIDCL_TEST_DEVICE"'
+    expect_status 0 "myriad-cpu run"
+    local s id
+    id=$(job_id)
+    s=$FAKE_STATE/sge/submitted/$id.sh
+    expect_exists "$s" "rendered job script submitted"
+    expect_no_grep "$s" '^#\$ -l gpu' "no GPU request on a CPU-only node"
+    expect_line "$s" '#$ -ac allow=D' "D nodes"
+    expect_no_grep "$s" '^#\$ -ac allow=(EF|L)$' "no GPU node class"
+    expect_line "$s" '#$ -pe smp 36' "whole node from CORES_REQUEST"
+    expect_line "$s" '#$ -l mem=4G' "memory request from MEM_REQUEST"
+    expect_line "$s" '#$ -l h_rt=00:30:00' "wall-clock request"
+    expect_line "$s" 'export GRIDCL_TEST_DEVICE=cpu' "CPU test device"
+    expect_no_grep "$s" 'GRIDCL_TEST_DEVICE=cuda' "no CUDA test device"
+    expect_line "$s" "GRIDCL_HPC_CUDA_PATH=''" "no CUDA_PATH"
+    expect_line "$s" 'export GRIDCL_HPC_TARGET=myriad-cpu' "target exported for gridcl-bench"
+    expect_grep "$s" "CARGO_TARGET_DIR=$TREE/target/myriad-cpu" "own CARGO_TARGET_DIR in the shared tree"
+    bash -n "$s" || fail "rendered script is not valid bash"
+    awk '/^#\$/ { if (cmd) bad = 1 } /^[^#]/ && NF { cmd = 1 } END { exit bad }' "$s" ||
+        fail "a #$ line follows a command"
+    expect_grep "$T/stdout" '^target: myriad-cpu$' "summary target"
+    expect_no_grep "$T/stdout" '^node load:' "no node-load line on SGE targets"
+    local dir=$LOCAL/target/hpc/myriad-cpu/$id
+    grep -q 'device=cpu' "$dir/output.log" 2>/dev/null || fail "the command did not see GRIDCL_TEST_DEVICE=cpu"
+    expect_grep "$dir/prologue.txt" '^slots: 36;' "prologue records the slots"
+    expect_grep "$dir/prologue.txt" '^cpus: nproc ' "prologue records the CPUs"
+
+    # Without --cores the job has one slot; the runner says so.
+    rt myriad-cpu -- true
+    expect_status 0 "myriad-cpu run without --cores"
+    expect_grep "$T/stderr" 'myriad-cpu without --cores' "note about the slots"
+    s=$FAKE_STATE/sge/submitted/$(job_id).sh
+    expect_no_grep "$s" '^#\$ -pe ' "no cores request"
+    expect_line "$s" '#$ -ac allow=D' "D nodes without --cores"
+}
+
+case_myriad_cpu_rejects_gpus() {
+    rt myriad-cpu --gpus 1 -- true
+    expect_status 2 "--gpus 1 on myriad-cpu"
+    expect_grep "$T/stderr" 'CPU-only' "message names the CPU-only nodes"
+    rt myriad-cpu --cores 36 --gpus=2 -- true
+    expect_status 2 "--gpus=2 on myriad-cpu"
+    expect_absent "$FAKE_STATE/ssh.log" "nothing contacted on usage errors"
 }
 
 case_exit_status_passthrough() {
@@ -524,6 +584,155 @@ case_cancel_deletes_job() {
     expect_nonzero "cancel without a job id"
 }
 
+# --- Slurm path (M3s T19) --------------------------------------------------------
+
+slurm_jobs() {
+    # shellcheck disable=SC2012 # job ids are numbers
+    ls "$FAKE_STATE/slurm/jobs" 2>/dev/null | sort -n
+}
+
+wait_for_slurm_job() { # prints the id of the first pending job; fails after 20 s
+    local i=0 id
+    while [ $i -lt 100 ]; do
+        id=$(slurm_jobs | head -n 1)
+        if [ -n "$id" ]; then
+            echo "$id"
+            return 0
+        fi
+        sleep 0.2
+        i=$((i + 1))
+    done
+    return 1
+}
+
+case_kathleen_job_script() {
+    local ktree=$REMOTE/kathleen/dev_e0-test
+    # shellcheck disable=SC2016 # expanded by the job, not here
+    rt kathleen --cores 36 --time 00:30:00 -- \
+        'echo "device=$GRIDCL_TEST_DEVICE step=${SLURM_STEP_ID:-unset} tid=$PSM2_TID flags=${GRIDCL_MPIRUN_FLAGS:-none} job=${JOB_ID:-unset}"'
+    expect_status 0 "kathleen run"
+    expect_grep "$T/stderr" '--cores ignored' "--cores is ignored on whole nodes"
+    local s id dir
+    id=$(job_id)
+    s=$FAKE_STATE/slurm/submitted/$id.sh
+    expect_exists "$s" "rendered job script submitted"
+    expect_line "$s" '#SBATCH --nodes=1' "one node by default"
+    expect_line "$s" '#SBATCH --qos=singlenode' "QoS singlenode for one node"
+    expect_line "$s" '#SBATCH --time=00:30:00' "wall-clock request"
+    expect_line "$s" '#SBATCH --ntasks-per-node=40' "a slot per core for mpirun"
+    expect_line "$s" "#SBATCH --chdir=$ktree" "job starts in the tree"
+    expect_line "$s" 'export GRIDCL_TEST_DEVICE=cpu' "CPU test device"
+    expect_no_grep "$s" '^#\$' "no SGE lines"
+    expect_no_grep "$s" 'GRIDCL_MPIRUN_FLAGS="' "no mapping flags on one node"
+    expect_no_grep "$s" '@[A-Z_]+@' "every placeholder replaced"
+    bash -n "$s" || fail "rendered script is not valid bash"
+    awk '/^#SBATCH/ { if (cmd) bad = 1 } /^[^#]/ && NF { cmd = 1 } END { exit bad }' "$s" ||
+        fail "an #SBATCH line follows a command"
+    expect_grep "$T/stdout" '^target: kathleen$' "summary target"
+    expect_line "$T/stdout" 'exit status: 0' "summary exit status"
+    dir=$LOCAL/target/hpc/kathleen/$id
+    expect_grep "$dir/output.log" "device=cpu step=unset tid=0 flags=none job=$id" \
+        "the command sees the CPU device, no batch step id, PSM2_TID=0 and JOB_ID"
+    expect_grep "$dir/prologue.txt" '^slots: 40;' "prologue records the tasks"
+    expect_grep "$dir/prologue.txt" '^slurm: qos singlenode, 1 node' "prologue records QoS and nodes"
+    expect_exists "$dir/slurm.log" "Slurm output moved into the results"
+    expect_absent "$ktree/results/slurm-$id.log" "Slurm output not left in results/"
+}
+
+case_kathleen_two_nodes() {
+    # shellcheck disable=SC2016 # expanded by the job, not here
+    rt kathleen --nodes 2 --ranks 4 -- 'echo "flags=$GRIDCL_MPIRUN_FLAGS ranks=$GRIDCL_RANKS"'
+    expect_status 0 "two-node run"
+    local s id
+    id=$(job_id)
+    s=$FAKE_STATE/slurm/submitted/$id.sh
+    expect_line "$s" '#SBATCH --nodes=2' "two nodes"
+    expect_line "$s" '#SBATCH --qos=test' "QoS test for two nodes up to 1 h"
+    grep -q 'flags=--map-by node ranks=4' "$LOCAL/target/hpc/kathleen/$id/output.log" 2>/dev/null ||
+        fail "mpirun does not map the ranks by node"
+    expect_grep "$LOCAL/target/hpc/kathleen/$id/prologue.txt" '^slots: 80;' "80 tasks on two nodes"
+    rt kathleen --nodes=2 --time 02:00:00 -- true
+    expect_status 0 "two-node run beyond 1 h"
+    expect_line "$FAKE_STATE/slurm/submitted/$(job_id).sh" '#SBATCH --qos=small' "QoS small beyond 1 h"
+}
+
+case_kathleen_rejects() {
+    rt kathleen --gpus 1 -- true
+    expect_status 2 "--gpus on kathleen"
+    rt kathleen --nodes 3 -- true
+    expect_status 2 "three nodes"
+    expect_grep "$T/stderr" 'at most 2 Kathleen nodes' "message names the node limit"
+    rt kathleen --ranks 41 -- true
+    expect_status 2 "41 ranks on one node"
+    rt kathleen --nodes 2 --ranks 81 -- true
+    expect_status 2 "81 ranks on two nodes"
+    rt kathleen --time 06:00:01 -- true
+    expect_status 2 "one node beyond 6 h"
+    rt kathleen --nodes 2 --time 48:00:01 -- true
+    expect_status 2 "two nodes beyond 48 h"
+    rt myriad-cpu --nodes 1 -- true
+    expect_status 2 "--nodes on an SGE target"
+    expect_absent "$FAKE_STATE/ssh.log" "nothing contacted on usage errors"
+}
+
+case_kathleen_max_wait_cancels() {
+    local start=$SECONDS
+    FAKE_SLURM_HOLD=1 rt kathleen --max-wait 00:00:02 -- true
+    expect_status 124 "max-wait overrun"
+    [ $((SECONDS - start)) -lt 30 ] || fail "runner waited $((SECONDS - start)) s for a 2 s max-wait"
+    expect_exists "$FAKE_STATE/slurm/scancel.log" "scancel called"
+    [ -z "$(slurm_jobs)" ] || fail "jobs left in the queue: $(slurm_jobs)"
+}
+
+case_kathleen_status_and_cancel() {
+    FAKE_SLURM_HOLD=1 bg_rt held kathleen --max-wait 00:01:00 -- true
+    local id
+    id=$(wait_for_slurm_job) || { fail "held job never queued"; return; }
+    "$STATUS" >"$T/status" 2>&1
+    RC=$?
+    expect_status 0 "status with a pending Slurm job"
+    expect_grep "$T/status" '^== kathleen \(fake-kathleen, slurm\)$' "status names the Slurm host"
+    expect_grep "$T/status" "^$id singlenode gridcl-kathleen PENDING" "status lists the job"
+    "$CANCEL" "$id" >"$T/cancel" 2>&1
+    RC=$?
+    expect_status 0 "cancel Slurm job"
+    expect_line "$FAKE_STATE/slurm/scancel.log" "$id" "scancel called with the id"
+    [ -z "$(slurm_jobs)" ] || fail "jobs left in the queue: $(slurm_jobs)"
+    wait_exit "$BG" 20
+    expect_nonzero "runner of a cancelled job"
+    [ "$RC" != 999 ] || fail "runner still waiting after its job was cancelled"
+    "$STATUS" >"$T/status" 2>&1
+    RC=$?
+    expect_status 0 "status without jobs"
+    [ ! -s "$T/status" ] || fail "status printed output without jobs: $(head -n 3 "$T/status")"
+}
+
+case_cancel_only_own_jobs() {
+    # A Slurm job whose id SGE also has, for another user: cancel.sh must skip the SGE job and
+    # cancel the Slurm one; an id only another user has is not ours to delete.
+    FAKE_SLURM_HOLD=1 bg_rt held kathleen --max-wait 00:01:00 -- true
+    local id other
+    id=$(wait_for_slurm_job) || { fail "held job never queued"; return; }
+    for other in "$id" 4242; do
+        mkdir -p "$FAKE_STATE/sge/jobs/$other"
+        echo someone-else >"$FAKE_STATE/sge/jobs/$other/owner"
+        echo foreign >"$FAKE_STATE/sge/jobs/$other/name"
+        echo r >"$FAKE_STATE/sge/jobs/$other/state"
+    done
+    "$CANCEL" "$id" >"$T/cancel" 2>&1
+    RC=$?
+    expect_status 0 "cancel a Slurm job whose id another user has on SGE"
+    expect_line "$FAKE_STATE/slurm/scancel.log" "$id" "scancel called with the id"
+    expect_absent "$FAKE_STATE/sge/qdel.log" "no qdel of another user's job"
+    expect_exists "$FAKE_STATE/sge/jobs/$id" "the other user's SGE job kept"
+    wait_exit "$BG" 20
+    expect_nonzero "runner of a cancelled job"
+    "$CANCEL" 4242 >"$T/cancel" 2>&1
+    RC=$?
+    expect_status 1 "cancel of another user's job"
+    expect_absent "$FAKE_STATE/sge/qdel.log" "no qdel of another user's job"
+}
+
 case_direct_remote_timeout() {
     rt locust -- 'echo direct-ok'
     expect_status 0 "direct run"
@@ -632,12 +841,13 @@ run_case() { # run_case <name>: prints ok/FAIL; returns non-zero on failure
 main() {
     local cases="" arg
     if [ $# -eq 0 ]; then
-        cases="$SGE_CASES $DIRECT_CASES"
+        cases="$SGE_CASES $DIRECT_CASES $SLURM_CASES"
     fi
     for arg in "$@"; do
         case $arg in
             sge) cases="$cases $SGE_CASES" ;;
             direct) cases="$cases $DIRECT_CASES" ;;
+            slurm) cases="$cases $SLURM_CASES" ;;
             -h | --help)
                 sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
                 return 0

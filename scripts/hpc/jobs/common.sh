@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # Shared part of the job scripts. remote-test.sh appends it to the rendered
 # jobs/<target>.sh, after the scheduler lines and the job settings:
-#   GRIDCL_HPC_TARGET, GRIDCL_HPC_SCHEDULER (sge | direct), GRIDCL_HPC_TREE, GRIDCL_HPC_BRANCH, GRIDCL_HPC_COMMIT, GRIDCL_HPC_DIRTY,
+#   GRIDCL_HPC_SCHEDULER (sge | slurm | direct), GRIDCL_HPC_TREE, GRIDCL_HPC_BRANCH, GRIDCL_HPC_COMMIT, GRIDCL_HPC_DIRTY,
 #   GRIDCL_HPC_COMMAND, GRIDCL_HPC_BUILD (may be empty), GRIDCL_HPC_MODULES,
-#   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported CARGO_TARGET_DIR,
-#   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE=cuda and, for --ranks N, GRIDCL_RANKS=N.
-# JOB_ID comes from the scheduler, or from the runner on direct targets.
+#   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported GRIDCL_HPC_TARGET, CARGO_TARGET_DIR,
+#   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE (cuda; cpu on myriad-cpu and kathleen) and, for
+#   --ranks N, GRIDCL_RANKS=N (and on two Kathleen nodes GRIDCL_MPIRUN_FLAGS=--map-by node).
+# JOB_ID comes from the scheduler (SGE; jobs/kathleen.sh sets it from SLURM_JOB_ID), or from
+# the runner on direct targets.
 #
 # The job runs the module lines, exports CUDA_PATH, records the prologue, builds (when
 # GRIDCL_HPC_BUILD is set), runs the command in the tree with bash, and writes
 # <tree>/results/<JOB_ID>/:
-#   prologue.txt   host, date, slots, module lines, nvidia-smi, CUDA toolkit, internet
-#                  access, toolchain versions
+#   prologue.txt   host, date, slots, CPUs (nproc), module lines, nvidia-smi, CUDA toolkit,
+#                  internet access, toolchain versions
 #   times.env      start, build_start, build_end, build_status, run_start, end (epoch s)
 #   output.log     stdout and stderr of the build and the command
 #   exit_status    the command's exit status (the build's, when the build failed)
@@ -19,7 +21,7 @@
 #                  direct targets only (ADR-0002): node-load snapshots taken immediately
 #                  before and after the command; the last line is node_load=idle or
 #                  node_load=busy: <reasons>
-# submit.env (written at submission) and sge.log (moved in afterwards), or job.sh,
+# submit.env (written at submission) and sge.log or slurm.log (moved in afterwards), or job.sh,
 # direct.log and direct_status on direct targets, complete it.
 # The job itself always exits 0: SGE treats the exit statuses 99 (requeue) and 100 (error
 # state) specially, so the command's status is passed on only through exit_status.
@@ -187,7 +189,15 @@ gridcl_job_main() {
         echo "target: ${GRIDCL_HPC_TARGET:-}"
         echo "job id: $JOB_ID"
         echo "commit: ${GRIDCL_HPC_COMMIT:-} (${GRIDCL_HPC_BRANCH:-}), dirty: ${GRIDCL_HPC_DIRTY:-}"
-        echo "slots: ${NSLOTS:-unknown}; ranks: ${GRIDCL_RANKS:-none}"
+        echo "slots: ${NSLOTS:-${SLURM_NTASKS:-unknown}}; ranks: ${GRIDCL_RANKS:-none}"
+        if [ -n "${SLURM_JOB_ID:-}" ]; then
+            echo "slurm: qos ${SLURM_JOB_QOS:-unknown}, ${SLURM_JOB_NUM_NODES:-?} node(s): ${SLURM_JOB_NODELIST:-unknown}," \
+                "batch shell CPUs $(taskset -cp $$ 2>/dev/null | sed 's/.*: //')"
+        fi
+        # The CPU runtime's thread count follows the CPUs the job may use (myriad-cpu). nproc
+        # honours OMP_NUM_THREADS, which Rust does not, so it runs without the OMP variables.
+        echo "cpus: nproc $(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null || echo unknown)," \
+            "online $(nproc --all 2>/dev/null || echo unknown); OMP_NUM_THREADS: ${OMP_NUM_THREADS:-unset}"
         echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-}"
         echo "== module lines"
         printf '%s\n' "${GRIDCL_HPC_MODULES:-}"

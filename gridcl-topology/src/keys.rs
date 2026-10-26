@@ -1,23 +1,28 @@
 //! Entity creation, step 2: the TopologyKeys kernel, generic over the vector size. Each key is
 //! the sub-entity's local vertex ids sorted by a sorting network; the payload is the emission
-//! index, and padding positions write an all-ones sentinel key.
+//! index, and padding positions write an all-ones sentinel key. Above vector size 1 the lanes
+//! read the cell-fastest copy of the connectivity (`transpose`), at size 1 the cell-major rows.
 
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, DeviceStrided, GridError, KernelKind, LaunchPlan, Result, SortKeys, VECTOR_PAD,
-    debug_assert_bindings,
+    debug_assert_bindings, pad_len,
 };
 use gridcl_dims::CellType;
 
 use crate::emission::{EmissionPlan, sub_entity_vertices};
+use crate::transpose;
 
-/// The comptime tables of one launch: the cell's vertex count and the local vertex lists of
-/// its sub-entities of the emitted type, all of `words` vertices.
+/// The comptime tables of one launch: the cell's vertex count, the local vertex lists of its
+/// sub-entities of the emitted type, all of `words` vertices, and the connectivity layout.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct KeyTables {
     pub nv: usize,
     pub entities: Vec<Vec<usize>>,
     pub words: usize,
+    /// Whether the kernel reads the cell-fastest copy (required above vector size 1) or the
+    /// cell-major rows.
+    pub cell_fastest: bool,
 }
 
 /// Exchanges `a` and `b` lane by lane where b < a: one comparator of a sorting network.
@@ -31,17 +36,19 @@ fn sort2<N: Size>(a: &mut Vector<u32, N>, b: &mut Vector<u32, N>) {
 
 /// Keys and payloads of every cell vector `v < num_vectors` (Listing B5 loop) of one block:
 /// sub-entity i of cell c goes to emission index start + i · padded_cells + c. Lanes of cells
-/// c ≥ num_cells write the all-ones sentinel key; they read the last cell, so reads stay in
-/// bounds. Vertex indices are clamped to `last_vertex` lane by lane (an arithmetic `min`), as
-/// the head and PermutationInfo kernels clamp them before reading origin ids, so all three
-/// treat an index past the local vertices as the last vertex, and no real key reaches the
-/// sentinel while `last_vertex` < u32::MAX.
-///   vertices  [cell][nv] local vertex indices
+/// c ≥ num_cells write the all-ones sentinel key. Vertex indices are clamped to `last_vertex`
+/// lane by lane (an arithmetic `min`), as the head and PermutationInfo kernels clamp them
+/// before reading origin ids, so all three treat an index past the local vertices as the last
+/// vertex, and no real key reaches the sentinel while `last_vertex` < u32::MAX.
+///   vertices  with `t.cell_fastest`, the vertex planes of the cell-fastest copy (word j of
+///             cell c at j · padded_cells + c, padding cells copying the last cell); else, only
+///             at N = 1, the cell-major rows [cell][nv], read at cell min(c, num_cells − 1)
 ///   keys      planar words: word w of key e at w · plane + e
 ///   payload   one emission index per key
 #[cube(launch_unchecked)]
+#[allow(unused_assignments)] // both comptime branches assign `x`
 fn topology_keys_kernel<N: Size>(
-    vertices: &[u32],
+    vertices: &[Vector<u32, N>],
     keys: &mut [Vector<u32, N>],
     payload: &mut [Vector<u32, N>],
     num_cells: u32,
@@ -57,6 +64,7 @@ fn topology_keys_kernel<N: Size>(
     let nv = t.nv;
     let last = num_cells - 1;
     let all_ones = Vector::<u32, N>::broadcast(u32::MAX);
+    let clamp = Vector::<u32, N>::broadcast(last_vertex);
     let first = ABSOLUTE_POS * items_per_unit as usize;
     for it in 0..items_per_unit as usize {
         let v = first + it;
@@ -75,12 +83,12 @@ fn topology_keys_kernel<N: Size>(
                 for j in 0..comptime!(t.words) {
                     let local = comptime!(t.entities[i][j]);
                     let mut x = Vector::<u32, N>::broadcast(0u32);
-                    #[unroll]
-                    for lane in 0..lanes {
-                        let c = min((v * lanes + lane) as u32, last) as usize;
-                        x.insert(lane, min(vertices[c * nv + local], last_vertex));
+                    if comptime!(t.cell_fastest) {
+                        x = vertices[local * (padded_cells as usize / lanes) + v];
+                    } else {
+                        x = vertices[min(v as u32, last) as usize * nv + local];
                     }
-                    w[j] = x;
+                    w[j] = min(x, clamp);
                 }
                 // Sorting networks of 2, 3 and 4 values.
                 if comptime!(t.words == 2) {
@@ -124,7 +132,8 @@ fn topology_keys_kernel<N: Size>(
 
 /// The keys and payloads of `plan`: one launch per cell block of the plan. `blocks` gives the
 /// cell type and vertex rows of every cell block, indexed like the plan's ranges' `block`;
-/// vertex indices above `last_vertex` count as `last_vertex`.
+/// vertex indices above `last_vertex` count as `last_vertex`. Above vector size 1 each launch
+/// reads a cell-fastest copy of its block's rows, made right before it and dropped after it.
 ///
 /// # Errors
 ///
@@ -146,12 +155,8 @@ pub(crate) fn emit_keys(
             continue;
         }
         let (cell, vertices) = blocks[range.block];
-        let tables = KeyTables {
-            nv: gridcl_refcell::vertices(cell).len(),
-            entities: sub_entity_vertices(cell, dim, &range.local),
-            words,
-        };
         let fit = |x: usize| u32::try_from(x).map_err(|_| GridError::TooLarge);
+        let copy_plan = transpose::plan(client, range.cells)?;
         let launch = LaunchPlan::elementwise(
             client,
             KernelKind::TopologyKeys,
@@ -161,9 +166,25 @@ pub(crate) fn emit_keys(
             2 * words + 2,
         )?;
         let n = launch.vector_size;
+        let cell_fastest = n > 1;
+        let copy = if cell_fastest {
+            Some(transpose::vertices(&copy_plan, vertices, range.cells)?)
+        } else {
+            None
+        };
+        let input = copy.as_ref().unwrap_or(&vertices.data);
+        let tables = KeyTables {
+            nv: gridcl_refcell::vertices(cell).len(),
+            entities: sub_entity_vertices(cell, dim, &range.local),
+            words,
+            cell_fastest,
+        };
+        debug_assert_eq!(pad_len(range.cells)?, range.padded);
         debug_assert_bindings(client, 3);
         // SAFETY: the plan covers pad_len(cells) = padded cells, so the kernel's vectors
-        // v < num_vectors index cells below `padded`. It reads `vertices` at c · nv + j with
+        // v < num_vectors index cells below `padded`. Above size 1 it reads the copy at
+        // j · padded / n + v, within its nv · padded words (padded is a multiple of
+        // VECTOR_PAD, which n divides); at size 1 it reads the rows at c · nv + j with
         // c ≤ cells − 1, within the block's rows. Sub-entity i writes emission vectors
         // (start + i · padded) / n + v < end / n ≤ total / n, and key words at
         // w · plane / n + that index < words · plane / n, within `keys` (words planes of
@@ -175,7 +196,7 @@ pub(crate) fn emit_keys(
                 launch.cube_count,
                 launch.cube_dim,
                 n,
-                vertices.data.arg(),
+                input.vector_arg(n),
                 keys.words_mut().vector_arg(n),
                 payload.vector_arg(n),
                 fit(range.cells)?,
@@ -296,6 +317,7 @@ mod tests {
         check(&[(Prism, rows(Prism, 40, 7))], 1);
     }
 
+    /// Both layouts: the cell-major rows at size 1, the cell-fastest copy above.
     #[test]
     fn every_vector_size_gives_the_same_keys() {
         use gridcl_device::VectorSizeOverride;
@@ -317,11 +339,17 @@ mod tests {
                     );
                 })
             });
-            let p = plans
-                .iter()
-                .find(|(k, _)| *k == KernelKind::TopologyKeys)
-                .unwrap();
-            assert_eq!(p.1.vector_size, n);
+            let mut launches = 0;
+            for (i, (kind, plan)) in plans.iter().enumerate() {
+                if *kind == KernelKind::TopologyKeys {
+                    launches += 1;
+                    assert_eq!(plan.vector_size, n);
+                    // Each launch follows the plan of its cell-fastest copy, which runs at
+                    // sizes above 1 only.
+                    assert_eq!(plans[i - 1].0, KernelKind::Scalar, "size {n}");
+                }
+            }
+            assert!(launches > 0, "no TopologyKeys plan at size {n}");
         }
     }
 }

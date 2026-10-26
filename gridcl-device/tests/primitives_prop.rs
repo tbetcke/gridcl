@@ -379,7 +379,7 @@ fn unique_by_key_length_mismatch() {
 /// shared memory for eight digits per chunk (Grace's L1 does not hold all 256). The blocks
 /// scheme runs at every vector size the device offers, the split scheme at those vector sizes n
 /// with units · n ≥ VECTOR_PAD (see below). Both cover several cubes: two units per cube in the
-/// blocks case.
+/// blocks case, and the blocks scheme also sorts 10^6 + 3 keys.
 #[test]
 fn radix_sort_both_schemes() {
     let client = test_client();
@@ -412,11 +412,17 @@ fn radix_sort_both_schemes() {
              split scheme skipped"
         );
     }
-    for (props, sizes) in [(split, split_sizes), (blocks, sizes)] {
+    let cases = [(1, 1), (17, 2), (1000, 3), (20_001, 4), (20_001, 5)];
+    // Many cubes and every digit chunk of every pass, on the blocks scheme only.
+    let large = [(1_000_003, 6)];
+    for (props, sizes, large) in [
+        (split, split_sizes, &large[..0]),
+        (blocks, sizes, &large[..]),
+    ] {
         testing::with_properties(props, || {
             for n in sizes {
                 testing::with_vector_size(VectorSizeOverride::Fixed(n), || {
-                    for (len, seed) in [(1, 1), (17, 2), (1000, 3), (20_001, 4), (20_001, 5)] {
+                    for &(len, seed) in cases.iter().chain(large) {
                         check_radix_sort(&client, len, seed);
                     }
                 });

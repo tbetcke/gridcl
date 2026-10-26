@@ -5,7 +5,9 @@
 //! from the last word's lowest digit to word 0's highest, in three launches:
 //!
 //! 1. **SortDigits** counts the digits of each cube in shared memory and writes the counts
-//!    digit-major, `counts[digit · cubes + cube]`.
+//!    digit-major, `counts[digit · cubes + cube]`. Under the blocks scheme each unit counts
+//!    into its own shared column and the columns are summed in unit order; under the split
+//!    scheme the cube's units share 256 atomic counters.
 //! 2. The exclusive scan of the counts gives each (digit, cube) its first output position.
 //! 3. A stable scatter ranks the keys of each cube with the same digit in input order and
 //!    writes each key and its payload to its offset plus its rank. The ranking scheme is
@@ -34,7 +36,8 @@ const RADIX: usize = 256;
 /// Bits of a packed split slot that hold the key's position in its cube; the digit is above.
 const SLOT_BITS: u32 = 16;
 
-/// Digit counts of the cube's keys, written to `counts[digit · cubes + CUBE_POS]`. Reads the
+/// The split scheme's digit counts of the cube's keys, through 256 shared atomic counters,
+/// written to `counts[digit · cubes + CUBE_POS]`. Reads the
 /// plane of the pass's word, which starts at vector `plane`; lanes at index >= `len` are not
 /// counted.
 #[cube(launch_unchecked)]
@@ -86,6 +89,67 @@ fn sort_digits_kernel<N: Size>(
     while b < RADIX {
         counts[b * cubes as usize + CUBE_POS] = hist[b].load();
         b += cube_dim as usize;
+    }
+}
+
+/// The blocks scheme's digit counts, without atomics: per digit chunk, each unit counts the
+/// digits of its `items_per_unit` vectors into its own column of shared memory, and the
+/// columns are summed in unit order into `counts[digit · cubes + CUBE_POS]`. A column holds
+/// one unit's `chunk_digits` counters contiguously, so units that are threads (CPUs) do not
+/// write the same cache lines. Lanes outside the chunk or at index >= `len` add 0.
+#[cube(launch_unchecked)]
+fn sort_digits_blocks_kernel<N: Size>(
+    words: &[Vector<u32, N>],
+    counts: &mut [u32],
+    plane: u32,
+    shift: u32,
+    len: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    cubes: u32,
+    #[comptime] cube_dim: u32,
+    #[comptime] chunk_digits: u32,
+) {
+    let lanes = N::value();
+    let units = cube_dim as usize;
+    let chunk = chunk_digits as usize;
+    let mut columns = Shared::<[u32]>::new_slice(chunk * units);
+    let column = UNIT_POS as usize * chunk;
+    let len = len as usize;
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    let mut d0 = 0u32;
+    while d0 < RADIX as u32 {
+        for d in 0..chunk {
+            columns[column + d] = 0u32;
+        }
+        for i in 0..items_per_unit as usize {
+            let v = first + i;
+            if v < num_vectors as usize {
+                let start = v * lanes;
+                let digits = (words[plane as usize + v] >> Vector::<u32, N>::broadcast(shift))
+                    & Vector::<u32, N>::broadcast(255u32);
+                #[unroll]
+                for l in 0..lanes {
+                    // Digits below d0 wrap to large values and fall outside the chunk.
+                    let d = digits.extract(l) - d0;
+                    let inside = d < chunk_digits && start + l < len;
+                    let slot = column + select(inside, d, 0u32) as usize;
+                    columns[slot] += select(inside, 1u32, 0u32);
+                }
+            }
+        }
+        sync_cube();
+        let mut d = UNIT_POS as usize;
+        while d < chunk {
+            let mut sum = 0u32;
+            for u in 0..units {
+                sum += columns[u * chunk + d];
+            }
+            counts[(d0 as usize + d) * cubes as usize + CUBE_POS] = sum;
+            d += units;
+        }
+        sync_cube();
+        d0 += chunk_digits;
     }
 }
 
@@ -405,27 +469,48 @@ pub fn radix_sort(
 
         let counts = DeviceBuffer::<u32>::uninit(client, num_counts)?;
         debug_assert_bindings(client, 2);
-        // SAFETY: the words buffer holds num_words · pad elements, pad / n whole vectors per
-        // plane; the kernel reads vector plane / n + v only for v < num_vectors = pad / n, so
-        // within the plane of `word`. `counts` holds 256 · cubes elements, and each cube
-        // writes counts[b · cubes + CUBE_POS] for b < 256 and CUBE_POS < cubes. The shared
-        // array has 256 entries, indexed by digits (< 256) and by b < 256.
+        // SAFETY (both kernels): the words buffer holds num_words · pad elements, pad / n whole
+        // vectors per plane; the kernels read vector plane / n + v only for v < num_vectors =
+        // pad / n, so within the plane of `word`. `counts` holds 256 · cubes elements, and each
+        // cube writes counts[b · cubes + CUBE_POS] for b < 256 and CUBE_POS < cubes. Split:
+        // the shared array has 256 entries, indexed by digits (< 256) and by b < 256. Blocks:
+        // it has chunk_digits · cube_dim entries, indexed by UNIT_POS · chunk_digits + d with
+        // d < chunk_digits, and the chunks d0 + d (d0 a multiple of chunk_digits, which
+        // divides 256) stay below 256.
         unsafe {
-            sort_digits_kernel::launch_unchecked(
-                client,
-                plan.cube_count.clone(),
-                plan.cube_dim,
-                n,
-                src_keys.words().vector_arg(n),
-                counts.arg(),
-                plane / n_u32,
-                shift,
-                len_u32,
-                plan.num_vectors,
-                plan.items_per_unit,
-                cubes_u32,
-                cube_dim,
-            );
+            match scheme {
+                Scheme::Blocks { chunk_digits } => sort_digits_blocks_kernel::launch_unchecked(
+                    client,
+                    plan.cube_count.clone(),
+                    plan.cube_dim,
+                    n,
+                    src_keys.words().vector_arg(n),
+                    counts.arg(),
+                    plane / n_u32,
+                    shift,
+                    len_u32,
+                    plan.num_vectors,
+                    plan.items_per_unit,
+                    cubes_u32,
+                    cube_dim,
+                    chunk_digits,
+                ),
+                Scheme::Split => sort_digits_kernel::launch_unchecked(
+                    client,
+                    plan.cube_count.clone(),
+                    plan.cube_dim,
+                    n,
+                    src_keys.words().vector_arg(n),
+                    counts.arg(),
+                    plane / n_u32,
+                    shift,
+                    len_u32,
+                    plan.num_vectors,
+                    plan.items_per_unit,
+                    cubes_u32,
+                    cube_dim,
+                ),
+            }
         }
         let offsets = exclusive_scan(&counts)?;
         debug_assert_bindings(client, 5);

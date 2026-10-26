@@ -1,17 +1,22 @@
 //! M2 acceptance: "on the CPU runtime, `LaunchPlan` uses one unit per hardware thread and blocks
 //! of whole 128-byte lines; with injected device properties, no plan exceeds
-//! `max_units_per_cube`, `max_cube_dim` or `max_cube_count` (property test)".
+//! `max_units_per_cube`, `max_cube_dim` or `max_cube_count` (property test)". On CPUs the unit
+//! count follows `VectorPolicy::cpu_units` (ADR-0017).
 
 mod common;
 
 use cubecl::ir::DeviceProperties;
 use cubecl::prelude::*;
-use gridcl_device::testing::{with_properties, with_vector_size};
-use gridcl_device::{GridError, KernelKind, LaunchPlan, VECTOR_PAD, VectorSizeOverride};
+use gridcl_device::testing::{
+    with_cpu_block_bytes, with_cpu_units, with_performance_cores, with_properties, with_vector_size,
+};
+use gridcl_device::{
+    CpuUnits, GridError, KernelKind, LaunchPlan, VECTOR_PAD, VectorPolicy, VectorSizeOverride,
+};
 use gridcl_testing::test_client;
 use proptest::prelude::*;
 
-const KINDS: [KernelKind; 12] = [
+const KINDS: [KernelKind; 13] = [
     KernelKind::Fill,
     KernelKind::Copy,
     KernelKind::Reduce,
@@ -24,6 +29,7 @@ const KINDS: [KernelKind; 12] = [
     KernelKind::EVector,
     KernelKind::GeomFactors,
     KernelKind::PullBack,
+    KernelKind::Scalar,
 ];
 
 /// Cube count of a plan as (x, y, z).
@@ -123,35 +129,76 @@ fn cpu_plan_one_unit_per_thread_whole_lines() {
     cases.push(("injected CPU properties", cpu));
 
     for (what, props) in cases {
-        let units = props.hardware.max_units_per_cube;
-        with_properties(props.clone(), || {
-            for kind in KINDS {
-                for elem_bytes in [4usize, 8] {
-                    for n in [1usize, 2, 4, 8, 16] {
-                        for items in [1usize, 1000, 1_000_000, 10_000_003] {
-                            let plan = with_vector_size(VectorSizeOverride::Fixed(n), || {
-                                LaunchPlan::elementwise(&client, kind, items, elem_bytes, 16, 1)
-                            })
-                            .unwrap_or_else(|e| panic!("{what}: {kind:?} {items}: {e}"));
-                            check_plan(&plan, &props, items, 16);
-                            assert_eq!(
-                                plan.cube_dim.num_elems(),
-                                units,
-                                "{what}: {kind:?}: one unit per hardware thread"
-                            );
-                            let block =
-                                plan.items_per_unit as usize * plan.vector_size * elem_bytes;
-                            assert!(
-                                block.is_multiple_of(128) && (8 << 10..=16 << 10).contains(&block),
-                                "{what}: {kind:?}, {elem_bytes}-byte items at vector size {}: \
-                                 a block of {block} bytes is not about 16 KiB of whole 128-byte lines",
-                                plan.vector_size
-                            );
-                        }
-                    }
+        let threads = props.hardware.max_units_per_cube;
+        // The units setting: the policy's, or forced; and a performance-core count below the
+        // threads, above them, or none.
+        let settings = [None, Some(CpuUnits::All), Some(CpuUnits::Performance)];
+        let cores = [Some((threads * 3 / 4).max(1)), Some(threads + 4), None];
+        for (units_setting, perf_cores) in settings
+            .into_iter()
+            .flat_map(|u| cores.into_iter().map(move |c| (u, c)))
+        {
+            let what = format!("{what}, units {units_setting:?}, performance cores {perf_cores:?}");
+            with_properties(props.clone(), || {
+                with_performance_cores(perf_cores, || match units_setting {
+                    Some(u) => with_cpu_units(u, || check_cpu_plans(&client, &props, &what)),
+                    None => check_cpu_plans(&client, &props, &what),
+                })
+            });
+        }
+    }
+}
+
+/// Every kind, element size, vector size and length under the current overrides: one unit per
+/// hardware thread, or per performance core where the units say so and the count is smaller
+/// (ADR-0017); blocks of whole 128-byte lines of about the policy's size.
+fn check_cpu_plans(client: &Client, props: &DeviceProperties, what: &str) {
+    let threads = props.hardware.max_units_per_cube;
+    let policy = VectorPolicy::for_client(client);
+    // The performance-core count in effect, read through a plan forced to `Performance`.
+    let perf = with_cpu_units(CpuUnits::Performance, || {
+        LaunchPlan::elementwise(client, KernelKind::Fill, 1, 4, 16, 1)
+    })
+    .unwrap()
+    .cube_dim
+    .num_elems();
+    assert!(
+        perf <= threads,
+        "{what}: {perf} performance cores of {threads}"
+    );
+    for kind in KINDS {
+        for elem_bytes in [4usize, 8] {
+            let units = match policy.cpu_units(kind, elem_bytes) {
+                Some(CpuUnits::Performance) => perf,
+                Some(CpuUnits::All) => threads,
+                None => panic!("{what}: a CPU class has CPU units"),
+            };
+            for n in [1usize, 2, 4, 8, 16] {
+                for items in [1usize, 1000, 1_000_000, 10_000_003] {
+                    let plan = with_vector_size(VectorSizeOverride::Fixed(n), || {
+                        LaunchPlan::elementwise(client, kind, items, elem_bytes, 16, 1)
+                    })
+                    .unwrap_or_else(|e| panic!("{what}: {kind:?} {items}: {e}"));
+                    check_plan(&plan, props, items, 16);
+                    assert_eq!(
+                        plan.cube_dim.num_elems(),
+                        units,
+                        "{what}: {kind:?} {elem_bytes}: one unit per thread of the policy's units"
+                    );
+                    let target = policy
+                        .cpu_block_bytes(kind, elem_bytes)
+                        .expect("a CPU class has CPU blocks");
+                    let block = plan.items_per_unit as usize * plan.vector_size * elem_bytes;
+                    assert!(
+                        block.is_multiple_of(128) && (target / 2 < block && block <= target),
+                        "{what}: {kind:?}, {elem_bytes}-byte items at vector size {}: a block \
+                         of {block} bytes is not about the policy's {target} bytes of whole \
+                         128-byte lines",
+                        plan.vector_size
+                    );
                 }
             }
-        });
+        }
     }
 }
 
@@ -211,16 +258,43 @@ proptest! {
         live in 1usize..=8,
         kind in prop::sample::select(KINDS.to_vec()),
         vector in override_value(),
+        block in prop::option::of(prop::sample::select(vec![4usize << 10, 16 << 10, 64 << 10])),
+        cpu_units in prop::option::of(prop::sample::select(vec![CpuUnits::All, CpuUnits::Performance])),
+        perf_cores in prop::option::of(prop::option::of(0u32..=1100)),
     ) {
         let client = test_client();
         let props = injected(client.properties(), cpu, units, dim, count, load_width);
         let plan = with_properties(props.clone(), || {
             let make = || LaunchPlan::elementwise(&client, kind, items, elem_bytes, max_vector, live);
-            match vector {
+            let make = || match vector {
                 Some(v) => with_vector_size(v, make),
+                None => make(),
+            };
+            let make = || match block {
+                Some(b) => with_cpu_block_bytes(b, make),
+                None => make(),
+            };
+            let make = || match cpu_units {
+                Some(u) => with_cpu_units(u, make),
+                None => make(),
+            };
+            match perf_cores {
+                Some(p) => with_performance_cores(p, make),
                 None => make(),
             }
         });
+        // Forced performance cores below every limit set cube_dim on CPUs (ADR-0017).
+        if let (Ok(plan), true, Some(CpuUnits::Performance), Some(Some(p))) =
+            (&plan, cpu, cpu_units, perf_cores)
+            && p >= 1
+            && p < units.min(dim.0)
+        {
+            prop_assert_eq!(plan.cube_dim.num_elems(), p);
+        }
+        if let (Ok(plan), Some(b), true) = (&plan, block, cpu) {
+            let bytes = plan.items_per_unit as usize * plan.vector_size * elem_bytes;
+            prop_assert!(bytes.is_multiple_of(128) && bytes <= b.max(128), "block {bytes} for {b}");
+        }
         match plan {
             Ok(plan) => check_plan(&plan, &props, items, max_vector),
             Err(GridError::TooLarge) => {

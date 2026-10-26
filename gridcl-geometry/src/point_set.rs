@@ -100,7 +100,7 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use gridcl_geometry::QuadRule;
     ///
     /// let client = gridcl_testing::test_client();
-    /// // Gauss–Jacobi with 2 points is exact for degree 3.
+    /// // Gauss–Legendre with 2 points is exact for degree 3.
     /// let rule = QuadRule::<f32, D1>::gauss(&client, &[Cell1::Interval], 3).unwrap();
     /// assert_eq!(rule.get(Cell1::Interval).unwrap().len(), 2);
     /// ```

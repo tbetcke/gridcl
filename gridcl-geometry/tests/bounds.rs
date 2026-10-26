@@ -1,9 +1,11 @@
 //! M3 review (Major 3): a geometry whose dofmap holds node indices past the local nodes reads
 //! no memory out of bounds. The EVector kernel clamps such an index to the last node, so the
-//! E-vector equals that of the clamped dofmap and is deterministic, in f32 and f64.
+//! E-vector equals that of the clamped dofmap and is deterministic, in f32 and f64. A geometry
+//! with cells but no nodes is rejected (M3 review, m11); the kernel's behaviour on that input is
+//! a unit test of `evector.rs`.
 
 use cubecl::prelude::Client;
-use gridcl_device::{DeviceBuffer, DeviceStrided, Real};
+use gridcl_device::{DeviceBuffer, DeviceStrided, GridError, Real};
 use gridcl_dims::{Cell2, D2, D3};
 use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
 use gridcl_parallel::{IndexMap, Serial};
@@ -81,16 +83,54 @@ fn out_of_range_nodes_read_the_last_node_f32() {
 fn out_of_range_nodes_read_the_last_node_f64() {
     if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
         check::<f64>();
+    } else {
+        eprintln!("out_of_range_nodes_read_the_last_node_f64: f64 is not supported; skipped");
     }
 }
 
+fn rejects_cells_without_nodes<F: Real>(client: &Client) {
+    let result = Geometry::<F, D2, D3>::new(
+        vec![GeometryBlock {
+            element: TRI,
+            dofmap: DeviceStrided {
+                data: DeviceBuffer::from_host(client, &[3u32, 4, 5, 9, 9, 1]).unwrap(),
+                stride: 3,
+            },
+        }],
+        DeviceBuffer::<F>::from_host(client, &[]).unwrap(),
+        IndexMap::new(&Serial, 0).unwrap(),
+        [0.0; 3],
+    );
+    assert!(matches!(
+        result,
+        Err(GridError::LengthMismatch {
+            expected: 0,
+            found: 6
+        })
+    ));
+    // No nodes and no cells is a valid, empty geometry.
+    let empty = Geometry::<F, D2, D3>::new(
+        vec![GeometryBlock {
+            element: TRI,
+            dofmap: DeviceStrided {
+                data: DeviceBuffer::from_host(client, &[]).unwrap(),
+                stride: 3,
+            },
+        }],
+        DeviceBuffer::<F>::from_host(client, &[]).unwrap(),
+        IndexMap::new(&Serial, 0).unwrap(),
+        [0.0; 3],
+    );
+    assert!(empty.is_ok());
+}
+
 #[test]
-fn cells_without_nodes_read_no_node_memory() {
-    // Every node index is out of range: the kernel reads inside the padded, zeroed allocation
-    // of the empty L-vector.
+fn empty_nodes_with_cells_are_rejected() {
     let client = gridcl_testing::test_client();
-    let g = geometry::<f32>(&client, &[3, 4, 5, 9, 9, 1], 0);
-    let xe = evector(&g);
-    assert_eq!(xe, evector(&g));
-    assert!(xe.iter().flatten().all(|&x| x == 0.0));
+    rejects_cells_without_nodes::<f32>(&client);
+    if gridcl_testing::supports::<f64>(&client) {
+        rejects_cells_without_nodes::<f64>(&client);
+    } else {
+        eprintln!("empty_nodes_with_cells_are_rejected: f64 is not supported; skipped");
+    }
 }

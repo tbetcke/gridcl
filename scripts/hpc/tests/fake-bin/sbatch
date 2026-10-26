@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Fake Slurm sbatch for scripts/hpc/tests. `sbatch [--parsable] script` queues the script as
+# job <id> in $FAKE_STATE/slurm/jobs/<id>/ and keeps a copy in $FAKE_STATE/slurm/submitted/<id>.sh.
+# The job then runs in the background (after FAKE_SLURM_QUEUE_DELAY seconds) unless
+# FAKE_SLURM_HOLD is set, in which case it stays pending until scancel. A running job gets
+# SLURM_JOB_ID, SLURM_JOB_NAME, SLURM_JOB_QOS, SLURM_JOB_NUM_NODES, SLURM_JOB_NODELIST,
+# SLURM_NTASKS (nodes x --ntasks-per-node) and SLURM_STEP_ID=-5 (the batch step, as on
+# Kathleen), starts in the directory of --chdir, and its output goes to --output (%j is the id).
+# --parsable prints "<id>;kathleen", as a cluster-qualified Slurm does.
+set -u
+: "${FAKE_STATE:?fake sbatch: FAKE_STATE is not set}"
+slurm=$FAKE_STATE/slurm
+mkdir -p "$slurm/jobs" "$slurm/submitted"
+
+parsable=""
+script=""
+for arg in "$@"; do
+    case $arg in
+        --parsable) parsable=1 ;;
+        -*) ;;
+        *) script=$arg ;;
+    esac
+done
+
+last=$(cat "$slurm/counter" 2>/dev/null || echo 500000)
+id=$((last + 1))
+echo "$id" >"$slurm/counter"
+cp "$script" "$slurm/submitted/$id.sh" || exit 1
+job=$slurm/submitted/$id.sh
+
+opt() { sed -n "s/^#SBATCH --$1=//p" "$job" | head -n 1; }
+name=$(opt job-name)
+qos=$(opt qos)
+nodes=$(opt nodes)
+per_node=$(opt ntasks-per-node)
+workdir=$(opt chdir)
+output=$(opt output)
+output=${output//%j/$id}
+
+mkdir -p "$slurm/jobs/$id"
+echo "${name:-sbatch}" >"$slurm/jobs/$id/name"
+echo "${qos:-normal}" >"$slurm/jobs/$id/qos"
+echo PENDING >"$slurm/jobs/$id/state"
+
+if [ -z "${FAKE_SLURM_HOLD:-}" ]; then
+    (
+        sleep "${FAKE_SLURM_QUEUE_DELAY:-0}"
+        [ -d "$slurm/jobs/$id" ] || exit 0
+        echo RUNNING >"$slurm/jobs/$id/state"
+        cd "${workdir:-$HOME}" || exit 1
+        SLURM_JOB_ID=$id SLURM_JOB_NAME=$name SLURM_JOB_QOS=$qos SLURM_JOB_NUM_NODES=${nodes:-1} \
+            SLURM_JOB_NODELIST=fake-node-[1-${nodes:-1}] SLURM_NTASKS=$((${nodes:-1} * ${per_node:-1})) \
+            SLURM_STEP_ID=-5 bash "$job" >"${output:-$slurm/out-$id.log}" 2>&1
+        echo "$?" >"$slurm/status-$id"
+        rm -rf "${slurm:?}/jobs/$id"
+    ) </dev/null >/dev/null 2>&1 &
+    echo "$!" >"$slurm/jobs/$id/pid"
+fi
+
+if [ -n "$parsable" ]; then
+    echo "$id;kathleen"
+else
+    echo "Submitted batch job $id"
+fi

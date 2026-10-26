@@ -16,6 +16,18 @@ use crate::EntityMap;
 /// A mesh, generic over scalar, dimensions and communicator, not over the backend
 /// (Listing B3). Constructors and methods require `TD: EmbeddedIn<GD>`. Not `Clone`: see
 /// [`try_clone`](Mesh::try_clone).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh: Mesh<f32, D2, D2> = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+/// assert_eq!(mesh.cell_blocks()[0].index_map.num_local(), 4);
+/// assert!((mesh.measure(1)? - 1.0).abs() < 1e-6);
+/// # Ok::<(), GridError>(())
+/// ```
 pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     client: Client,
     comm: C,
@@ -24,12 +36,53 @@ pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
 }
 
 /// A curve in 3D.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// assert_eq!((CurveMesh::<f32>::TDIM, CurveMesh::<f32>::GDIM), (1, 3));
+/// ```
 pub type CurveMesh<F, C = Serial> = Mesh<F, D1, D3, C>;
 /// A planar mesh.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh: PlanarMesh<f32> = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
+/// assert_eq!((mesh.tdim(), mesh.gdim()), (2, 2));
+/// # Ok::<(), GridError>(())
+/// ```
 pub type PlanarMesh<F, C = Serial> = Mesh<F, D2, D2, C>;
 /// A surface in 3D.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh: SurfaceMesh<f32> = gridcl_testing::sphere(0, 1).build(&client)?;
+/// assert_eq!((mesh.tdim(), mesh.gdim()), (2, 3));
+/// # Ok::<(), GridError>(())
+/// ```
 pub type SurfaceMesh<F, C = Serial> = Mesh<F, D2, D3, C>;
 /// A volume mesh.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh: VolumeMesh<f32> = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build(&client)?;
+/// assert_eq!((mesh.tdim(), mesh.gdim()), (3, 3));
+/// # Ok::<(), GridError>(())
+/// ```
 pub type VolumeMesh<F, C = Serial> = Mesh<F, D3, D3, C>;
 
 impl<F, TD, GD, C> Mesh<F, TD, GD, C>
@@ -40,8 +93,24 @@ where
     C: Comm,
 {
     /// The topological dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// assert_eq!(SurfaceMesh::<f32>::TDIM, 2);
+    /// ```
     pub const TDIM: usize = TD::N;
     /// The geometric dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// assert_eq!(SurfaceMesh::<f32>::GDIM, 3);
+    /// ```
     pub const GDIM: usize = GD::N;
 
     /// A mesh from its parts. `MeshBuilder` is the usual way to make one.
@@ -76,16 +145,51 @@ where
     }
 
     /// The topological dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: SurfaceMesh<f32> = gridcl_testing::sphere(0, 1).build(&client)?;
+    /// assert_eq!(mesh.tdim(), 2);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn tdim(&self) -> usize {
         TD::N
     }
 
     /// The geometric dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: SurfaceMesh<f32> = gridcl_testing::sphere(0, 1).build(&client)?;
+    /// assert_eq!(mesh.gdim(), 3);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn gdim(&self) -> usize {
         GD::N
     }
 
     /// The runtime-erased client.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // Device arrays for this mesh go on its client.
+    /// let values = DeviceBuffer::from_host(mesh.client(), &[1.0f32, 2.0])?;
+    /// assert_eq!(values.len(), 2);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn client(&self) -> &Client {
         &self.client
     }
@@ -95,6 +199,18 @@ where
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// let copy = mesh.try_clone()?;
+    /// assert_eq!(copy.nodes().to_host()?, mesh.nodes().to_host()?);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn try_clone(&self) -> Result<Self> {
         Ok(Mesh {
             client: self.client.clone(),
@@ -109,6 +225,21 @@ where
     /// # Errors
     ///
     /// `CellNotInRule` if `rule` lacks a cell type of the mesh; allocation and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// let x = mesh.physical_points(&rule)?;
+    /// // The one Gauss point of the unit square is its centre.
+    /// let [x0, y0] = x.blocks[0].to_host_cell_major()?[0];
+    /// assert!((x0 - 0.5).abs() < 1e-6 && (y0 - 0.5).abs() < 1e-6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn physical_points(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, VecShape<GD>>> {
         self.per_block(|b| physical_points_block(self, b, rule.get(self.cell(b))?))
     }
@@ -118,6 +249,22 @@ where
     /// # Errors
     ///
     /// As [`physical_points`](Mesh::physical_points).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// // Squares of side 1/2: J = I / 2, column-major.
+    /// for j in mesh.jacobians(&rule)?.blocks[0].to_host_cell_major()? {
+    ///     assert!((j[0][0] - 0.5).abs() < 1e-6 && (j[1][1] - 0.5).abs() < 1e-6);
+    ///     assert!(j[0][1].abs() < 1e-6 && j[1][0].abs() < 1e-6);
+    /// }
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn jacobians(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, JacShape<TD, GD>>> {
         self.per_block(|b| jacobians_block(self, b, rule.get(self.cell(b))?))
     }
@@ -127,6 +274,19 @@ where
     /// # Errors
     ///
     /// As [`physical_points`](Mesh::physical_points).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// let detj = mesh.detj(&rule)?.blocks[0].to_host_cell_major()?;
+    /// assert!(detj.iter().all(|d| (d - 0.25).abs() < 1e-6));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn detj(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, ScalarShape>> {
         self.per_block(|b| detj_block(self, b, rule.get(self.cell(b))?))
     }
@@ -136,6 +296,28 @@ where
     /// # Errors
     ///
     /// As [`physical_points`](Mesh::physical_points).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: SurfaceMesh<f32> = gridcl_testing::sphere(0, 1).build(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// let j = mesh.jacobians(&rule)?.blocks[0].to_host_cell_major()?;
+    /// let k = mesh.pseudo_inverse_jacobians(&rule)?.blocks[0].to_host_cell_major()?;
+    /// // K J = I (2 × 2) on every face; K is 2 × 3 and J is 3 × 2, both column-major.
+    /// for (k, j) in k.iter().zip(&j) {
+    ///     for a in 0..2 {
+    ///         for b in 0..2 {
+    ///             let kj: f32 = (0..3).map(|g| k[g][a] * j[b][g]).sum();
+    ///             assert!((kj - if a == b { 1.0 } else { 0.0 }).abs() < 1e-5);
+    ///         }
+    ///     }
+    /// }
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn pseudo_inverse_jacobians(
         &self,
         rule: &QuadRule<F, TD>,
@@ -149,6 +331,17 @@ where
     /// # Errors
     ///
     /// Allocation and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::cube_box(Cell3::Tetrahedron, 2, 1).build::<f32, D3, D3>(&client)?;
+    /// assert!((mesh.measure(1)? - 1.0).abs() < 1e-6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn measure(&self, degree: u32) -> Result<f64> {
         let rule = QuadRule::for_grid(self, degree)?;
         let mut local = 0.0;
@@ -164,6 +357,22 @@ where
     /// # Errors
     ///
     /// `IndexOutOfRange` if `i` is not a local node; device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // The four corners of the unit square.
+    /// for i in 0..4 {
+    ///     let x = mesh.read_node(i)?;
+    ///     assert!(x.iter().all(|c| *c == 0.0 || *c == 1.0));
+    /// }
+    /// assert!(matches!(mesh.read_node(4), Err(GridError::IndexOutOfRange { index: 4, len: 4 })));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn read_node(&self, i: usize) -> Result<GD::Array<F>> {
         let num_nodes = self.geometry.node_index_map().num_local();
         if i >= num_nodes {
@@ -187,6 +396,23 @@ where
     /// # Errors
     ///
     /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?;
+    /// mesh.create_entities(1)?;
+    /// mesh.create_entities(2)?;
+    /// // One cube: 12 edges and 6 faces.
+    /// assert_eq!(mesh.entity_blocks(1)?[0].index_map.num_local(), 12);
+    /// assert_eq!(mesh.entity_blocks(2)?[0].index_map.num_local(), 6);
+    /// // Cells are in `cell_blocks()`, not entity blocks.
+    /// assert!(mesh.create_entities(3).is_err());
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn create_entities(&mut self, dim: usize) -> Result<()> {
         self.topology.create_entities(&self.comm, dim)
     }
@@ -197,6 +423,24 @@ where
     ///
     /// `UnsupportedConnectivity` for pairs gridcl does not store; errors of
     /// [`create_entities`](Mesh::create_entities).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?;
+    /// mesh.create_connectivity(1, 3)?;
+    /// let Connectivity::Upward(csr) = mesh.connectivity(ConnKey { from: 1, to: 3 })? else {
+    ///     unreachable!("edge -> cell is upward")
+    /// };
+    /// // 12 edges with one cell each.
+    /// assert_eq!((csr.offsets.len(), csr.indices.len()), (13, 12));
+    /// // The entities it needed exist now.
+    /// assert_eq!(mesh.entity_blocks(1)?[0].index_map.num_local(), 12);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn create_connectivity(&mut self, from: usize, to: usize) -> Result<()> {
         self.topology.create_connectivity(&self.comm, from, to)
     }
@@ -214,6 +458,22 @@ where
     /// # Errors
     ///
     /// As [`physical_points`](Mesh::physical_points).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// // J = I / 2, so J⁻¹ = 2 I.
+    /// for k in mesh.inverse_jacobians(&rule)?.blocks[0].to_host_cell_major()? {
+    ///     assert!((k[0][0] - 2.0).abs() < 1e-5 && (k[1][1] - 2.0).abs() < 1e-5);
+    ///     assert!(k[0][1].abs() < 1e-5 && k[1][0].abs() < 1e-5);
+    /// }
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn inverse_jacobians(
         &self,
         rule: &QuadRule<F, TD>,
@@ -227,6 +487,23 @@ where
     /// # Errors
     ///
     /// As [`physical_points`](Mesh::physical_points).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// let rule = FacetQuadRule::for_grid(&mesh, 1)?;
+    /// let n = mesh.facet_normals(&rule)?.blocks[0].to_host_cell_major()?;
+    /// // One point per side: four outward unit normals that sum to zero.
+    /// assert_eq!(n.len(), 4);
+    /// assert!(n.iter().all(|v| ((v[0] * v[0] + v[1] * v[1]) - 1.0).abs() < 1e-6));
+    /// let sum = n.iter().fold([0.0f32; 2], |s, v| [s[0] + v[0], s[1] + v[1]]);
+    /// assert!(sum[0].abs() < 1e-6 && sum[1].abs() < 1e-6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn facet_normals(
         &self,
         rule: &FacetQuadRule<F, TD>,
@@ -247,6 +524,20 @@ where
     /// # Errors
     ///
     /// As [`physical_points`](Mesh::physical_points).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: SurfaceMesh<f32> = gridcl_testing::sphere(0, 1).build(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// let n = mesh.normals(&rule)?.blocks[0].to_host_cell_major()?;
+    /// assert_eq!(n.len(), 20);
+    /// assert!(n.iter().all(|v| (v.iter().map(|c| c * c).sum::<f32>() - 1.0).abs() < 1e-5));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn normals(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, VecShape<GD>>> {
         self.per_block(|b| normals_block(self, b, rule.get(self.cell(b))?))
     }
@@ -265,6 +556,17 @@ where
     /// # Errors
     ///
     /// Returns `GridError::NotYetImplemented` until M9 (ADR-0012).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?;
+    /// assert!(matches!(mesh.boundary(), Err(GridError::NotYetImplemented(_))));
+    /// # Ok::<(), GridError>(())
+    /// ```
     #[allow(clippy::type_complexity)] // Listing B4's signature
     pub fn boundary(&self) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)> {
         Err(GridError::NotYetImplemented("boundary: M9"))

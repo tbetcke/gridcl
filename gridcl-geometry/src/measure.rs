@@ -78,7 +78,7 @@ fn sum<F: Real>(mut x: DeviceBuffer<F>) -> Result<f64> {
         let num_out = x.len().div_ceil(BLOCK);
         let out = DeviceBuffer::<F>::uninit(&client, num_out)?;
         let plan =
-            LaunchPlan::elementwise(&client, KernelKind::Reduce, num_out, size_of::<F>(), 1, 1)?;
+            LaunchPlan::elementwise(&client, KernelKind::Scalar, num_out, size_of::<F>(), 1, 1)?;
         debug_assert_bindings(&client, 2);
         // SAFETY: outputs i < num_out read x[i · BLOCK .. min((i + 1) · BLOCK, len)], within
         // its len entries, and write out[i] < num_out, its length.
@@ -149,7 +149,7 @@ where
             continue;
         }
         let plan =
-            LaunchPlan::elementwise(client, KernelKind::Reduce, cells, size_of::<F>(), 1, 1)?;
+            LaunchPlan::elementwise(client, KernelKind::Scalar, cells, size_of::<F>(), 1, 1)?;
         debug_assert_bindings(client, 3);
         // SAFETY: cells c < cells read det J at tile·num_points·tile + q·tile + lane, within the
         // chunk's padded cells · num_points values; the weights below num_points; and write

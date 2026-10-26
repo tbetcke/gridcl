@@ -71,7 +71,7 @@ pub fn histogram(values: &DeviceBuffer<u32>, num_bins: u32) -> Result<DeviceBuff
         return Ok(out);
     }
     let len = u32::try_from(values.len()).map_err(|_| GridError::TooLarge)?;
-    let plan = LaunchPlan::elementwise(client, KernelKind::Reduce, values.len(), 4, 1, 1)?;
+    let plan = LaunchPlan::elementwise(client, KernelKind::Scalar, values.len(), 4, 1, 1)?;
     let cube_dim = plan.cube_dim.num_elems();
     let chunk_bins = chunk_bins(
         testing::properties(client).hardware.max_shared_memory_size,
@@ -124,5 +124,23 @@ mod tests {
         assert_eq!(chunk_bins(48 << 10, 17), 32);
         assert_eq!(chunk_bins(48 << 10, 1), 1);
         assert_eq!(chunk_bins(0, 5), 1);
+    }
+
+    /// The histogram kernel is scalar, so it plans as `Scalar`, not as a candidate family (m8);
+    /// only the zero fill of the output, a `fill`, plans as Fill and follows a forced size.
+    #[test]
+    fn histogram_plans_as_scalar() {
+        let client = gridcl_testing::test_client();
+        let values = DeviceBuffer::from_host(&client, &[2u32, 0, 2, 9, 1, 2]).unwrap();
+        let (counts, plans) = testing::record_plans(|| {
+            testing::with_vector_size(crate::VectorSizeOverride::Fixed(2), || {
+                histogram(&values, 4).unwrap()
+            })
+        });
+        assert_eq!(counts.to_host().unwrap(), vec![1, 1, 3, 0]);
+        let shapes: Vec<(KernelKind, usize)> =
+            plans.iter().map(|(k, p)| (*k, p.vector_size)).collect();
+        let n = 2.min(testing::properties(&client).hardware.max_vector_size);
+        assert_eq!(shapes, vec![(KernelKind::Fill, n), (KernelKind::Scalar, 1)]);
     }
 }

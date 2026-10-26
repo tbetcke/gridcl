@@ -6,6 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Benchmark support, not a library feature: the hidden `gridcl_topology::bench` module.
+# gridcl-bench turns it on (docs/design.md, "Cargo features"; ADR-0015).
+bench = []
+
 [dependencies]
 cubecl.workspace = true
 gridcl-device = { path = "../gridcl-device" }

@@ -1934,7 +1934,6 @@ dependencies = [
  "gridcl-refcell",
  "gridcl-testing",
  "gridcl-topology",
- "proptest",
  "serde_json",
  "trybuild",
 ]
@@ -1946,8 +1945,12 @@ dependencies = [
  "cubecl",
  "gridcl",
  "gridcl-device",
+ "gridcl-refcell",
  "gridcl-testing",
+ "gridcl-topology",
+ "proptest",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -1957,6 +1960,7 @@ dependencies = [
  "cubecl",
  "cubecl-runtime",
  "gridcl-testing",
+ "libc",
  "proptest",
  "toml",
 ]
@@ -1977,7 +1981,6 @@ dependencies = [
  "gridcl-refcell",
  "gridcl-testing",
  "gridcl-topology",
- "proptest",
 ]
 
 [[package]]

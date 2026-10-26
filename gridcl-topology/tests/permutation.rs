@@ -137,6 +137,8 @@ fn vector_sizes(client: &Client) -> Vec<usize> {
     sizes
 }
 
+/// Both layouts, the cell-major rows at size 1 and the cell-fastest copy above it, on both id
+/// paths.
 #[test]
 fn every_vector_size_gives_the_same_bits() {
     let client = gridcl_testing::test_client();
@@ -150,8 +152,13 @@ fn every_vector_size_gives_the_same_bits() {
     for cell in CELLS {
         let nv = gridcl_refcell::vertices(cell).len();
         let num_vertices = 50;
-        let ids: Vec<i64> = (0..num_vertices).map(|_| next() as i64 >> 20).collect();
-        for cells in [0usize, 1, 15, 16, 17, 100] {
+        // The (hi, lo) path, then the fast path (ids below 2^32).
+        let wide: Vec<i64> = (0..num_vertices).map(|_| next() as i64 >> 20).collect();
+        let narrow: Vec<i64> = (0..num_vertices).map(|_| (next() >> 32) as i64).collect();
+        for (ids, cells) in [&wide, &narrow]
+            .into_iter()
+            .flat_map(|ids| [0usize, 1, 15, 16, 17, 100].map(|c| (ids, c)))
+        {
             let rows: Vec<u32> = (0..cells)
                 .flat_map(|_| {
                     // nv distinct vertices.
@@ -165,20 +172,26 @@ fn every_vector_size_gives_the_same_bits() {
                     row
                 })
                 .collect();
-            let want = reference(cell, &rows, &ids);
+            let want = reference(cell, &rows, ids);
             for n in vector_sizes(&client) {
                 let (got, plans): (Vec<u32>, Vec<(KernelKind, LaunchPlan)>) = record_plans(|| {
                     with_vector_size(VectorSizeOverride::Fixed(n), || {
-                        bits_any(&client, cell, &rows, &ids)
+                        bits_any(&client, cell, &rows, ids)
                     })
                 });
-                let plan = plans
+                let at = plans
                     .iter()
-                    .find(|(k, _)| *k == KernelKind::PermutationInfo);
+                    .position(|(k, _)| *k == KernelKind::PermutationInfo);
                 if cells > 0 {
-                    assert_eq!(plan.unwrap().1.vector_size, n, "{cell:?}, {cells} cells");
+                    let at = at.unwrap();
+                    assert_eq!(plans[at].1.vector_size, n, "{cell:?}, {cells} cells");
+                    // The cell-fastest copy plans right before; it runs above size 1 only.
+                    assert!(
+                        at > 0 && plans[at - 1].0 == KernelKind::Scalar,
+                        "{cell:?}, {cells} cells: no copy plan"
+                    );
                 } else {
-                    assert!(plan.is_none(), "an empty block launched");
+                    assert!(at.is_none(), "an empty block launched");
                 }
                 assert_eq!(got, want, "{cell:?}, {cells} cells, vector size {n}");
             }
@@ -187,7 +200,7 @@ fn every_vector_size_gives_the_same_bits() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
     #[test]
     fn prop_bits_match_orientation_bits(

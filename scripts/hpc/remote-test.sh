@@ -26,23 +26,35 @@ HPC_ROOT=$(cd "$HPC_DIR/../.." && pwd)
 
 DEFAULT_TIME=01:00:00
 DEFAULT_MAX_WAIT=03:00:00
+# Kathleen (ADR-0016): whole nodes of 40 cores, at most two per job.
+KATHLEEN_CORES=40
+KATHLEEN_MAX_NODES=2
 
 usage() {
     cat <<EOF
-usage: scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
-targets: myriad-v100 | myriad-a100 | locust
+usage: scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--nodes N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
+targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | kathleen
 
 Syncs the working tree to the target, fetches crates on its login node, runs <command> in
-a job from the root of the remote tree (offline, GRIDCL_TEST_DEVICE=cuda) and prints a
-summary of at most 40 lines. The words after -- are joined with spaces and run by bash.
+a job from the root of the remote tree (offline, GRIDCL_TEST_DEVICE=cuda; =cpu on
+myriad-cpu and kathleen) and prints a summary of at most 40 lines. The words after -- are joined with
+spaces and run by bash.
 On SGE targets (Myriad) the job is queued; on direct targets (Locust: no scheduler) it starts
 at once under timeout (the smaller of --time and --max-wait) and records the node load
-before and after the command (summary line "node load:").
+before and after the command (summary line "node load:"). myriad-cpu runs on a CPU-only
+D node (36 cores, AVX-512, no GPU). kathleen (Slurm) runs on whole nodes of 40 cores
+(AVX-512, no GPU), at most two per job: QoS singlenode for one node (at most 6 h), test for
+two nodes up to 1 h, small for two nodes beyond that (ADR-0016).
 
-  --gpus N           GPUs of the job (default 1; at most 2 on myriad-v100, 4 on myriad-a100)
+  --gpus N           GPUs of the job (default 1; at most 2 on myriad-v100, 4 on myriad-a100;
+                     not accepted on myriad-cpu and kathleen)
   --ranks N          reserve N slots and export GRIDCL_RANKS=N; the command starts mpirun
-  --cores N          CPU cores of the job (36: a whole Myriad node, for CPU benchmarks);
-                     ignored on direct targets, which reserve nothing
+                     (kathleen: at most 40 per node; on two nodes mpirun maps by node)
+  --cores N          CPU cores of the job (36: a whole Myriad node, for CPU benchmarks and
+                     every CPU-runtime run on myriad-cpu, whose threads follow the slots);
+                     ignored on direct targets, which reserve nothing, and on kathleen,
+                     which runs whole nodes
+  --nodes N          whole nodes of the job (kathleen only; 1 or 2, default 1)
   --time HH:MM:SS    wall-clock limit of the job (default $DEFAULT_TIME)
   --max-wait HH:MM:SS  wait at most this long, queue time included (default $DEFAULT_MAX_WAIT);
                      then the job is deleted and the exit status is 124
@@ -84,7 +96,8 @@ parse_args() {
     TARGET=$1
     shift
     hpc_known_target "$TARGET" || usage_error "unknown target '$TARGET'"
-    OPT_GPUS=1 OPT_RANKS="" OPT_CORES="" OPT_TIME=$DEFAULT_TIME OPT_MAX_WAIT=$DEFAULT_MAX_WAIT
+    OPT_GPUS=1 OPT_GPUS_GIVEN="" OPT_RANKS="" OPT_CORES="" OPT_NODES="" OPT_TIME=$DEFAULT_TIME
+    OPT_MAX_WAIT=$DEFAULT_MAX_WAIT
     while [ $# -gt 0 ]; do
         opt=$1
         case $opt in
@@ -97,12 +110,12 @@ parse_args() {
                 usage
                 exit 0
                 ;;
-            --gpus=* | --ranks=* | --cores=* | --time=* | --max-wait=*)
+            --gpus=* | --ranks=* | --cores=* | --nodes=* | --time=* | --max-wait=*)
                 val=${opt#*=}
                 opt=${opt%%=*}
                 shift
                 ;;
-            --gpus | --ranks | --cores | --time | --max-wait)
+            --gpus | --ranks | --cores | --nodes | --time | --max-wait)
                 [ $# -ge 2 ] || usage_error "$opt needs a value"
                 val=$2
                 shift 2
@@ -111,9 +124,10 @@ parse_args() {
             *) usage_error "'$opt' before --: put the command after --" ;;
         esac
         case $opt in
-            --gpus) check_count "$opt" "$val" && OPT_GPUS=$((10#$val)) ;;
+            --gpus) check_count "$opt" "$val" && OPT_GPUS=$((10#$val)) OPT_GPUS_GIVEN=1 ;;
             --ranks) check_count "$opt" "$val" && OPT_RANKS=$((10#$val)) ;;
             --cores) check_count "$opt" "$val" && OPT_CORES=$((10#$val)) ;;
+            --nodes) check_count "$opt" "$val" && OPT_NODES=$((10#$val)) ;;
             --time) check_duration "$opt" "$val" && OPT_TIME=$val ;;
             --max-wait) check_duration "$opt" "$val" && OPT_MAX_WAIT=$val ;;
         esac
@@ -128,8 +142,27 @@ parse_args() {
     case $TARGET in
         myriad-v100) [ "$OPT_GPUS" -le 2 ] || usage_error "--gpus $OPT_GPUS: an E or F node has 2 V100s" ;;
         myriad-a100) [ "$OPT_GPUS" -le 4 ] || usage_error "--gpus $OPT_GPUS: an L node has 4 A100s" ;;
+        myriad-cpu)
+            [ -z "$OPT_GPUS_GIVEN" ] ||
+                usage_error "--gpus $OPT_GPUS: myriad-cpu runs on CPU-only D nodes; use myriad-v100 or myriad-a100 for GPUs"
+            OPT_GPUS=0
+            ;;
         locust) [ "$OPT_GPUS" -le 1 ] || usage_error "--gpus $OPT_GPUS: Locust has one GH200" ;;
+        kathleen)
+            [ -z "$OPT_GPUS_GIVEN" ] ||
+                usage_error "--gpus $OPT_GPUS: kathleen has no GPUs; use locust or a Myriad GPU target"
+            OPT_GPUS=0
+            OPT_NODES=${OPT_NODES:-1}
+            [ "$OPT_NODES" -le "$KATHLEEN_MAX_NODES" ] ||
+                usage_error "--nodes $OPT_NODES: at most $KATHLEEN_MAX_NODES Kathleen nodes per job (ADR-0016)"
+            if [ -n "$OPT_RANKS" ] && [ "$OPT_RANKS" -gt $((OPT_NODES * KATHLEEN_CORES)) ]; then
+                usage_error "--ranks $OPT_RANKS: $OPT_NODES node(s) have $((OPT_NODES * KATHLEEN_CORES)) cores"
+            fi
+            ;;
     esac
+    if [ -n "$OPT_NODES" ] && [ "$TARGET" != kathleen ]; then
+        usage_error "--nodes is for kathleen only; $TARGET jobs take --cores"
+    fi
     if [ -n "$OPT_RANKS" ] && [ -n "$OPT_CORES" ] && [ "$OPT_CORES" -lt "$OPT_RANKS" ]; then
         usage_error "--cores $OPT_CORES is less than --ranks $OPT_RANKS"
     fi
@@ -137,6 +170,18 @@ parse_args() {
     JOB_CORES=${OPT_CORES:-$OPT_RANKS}
     MAX_WAIT_SECONDS=$(hpc_seconds "$OPT_MAX_WAIT")
     TIME_SECONDS=$(hpc_seconds "$OPT_TIME")
+    JOB_QOS=""
+    if [ "$TARGET" = kathleen ]; then
+        if [ "$OPT_NODES" = 1 ]; then
+            [ "$TIME_SECONDS" -le 21600 ] || usage_error "--time $OPT_TIME: one Kathleen node (QoS singlenode) runs at most 06:00:00"
+            JOB_QOS=singlenode
+        elif [ "$TIME_SECONDS" -le 3600 ]; then
+            JOB_QOS="test"
+        else
+            [ "$TIME_SECONDS" -le 172800 ] || usage_error "--time $OPT_TIME: two Kathleen nodes (QoS small) run at most 48:00:00"
+            JOB_QOS=small
+        fi
+    fi
 }
 
 # shellcheck disable=SC2329 # invoked by the traps in run_job
@@ -166,7 +211,7 @@ run_job() {
     trap 'on_signal 143' TERM
     trap 'on_signal 129' HUP
     case $CFG_SCHEDULER in
-        sge) submit_job ;;
+        sge | slurm) submit_job ;;
         direct) direct_submit ;;
     esac
     JOB_ACTIVE=$JOB_ID
@@ -196,7 +241,16 @@ main() {
             hpc_msg "--cores ignored: $TARGET has no scheduler to reserve cores (the node load is recorded instead)"
         fi
         JOB_CORES=""
-    elif [ -n "$OPT_CORES$OPT_RANKS" ]; then
+    elif [ "$CFG_SCHEDULER" = slurm ]; then
+        if [ -n "$OPT_CORES" ]; then
+            hpc_msg "--cores ignored: $TARGET runs whole nodes (--nodes)"
+        fi
+        JOB_CORES=""
+    elif [ "$TARGET" = myriad-cpu ] && [ -z "$OPT_CORES" ]; then
+        hpc_msg "note: myriad-cpu without --cores: the CPU runtime's threads follow the job's" \
+            "slots (${OPT_RANKS:-1}); use --cores 36 for benchmarks and whole-suite runs"
+    fi
+    if [ "$CFG_SCHEDULER" = sge ] && [ -n "$OPT_CORES$OPT_RANKS" ]; then
         case $CFG_CORES_REQUEST in
             *'{cores}'*) ;;
             *) hpc_die 125 "--cores/--ranks need ${CFG_PREFIX}_CORES_REQUEST with {cores} in targets.env" ;;

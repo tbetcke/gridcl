@@ -181,7 +181,7 @@ pub fn scatter<T: DeviceScalar>(
     let client = src.client();
     let len = u32::try_from(src.len()).map_err(|_| GridError::TooLarge)?;
     let plan =
-        LaunchPlan::elementwise(client, KernelKind::Gather, src.len(), size_of::<T>(), 1, 1)?;
+        LaunchPlan::elementwise(client, KernelKind::Scalar, src.len(), size_of::<T>(), 1, 1)?;
     debug_assert_bindings(client, 3);
     // SAFETY: the kernel reads src[j] and idx[j] only for j < len = src.len() = idx.len(), and
     // writes dst[k] only for k < dst_len = dst.len().

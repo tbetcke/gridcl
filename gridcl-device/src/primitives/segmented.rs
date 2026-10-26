@@ -64,7 +64,7 @@ pub fn segmented_reduce<T: DeviceScalar>(
     }
     let len = u32::try_from(values.len()).map_err(|_| GridError::TooLarge)?;
     let num_segments = u32::try_from(segments).map_err(|_| GridError::TooLarge)?;
-    let plan = LaunchPlan::elementwise(client, KernelKind::Reduce, segments, size_of::<T>(), 1, 1)?;
+    let plan = LaunchPlan::elementwise(client, KernelKind::Scalar, segments, size_of::<T>(), 1, 1)?;
     debug_assert_bindings(client, 3);
     // SAFETY: the kernel reads offsets[s] and offsets[s + 1] only for s < num_segments, so
     // below offsets.len(); values[j] only for j < min(offset, len) <= values.len(); and writes

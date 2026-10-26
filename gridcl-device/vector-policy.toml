@@ -1,65 +1,154 @@
-# Vector policy of gridcl-device (docs/design.md, "Launch plans and the vector policy").
+# Vector policy of gridcl-device (docs/design.md, "Launch plans and the vector policy"; ADR-0015).
 #
-# Vector sizes per kernel family and device class, by scalar size in bytes, and the QuadField
-# tile width. Changed only with benchmark data in docs/perf/vectorization.md; until M3s every
-# family runs at vector size 1 and the tile width is 16.
+# Per device class: the QuadField tile width by scalar size in bytes; the vector size per kernel
+# family and scalar size; on CPU classes, the CPU block per kernel family and scalar size of the
+# widest stream, in units of 4 KiB, and the CPU units (all hardware threads or the performance
+# cores; ADR-0017). Written by `cargo run -p gridcl-bench --bin policy_report` from
+# docs/perf/data/ with the decision rule of docs/perf/vectorization.md; do not edit by hand.
 
 [CpuSimd128]
-quad_tile = 16
+quad_tile = { 4 = 4, 8 = 4 }
 [CpuSimd128.vector_size]
-Fill = { 4 = 1, 8 = 1 }
-Copy = { 4 = 1, 8 = 1 }
-Reduce = { 4 = 1, 8 = 1 }
-ScanTile = { 4 = 1, 8 = 1 }
+Fill = { 4 = 16, 8 = 1 }
+Copy = { 4 = 8, 8 = 1 }
+Reduce = { 4 = 16, 8 = 1 }
+ScanTile = { 4 = 16, 8 = 1 }
 SortDigits = { 4 = 1, 8 = 1 }
 Gather = { 4 = 1, 8 = 1 }
 Pack = { 4 = 1, 8 = 1 }
 TopologyKeys = { 4 = 1, 8 = 1 }
 PermutationInfo = { 4 = 1, 8 = 1 }
-EVector = { 4 = 1, 8 = 1 }
-GeomFactors = { 4 = 1, 8 = 1 }
+EVector = { 4 = 16, 8 = 8 }
+GeomFactors = { 4 = 4, 8 = 4 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
+[CpuSimd128.cpu_block]
+Fill = { 4 = 16, 8 = 16 }
+Copy = { 4 = 16, 8 = 4 }
+Reduce = { 4 = 16, 8 = 16 }
+ScanTile = { 4 = 16, 8 = 4 }
+SortDigits = { 4 = 16, 8 = 4 }
+Gather = { 4 = 16, 8 = 16 }
+Pack = { 4 = 4, 8 = 4 }
+TopologyKeys = { 4 = 16, 8 = 4 }
+PermutationInfo = { 4 = 16, 8 = 4 }
+EVector = { 4 = 16, 8 = 4 }
+GeomFactors = { 4 = 1, 8 = 16 }
+PullBack = { 4 = 4, 8 = 4 }
+Scalar = { 4 = 16, 8 = 1 }
+[CpuSimd128.cpu_units]
+Fill = { 4 = "performance", 8 = "all" }
+Copy = { 4 = "all", 8 = "all" }
+Reduce = { 4 = "performance", 8 = "performance" }
+ScanTile = { 4 = "performance", 8 = "all" }
+SortDigits = { 4 = "performance", 8 = "all" }
+Gather = { 4 = "performance", 8 = "performance" }
+Pack = { 4 = "all", 8 = "all" }
+TopologyKeys = { 4 = "performance", 8 = "all" }
+PermutationInfo = { 4 = "performance", 8 = "all" }
+EVector = { 4 = "all", 8 = "performance" }
+GeomFactors = { 4 = "all", 8 = "all" }
+PullBack = { 4 = "all", 8 = "all" }
+Scalar = { 4 = "performance", 8 = "performance" }
 
 [CpuSimd256]
-quad_tile = 16
+quad_tile = { 4 = 16, 8 = 16 }
 [CpuSimd256.vector_size]
 Fill = { 4 = 1, 8 = 1 }
 Copy = { 4 = 1, 8 = 1 }
-Reduce = { 4 = 1, 8 = 1 }
-ScanTile = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 8, 8 = 1 }
+ScanTile = { 4 = 8, 8 = 1 }
 SortDigits = { 4 = 1, 8 = 1 }
 Gather = { 4 = 1, 8 = 1 }
 Pack = { 4 = 1, 8 = 1 }
 TopologyKeys = { 4 = 1, 8 = 1 }
-PermutationInfo = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 16, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
-GeomFactors = { 4 = 1, 8 = 1 }
+GeomFactors = { 4 = 16, 8 = 16 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
+[CpuSimd256.cpu_block]
+Fill = { 4 = 4, 8 = 16 }
+Copy = { 4 = 1, 8 = 4 }
+Reduce = { 4 = 16, 8 = 16 }
+ScanTile = { 4 = 16, 8 = 4 }
+SortDigits = { 4 = 16, 8 = 4 }
+Gather = { 4 = 1, 8 = 4 }
+Pack = { 4 = 4, 8 = 4 }
+TopologyKeys = { 4 = 4, 8 = 4 }
+PermutationInfo = { 4 = 1, 8 = 4 }
+EVector = { 4 = 16, 8 = 16 }
+GeomFactors = { 4 = 16, 8 = 1 }
+PullBack = { 4 = 4, 8 = 4 }
+Scalar = { 4 = 16, 8 = 16 }
+[CpuSimd256.cpu_units]
+Fill = { 4 = "all", 8 = "all" }
+Copy = { 4 = "all", 8 = "all" }
+Reduce = { 4 = "all", 8 = "all" }
+ScanTile = { 4 = "all", 8 = "all" }
+SortDigits = { 4 = "all", 8 = "all" }
+Gather = { 4 = "all", 8 = "all" }
+Pack = { 4 = "all", 8 = "all" }
+TopologyKeys = { 4 = "all", 8 = "all" }
+PermutationInfo = { 4 = "all", 8 = "all" }
+EVector = { 4 = "all", 8 = "all" }
+GeomFactors = { 4 = "all", 8 = "all" }
+PullBack = { 4 = "all", 8 = "all" }
+Scalar = { 4 = "all", 8 = "all" }
 
 [CpuSimd512]
-quad_tile = 16
+quad_tile = { 4 = 16, 8 = 16 }
 [CpuSimd512.vector_size]
 Fill = { 4 = 1, 8 = 1 }
 Copy = { 4 = 1, 8 = 1 }
-Reduce = { 4 = 1, 8 = 1 }
-ScanTile = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 8, 8 = 1 }
+ScanTile = { 4 = 8, 8 = 1 }
 SortDigits = { 4 = 1, 8 = 1 }
 Gather = { 4 = 1, 8 = 1 }
 Pack = { 4 = 1, 8 = 1 }
 TopologyKeys = { 4 = 1, 8 = 1 }
-PermutationInfo = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 16, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
-GeomFactors = { 4 = 1, 8 = 1 }
+GeomFactors = { 4 = 16, 8 = 16 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
+[CpuSimd512.cpu_block]
+Fill = { 4 = 4, 8 = 16 }
+Copy = { 4 = 1, 8 = 4 }
+Reduce = { 4 = 16, 8 = 16 }
+ScanTile = { 4 = 16, 8 = 4 }
+SortDigits = { 4 = 16, 8 = 4 }
+Gather = { 4 = 1, 8 = 4 }
+Pack = { 4 = 4, 8 = 4 }
+TopologyKeys = { 4 = 4, 8 = 4 }
+PermutationInfo = { 4 = 1, 8 = 4 }
+EVector = { 4 = 16, 8 = 16 }
+GeomFactors = { 4 = 16, 8 = 1 }
+PullBack = { 4 = 4, 8 = 4 }
+Scalar = { 4 = 16, 8 = 16 }
+[CpuSimd512.cpu_units]
+Fill = { 4 = "all", 8 = "all" }
+Copy = { 4 = "all", 8 = "all" }
+Reduce = { 4 = "all", 8 = "all" }
+ScanTile = { 4 = "all", 8 = "all" }
+SortDigits = { 4 = "all", 8 = "all" }
+Gather = { 4 = "all", 8 = "all" }
+Pack = { 4 = "all", 8 = "all" }
+TopologyKeys = { 4 = "all", 8 = "all" }
+PermutationInfo = { 4 = "all", 8 = "all" }
+EVector = { 4 = "all", 8 = "all" }
+GeomFactors = { 4 = "all", 8 = "all" }
+PullBack = { 4 = "all", 8 = "all" }
+Scalar = { 4 = "all", 8 = "all" }
 
 [Gpu]
-quad_tile = 16
+quad_tile = { 4 = 16, 8 = 16 }
 [Gpu.vector_size]
 Fill = { 4 = 1, 8 = 1 }
-Copy = { 4 = 1, 8 = 1 }
-Reduce = { 4 = 1, 8 = 1 }
-ScanTile = { 4 = 1, 8 = 1 }
-SortDigits = { 4 = 1, 8 = 1 }
+Copy = { 4 = 4, 8 = 1 }
+Reduce = { 4 = 16, 8 = 4 }
+ScanTile = { 4 = 8, 8 = 1 }
+SortDigits = { 4 = 4, 8 = 1 }
 Gather = { 4 = 1, 8 = 1 }
 Pack = { 4 = 1, 8 = 1 }
 TopologyKeys = { 4 = 1, 8 = 1 }
@@ -67,3 +156,4 @@ PermutationInfo = { 4 = 1, 8 = 1 }
 EVector = { 4 = 1, 8 = 1 }
 GeomFactors = { 4 = 1, 8 = 1 }
 PullBack = { 4 = 1, 8 = 1 }
+Scalar = { 4 = 1, 8 = 1 }
