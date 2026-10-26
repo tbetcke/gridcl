@@ -391,12 +391,15 @@ r_status_slurm() { # r_status_slurm: the user's Slurm jobs (squeue; nothing when
 
 # r_cancel_sge <job id> <marker> <base>...: writes the marker to results/<id>/cancelled of the
 # tree below the bases that submitted the job (so its runner reports the cancellation), then
-# deletes the job. Status 0 deleted, 1 qdel failed, 4 no such job.
+# deletes the job. Only the user's own jobs count: another user's job with the same id (or a
+# Slurm id that SGE also has) is "no such job", so cancel.sh tries the next scheduler.
+# Status 0 deleted, 1 qdel failed, 4 no such job.
 r_cancel_sge() {
     local id=$1 marker=$2 b f tree
     shift 2
     r_env sge
-    qstat -j "$id" >/dev/null 2>&1 || return 4
+    qstat -u "${USER:-$(id -un)}" </dev/null 2>/dev/null |
+        awk -v id="$id" '$1 == id { found = 1 } END { exit !found }' || return 4
     for b in "$@"; do
         for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
             [ -f "$f" ] || continue
@@ -412,7 +415,7 @@ r_cancel_slurm() {
     local id=$1 marker=$2 b f tree
     shift 2
     r_env slurm
-    [ -n "$(squeue -h -j "$id" -o %i 2>/dev/null </dev/null)" ] || return 4
+    [ -n "$(squeue -h -u "${USER:-$(id -un)}" -j "$id" -o %i 2>/dev/null </dev/null)" ] || return 4
     for b in "$@"; do
         for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
             [ -f "$f" ] || continue

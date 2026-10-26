@@ -43,7 +43,7 @@ results_survive_resync busy_tree_refused cubecl_toml_written myriad_cpu_job_scri
 myriad_cpu_rejects_gpus"
 DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees"
 SLURM_CASES="kathleen_job_script kathleen_two_nodes kathleen_rejects kathleen_max_wait_cancels
-kathleen_status_and_cancel"
+kathleen_status_and_cancel cancel_only_own_jobs"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
 
 # --- assertions -------------------------------------------------------------------
@@ -705,6 +705,32 @@ case_kathleen_status_and_cancel() {
     RC=$?
     expect_status 0 "status without jobs"
     [ ! -s "$T/status" ] || fail "status printed output without jobs: $(head -n 3 "$T/status")"
+}
+
+case_cancel_only_own_jobs() {
+    # A Slurm job whose id SGE also has, for another user: cancel.sh must skip the SGE job and
+    # cancel the Slurm one; an id only another user has is not ours to delete.
+    FAKE_SLURM_HOLD=1 bg_rt held kathleen --max-wait 00:01:00 -- true
+    local id other
+    id=$(wait_for_slurm_job) || { fail "held job never queued"; return; }
+    for other in "$id" 4242; do
+        mkdir -p "$FAKE_STATE/sge/jobs/$other"
+        echo someone-else >"$FAKE_STATE/sge/jobs/$other/owner"
+        echo foreign >"$FAKE_STATE/sge/jobs/$other/name"
+        echo r >"$FAKE_STATE/sge/jobs/$other/state"
+    done
+    "$CANCEL" "$id" >"$T/cancel" 2>&1
+    RC=$?
+    expect_status 0 "cancel a Slurm job whose id another user has on SGE"
+    expect_line "$FAKE_STATE/slurm/scancel.log" "$id" "scancel called with the id"
+    expect_absent "$FAKE_STATE/sge/qdel.log" "no qdel of another user's job"
+    expect_exists "$FAKE_STATE/sge/jobs/$id" "the other user's SGE job kept"
+    wait_exit "$BG" 20
+    expect_nonzero "runner of a cancelled job"
+    "$CANCEL" 4242 >"$T/cancel" 2>&1
+    RC=$?
+    expect_status 1 "cancel of another user's job"
+    expect_absent "$FAKE_STATE/sge/qdel.log" "no qdel of another user's job"
 }
 
 case_direct_remote_timeout() {
