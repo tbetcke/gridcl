@@ -21,3 +21,6 @@ pub use model::{
 };
 pub use parse::{parse, read_file};
 pub use write::Encoding;
+
+/// The format name in `GridError::Parse` and `GridError::UnsupportedElementType`.
+pub(crate) const FORMAT: &str = "Gmsh";
