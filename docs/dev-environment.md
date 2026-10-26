@@ -66,7 +66,7 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
     | Claude Code ≥ 2.1.286 | as documented by Anthropic | the workflow |
     | Open MPI or MPICH (one of them) | Homebrew | local MPI runs; hosted CI covers the other |
     | rsync 3.x | Homebrew (the rsync that ships with macOS may lack the filter options the runner uses) | the remote-test runner |
-    | Gmsh, one pinned version | Homebrew or gmsh.info | the M4 fixture corpus |
+    | Gmsh, one pinned version: the PyPI wheel `gmsh==4.15.2` | `.venv/bin/pip install gmsh==4.15.2` (`scripts/check-local-tools.sh` checks the pin) | the M4 fixture corpus (`scripts/fixtures/gmsh/generate.py`) |
     | Python with `vtk` ≥ 9.2 and `meshio` | a virtual environment | M5 read-back tests |
     | HDF5 built with MPI | Homebrew (`hdf5-mpi`) | M8 VTKHDF output |
 
@@ -163,7 +163,7 @@ Checked by E0 T9 on 2026-10-18.
 | Internet access on compute nodes | – | no (`curl` to crates.io times out) | no (`curl` to crates.io times out) | yes (`curl` to crates.io) |
 | Clean build time of env-check | 81 s on Rust 1.99.1 (`--release --features cpu,metal,mpi`) | 1829 s on 8 cores (job 172549, `--release --features cuda`); after a feature change 178 s on 8 cores (`cuda-cpp,cpu`) and 952 s on 1 core (`cuda`) | 5428 s on 8 cores (job 177336, `--release --features cuda`); after a feature change 44 s on 8 cores (`cuda-cpp,cpu`) | 85 s with 32 build jobs (job 20261018213942-3492085, `--release --features cuda,cpu`); after a feature change 7 s (`cuda-cpp`) |
 | Queue wait and run time (median of 3) | – | 1 GPU: queue 153 s, run 28 s (jobs 175462, 175480, 175482 on 2026-10-18; the first rebuilt CubeCL, 987 s); 2 GPUs: queue 7525 s (job 175401) | 1 GPU: queue 183 s, run 41 s (jobs 177590, 177591, 177593 on 2026-10-18; no rebuild); the first job of the target waited 6383 s (job 177336); 2 GPUs: queue 2762 s (job 186145; an earlier 2-GPU job, 178649, was deleted after 4 h in the queue) | no queue: start 1 s, run 3 s (jobs 20261018214145-3501138, …214159-3501789, …214212-3502445 on 2026-10-18; no rebuild, command 2 s each) |
-| Gmsh, `vtk`, `meshio`, Claude Code versions | Gmsh 4.15.2-git (unpinned; M4 sets the pin); vtk 9.7.1 and meshio 5.3.5 in `.venv` (Python 3.14.7); Claude Code 2.1.295 | – | – | – |
+| Gmsh, `vtk`, `meshio`, Claude Code versions | Gmsh 4.15.2-git (Homebrew, unpinned); pinned wheel `gmsh==4.15.2` in `.venv` for the M4 corpus; vtk 9.7.1 and meshio 5.3.5 in `.venv` (Python 3.14.7); Claude Code 2.1.295 | – | – | – |
 
 Re-run env-check on a target after its maintenance window or a module change, and update this table.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Check and print the local tool versions of the M3 Max (docs/design.md, E0 acceptance):
-# vtk >= 9.2 and meshio importable in ${GRIDCL_PYTHON:-.venv/bin/python}, gmsh,
+# vtk >= 9.2, meshio and the pinned gmsh wheel (4.15.2, the M4 fixture corpus) importable in
+# ${GRIDCL_PYTHON:-.venv/bin/python}, gmsh,
 # claude >= 2.1.286, rsync >= 3 and mpirun. Prints one line per tool; exits 1 if any
 # check fails.
 #
@@ -50,8 +51,18 @@ if [ -x "$python" ]; then
     report python "$("$python" -c 'import platform; print(platform.python_version())' 2>/dev/null)"
     report vtk "$("$python" -c 'import vtk; print(vtk.vtkVersion.GetVTKVersion())' 2>/dev/null)" 9.2
     report meshio "$("$python" -c 'import meshio; print(meshio.__version__)' 2>/dev/null)"
+    # The Gmsh wheel that writes the M4 fixture corpus: exactly this version (docs/plans/M4.md, T1).
+    gmsh_pin=4.15.2
+    gmsh_py=$("$python" -c 'import gmsh; print(gmsh.__version__)' 2>/dev/null)
+    if [ "$gmsh_py" = "$gmsh_pin" ]; then
+        printf '%-8s %s (pinned)\n' gmsh-py "$gmsh_py"
+    else
+        printf '%-8s %s FAIL: need %s (.venv/bin/pip install gmsh==%s)\n' gmsh-py "${gmsh_py:-none}" \
+            "$gmsh_pin" "$gmsh_pin"
+        failed=1
+    fi
 else
-    printf '%-8s FAIL: no interpreter at %s (python3 -m venv .venv && .venv/bin/pip install vtk meshio)\n' \
+    printf '%-8s FAIL: no interpreter at %s (python3 -m venv .venv && .venv/bin/pip install vtk meshio gmsh==4.15.2)\n' \
         python "$python"
     failed=1
 fi
