@@ -34,3 +34,6 @@ target/hpc/
 
 # trybuild's output for compile-fail cases without a .stderr baseline (it adds its own .gitignore too)
 /gridcl*/wip/
+
+# Python bytecode (scripts/fixtures)
+__pycache__/
