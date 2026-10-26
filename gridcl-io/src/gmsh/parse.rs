@@ -9,7 +9,10 @@ use std::path::Path;
 
 use gridcl_device::{GridError, Result};
 
-use super::{ElementBlock, Entities, Entity, FORMAT, MshFile, NodeBlock, PhysicalName};
+use super::{
+    ElementBlock, Entities, Entity, FORMAT, MshFile, NodeBlock, PartitionedEntities,
+    PartitionedEntity, Periodic, PhysicalName,
+};
 
 /// A position in the file and the reads of one value kind.
 struct Cursor<'a> {
@@ -254,6 +257,75 @@ fn entities(c: &mut Cursor<'_>) -> Result<Entities> {
     Ok(out)
 }
 
+/// `$PartitionedEntities`.
+fn partitioned_entities(c: &mut Cursor<'_>) -> Result<PartitionedEntities> {
+    let (int, _, float) = c.widths();
+    let num_partitions = c.count(0)?;
+    let num_ghosts = c.count(2 * int)?;
+    let ghost_entities = (0..num_ghosts)
+        .map(|_| Ok((c.int()?, c.int()?)))
+        .collect::<Result<Vec<_>>>()?;
+    let mut counts = [0usize; 4];
+    for n in &mut counts {
+        *n = c.count(3 * int + 3 * float)?;
+    }
+    let mut out = PartitionedEntities {
+        num_partitions,
+        ghost_entities,
+        ..PartitionedEntities::default()
+    };
+    for (dim, &n) in counts.iter().enumerate() {
+        let list = match dim {
+            0 => &mut out.points,
+            1 => &mut out.curves,
+            2 => &mut out.surfaces,
+            _ => &mut out.volumes,
+        };
+        list.reserve(n);
+        for _ in 0..n {
+            let tag = c.int()?;
+            let parent_dim = c.dim()?;
+            let parent_tag = c.int()?;
+            let partitions = int_list(c)?;
+            list.push(PartitionedEntity {
+                entity: entity_body(c, tag, dim)?,
+                parent_dim,
+                parent_tag,
+                partitions,
+            });
+        }
+    }
+    c.end("PartitionedEntities")?;
+    Ok(out)
+}
+
+/// `$Periodic`.
+fn periodic(c: &mut Cursor<'_>) -> Result<Vec<Periodic>> {
+    let (int, size, float) = c.widths();
+    let n = c.count(3 * int + 2 * size)?;
+    let mut links = Vec::with_capacity(n);
+    for _ in 0..n {
+        let dim = c.dim()?;
+        let tag = c.int()?;
+        let master_tag = c.int()?;
+        let num_affine = c.count(float)?;
+        let affine = (0..num_affine).map(|_| c.float()).collect::<Result<_>>()?;
+        let num_nodes = c.count(2 * size)?;
+        let nodes = (0..num_nodes)
+            .map(|_| Ok((c.tag("node")?, c.tag("node")?)))
+            .collect::<Result<_>>()?;
+        links.push(Periodic {
+            dim,
+            tag,
+            master_tag,
+            affine,
+            nodes,
+        });
+    }
+    c.end("Periodic")?;
+    Ok(links)
+}
+
 /// `$Nodes`. Parametric coordinates are read and dropped.
 fn nodes(c: &mut Cursor<'_>) -> Result<Vec<NodeBlock>> {
     let (int, size, float) = c.widths();
@@ -389,6 +461,10 @@ pub fn parse(bytes: &[u8]) -> Result<MshFile> {
         match section {
             "PhysicalNames" => file.physical_names.extend(physical_names(&mut c)?),
             "Entities" => file.entities = Some(entities(&mut c)?),
+            "PartitionedEntities" => {
+                file.partitioned_entities = Some(partitioned_entities(&mut c)?);
+            }
+            "Periodic" => file.periodic.extend(periodic(&mut c)?),
             "Nodes" => file.node_blocks.extend(nodes(&mut c)?),
             "Elements" => file.element_blocks.extend(elements(&mut c)?),
             "MeshFormat" => return Err(c.error_at(at, "a second $MeshFormat")),
@@ -482,6 +558,68 @@ $Elements\n2 3 1 3\n1 1 1 1\n3 1 4\n2 1 2 2\n1 1 2 3\n2 1 3 4\n$EndElements\n";
         assert_eq!(f.element_blocks[1].tags, [1, 2]);
         assert_eq!(f.element_blocks[1].nodes, [1, 2, 3, 1, 3, 4]);
         assert!(f.partitioned_entities.is_none() && f.periodic.is_empty());
+    }
+
+    #[test]
+    fn parse_partitioned_entities_and_periodic() {
+        let text = FILE.replace(
+            "$Nodes",
+            "$PartitionedEntities\n2\n1\n4 2\n1 1 0 0\n\
+             5 0 1 1 2 0.5 0 0 1 5\n\
+             6 1 2 2 1 2 0 0 0 1 1 0 0 2 5 -5\n$EndPartitionedEntities\n\
+             $Periodic\n2\n1 2 1\n16 1 0 0 1 0 1 0 0 0 0 1 0 0 0 0 1\n1\n3 2\n\
+             0 4 1\n0\n0\n$EndPeriodic\n$Nodes",
+        );
+        let f = parse(text.as_bytes()).unwrap();
+        let p = f.partitioned_entities.unwrap();
+        assert_eq!(
+            (p.num_partitions, &p.ghost_entities[..]),
+            (2, &[(4, 2)][..])
+        );
+        assert_eq!(p.points.len(), 1);
+        assert_eq!((p.points[0].parent_dim, p.points[0].parent_tag), (0, 1));
+        assert_eq!(p.points[0].partitions, [2]);
+        assert_eq!(p.points[0].entity.min, [0.5, 0.0, 0.0]);
+        assert_eq!(p.points[0].entity.physical_tags, [5]);
+        let curve = &p.curves[0];
+        assert_eq!(
+            (curve.entity.tag, curve.parent_dim, curve.parent_tag),
+            (6, 1, 2)
+        );
+        assert_eq!(curve.partitions, [1, 2]);
+        assert_eq!(curve.entity.max, [1.0, 1.0, 0.0]);
+        assert_eq!(curve.entity.boundary, [5, -5]);
+        assert_eq!(f.periodic.len(), 2);
+        assert_eq!(
+            (
+                f.periodic[0].dim,
+                f.periodic[0].tag,
+                f.periodic[0].master_tag
+            ),
+            (1, 2, 1)
+        );
+        assert_eq!(f.periodic[0].affine.len(), 16);
+        assert_eq!(f.periodic[0].nodes, [(3, 2)]);
+        assert!(f.periodic[1].affine.is_empty() && f.periodic[1].nodes.is_empty());
+        // The rest of the file is unchanged.
+        assert_eq!(f.node_blocks, parse(FILE.as_bytes()).unwrap().node_blocks);
+        let (_, message) = parse_err(&text.replace("\n1\n3 2\n", "\n1\n3 0\n"));
+        assert!(message.contains("tag 0"), "{message}");
+    }
+
+    /// The corpus's partitioned and periodic files (gridcl-io/tests/fixtures/gmsh).
+    #[test]
+    fn parse_partitioned_and_periodic_fixtures() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/gmsh");
+        let f = read_file(&dir.join("partitioned_p1.msh")).unwrap();
+        let p = f.partitioned_entities.unwrap();
+        assert_eq!(p.num_partitions, 2);
+        // Interface entities have a parent of higher dimension.
+        assert!(p.curves.iter().any(|e| e.parent_dim == 2));
+        assert!(p.surfaces.iter().all(|e| e.parent_dim == 2));
+        let f = read_file(&dir.join("periodic_p1.msh")).unwrap();
+        assert!(f.periodic.iter().any(|l| l.dim == 1 && !l.nodes.is_empty()));
+        assert!(f.periodic.iter().all(|l| l.affine.len() == 16));
     }
 
     #[test]
