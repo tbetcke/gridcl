@@ -3,10 +3,8 @@
 This report records how M3s chose `gridcl-device/vector-policy.toml` (docs/design.md,
 "Vectorization and CPU execution", "Benchmarks"). The tables under "Results" are written by
 `cargo run -p gridcl-bench --bin policy_report` from the JSON under `docs/perf/data/`, between
-its marker comments; the rest is written by hand. The CpuSimd512 sweep and the Kathleen
-throughput run wait for Kathleen, which was drained for maintenance during M3s (ADR-0016;
-docs/plans/M3s.md, T16 and T17). Until then CpuSimd512 and CpuSimd256 keep vector size 1, tile
-16, 16 KiB blocks and all hardware threads, and their rows say "no data".
+its marker comments; the rest is written by hand. CpuSimd512 is measured on one socket of a
+whole Kathleen node (ADR-0020), and CpuSimd256 copies its table.
 
 ## Protocol
 
@@ -33,7 +31,9 @@ docs/plans/M3s.md, T16 and T17). Until then CpuSimd512 and CpuSimd256 keep vecto
 
 ## Conditions
 
-All sweep data were measured at commit 3ab0f31 (M3s T22).
+The M3 Max and Locust sweeps were measured at commit 3ab0f31 (M3s T22), the Kathleen sweep at
+55deca2; the protocol is the same, and CpuSimd512 kept its default entries until its own data
+existed, so the helpers inside the timed calls ran the same kernels.
 
 | Device | Class | Run | Records | Conditions |
 | --- | --- | --- | ---: | --- |
@@ -41,7 +41,7 @@ All sweep data were measured at commit 3ab0f31 (M3s T22).
 | M3 Max Metal | Gpu | 2026-10-25 19:06–19:08; Fill repeated at 19:17 | 207 | As above. Sizes 8 and 16 run at 4. |
 | Locust Grace CPU (Neoverse-V2, 72 threads; no performance-core count) | CpuSimd128 | job 20261025170542-3734076, 825 s | 900 | `node load: idle` before and after. |
 | Locust H100 (GH200) | Gpu | job 20261025180049-1677957, 196 s | 294 | `node load: idle` before and after; no clamped sizes. |
-| Kathleen node (2 × Xeon Gold 6248, AVX-512) | CpuSimd512 | – | – | Not yet measured: every node drained for the `rdss-upgrade` maintenance, and Myriad's D nodes (the fallback) started no job from 2026-10-24 on. |
+| Kathleen, socket 0 of node-c11a-024 (Xeon Gold 6248, 20 cores, AVX-512) | CpuSimd512 | job 608520, 2026-10-26 14:16–14:49, 1,985 s | 900 | The whole node reserved (80 hardware threads allocated, no other job on the node); the sweep bound with `numactl --physcpubind=0-19 --membind=0`, so the CPU runtime ran 20 threads (ADR-0020). No performance-core count, so `plan` only. A second Fill sweep in the same job agreed within 0.76–1.08× at 10^7. |
 
 Batching (ADR-0018) cut the noise of the sub-millisecond calls: the spread of the 3rd to 8th
 sorted run over the median fell, for example, on the M3 Max CPU from 0.24 / 0.08 to
@@ -84,6 +84,21 @@ CpuSimd128 f64. The rule then takes the closest (3.2–6.7% slower), and the tab
   size 4. The Gpu
   class keeps 1 for EVector, GeomFactors, Gather, TopologyKeys and PermutationInfo, and the
   QuadField tile stays 16.
+- **AVX-512 (one Kathleen socket).** GeomFactors gains most: 2.8× / 3.5× in f32 and 1.9× /
+  2.1× in f64 at size 16, which the policy takes with tile 16 for both types. PermutationInfo,
+  slower above size 1 on every other device, gains 3.1× / 1.4× at size 16 here, and Reduce and
+  ScanTile 4-byte take size 8 (1.1–1.4×). SortDigits, Gather, TopologyKeys and EVector stay at 1.
+- **Two sockets are unstable (ADR-0020).** The first Kathleen sweeps ran the CPU runtime's 40
+  unpinned threads across both sockets. Then a configuration's time at 10^7 depended on where
+  the threads landed, up to 4× between runs (Fill f32, size 16, 64 KiB blocks: 340, 369, 422,
+  98 and 421 µs in five runs), with or without interleaved memory, and a different Fill entry
+  failed the rule in each sweep. On one socket the times are stable. Thread pinning in the CPU
+  runtime is left to M10.
+- **f32 and u32 Fill disagree on AVX-512 (ADR-0021).** At size 1, u32 Fill takes about 1.6× as
+  long as f32 Fill at 10^7 for the same bytes, so u32 gains 2.4–3.1× from vectors and f32 much
+  less. The two types admit different sizes (f32 2 and 4, u32 8 and 16), so the shared entry
+  keeps size 1, and at size 1 they prefer different blocks; the entry takes 16 KiB, "closest
+  across types", 14.7% from one type's fastest.
 
 ## CPU units (question 8, ADR-0017)
 
@@ -102,7 +117,7 @@ the tables give each gain over the best admitted all-threads configuration.
 The compile time of a configuration is its warm-up minus its median; only the first
 configuration of each vector size compiles, and the first configuration of a family also pays
 one-time setup. Per device, the median over families is a few milliseconds at every size (CPU
-runtime 0.3–3.4 ms, CUDA below 0.1 ms, Metal 0.1–1.0 ms). The largest are the geometry kernels:
+runtime 0.2–3.4 ms, CUDA below 0.1 ms, Metal 0.1–1.0 ms). The largest are the geometry kernels:
 
 | Device | Family | 1 | 2 | 4 | 8 | 16 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -113,6 +128,8 @@ runtime 0.3–3.4 ms, CUDA below 0.1 ms, Metal 0.1–1.0 ms). The largest are th
 | H100 | GeomFactors | 216 ms | 210 ms | 216 ms | 243 ms | 295 ms |
 | H100 | EVector | 34 ms | 46 ms | 82 ms | 178 ms | 476 ms |
 | Metal | GeomFactors | 239 ms | 368 ms | 610 ms | (ran 4) | (ran 4) |
+| Kathleen CPU (one socket) | GeomFactors | 5,511 ms | 275 ms | 274 ms | 275 ms | 275 ms |
+| Kathleen CPU (one socket) | EVector | 503 ms | 48 ms | 69 ms | 125 ms | 298 ms |
 
 Above size 2 the compile time of the geometry kernels grows with the vector size, by about 2–3×
 from 2 to 16 on the CPUs and up to 10× for EVector on the H100; the other families stay below
@@ -132,13 +149,22 @@ det J and K are computed on P2 tetrahedra with a degree-4 rule.
 | M3 Max CPU | entities / s | P1 tetrahedra (998,250 cells) | 1.48e7 | 1.41e7 | 1.05 |
 | M3 Max CPU | entities / s | P1 hexahedra | 8.35e6 | 8.46e6 | 0.99 |
 | M3 Max CPU | factors / s | P2 tetrahedra | 3.13e8 | 2.48e8 | 1.26 |
-| Kathleen CPU | – | – | – | – | not yet measured |
+| Kathleen CPU (one socket) | entities / s | P1 tetrahedra | 1.49e6 | 1.49e6 | 1.00 |
+| Kathleen CPU (one socket) | entities / s | P1 hexahedra | 1.84e6 | 1.79e6 | 1.03 |
+| Kathleen CPU (one socket) | factors / s | P2 tetrahedra | 1.83e8 | 9.38e7 | 1.95 |
 
 M3 Max run: commit b96f49c (the committed policy), 2026-10-25 20:07, 32 s; mains power and
 other applications closed (confirmed by the maintainer); 1-minute load average 2.98 before,
 Microsoft Defender at 0.14 of a core and Spotlight at 0.08. Entity creation is dominated by the
 radix sort and the scalar helpers, which the policy leaves at size 1 on CPUs, so it changes
 little; the geometric factors follow GeomFactors' size-4 entry.
+
+Kathleen run: job 608596 at commit adc4917 (the committed policy), 2026-10-26 16:12–16:17,
+269 s, node-c11b-048 reserved whole (no other job on it), bound to socket 0 with
+`numactl --physcpubind=0-19 --membind=0` (20 threads; ADR-0020). The factors follow
+GeomFactors' size-16 entry (1.95×). Entity creation takes about ten times as long as on the M3
+Max (2.15 s against 0.22 s for the tetrahedra), on 20 x86-64 cores against 16 Apple cores; its
+cause is not studied here (M10).
 
 ## CPU `cube_dim` and test times (T14)
 
