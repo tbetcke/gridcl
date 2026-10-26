@@ -57,6 +57,10 @@ If the user named a target, use it.
   and a longer `--time`; never draw SIMD conclusions from a job with fewer slots (the prologue's
   `slots:` and `cpus:` lines show what the job had). Copy the JSON results from `target/hpc/<target>/<job id>/` to `docs/perf/data/`
   only when the plan's task asks for it.
+- Benchmarks on Kathleen (ADR-0020): one whole node, but bind the benchmark binary to socket 0
+  and its memory: build it first, then run it under `numactl --physcpubind=0-19 --membind=0`
+  (20 threads, one per core). Across both sockets the timings depend on thread placement.
+  Test suites and MPI runs keep the whole node unbound.
 - Benchmarks or timings on Locust: Locust has no scheduler and is shared with other users. Use
   the result only if the summary's `node load:` line is `idle` before and after the run;
   otherwise discard it and repeat the run later (ADR-0002).
