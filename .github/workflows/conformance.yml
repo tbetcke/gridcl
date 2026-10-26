@@ -26,8 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: OpenBLAS
-        run: |
-          scripts/ci-apt-install.sh libopenblas-dev
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libopenblas-dev
       - name: Rust toolchain from rust-toolchain.toml
         run: |
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \

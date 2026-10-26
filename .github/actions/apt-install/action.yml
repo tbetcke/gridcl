@@ -1,0 +1,39 @@
+# Installs Ubuntu packages with scripts/ci-apt-install.sh and caches the downloaded .deb files,
+# so that runs do not depend on the speed of the runners' mirror (docs/dev-environment.md). The
+# cache key is the package list and the ISO week: a new week starts from last week's files and
+# downloads only what changed. Like the cargo caches, it is saved from main only.
+name: apt-install
+description: Install Ubuntu packages, with the .deb files cached per package list and week
+inputs:
+  packages:
+    description: Space-separated package names
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        list=$(printf '%s\n' $PACKAGES | sort | sha256sum | cut -c1-16)
+        echo "prefix=apt-${{ runner.os }}-$list-" >>"$GITHUB_OUTPUT"
+        echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
+    - id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.key.outputs.prefix }}${{ steps.key.outputs.week }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+    - shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        export APT_ARCHIVES=$HOME/apt-archives
+        # shellcheck disable=SC2086 # one word per package
+        "$GITHUB_WORKSPACE/scripts/ci-apt-install.sh" $PACKAGES
+    - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.key.outputs.prefix }}${{ steps.key.outputs.week }}
