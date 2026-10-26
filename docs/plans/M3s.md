@@ -1,6 +1,6 @@
 # M3s SIMD vectorization and benchmarks — plan
 
-- **Status:** approved
+- **Status:** implemented
 - **Branch:** tbetcke/tbetcke-m3s-simd-vectorization-and-benchmarks (question 1)
 - **Base commit:** 5882b8c8c8dc9b17ab7d635da43a6ef98bc8cc9a
 - **Design sections:**
