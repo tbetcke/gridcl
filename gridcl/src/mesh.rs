@@ -11,7 +11,7 @@ use gridcl_geometry::{
 use gridcl_parallel::{Comm, CommDyn, CommExt, IndexMap, Serial};
 use gridcl_topology::{CellBlock, Connectivity, EntityBlock, Topology};
 
-use crate::EntityMap;
+use crate::{EntityMap, TagRegistry};
 
 /// A mesh, generic over scalar, dimensions and communicator, not over the backend
 /// (Listing B3). Constructors and methods require `TD: EmbeddedIn<GD>`. Not `Clone`: see
@@ -192,6 +192,11 @@ where
     /// ```
     pub fn client(&self) -> &Client {
         &self.client
+    }
+
+    /// Physical and elementary tags and the name table (empty unless read from a file).
+    pub fn tags(&self) -> &TagRegistry {
+        todo!("M4 T10")
     }
 
     /// A deep copy of every device array.

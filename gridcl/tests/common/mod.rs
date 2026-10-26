@@ -2,6 +2,7 @@
 //! host f64 references, precision and vector-size helpers, and the orientation-fixture reader.
 #![allow(dead_code)]
 
+pub mod gmsh;
 pub mod reference;
 
 use cubecl::prelude::*;

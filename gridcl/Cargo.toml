@@ -26,6 +26,7 @@ gridcl-parallel = { path = "../gridcl-parallel" }
 gridcl-partition = { path = "../gridcl-partition" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 gridcl-topology = { path = "../gridcl-topology" }
+log.workspace = true
 
 [dev-dependencies]
 gridcl-testing = { path = "../gridcl-testing" }

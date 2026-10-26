@@ -1,7 +1,8 @@
 //! gridcl: distributed unstructured meshes on GPUs and CPUs through CubeCL.
 //!
 //! The facade crate: [`Mesh`], [`MeshBuilder`], [`AnyMesh`], [`AnyMeshRef`], [`with_mesh!`],
-//! [`DeviceGrid`] (re-exported), and the [`prelude`] (docs/design.md, "Architecture").
+//! [`DeviceGrid`] (re-exported), tags ([`TagRegistry`], [`MeshTags`], [`Codim`]), Gmsh I/O
+//! ([`gmsh`]), and the [`prelude`] (docs/design.md, "Architecture").
 //!
 //! A mesh is typed by its scalar `F`, its topological and geometric dimensions `TD` and `GD`,
 //! and its communicator `C` (default [`Serial`]). Methods exist only where they make sense:
@@ -10,13 +11,17 @@
 mod any;
 mod builder;
 mod entity_map;
+pub mod gmsh;
 mod mesh;
 pub mod prelude;
+mod tags;
 
 pub use any::{AnyMesh, AnyMeshRef};
 pub use builder::MeshBuilder;
 pub use entity_map::EntityMap;
+pub use gmsh::GmshOptions;
 pub use mesh::{CurveMesh, Mesh, PlanarMesh, SurfaceMesh, VolumeMesh};
+pub use tags::{Codim, MeshTags, TagRegistry};
 
 pub use gridcl_device::{
     ConnKey, DeviceBuffer, DeviceCsr, DeviceStrided, GridError, Real, Result, VECTOR_PAD,
