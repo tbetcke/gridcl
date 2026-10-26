@@ -329,7 +329,7 @@ impl VectorPolicy {
 
     /// Tile width of QuadField and E-vector chunks for one scalar size: 1, 2, 4, 8 or 16. The
     /// scoped override (`testing::with_quad_tile`), then `GRIDCL_QUAD_TILE`, then the policy;
-    /// 1 for scalar sizes the policy does not list. The overrides apply to every scalar size.
+    /// 16 for scalar sizes the policy does not list. The overrides apply to every scalar size.
     ///
     /// # Example
     ///
@@ -347,7 +347,7 @@ impl VectorPolicy {
                 read_env(QUAD_TILE_VAR)
                     .map(|v| parse_quad_tile(&v).unwrap_or_else(|e| panic!("{e}")))
             }))
-            .unwrap_or_else(|| self.quad_tiles.get(&elem_bytes).copied().unwrap_or(1))
+            .unwrap_or_else(|| self.quad_tiles.get(&elem_bytes).copied().unwrap_or(16))
     }
 
     /// CPU block of one kind and element size in bytes (vector-policy.toml stores units of

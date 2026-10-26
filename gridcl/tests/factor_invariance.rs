@@ -1,6 +1,7 @@
 //! M3 acceptance: factor kernels on E-vectors agree with a scalar L-vector reference kernel at
 //! every vector size from 1 up to 16 that the device offers and the tile holds, and at tile
-//! widths 1 and 16, bitwise on the CPU runtime and within the tolerances on GPUs.
+//! widths 1 and 16 and the policy's tile, bitwise on the CPU runtime and within the tolerances on
+//! GPUs.
 //!
 //! X, J, det J and K on every cell type and every (TD, GD) pair, facet normals in codimension 0
 //! and normals in codimension 1, at p = 2 with 0, 1, 15, 16 and 17 cells; J and det J also on
@@ -17,15 +18,15 @@ use gridcl::{
     FieldShape, QuadField, detj_block, facet_normals_block, jacobians_block, normals_block,
     physical_points_block, pseudo_inverse_block,
 };
-use gridcl_device::KernelKind;
 use gridcl_device::testing::with_quad_tile;
+use gridcl_device::{KernelKind, VectorPolicy};
 use gridcl_testing::HostMesh;
 
 const P: u32 = 2;
 const RULE_DEGREE: u32 = 3;
 
 /// Runs `compute` at every vector size the device offers within `tile`, for tile widths 1 and
-/// 16, and compares each result with `want`.
+/// 16 and the tile the policy ships, and compares each result with `want`.
 fn sweep<F: Real, S: FieldShape>(
     client: &Client,
     what: &str,
@@ -33,7 +34,14 @@ fn sweep<F: Real, S: FieldShape>(
     want: &[F],
     compute: impl Fn() -> QuadField<F, S>,
 ) {
-    for tile in [1, 16] {
+    let mut tiles = vec![
+        1,
+        16,
+        VectorPolicy::for_client(client).quad_tile(size_of::<F>()),
+    ];
+    tiles.sort_unstable();
+    tiles.dedup();
+    for tile in tiles {
         for n in vector_sizes(client, size_of::<F>(), tile) {
             let field = with_quad_tile(tile, || {
                 at_vector_size(n, KernelKind::GeomFactors, num_cells > 0, &compute)

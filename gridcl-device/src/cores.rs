@@ -41,14 +41,22 @@ fn read() -> Option<u32> {
 mod tests {
     use super::*;
 
-    /// On macOS the count is positive and at most the hardware threads; elsewhere there is none.
+    /// A count, where the OS reports one, is positive and at most the hardware threads; Apple
+    /// silicon always reports one (Intel Macs have no `hw.perflevel0`); other systems none.
     #[test]
     fn performance_cores_match_the_os() {
         let cores = performance_cores();
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            assert!(
+                cores.is_some(),
+                "Apple silicon reports hw.perflevel0.physicalcpu"
+            );
+        }
         if cfg!(target_os = "macos") {
-            let threads = std::thread::available_parallelism().unwrap().get();
-            let p = cores.expect("macOS reports hw.perflevel0.physicalcpu");
-            assert!(p >= 1 && p as usize <= threads, "{p} of {threads}");
+            if let Some(p) = cores {
+                let threads = std::thread::available_parallelism().unwrap().get();
+                assert!(p >= 1 && p as usize <= threads, "{p} of {threads}");
+            }
         } else {
             assert_eq!(cores, None);
         }

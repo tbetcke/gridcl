@@ -57,7 +57,7 @@ impl LaunchPlan {
     ///   the device's `hardware.max_vector_size` (ADR-0011) and the widest of
     ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by `GRIDCL_VECTOR_SIZE`,
     ///   `testing::with_vector_size` or `testing::with_kind_vector_size` (see
-    ///   [`VectorSizeOverride`]).
+    ///   [`VectorSizeOverride`]). `KernelKind::Scalar` is always 1.
     /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` (at most `max_cube_dim.0`) if
     ///   that is smaller; `items_per_unit` is 1.
     /// - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`,
@@ -65,7 +65,7 @@ impl LaunchPlan {
     ///   `VectorPolicy::cpu_units(kind, elem_bytes)` (or `testing::with_cpu_units`) says
     ///   `Performance` and the CPU reports a smaller count (macOS; ADR-0017). Each unit takes
     ///   blocks of `VectorPolicy::cpu_block_bytes(kind, elem_bytes)` of the widest stream
-    ///   (4, 16 or 64 KiB), rounded to whole 128-byte lines (ADR-0015).
+    ///   (a power of two from 4 to 64 KiB), rounded to whole 128-byte lines (ADR-0015).
     /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
     ///
     /// # Errors
@@ -184,6 +184,7 @@ fn plan_for(
 
 /// The vector size of a plan: the override's, else the policy rule, clamped by `max_vector`
 /// and the device's `max_vector_size`; always a power of two dividing `VECTOR_PAD`.
+/// `KernelKind::Scalar` is always 1, whatever the override (ADR-0015).
 fn vector_size(
     props: &DeviceProperties,
     class: DeviceClass,
@@ -193,6 +194,9 @@ fn vector_size(
     live: usize,
     vector: VectorSizeOverride,
 ) -> usize {
+    if kind == KernelKind::Scalar {
+        return 1;
+    }
     let wanted = match vector {
         VectorSizeOverride::Scalar => 1,
         VectorSizeOverride::Fixed(n) => n,
@@ -372,6 +376,33 @@ mod tests {
                 assert_eq!(plan.vector_size, 1, "{kind:?} {elem_bytes}");
             }
         }
+    }
+
+    /// Scalar kernels run at size 1 under every override, even with a wide `max_vector`.
+    #[test]
+    fn scalar_kind_is_always_one() {
+        use VectorSizeOverride::{Fixed, Policy, Scalar, Widest};
+        let mut props = props();
+        props.hardware.max_vector_size = 16;
+        for vector in [Scalar, Policy, Widest, Fixed(2), Fixed(16)] {
+            for elem_bytes in [4, 8] {
+                let plan =
+                    plan_for(&props, KernelKind::Scalar, 1000, elem_bytes, 16, 1, vector).unwrap();
+                assert_eq!(plan.vector_size, 1, "{vector:?} {elem_bytes}");
+            }
+        }
+        let plan = testing::with_kind_vector_size(KernelKind::Scalar, Fixed(4), || {
+            LaunchPlan::elementwise(
+                &gridcl_testing::test_client(),
+                KernelKind::Scalar,
+                1000,
+                4,
+                16,
+                1,
+            )
+        })
+        .unwrap();
+        assert_eq!(plan.vector_size, 1, "kind override");
     }
 
     #[test]
