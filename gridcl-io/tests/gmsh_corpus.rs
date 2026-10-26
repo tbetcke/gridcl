@@ -127,80 +127,90 @@ fn nodes_and_elements_agree_with_mshio() {
             continue;
         }
         let theirs = parsed.unwrap_or_else(|e| panic!("{}: mshio: {e:?}", f.file));
-        let name = &f.file;
-
-        // Nodes. mshio keeps the tags of a block only when the file's tags are sparse; dense
-        // tags are min..=max over the file.
-        let nodes = theirs.data.nodes.as_ref().expect("mshio: $Nodes");
-        assert_eq!(
-            ours.node_blocks.len(),
-            nodes.node_blocks.len(),
-            "{name}: node blocks"
-        );
-        let mut all_tags = Vec::new();
-        for (a, b) in ours.node_blocks.iter().zip(&nodes.node_blocks) {
-            assert_eq!(a.dim as i32, b.entity_dim, "{name}: node block dim");
-            assert_eq!(a.entity_tag, b.entity_tag, "{name}: node block entity");
-            assert_eq!(a.coords.len(), b.nodes.len(), "{name}: node block length");
-            for (x, y) in a.coords.iter().zip(&b.nodes) {
-                assert_eq!(*x, [y.x, y.y, y.z], "{name}: node coordinates");
-            }
-            if let Some(map) = &b.node_tags {
-                // Repeated tags (the duplicate-tag fixture) map to one of their positions.
-                for &t in &a.tags {
-                    let i = map[&(t as u64)];
-                    assert_eq!(a.tags[i], t, "{name}: node tag {t}");
-                }
-            }
-            all_tags.extend_from_slice(&a.tags);
-        }
-        let range = nodes.min_node_tag as i64..=nodes.max_node_tag as i64;
-        assert!(
-            all_tags.iter().all(|t| range.contains(t)),
-            "{name}: node tag range"
-        );
-        let dense = nodes.node_blocks.iter().all(|b| b.node_tags.is_none());
-        if dense && f.expect == Expect::Mesh {
-            all_tags.sort_unstable();
-            assert_eq!(
-                all_tags,
-                range.collect::<Vec<_>>(),
-                "{name}: dense node tags"
-            );
-        }
-
-        // Elements.
-        let elements = theirs.data.elements.as_ref().expect("mshio: $Elements");
-        assert_eq!(
-            ours.element_blocks.len(),
-            elements.element_blocks.len(),
-            "{name}: element blocks"
-        );
-        for (a, b) in ours.element_blocks.iter().zip(&elements.element_blocks) {
-            assert_eq!(a.dim as i32, b.entity_dim, "{name}: element block dim");
-            assert_eq!(a.entity_tag, b.entity_tag, "{name}: element block entity");
-            assert_eq!(
-                a.element_type, b.element_type as i32,
-                "{name}: element type"
-            );
-            assert_eq!(
-                a.tags.len(),
-                b.elements.len(),
-                "{name}: element block length"
-            );
-            let k = a.nodes.len() / a.tags.len().max(1);
-            for (i, e) in b.elements.iter().enumerate() {
-                assert_eq!(a.tags[i], e.element_tag as i64, "{name}: element tag");
-                let nodes: Vec<i64> = e.nodes.iter().map(|&n| n as i64).collect();
-                assert_eq!(
-                    a.nodes[i * k..(i + 1) * k],
-                    nodes[..],
-                    "{name}: element nodes"
-                );
-            }
-        }
+        agree_with_mshio(&f.file, &ours, &theirs, f.expect == Expect::Mesh);
     }
     assert!(exempt > 0, "the corpus has no 18-node prisms");
+}
+
+/// Asserts that `ours` and mshio's parse of the same file agree: node blocks (entity,
+/// coordinates and tags) and element blocks (entity, type, tags and node tags). With
+/// `unique_tags`, dense node tags must be exactly min..=max.
+fn agree_with_mshio(
+    name: &str,
+    ours: &MshFile,
+    theirs: &mshio::MshFile<u64, i32, f64>,
+    unique_tags: bool,
+) {
+    // Nodes. mshio keeps the tags of a block only when the file's tags are sparse; dense
+    // tags are min..=max over the file.
+    let nodes = theirs.data.nodes.as_ref().expect("mshio: $Nodes");
+    assert_eq!(
+        ours.node_blocks.len(),
+        nodes.node_blocks.len(),
+        "{name}: node blocks"
+    );
+    let mut all_tags = Vec::new();
+    for (a, b) in ours.node_blocks.iter().zip(&nodes.node_blocks) {
+        assert_eq!(a.dim as i32, b.entity_dim, "{name}: node block dim");
+        assert_eq!(a.entity_tag, b.entity_tag, "{name}: node block entity");
+        assert_eq!(a.coords.len(), b.nodes.len(), "{name}: node block length");
+        for (x, y) in a.coords.iter().zip(&b.nodes) {
+            assert_eq!(*x, [y.x, y.y, y.z], "{name}: node coordinates");
+        }
+        if let Some(map) = &b.node_tags {
+            // Repeated tags (the duplicate-tag fixture) map to one of their positions.
+            for &t in &a.tags {
+                let i = map[&(t as u64)];
+                assert_eq!(a.tags[i], t, "{name}: node tag {t}");
+            }
+        }
+        all_tags.extend_from_slice(&a.tags);
+    }
+    let range = nodes.min_node_tag as i64..=nodes.max_node_tag as i64;
+    assert!(
+        all_tags.iter().all(|t| range.contains(t)),
+        "{name}: node tag range"
+    );
+    let dense = nodes.node_blocks.iter().all(|b| b.node_tags.is_none());
+    if dense && unique_tags {
+        all_tags.sort_unstable();
+        assert_eq!(
+            all_tags,
+            range.collect::<Vec<_>>(),
+            "{name}: dense node tags"
+        );
+    }
+
+    // Elements.
+    let elements = theirs.data.elements.as_ref().expect("mshio: $Elements");
+    assert_eq!(
+        ours.element_blocks.len(),
+        elements.element_blocks.len(),
+        "{name}: element blocks"
+    );
+    for (a, b) in ours.element_blocks.iter().zip(&elements.element_blocks) {
+        assert_eq!(a.dim as i32, b.entity_dim, "{name}: element block dim");
+        assert_eq!(a.entity_tag, b.entity_tag, "{name}: element block entity");
+        assert_eq!(
+            a.element_type, b.element_type as i32,
+            "{name}: element type"
+        );
+        assert_eq!(
+            a.tags.len(),
+            b.elements.len(),
+            "{name}: element block length"
+        );
+        let k = a.nodes.len() / a.tags.len().max(1);
+        for (i, e) in b.elements.iter().enumerate() {
+            assert_eq!(a.tags[i], e.element_tag as i64, "{name}: element tag");
+            let nodes: Vec<i64> = e.nodes.iter().map(|&n| n as i64).collect();
+            assert_eq!(
+                a.nodes[i * k..(i + 1) * k],
+                nodes[..],
+                "{name}: element nodes"
+            );
+        }
+    }
 }
 
 /// Every binary fixture, re-encoded in both byte orders and with 4- and 8-byte `size_t`, parses
@@ -268,6 +278,29 @@ fn binary_truncated_files() {
                     matches!(result, Err(gridcl_device::GridError::Parse { .. })),
                     "prefix of {len} bytes (big-endian {big_endian})"
                 );
+            }
+        }
+    }
+}
+
+/// Every corpus file, written in both encodings, parses back to the same model, and mshio reads
+/// the written file with the same nodes and elements (except the files with 18-node prisms,
+/// ADR-0023).
+#[test]
+fn written_files_parse_back_and_agree_with_mshio() {
+    let manifest = manifest();
+    for f in &manifest.files {
+        let model = read(f);
+        for encoding in [gmsh::Encoding::Ascii, gmsh::Encoding::Binary] {
+            let what = format!("{} written as {encoding:?}", f.file);
+            let mut bytes = Vec::new();
+            model.write_to(&mut bytes, encoding).unwrap();
+            let back = gmsh::parse(&bytes).unwrap_or_else(|e| panic!("{what}: {e}"));
+            assert_eq!(back, model, "{what}");
+            if !f.element_counts.contains_key(&MSHIO_UNREADABLE_TYPE) {
+                let theirs = mshio::parse_msh_bytes(&bytes)
+                    .unwrap_or_else(|e| panic!("{what}: mshio: {e:?}"));
+                agree_with_mshio(&what, &model, &theirs, f.expect == Expect::Mesh);
             }
         }
     }
