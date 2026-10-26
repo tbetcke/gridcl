@@ -1,10 +1,14 @@
 # Hosted CI jobs of docs/design.md, "CI matrix": cpu, mpi-mpich, mpi-openmpi and vulkan.
 # The commands are the ones docs/dev-environment.md, "Test commands", records.
+#
+# Every push runs once; a pull request shows the checks of its head commit's push run, so there
+# is no pull_request trigger (it ran every job twice). Caches hold dependencies only and are
+# saved from main alone: branches restore main's caches instead of evicting them, since all
+# workflows share 10 GB per repository.
 name: ci
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -17,6 +21,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # No debug info in test builds: it made up most of the cached target directory and of the
+  # link time. Backtraces keep function names.
+  CARGO_PROFILE_DEV_DEBUG: 0
   # The CPU runtime's build script downloads its LLVM bundle to $XDG_DATA_HOME/tracel.
   XDG_DATA_HOME: /home/runner/.local/share
 
@@ -30,16 +37,11 @@ jobs:
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
             --profile minimal --component rustfmt,clippy
           rustc --version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.local/share/tracel
-            target
-          key: ${{ runner.os }}-cpu-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cpu-
+          key: cpu
+          cache-directories: ~/.local/share/tracel
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -68,24 +70,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: MPI and libclang (rsmpi's bindgen)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ${{ matrix.packages }} libclang-dev
+          scripts/ci-apt-install.sh ${{ matrix.packages }} libclang-dev
           mpirun --version
       - name: Rust toolchain from rust-toolchain.toml
         run: |
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
             --profile minimal --component clippy
           rustc --version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.local/share/tracel
-            target
-          key: ${{ runner.os }}-mpi-${{ matrix.mpi }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-mpi-${{ matrix.mpi }}-
+          key: mpi-${{ matrix.mpi }}
+          cache-directories: ~/.local/share/tracel
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
       - run: scripts/mpi-test.sh 1 2 3 4
         env:
@@ -99,24 +95,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers vulkan-tools
+          scripts/ci-apt-install.sh mesa-vulkan-drivers vulkan-tools
           vulkaninfo --summary
       - name: Rust toolchain from rust-toolchain.toml
         run: |
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
             --profile minimal
           rustc --version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.local/share/tracel
-            target
-          key: ${{ runner.os }}-vulkan-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-vulkan-
+          key: vulkan
+          cache-directories: ~/.local/share/tracel
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Release build: the primitives' property tests are too slow on lavapipe in a debug
       # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
       - run: cargo test --release --workspace --features gridcl-testing/vulkan -- --nocapture
