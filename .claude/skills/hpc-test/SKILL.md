@@ -60,7 +60,12 @@ If the user named a target, use it.
 - Benchmarks on Kathleen (ADR-0020): one whole node, but bind the benchmark binary to socket 0
   and its memory: build it first, then run it under `numactl --physcpubind=0-19 --membind=0`
   (20 threads, one per core). Across both sockets the timings depend on thread placement.
-  Test suites and MPI runs keep the whole node unbound.
+  Test suites and MPI runs keep the whole node unbound. A Myriad D node (2 × 18 cores) is two
+  sockets as well: bind a benchmark there to socket 0 the same way, with the CPU list of node 0
+  from `numactl --hardware` in the job, and record it.
+- Benchmarks on a fallback target (`myriad-cpu`, `myriad-v100`, `myriad-a100`): pass
+  `--fallback-reason "<why>"` to `vector_sweep` and `mesh_throughput`; `perf_record` rejects
+  Myriad records without one (ADR-0014, ADR-0016).
 - Benchmarks or timings on Locust: Locust has no scheduler and is shared with other users. Use
   the result only if the summary's `node load:` line is `idle` before and after the run;
   otherwise discard it and repeat the run later (ADR-0002).
@@ -91,7 +96,7 @@ read them only as far as needed to locate a failure.
 
 | Symptom | Meaning and action |
 | --- | --- |
-| SSH asks for a password or times out | The shared connection is closed or the VPN is down. Ask the user to run `ssh myriad true` (or `ssh locust true`); do not retry more than twice. |
+| SSH asks for a password or times out | The shared connection is closed or the VPN is down. Ask the user to run `ssh myriad true` (or `ssh locust true`, `ssh kathleen true`); do not retry more than twice. |
 | `CUDA_ERROR_UNSUPPORTED_PTX_VERSION` | Only with `cuda-cpp` (NVRTC; the default `cuda` path picks the PTX version for the driver, ADR-0001): the CUDA toolkit is newer than the node's driver. Use the toolkit recorded in docs/dev-environment.md. |
 | A V100 build or load failure after loading a CUDA 13 toolkit | CUDA 13 dropped sm_70. Use CUDA 12.x. |
 | Exit status 124 | The run exceeded `--max-wait` and was deleted. Report it; resubmit only if the queue was the cause. |
