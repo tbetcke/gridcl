@@ -1,6 +1,6 @@
 # ADR-0022: M4 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-26
 - **Raised in:** M4 planning (docs/plans/M4.md, "Planned public API and rules", questions 2–17, 19 and 20)
 - **Design sections affected:**
@@ -235,4 +235,4 @@ the tag-element degree in item 10 during M4 planning (2026-10-26).
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-26, as proposed (option 2, items 1–15), without conditions. Applied to docs/design.md in `adr: 0022 apply`.

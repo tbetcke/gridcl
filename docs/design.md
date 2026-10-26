@@ -220,7 +220,7 @@ pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     comm: C,                        // Listing S2c
     topology: Topology<TD>,         // cell and entity blocks, connectivity, vertex IndexMap, origin ids
     geometry: Geometry<F, TD, GD>,  // geometry blocks, nodes, node IndexMap, cached factors
-    tags: TagRegistry,              // from M4, its first user (ADR-0012)
+    tags: TagRegistry,              // physical and elementary MeshTags per dimension, names (ADR-0012, ADR-0022)
 }
 
 pub type CurveMesh<F, C = Serial>   = Mesh<F, D1, D3, C>;
@@ -276,6 +276,8 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, C: Comm,
     pub fn measure(&self, degree: u32) -> Result<f64>;
     /// One node copied to the host. Tests and debugging only: one device read and one sync per call.
     pub fn read_node(&self, i: usize) -> Result<GD::Array<F>>;
+    /// Physical and elementary tags and the name table (empty unless read from a file).
+    pub fn tags(&self) -> &TagRegistry;
     pub fn create_entities(&mut self, dim: usize) -> Result<()>;
     pub fn create_connectivity(&mut self, from: usize, to: usize) -> Result<()>;
 }
@@ -619,6 +621,8 @@ println!("{owned} owned cells on rank {}, running on {}", comm.rank(), client.na
 
 On a device without f64 support (Metal, some Vulkan adapters), reading into an f64 mesh returns `GridError::UnsupportedPrecision`; use `AnyMesh<f32, _>` there.
 
+`gmsh::read` is generic over `C: Comm`. Until M8 it requires one rank, and `GmshOptions` offers only `gdim`; `partitioner` and `ghosts` arrive with M7 and M6–M8 (ADR-0022).
+
 ### Volume mesh to BEM surface mesh
 
 **Listing B9**
@@ -734,7 +738,7 @@ gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 
     - Intervals, triangles, quadrilaterals, tetrahedra and hexahedra use exactly ndelement's layout, so the FEM/BEM layer can apply ndelement's DOF transformations without a second convention.
     - ndelement has no Lagrange element on prisms or pyramids. gridcl defines those layouts in A.5, using the DefElement conventions and the same in-entity rule; Basix's equispaced lattices for these cells coincide with it.
     - The pyramid uses DefElement's Lagrange pyramid space (Definition 9), a rational space of dimension (p+1)(p+2)(2p+3)/6. A FEM layer that needs prism or pyramid elements must supply them itself.
-- **Node families.** Equispaced points on every cell are required for Gmsh and VTK interoperability. Gauss–Lobatto–Legendre (GLL) points are offered on intervals, quadrilaterals and hexahedra only, matching ndelement. Requesting GLL on any other cell returns `GridError::UnsupportedNodeFamily`. Conversion between families is an interpolation applied on the device; writers always convert to equispaced.
+- **Node families.** Equispaced points on every cell are required for Gmsh and VTK interoperability. Gauss–Lobatto–Legendre (GLL) points are offered on intervals, quadrilaterals and hexahedra only, matching ndelement. Requesting GLL on any other cell returns `GridError::UnsupportedNodeFamily`. Conversion between families is an interpolation applied on the device; writers always convert to equispaced. (Until M5, `GmshWriter` rejects GLL geometry with `UnsupportedNodeFamily`; ADR-0022.)
 - **DOF transformations.** The base transformations of Scroggs, Dokken, Richardson and Wells (ACM TOMS 48(2), 2022, doi 10.1145/3524456) depend only on the sub-entity type. They are therefore identical in the DefElement and Basix numberings; only the block of the cell transformation that each one lands in moves.
 
 ## Device model and backends
@@ -839,7 +843,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`; cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -1472,24 +1476,32 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 
 ### Gmsh MSH 4.1
 
-- **Own reader and writer.** The mshio crate parses only Entities, Nodes and Elements, reads only MSH 4.1 and cannot write. It is a test oracle, not the implementation.
+- **Own reader and writer.** The mshio crate parses only Entities, Nodes and Elements, reads only MSH 4.1 and cannot write. It is a test oracle, not the implementation. gridcl-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `gridcl::gmsh` builds and downloads meshes (ADR-0022).
 - **Sections:** $MeshFormat, $PhysicalNames, $Entities, $Nodes and $Elements, optionally $PartitionedEntities and $Periodic. $Periodic is stored but applied only in a later milestone, outside this roadmap. Both ASCII and binary are supported, in either byte order (binary marker), and the data-size field gives the width of `size_t`.
 - **Element types** come from a generated table (A.7): complete Lagrange elements at the listed orders, including pyramids 118–124. Serendipity types 16–19 are upgraded to complete Lagrange on read, by evaluating the serendipity map at the missing nodes (8 → 9, 20 → 27, 15 → 18, 13 → 14). Other incomplete types are rejected.
 - **Mesh content.** D_TOP is the highest element dimension in the file, and elements of that dimension form the mesh. Lower-dimensional elements become MeshTags:
     - their sorted corner-node tags (origin ids) form keys;
-    - after `create_entities(d)`, the keys are matched against the mesh's entities of that dimension by a device sort and merge (distributed: keys hashed to ranks);
+    - after `create_entities(d)`, the corner-node tags are mapped to local vertex indices, and the keys are matched against the mesh's entities of that dimension by a device sort and merge (`Topology::match_entities`; distributed: keys hashed to ranks);
     - points match vertices;
-    - an element that matches no entity returns `GridError::UnmatchedTagElement`.
-- **Tags.** Physical groups become MeshTags per dimension, and the name table is preserved (name → (dimension, value)). Elementary entity tags are kept as secondary tags.
+    - an element that matches no entity returns `GridError::UnmatchedTagElement`;
+    - cell blocks are in `CellType` order, with cells in file order within a block; one cell type in two degrees in D_TOP returns `GridError::DuplicateCellBlock`, and a file without elements of dimension ≥ 1 returns `GridError::Parse` (ADR-0022).
+- **Tags.** Physical groups become MeshTags per dimension, and the name table is preserved (name → (dimension, value)). Elementary entity tags are kept as secondary tags. An element may be in several physical groups; a name may be used in several dimensions.
 - **Geometric dimension.** The caller may fix D_GEO (`GmshOptions::gdim`). Otherwise it is inferred from a global allreduce over all nodes, relative to the bounding-box diameter L:
     - D_GEO = 3 if any |z| > 10^−12 L;
     - else 2 if any |y| > 10^−12 L;
     - else 1;
     - never below D_TOP. Gmsh always writes three coordinates.
-- **Origin ids** are the node tags, and the element tags for cells. Duplicates return `GridError::DuplicateOriginId`.
+    - The reduction covers all nodes of the file. A fixed `gdim` must be 1–3, at least D_TOP and at least the inferred D_GEO; otherwise `GridError::DimensionMismatch` (ADR-0022).
+- **Origin ids** are the node tags, and the element tags for cells. Duplicates return `GridError::DuplicateOriginId`. Tags must be ≥ 1. The writer writes vertex origin ids as node tags, numbers the other nodes after the largest vertex id, and shifts tags below 1 (ADR-0022).
+- **Writer** (ADR-0022):
+    - tag elements are linear, with their corner nodes from `EntityBlock::vertices` in canonical A.6 orientation, so the file's original boundary orientation is not kept;
+    - element tags are the cell origin ids, and tag elements are numbered after the largest cell id; if any node or element tag would be below 1, all tags of that kind are shifted by one constant so that the smallest is 1;
+    - one node block, in the first D_TOP entity; `$Entities` is rebuilt from the elementary tags, one entity per (elementary tag, set of physical tags), with a bounding box from its nodes, point coordinates for dimension 0, and empty boundary lists; a mesh without tags gets one entity with tag 1;
+    - three coordinates per node; binary is always little-endian with an 8-byte `size_t`.
+- **Serendipity nodes** (ADR-0022). `gridcl_refcell::serendipity_upgrade` gives the weights of the missing complete-P2 nodes from Gmsh's serendipity map. An added face-centre node is created once per face, keyed by the face's sorted corner node tags; it reuses the node of a complete-P2 neighbour where there is one, and otherwise takes a fresh tag above the file's largest node tag, in order of first use.
 - **Parallel read.** Binary files are read in byte-range chunks per rank. Block headers are scanned first, since records within a block have a fixed size and offsets are therefore computable. ASCII files are read on rank 0 and scattered.
 - **Parallel write:** gather to rank 0, or one partitioned file per rank with $PartitionedEntities.
-- **Precision.** Reading into an f32 mesh narrows coordinates and logs one warning per file.
+- **Precision.** Reading into an f32 mesh narrows coordinates and logs one warning per file (`log::warn!`).
 
 ### VTK
 
@@ -1518,8 +1530,8 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 
 Tags and submeshes connect the volume mesh to boundary problems; the boundary of a volume mesh becomes the BEM surface mesh with outward orientation.
 
-- **MeshTags:** (dimension, sorted local entity indices in flat numbering, i32 values) on the device, covering owned and ghost entities. Ghost values are made consistent by a forward scatter. A host table in `TagRegistry` maps names to (dimension, value), filled from Gmsh physical names.
-- **Codimension addressing** (NGSolve): `Codim::Vol`, `Bnd`, `BBnd` and `BBBnd` map to D_TOP, D_TOP−1, D_TOP−2 and D_TOP−3. The same region code then works for curve, surface and volume meshes.
+- **MeshTags:** (dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device, covering owned and ghost entities. An index repeats only with distinct values. Ghost values are made consistent by a forward scatter. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value, filled from Gmsh physical names, and each group's size; `named` and `group` select one group on the device (ADR-0022).
+- **Codimension addressing** (NGSolve): `Codim::Vol`, `Bnd`, `BBnd` and `BBBnd` map to D_TOP, D_TOP−1, D_TOP−2 and D_TOP−3 (`Codim::dim(tdim) -> Option<usize>`). The same region code then works for curve, surface and volume meshes.
 - **Submeshes:** tagged cells (same D_TOP), tagged boundary facets (`facet_submesh`, D_TOP−1), and tagged edges of 3D meshes (curves in 3D). Each comes with an `EntityMap`: child → parent indices on the device, parent → child as a sparse map.
     - Ownership and ghosting are inherited from the parent.
     - Facet submeshes accept boundary facets only (`GridError::InteriorFacet` otherwise), and inherit outward orientation from the single parent cell.
@@ -1631,8 +1643,8 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
-| gridcl-io | Gmsh reader and writer, VTU/PVTU, VTKHDF | topology, geometry, parallel, partition; hdf5-metno (optional) |
-| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, prelude | all of the above |
+| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU, VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; hdf5-metno (optional); dev: mshio, serde_json |
+| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, prelude | all of the above; log |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
 | gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
@@ -1848,8 +1860,8 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Acceptance:**
 
-- read → write → read gives identical topology, and coordinates equal to 10^−15 relative (f64);
-- the committed fixture corpus reads without error with correct node counts. It is written by a pinned Gmsh version and covers every element type up to order 4, pyramids up to order 3;
+- read → write → read gives identical topology (cell types and degrees, cell and vertex origin ids, names and tags keyed by origin ids), and coordinates equal to 10^−15 relative to the largest absolute coordinate (f64; 10^−5 in f32) (ADR-0022);
+- the committed fixture corpus reads without error with correct node counts (file: Gmsh's node count; mesh: the nodes of D_TOP elements). It is written by a pinned Gmsh version and covers every element type up to order 4, pyramids up to order 3;
 - nodes and elements agree with mshio on every fixture;
 - tag counts equal Gmsh's physical-group sizes;
 - D_GEO is inferred correctly on 1D, 2D and 3D fixtures, and duplicate node tags are rejected.
