@@ -548,15 +548,335 @@ pub fn to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> 
     })
 }
 
-/// The file of `mesh`: node and element tags as in ADR-0022 (shifted to start at 1 where
-/// needed), linear tag elements, rebuilt `$Entities` and `$PhysicalNames`.
+/// One entity of the written file: dimension, elementary tag and physical tags.
+type EntityKey = (usize, i32, Vec<i32>);
+
+/// The elements of one written entity: (element type, element tags, node tags in Gmsh order).
+type EntityElements = Vec<(i32, Vec<i64>, Vec<i64>)>;
+
+/// The physical tags of each of `n` elements from sorted (index, tag) pairs.
+fn physical_sets(n: usize, pairs: &[(u32, i32)]) -> Vec<Vec<i32>> {
+    let mut sets = vec![Vec::new(); n];
+    for &(i, p) in pairs {
+        if let Some(set) = sets.get_mut(i as usize) {
+            set.push(p);
+        }
+    }
+    for set in &mut sets {
+        set.sort_unstable();
+        set.dedup();
+    }
+    sets
+}
+
+/// `x + shift`, or `TooLarge`.
+fn shifted(x: i64, shift: i64) -> Result<i64> {
+    x.checked_add(shift).ok_or(GridError::TooLarge)
+}
+
+/// The constant that makes the smallest of `tags` 1, or 0 if none is below 1.
+fn shift_to_one(tags: impl Iterator<Item = i64>) -> Result<i64> {
+    match tags.min() {
+        Some(min) if min < 1 => 1i64.checked_sub(min).ok_or(GridError::TooLarge),
+        _ => Ok(0),
+    }
+}
+
+/// The file of `mesh` (ADR-0022, item 10):
+///
+/// - **Node tags:** the tags of vertex nodes (the first nodes of each cell) are kept; the other
+///   nodes, whose `node_tags` are ignored, are numbered after the largest vertex tag in node
+///   order. If any tag is then below 1, all node tags are shifted by one constant so that the
+///   smallest is 1. Tag-group corners are shifted with them.
+/// - **Element tags:** cells keep theirs; tag elements, whose `tags` are ignored, are numbered
+///   after the largest cell tag. If any is below 1, all element tags are shifted alike.
+/// - **Elements:** cells at their degree in Gmsh order; tag elements linear, from their
+///   corners.
+/// - **`$Entities`:** one entity per (dimension, elementary tag, set of physical tags), with the
+///   elementary tag as its tag (a fresh tag above the dimension's largest when two physical
+///   sets share an elementary tag), a bounding box from its nodes, the first point's
+///   coordinates for dimension 0, and empty boundary lists.
+/// - One node block, in the first D_TOP entity; three coordinates per node.
 ///
 /// # Errors
 ///
-/// `TooLarge` if a tag overflows; `UnsupportedElementType` for a cell Gmsh has no type for.
+/// `LengthMismatch` if the node arrays disagree; `IndexOutOfRange` for a cell node beyond the
+/// nodes; `UnsupportedDegree` for a cell Gmsh has no type for; `TooLarge` if a tag overflows.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_dims::CellType;
+/// use gridcl_io::gmsh::{GmshCellBlock, GmshMesh, from_gmsh_mesh};
+///
+/// // Two triangles whose origin ids start at 0, as MeshBuilder's defaults do.
+/// let mesh = GmshMesh {
+///     tdim: 2,
+///     gdim: 2,
+///     nodes: vec![0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0],
+///     node_tags: vec![0, 1, 2, 3],
+///     blocks: vec![GmshCellBlock {
+///         cell: CellType::Triangle,
+///         degree: 1,
+///         nodes: vec![0, 1, 2, 0, 2, 3],
+///         tags: vec![0, 1],
+///         elementary: vec![1, 1],
+///         physical: vec![],
+///     }],
+///     tag_groups: vec![],
+///     names: vec![],
+/// };
+/// let file = from_gmsh_mesh(&mesh)?;
+/// // Node and element tags are shifted by one so that they start at 1.
+/// assert_eq!(file.node_blocks[0].tags, [1, 2, 3, 4]);
+/// assert_eq!(file.node_blocks[0].coords[2], [1.0, 1.0, 0.0]);
+/// assert_eq!(file.element_blocks[0].tags, [1, 2]);
+/// assert_eq!(file.entities.unwrap().surfaces[0].max, [1.0, 1.0, 0.0]);
+/// # Ok::<(), gridcl_device::GridError>(())
+/// ```
 pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
-    let _ = mesh;
-    todo!("M4 T12")
+    let n = mesh.node_tags.len();
+    let gd = mesh.gdim;
+    let expected = n.checked_mul(gd).ok_or(GridError::TooLarge)?;
+    if mesh.nodes.len() != expected || !(1..=3).contains(&gd) {
+        return Err(GridError::LengthMismatch {
+            expected,
+            found: mesh.nodes.len(),
+        });
+    }
+    let coords: Vec<[f64; 3]> = mesh
+        .nodes
+        .chunks_exact(gd)
+        .map(|x| {
+            let mut c = [0.0; 3];
+            c[..gd].copy_from_slice(x);
+            c
+        })
+        .collect();
+
+    // Node tags: vertices keep theirs, the others follow the largest vertex tag.
+    let mut is_vertex = vec![false; n];
+    for b in &mesh.blocks {
+        let k = gridcl_refcell::num_lagrange_nodes(b.cell, b.degree);
+        let nv = gridcl_refcell::vertices(b.cell).len();
+        for row in b.nodes.chunks_exact(k) {
+            for &i in &row[..nv] {
+                *is_vertex
+                    .get_mut(i as usize)
+                    .ok_or(GridError::IndexOutOfRange {
+                        index: i as usize,
+                        len: n,
+                    })? = true;
+            }
+        }
+    }
+    let max_vertex = (0..n)
+        .filter(|&i| is_vertex[i])
+        .map(|i| mesh.node_tags[i])
+        .max()
+        .unwrap_or(0);
+    let mut next = max_vertex;
+    let mut node_tags = Vec::with_capacity(n);
+    for (&vertex, &tag) in is_vertex.iter().zip(&mesh.node_tags) {
+        node_tags.push(if vertex {
+            tag
+        } else {
+            next = next.checked_add(1).ok_or(GridError::TooLarge)?;
+            next
+        });
+    }
+    let node_shift = shift_to_one(node_tags.iter().copied())?;
+    let node_tags: Vec<i64> = node_tags
+        .iter()
+        .map(|&t| shifted(t, node_shift))
+        .collect::<Result<_>>()?;
+    let index_of: HashMap<i64, usize> = (0..n)
+        .filter(|&i| is_vertex[i])
+        .map(|i| (mesh.node_tags[i], i))
+        .collect();
+
+    // Element tags: cells keep theirs, tag elements follow the largest cell tag.
+    let max_cell = mesh
+        .blocks
+        .iter()
+        .flat_map(|b| b.tags.iter().copied())
+        .max()
+        .unwrap_or(0);
+    let num_tag_elements: usize = mesh.tag_groups.iter().map(|g| g.tags.len()).sum();
+    let last = i64::try_from(num_tag_elements)
+        .ok()
+        .and_then(|k| max_cell.checked_add(k))
+        .ok_or(GridError::TooLarge)?;
+    // Tag elements follow the cells, so the smallest cell tag decides the shift.
+    let element_shift = shift_to_one(mesh.blocks.iter().flat_map(|b| b.tags.iter().copied()))?;
+    shifted(last, element_shift)?;
+
+    // Elements grouped by entity, in order of first appearance per dimension.
+    let mut entities: Vec<EntityKey> = Vec::new();
+    let mut elements: Vec<EntityElements> = Vec::new();
+    let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::new();
+    let mut first_point: Vec<Option<[f64; 3]>> = Vec::new();
+    let mut add = |key: EntityKey, ty: i32, tag: i64, nodes: Vec<i64>, xs: Vec<[f64; 3]>| {
+        let e = match entities.iter().position(|k| *k == key) {
+            Some(e) => e,
+            None => {
+                entities.push(key);
+                elements.push(Vec::new());
+                boxes.push(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]));
+                first_point.push(None);
+                entities.len() - 1
+            }
+        };
+        let list = &mut elements[e];
+        let b = match list.iter().position(|(t, _, _)| *t == ty) {
+            Some(b) => b,
+            None => {
+                list.push((ty, Vec::new(), Vec::new()));
+                list.len() - 1
+            }
+        };
+        list[b].1.push(tag);
+        list[b].2.extend(nodes);
+        let (lo, hi) = &mut boxes[e];
+        for x in &xs {
+            for ((l, h), &c) in lo.iter_mut().zip(hi.iter_mut()).zip(x) {
+                *l = l.min(c);
+                *h = h.max(c);
+            }
+        }
+        first_point[e].get_or_insert(xs[0]);
+    };
+
+    let mut groups: Vec<&GmshTagGroup> = mesh.tag_groups.iter().collect();
+    groups.sort_by_key(|g| g.dim);
+    let mut next_element = max_cell;
+    for g in groups {
+        let ty = lagrange_element_type(g.cell, 1)?;
+        let nv = gridcl_refcell::vertices(g.cell).len();
+        let map = match g.cell {
+            CellType::Point => vec![0],
+            cell => gridcl_refcell::gmsh_to_internal(cell, 1).expect("Gmsh order exists"),
+        };
+        let physical = physical_sets(g.tags.len(), &g.physical);
+        for (e, corners) in g.corners.chunks_exact(nv).enumerate() {
+            next_element += 1;
+            let file_nodes: Vec<i64> = map.iter().map(|&i| corners[i]).collect();
+            let xs = file_nodes
+                .iter()
+                .map(|t| index_of.get(t).map(|&i| coords[i]))
+                .collect::<Option<Vec<_>>>()
+                .ok_or(GridError::UnmatchedTagElement {
+                    dim: g.dim,
+                    tag: g.tags[e],
+                })?;
+            let nodes = file_nodes
+                .iter()
+                .map(|&t| shifted(t, node_shift))
+                .collect::<Result<_>>()?;
+            add(
+                (g.dim, g.elementary[e], physical[e].clone()),
+                ty.id,
+                shifted(next_element, element_shift)?,
+                nodes,
+                xs,
+            );
+        }
+    }
+    for b in &mesh.blocks {
+        let ty = lagrange_element_type(b.cell, b.degree)?;
+        let map = gridcl_refcell::gmsh_to_internal(b.cell, b.degree).expect("Gmsh order exists");
+        let physical = physical_sets(b.tags.len(), &b.physical);
+        for (c, row) in b.nodes.chunks_exact(ty.num_nodes).enumerate() {
+            let nodes = map.iter().map(|&i| node_tags[row[i] as usize]).collect();
+            let xs = row.iter().map(|&i| coords[i as usize]).collect();
+            add(
+                (mesh.tdim, b.elementary[c], physical[c].clone()),
+                ty.id,
+                shifted(b.tags[c], element_shift)?,
+                nodes,
+                xs,
+            );
+        }
+    }
+
+    // Entity tags: the elementary tag, or a fresh one when the tag is taken in its dimension.
+    let mut tags = vec![0i32; entities.len()];
+    let mut taken: HashSet<(usize, i32)> = HashSet::new();
+    let mut fresh = Vec::new();
+    for (e, (dim, elementary, _)) in entities.iter().enumerate() {
+        if taken.insert((*dim, *elementary)) {
+            tags[e] = *elementary;
+        } else {
+            fresh.push(e);
+        }
+    }
+    for e in fresh {
+        let dim = entities[e].0;
+        let max = taken
+            .iter()
+            .filter(|(d, _)| *d == dim)
+            .map(|&(_, t)| t)
+            .max()
+            .unwrap_or(0);
+        let t = max.checked_add(1).ok_or(GridError::TooLarge)?;
+        taken.insert((dim, t));
+        tags[e] = t;
+    }
+
+    let mut order: Vec<usize> = (0..entities.len()).collect();
+    order.sort_by_key(|&e| (entities[e].0, tags[e]));
+    let mut model = super::Entities::default();
+    let mut element_blocks = Vec::new();
+    for &e in &order {
+        let (dim, _, physical) = &entities[e];
+        let (min, max) = if *dim == 0 {
+            let x = first_point[e].expect("an entity has elements");
+            (x, x)
+        } else {
+            boxes[e]
+        };
+        let entity = super::Entity {
+            tag: tags[e],
+            min,
+            max,
+            physical_tags: physical.clone(),
+            boundary: Vec::new(),
+        };
+        match dim {
+            0 => model.points.push(entity),
+            1 => model.curves.push(entity),
+            2 => model.surfaces.push(entity),
+            _ => model.volumes.push(entity),
+        }
+        let mut list = elements[e].clone();
+        list.sort_by_key(|(ty, _, _)| element_type(*ty).map(|t| t.cell).ok());
+        for (ty, tags_, nodes) in list {
+            element_blocks.push(ElementBlock {
+                dim: *dim,
+                entity_tag: tags[e],
+                element_type: ty,
+                tags: tags_,
+                nodes,
+            });
+        }
+    }
+    let node_entity = order
+        .iter()
+        .find(|&&e| entities[e].0 == mesh.tdim)
+        .map_or(1, |&e| tags[e]);
+    Ok(MshFile {
+        physical_names: mesh.names.clone(),
+        entities: Some(model),
+        partitioned_entities: None,
+        node_blocks: vec![super::NodeBlock {
+            dim: mesh.tdim,
+            entity_tag: node_entity,
+            tags: node_tags,
+            coords,
+        }],
+        element_blocks,
+        periodic: Vec::new(),
+    })
 }
 
 #[cfg(test)]
@@ -999,5 +1319,207 @@ mod tests {
             .map(|&i| m.node_tags[i as usize])
             .collect();
         assert_eq!(tags, [fb.nodes[0], fb.nodes[1], fb.nodes[3], fb.nodes[2]]);
+    }
+
+    /// The cells of `m` by element tag: (cell, degree, coordinate bits in internal order,
+    /// vertex tags, elementary tag, physical tags).
+    type CellKey = (CellType, u32, Vec<u64>, Vec<i64>, i32, Vec<i32>);
+
+    fn cells_by_tag(m: &GmshMesh) -> HashMap<i64, CellKey> {
+        let mut out = HashMap::new();
+        for b in &m.blocks {
+            let k = b.nodes.len() / b.tags.len().max(1);
+            let nv = gridcl_refcell::vertices(b.cell).len();
+            let physical = physical_sets(b.tags.len(), &b.physical);
+            for (c, row) in b.nodes.chunks_exact(k).enumerate() {
+                let coords = row
+                    .iter()
+                    .flat_map(|&i| node(m, i).iter().map(|x| x.to_bits()))
+                    .collect();
+                let vertices = row[..nv].iter().map(|&i| m.node_tags[i as usize]).collect();
+                let key = (
+                    b.cell,
+                    b.degree,
+                    coords,
+                    vertices,
+                    b.elementary[c],
+                    physical[c].clone(),
+                );
+                assert!(out.insert(b.tags[c], key).is_none());
+            }
+        }
+        out
+    }
+
+    /// The tag elements of `m`: (cell, corner tags, elementary tag, physical tags), sorted.
+    fn tag_elements(m: &GmshMesh) -> Vec<(CellType, Vec<i64>, i32, Vec<i32>)> {
+        let mut out = Vec::new();
+        for g in &m.tag_groups {
+            let nv = gridcl_refcell::vertices(g.cell).len();
+            let physical = physical_sets(g.tags.len(), &g.physical);
+            for (e, corners) in g.corners.chunks_exact(nv).enumerate() {
+                out.push((
+                    g.cell,
+                    corners.to_vec(),
+                    g.elementary[e],
+                    physical[e].clone(),
+                ));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// `to_gmsh_mesh(from_gmsh_mesh(m))` is `m` up to the documented renumbering, for every
+    /// corpus file: the same cells by element tag (cell, degree, exact coordinates, vertex
+    /// tags, elementary and physical tags), tag elements, names and dimensions. Written in both
+    /// encodings, the file parses back unchanged and mshio reads it (except with 18-node
+    /// prisms, ADR-0023).
+    #[test]
+    fn convert_from_gmsh_mesh_round_trips_the_corpus() {
+        for name in mesh_fixtures() {
+            let m = convert(&name);
+            let file = from_gmsh_mesh(&m).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let back = to_gmsh_mesh(&file, &Serial, Some(m.gdim)).unwrap();
+            assert_eq!((back.tdim, back.gdim), (m.tdim, m.gdim), "{name}");
+            assert_eq!(cells_by_tag(&back), cells_by_tag(&m), "{name}: cells");
+            assert_eq!(
+                tag_elements(&back),
+                tag_elements(&m),
+                "{name}: tag elements"
+            );
+            assert_eq!(back.names, m.names, "{name}: names");
+            // Cells keep their tags; tag elements follow them.
+            let max_cell = m.blocks.iter().flat_map(|b| b.tags.iter()).max().unwrap();
+            for g in &back.tag_groups {
+                assert!(
+                    g.tags.iter().all(|t| t > max_cell),
+                    "{name}: tag element tags"
+                );
+            }
+            let prisms_p2 = m
+                .blocks
+                .iter()
+                .any(|b| b.cell == CellType::Prism && b.degree == 2);
+            for encoding in [crate::gmsh::Encoding::Ascii, crate::gmsh::Encoding::Binary] {
+                let mut bytes = Vec::new();
+                file.write_to(&mut bytes, encoding).unwrap();
+                assert_eq!(
+                    crate::gmsh::parse(&bytes).unwrap(),
+                    file,
+                    "{name} {encoding:?}"
+                );
+                if !prisms_p2 {
+                    mshio::parse_msh_bytes(&bytes)
+                        .unwrap_or_else(|e| panic!("{name} {encoding:?}: mshio: {e:?}"));
+                }
+            }
+        }
+    }
+
+    /// Origin ids below 1 (MeshBuilder's defaults start at 0) are shifted so that node and
+    /// element tags start at 1; non-vertex nodes follow the largest vertex tag, tag elements
+    /// the largest cell tag.
+    #[test]
+    fn convert_from_gmsh_mesh_shifts_tags() {
+        // One P2 triangle with vertex ids -2, 0, 5 and an edge as a tag element.
+        let mesh = GmshMesh {
+            tdim: 2,
+            gdim: 2,
+            nodes: vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.5, 0.5, 0.0, 0.5],
+            node_tags: vec![-2, 0, 5, 99, 99, 99],
+            blocks: vec![GmshCellBlock {
+                cell: CellType::Triangle,
+                degree: 2,
+                nodes: vec![0, 1, 2, 3, 5, 4],
+                tags: vec![-1],
+                elementary: vec![3],
+                physical: vec![(0, 7)],
+            }],
+            tag_groups: vec![GmshTagGroup {
+                dim: 1,
+                cell: CellType::Interval,
+                corners: vec![-2, 0],
+                tags: vec![1000],
+                elementary: vec![4],
+                physical: vec![],
+            }],
+            names: vec![],
+        };
+        let file = from_gmsh_mesh(&mesh).unwrap();
+        // Vertices -2, 0, 5 and the edge nodes 6, 7, 8, all shifted by 3.
+        assert_eq!(file.node_blocks[0].tags, [1, 3, 8, 9, 10, 11]);
+        // Cell -1 and tag element 0 (after the cell), shifted by 2.
+        let line = &file.element_blocks[0];
+        assert_eq!(
+            (line.element_type, &line.tags[..], &line.nodes[..]),
+            (1, &[2][..], &[1, 3][..])
+        );
+        let tri = &file.element_blocks[1];
+        assert_eq!((tri.element_type, &tri.tags[..]), (9, &[1][..]));
+        // Gmsh order: vertices, then the edges (0,1), (1,2), (2,0); internal 3, 5, 4.
+        assert_eq!(tri.nodes, [1, 3, 8, 9, 10, 11]);
+        let e = file.entities.as_ref().unwrap();
+        assert_eq!((e.curves[0].tag, e.surfaces[0].tag), (4, 3));
+        assert_eq!(e.surfaces[0].physical_tags, [7]);
+        assert_eq!(file.node_blocks[0].entity_tag, 3);
+    }
+
+    /// One entity per (dimension, elementary tag, physical set), with bounding boxes from its
+    /// nodes, the point's coordinates for dimension 0 and empty boundaries; a second physical
+    /// set on one elementary tag gets a fresh entity tag; an untagged mesh gets one entity 1.
+    #[test]
+    fn convert_from_gmsh_mesh_entities() {
+        let mesh = GmshMesh {
+            tdim: 1,
+            gdim: 3,
+            nodes: vec![0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 3.0, 2.0, -1.0],
+            node_tags: vec![1, 2, 3],
+            blocks: vec![GmshCellBlock {
+                cell: CellType::Interval,
+                degree: 1,
+                nodes: vec![0, 1, 1, 2],
+                tags: vec![1, 2],
+                elementary: vec![5, 5],
+                physical: vec![(0, 1), (1, 2)],
+            }],
+            tag_groups: vec![GmshTagGroup {
+                dim: 0,
+                cell: CellType::Point,
+                corners: vec![3],
+                tags: vec![1],
+                elementary: vec![9],
+                physical: vec![(0, 4)],
+            }],
+            names: vec![],
+        };
+        let file = from_gmsh_mesh(&mesh).unwrap();
+        let e = file.entities.unwrap();
+        let p = &e.points[0];
+        assert_eq!(
+            (e.points.len(), p.tag, p.min, p.max),
+            (1, 9, [3.0, 2.0, -1.0], [3.0, 2.0, -1.0])
+        );
+        type Curve = (i32, [f64; 3], [f64; 3], Vec<i32>);
+        let curves: Vec<Curve> = e
+            .curves
+            .iter()
+            .map(|c| (c.tag, c.min, c.max, c.physical_tags.clone()))
+            .collect();
+        assert_eq!(
+            curves,
+            [
+                (5, [0.0, 0.0, 0.0], [1.0, 2.0, 0.0], vec![1]),
+                (6, [1.0, 2.0, -1.0], [3.0, 2.0, 0.0], vec![2]),
+            ]
+        );
+        assert!(e.curves.iter().all(|c| c.boundary.is_empty()));
+        assert_eq!(file.node_blocks[0].entity_tag, 5);
+        let mut plain = mesh.clone();
+        plain.blocks[0].elementary = vec![1, 1];
+        plain.blocks[0].physical.clear();
+        plain.tag_groups.clear();
+        let e = from_gmsh_mesh(&plain).unwrap().entities.unwrap();
+        assert_eq!((e.curves.len(), e.curves[0].tag), (1, 1));
     }
 }
