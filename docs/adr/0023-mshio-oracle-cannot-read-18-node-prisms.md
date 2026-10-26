@@ -1,6 +1,6 @@
 # ADR-0023: The mshio oracle cannot read 18-node prisms
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-26
 - **Raised in:** M4 T6 (docs/plans/M4.md, question 21)
 - **Design sections affected:** "Implementation roadmap / M4 Gmsh I/O (serial)" (the third acceptance bullet); "Import and export / Gmsh MSH 4.1" (the "Own reader and writer" bullet)
@@ -86,4 +86,4 @@ Options 3 and 4 add a fork or a second toolchain to fix a gap that these checks 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-26, as proposed (option 2), without conditions. Applied to docs/design.md in `adr: 0023 apply`.

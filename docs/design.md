@@ -1476,7 +1476,7 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 
 ### Gmsh MSH 4.1
 
-- **Own reader and writer.** The mshio crate parses only Entities, Nodes and Elements, reads only MSH 4.1 and cannot write. It is a test oracle, not the implementation. gridcl-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `gridcl::gmsh` builds and downloads meshes (ADR-0022).
+- **Own reader and writer.** The mshio crate parses only Entities, Nodes and Elements, reads only MSH 4.1 and cannot write. It is a test oracle, not the implementation. gridcl-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `gridcl::gmsh` builds and downloads meshes (ADR-0022). mshio 0.4.2 gives the 18-node prism 28 nodes, so it cannot read files that contain one (ADR-0023).
 - **Sections:** $MeshFormat, $PhysicalNames, $Entities, $Nodes and $Elements, optionally $PartitionedEntities and $Periodic. $Periodic is stored but applied only in a later milestone, outside this roadmap. Both ASCII and binary are supported, in either byte order (binary marker), and the data-size field gives the width of `size_t`.
 - **Element types** come from a generated table (A.7): complete Lagrange elements at the listed orders, including pyramids 118–124. Serendipity types 16–19 are upgraded to complete Lagrange on read, by evaluating the serendipity map at the missing nodes (8 → 9, 20 → 27, 15 → 18, 13 → 14). Other incomplete types are rejected.
 - **Mesh content.** D_TOP is the highest element dimension in the file, and elements of that dimension form the mesh. Lower-dimensional elements become MeshTags:
@@ -1862,7 +1862,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - read → write → read gives identical topology (cell types and degrees, cell and vertex origin ids, names and tags keyed by origin ids), and coordinates equal to 10^−15 relative to the largest absolute coordinate (f64; 10^−5 in f32) (ADR-0022);
 - the committed fixture corpus reads without error with correct node counts (file: Gmsh's node count; mesh: the nodes of D_TOP elements). It is written by a pinned Gmsh version and covers every element type up to order 4, pyramids up to order 3;
-- nodes and elements agree with mshio on every fixture;
+- nodes and elements agree with mshio on every fixture mshio can read; mshio 0.4.2 cannot read the 18-node prism (type 13), and the test asserts that it fails on exactly the files that contain it (ADR-0023);
 - tag counts equal Gmsh's physical-group sizes;
 - D_GEO is inferred correctly on 1D, 2D and 3D fixtures, and duplicate node tags are rejected.
 
