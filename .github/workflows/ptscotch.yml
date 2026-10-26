@@ -25,8 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: PT-Scotch
-        run: |
-          scripts/ci-apt-install.sh libptscotch-dev
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libptscotch-dev
       - name: Rust toolchain from rust-toolchain.toml
         run: |
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \

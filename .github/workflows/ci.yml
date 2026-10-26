@@ -69,9 +69,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: MPI and libclang (rsmpi's bindgen)
-        run: |
-          scripts/ci-apt-install.sh ${{ matrix.packages }} libclang-dev
-          mpirun --version
+        uses: ./.github/actions/apt-install
+        with:
+          packages: ${{ matrix.packages }} libclang-dev
+      - run: mpirun --version
       - name: Rust toolchain from rust-toolchain.toml
         run: |
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
@@ -94,9 +95,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)
-        run: |
-          scripts/ci-apt-install.sh mesa-vulkan-drivers vulkan-tools
-          vulkaninfo --summary
+        uses: ./.github/actions/apt-install
+        with:
+          packages: mesa-vulkan-drivers vulkan-tools
+      - run: vulkaninfo --summary
       - name: Rust toolchain from rust-toolchain.toml
         run: |
           rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
