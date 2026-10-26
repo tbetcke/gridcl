@@ -472,7 +472,9 @@ fn policy_follows_the_decision_rule() {
                     continue;
                 }
                 // The backstop (ADR-0018): no admitted configuration within 3% for every type at
-                // both sizes; the chosen one is the closest, at most 10% slower, and marked.
+                // both sizes; the chosen one is the closest, at most 10% slower, and marked. A
+                // shared entry with more than one type measured may go up to 25%, marked "closest
+                // across types" above 10% (ADR-0021).
                 let candidates: Vec<Config> = views[0].times[0]
                     .keys()
                     .copied()
@@ -493,12 +495,22 @@ fn policy_follows_the_decision_rule() {
                         );
                     }
                 }
+                let (bound, percent, adr) = if views.len() > 1 {
+                    (1.25, 25, "ADR-0021")
+                } else {
+                    (1.1, 10, "ADR-0018")
+                };
                 assert!(
-                    chosen_worst <= 1.1,
+                    chosen_worst <= bound,
                     "{what}: unresolved: the closest admitted configuration {chosen:?} is \
-                     {:.1}% slower than the fastest, above the 10% bound (ADR-0018)",
+                     {:.1}% slower than the fastest, above the {percent}% bound ({adr})",
                     (chosen_worst - 1.0) * 100.0
                 );
+                let mark = if chosen_worst <= 1.1 {
+                    "| closest, "
+                } else {
+                    "| closest across types, "
+                };
                 for v in &views {
                     let row = if kind == KernelKind::Scalar {
                         format!("| {c} | {} |", v.scalar.name())
@@ -507,7 +519,7 @@ fn policy_follows_the_decision_rule() {
                     };
                     let marked = report
                         .lines()
-                        .any(|line| line.starts_with(&row) && line.contains("| closest, "));
+                        .any(|line| line.starts_with(&row) && line.contains(mark));
                     assert!(
                         marked,
                         "{what}: the report does not mark the backstop entry {row} as closest"

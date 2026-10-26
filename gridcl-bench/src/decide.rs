@@ -22,8 +22,10 @@
 //!   other configuration qualifies, so the TOML holds sizes that ran (item 6, register budget).
 //! - Backstop (ADR-0018): if no admitted configuration is within 3% at both sizes (for every
 //!   type of a shared entry), the one with the smallest worst-case ratio is chosen if that ratio
-//!   is at most 1.10, and its reason starts "closest, x% slower". Above 1.10 the entry is
-//!   unresolved: it still holds the closest configuration, and the case goes to the maintainer.
+//!   is at most 1.10, and its reason starts "closest, x% slower". A shared 4-byte entry with
+//!   more than one type measured may go up to 1.25, and above 1.10 its reason starts "closest
+//!   across types, x% slower" (ADR-0021). Above the bound the entry is unresolved: it still
+//!   holds the closest configuration, and the case goes to the maintainer.
 //! - CpuSimd256 copies the CpuSimd512 table ("Benchmarks", "Where").
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -42,6 +44,8 @@ pub const WITHIN: f64 = 1.03;
 /// The backstop takes the closest admitted configuration only up to this worst-case ratio
 /// (ADR-0018).
 pub const BACKSTOP: f64 = 1.1;
+/// The backstop's bound for a shared 4-byte entry with more than one type measured (ADR-0021).
+pub const SHARED_BACKSTOP: f64 = 1.25;
 /// The element sizes of the policy, in bytes.
 pub const ELEM_BYTES: [usize; 2] = [4, 8];
 /// The unit of `cpu_block` entries in `vector-policy.toml`.
@@ -89,10 +93,10 @@ pub enum Fit {
     /// there is no data.
     Rule,
     /// The backstop: no admitted configuration is within 3%, and this one is the closest, at
-    /// most 10% slower (ADR-0018).
+    /// most 10% slower (ADR-0018), or 25% for a shared entry (ADR-0021).
     Closest,
-    /// No admitted configuration within 10%: the closest is stored, and the case goes to the
-    /// maintainer.
+    /// No admitted configuration within the backstop's bound: the closest is stored, and the
+    /// case goes to the maintainer.
     Unresolved,
 }
 
@@ -563,8 +567,11 @@ fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -
                 ..defaults("unresolved: no configuration measured at both sizes for every type")
             };
         };
-        let slower = (worst(&config) - 1.0) * 100.0;
-        let (fit, text) = if worst(&config) <= BACKSTOP {
+        let ratio = worst(&config);
+        let slower = (ratio - 1.0) * 100.0;
+        let shared = views.len() > 1;
+        let bound = if shared { SHARED_BACKSTOP } else { BACKSTOP };
+        let (fit, text) = if ratio <= BACKSTOP {
             (
                 Fit::Closest,
                 format!(
@@ -572,12 +579,25 @@ fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -
                      fastest at both sizes (ADR-0018)"
                 ),
             )
+        } else if ratio <= bound {
+            (
+                Fit::Closest,
+                format!(
+                    "closest across types, {slower:.1}% slower: no admitted configuration \
+                     within 10% of each type's fastest at both sizes (ADR-0021)"
+                ),
+            )
         } else {
+            let (percent, adr) = if shared {
+                (25, "ADR-0021")
+            } else {
+                (10, "ADR-0018")
+            };
             (
                 Fit::Unresolved,
                 format!(
                     "unresolved: the closest admitted configuration is {slower:.1}% slower, \
-                     above the 10% bound (ADR-0018)"
+                     above the {percent}% bound ({adr})"
                 ),
             )
         };
@@ -1168,6 +1188,55 @@ mod tests {
             .map(|c| (c.class, c.kind, c.elem_bytes))
             .collect();
         assert_eq!(unresolved, vec![(CPU, KernelKind::Fill, 8)]);
+    }
+
+    /// Fill f32 and u32 (a shared 4-byte entry) at size 1, whose blocks pull apart: u32 is `r`
+    /// times slower with 4 KiB at 10^6, f32 `r` + 0.05 times slower with 16 KiB at 10^7.
+    fn disagreeing_types(r: f64) -> PerfData {
+        let mut sweeps = Vec::new();
+        for (scalar, t4, t16) in [
+            (Scalar::F32, (1.0, 10.0), (1.0, 10.0 * (r + 0.05))),
+            (Scalar::U32, (r, 10.0), (1.0, 10.0)),
+        ] {
+            for (i, &n) in RULE_SIZES.iter().enumerate() {
+                for (block, t) in [(4 << 10, t4), (16 << 10, t16)] {
+                    let t = if i == 0 { t.0 } else { t.1 };
+                    let spec = (1, None, Some(block));
+                    sweeps.push(rec(CPU, "a", KernelKind::Fill, scalar, n, spec, t));
+                }
+            }
+        }
+        data(sweeps)
+    }
+
+    #[test]
+    fn a_shared_entry_whose_types_disagree_backstops_up_to_25_percent() {
+        let c = entry(&decide(&disagreeing_types(1.2)), CPU, KernelKind::Fill, 4).clone();
+        assert_eq!(
+            (c.cpu_block, c.fit),
+            (Some(1), Fit::Closest),
+            "{}",
+            c.reason
+        );
+        assert!(
+            c.reason.starts_with("closest across types, 20.0% slower"),
+            "{}",
+            c.reason
+        );
+        let d = decide(&disagreeing_types(1.3));
+        let c = entry(&d, CPU, KernelKind::Fill, 4);
+        assert_eq!(c.fit, Fit::Unresolved, "{}", c.reason);
+        assert!(c.reason.contains("above the 25% bound"), "{}", c.reason);
+        // A single-type entry keeps the 10% bound.
+        let c = entry(
+            &decide(&two_blocks((1.0, 12.0), (1.2, 10.0))),
+            CPU,
+            KernelKind::Fill,
+            8,
+        )
+        .clone();
+        assert_eq!(c.fit, Fit::Unresolved, "{}", c.reason);
+        assert!(c.reason.contains("above the 10% bound"), "{}", c.reason);
     }
 
     #[test]

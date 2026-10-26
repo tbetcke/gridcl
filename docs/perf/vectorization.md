@@ -224,55 +224,55 @@ element size from T15's data.
 
 ### Vector sizes
 
-Speedup of each vector size over size 1 at 10^6 / 10^7 items: the best time over tiles blocks and CPU units at size 1 over the best at that size; for a class measured on several devices, the geometric mean of the per-device ratios (ADR-0015). "(ran m)": every device ran the size at m lanes. Size, tile, block and units are the entries of `vector-policy.toml`; f32 and u32 share the 4-byte entries. Units: all hardware threads or the performance cores; a device without a performance-core count gives both the same time (ADR-0017). A reason "closest, x% slower" marks an entry where no admitted configuration is within 3% of the fastest at both sizes, so the rule took the one with the smallest worst-case ratio, at most 10% slower; "unresolved" marks one where even that is more than 10% slower (ADR-0018).
+Speedup of each vector size over size 1 at 10^6 / 10^7 items: the best time over tiles blocks and CPU units at size 1 over the best at that size; for a class measured on several devices, the geometric mean of the per-device ratios (ADR-0015). "(ran m)": every device ran the size at m lanes. Size, tile, block and units are the entries of `vector-policy.toml`; f32 and u32 share the 4-byte entries. Units: all hardware threads or the performance cores; a device without a performance-core count gives both the same time (ADR-0017). A reason "closest, x% slower" marks an entry where no admitted configuration is within 3% of the fastest at both sizes, so the rule took the one with the smallest worst-case ratio, at most 10% slower (ADR-0018); "closest across types" marks a shared 4-byte entry whose types disagree, at most 25% slower (ADR-0021); "unresolved" marks one where even that bound is exceeded.
 
 | Family | Class | Type | 2 | 4 | 8 | 16 | Size | Tile | Block | Units | Reason |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
 | Fill | CpuSimd128 | f32 | 1.19 / 1.45 | 1.28 / 2.53 | 1.24 / 2.80 | 1.26 / 2.85 | 16 | – | 64 KiB | performance | closest, 3.9% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Fill | CpuSimd128 | f64 | 1.07 / 1.37 | 1.05 / 2.19 | 1.08 / 2.35 | 1.06 / 2.28 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | Fill | CpuSimd128 | u32 | 1.19 / 1.47 | 1.28 / 2.81 | 1.25 / 2.93 | 1.23 / 2.87 | 16 | – | 64 KiB | performance | closest, 3.9% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
-| Fill | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Fill | CpuSimd256 | f64 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Fill | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Fill | CpuSimd512 | f32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| Fill | CpuSimd512 | f64 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| Fill | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| Fill | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
+| Fill | CpuSimd256 | f64 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| Fill | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
+| Fill | CpuSimd512 | f32 | 1.28 / 1.43 | 1.10 / 1.85 | 0.96 / 1.89 | 0.87 / 2.03 | 1 | – | 16 KiB | all | closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
+| Fill | CpuSimd512 | f64 | 1.21 / 1.03 | 1.14 / 1.03 | 1.15 / 1.01 | 1.15 / 1.03 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
+| Fill | CpuSimd512 | u32 | 1.07 / 2.36 | 1.00 / 2.64 | 1.34 / 2.76 | 1.15 / 2.84 | 1 | – | 16 KiB | all | closest across types, 14.7% slower: no admitted configuration within 10% of each type's fastest at both sizes (ADR-0021); size 2, 4, 8, 16 admitted for f32, u32 only (shared 4-byte entry) |
 | Fill | Gpu | f32 | 0.98 / 1.28 | 1.08 / 1.41 | 1.02 / 1.15 | 1.00 / 1.06 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7; size 2 admitted for u32 only (shared 4-byte entry) |
 | Fill | Gpu | f64 | 1.06 / 1.10 | 0.87 / 0.68 | 0.83 / 0.57 | 0.76 / 0.28 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | Fill | Gpu | u32 | 1.11 / 1.28 | 1.09 / 1.42 | 1.04 / 1.19 | 1.02 / 1.02 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7; size 2 admitted for u32 only (shared 4-byte entry) |
 | Copy | CpuSimd128 | u32 | 1.34 / 1.06 | 1.39 / 2.06 | 1.43 / 2.27 | 1.38 / 2.17 | 8 | – | 64 KiB | all | 1.43x / 2.27x over size 1; smallest admitted size within 3% of the fastest |
-| Copy | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Copy | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| Copy | CpuSimd256 | u32 | – | – | – | – | 1 | – | 4 KiB | all | copies CpuSimd512: closest, 6.6% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
+| Copy | CpuSimd512 | u32 | 1.34 / 1.03 | 1.31 / 1.07 | 1.09 / 1.09 | 1.35 / 1.09 | 1 | – | 4 KiB | all | closest, 6.6% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Copy | Gpu | u32 | 1.12 / 1.07 | 1.11 / 1.14 | 1.10 / 1.14 | 1.07 / 1.01 | 4 | – | – | – | 1.11x / 1.14x over size 1; smallest admitted size within 3% of the fastest |
 | Reduce | CpuSimd128 | f32 | 1.08 / 1.19 | 1.16 / 1.31 | 1.26 / 1.39 | 1.17 / 1.43 | 16 | – | 64 KiB | performance | 1.17x / 1.17x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.58x / 1.57x over all threads; size 8 admitted for f32 only (shared 4-byte entry) |
 | Reduce | CpuSimd128 | f64 | 1.07 / 0.99 | 1.17 / 1.07 | 1.03 / 1.05 | 1.16 / 0.99 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 3.67x / 1.22x over all threads |
 | Reduce | CpuSimd128 | u32 | 1.16 / 1.10 | 1.24 / 1.11 | 1.35 / 1.09 | 1.37 / 1.17 | 16 | – | 64 KiB | performance | 1.17x / 1.17x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.58x / 1.57x over all threads; size 8 admitted for f32 only (shared 4-byte entry) |
-| Reduce | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Reduce | CpuSimd256 | f64 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Reduce | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Reduce | CpuSimd512 | f32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| Reduce | CpuSimd512 | f64 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| Reduce | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| Reduce | CpuSimd256 | f32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
+| Reduce | CpuSimd256 | f64 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| Reduce | CpuSimd256 | u32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
+| Reduce | CpuSimd512 | f32 | 1.28 / 1.21 | 1.43 / 1.31 | 1.52 / 1.33 | 1.45 / 1.31 | 8 | – | 64 KiB | all | 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
+| Reduce | CpuSimd512 | f64 | 1.13 / 1.05 | 1.19 / 1.07 | 1.21 / 1.05 | 1.20 / 1.06 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
+| Reduce | CpuSimd512 | u32 | 1.12 / 0.99 | 1.17 / 1.00 | 1.23 / 1.12 | 1.22 / 1.10 | 8 | – | 64 KiB | all | 1.23x / 1.12x over size 1; smallest admitted size within 3% of the fastest; size 2, 4 admitted for f32 only (shared 4-byte entry) |
 | Reduce | Gpu | f32 | 1.03 / 1.50 | 1.65 / 1.96 | 1.48 / 2.07 | 1.63 / 2.19 | 16 | – | – | – | closest, 6.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018); size 2 admitted for u32 only (shared 4-byte entry) |
 | Reduce | Gpu | f64 | 1.05 / 1.39 | 1.36 / 1.60 | 1.34 / 1.57 | 1.29 / 1.65 | 4 | – | – | – | closest, 3.2% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Reduce | Gpu | u32 | 1.28 / 1.47 | 1.43 / 1.86 | 1.56 / 2.02 | 1.47 / 1.89 | 16 | – | – | – | closest, 6.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018); size 2 admitted for u32 only (shared 4-byte entry) |
 | ScanTile | CpuSimd128 | u32 | 1.11 / 1.05 | 1.08 / 1.11 | 1.14 / 1.12 | 1.21 / 1.11 | 16 | – | 64 KiB | performance | 1.21x / 1.11x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.71x / 2.61x over all threads |
-| ScanTile | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| ScanTile | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| ScanTile | CpuSimd256 | u32 | – | – | – | – | 8 | – | 64 KiB | all | copies CpuSimd512: 1.40x / 1.18x over size 1; smallest admitted size within 3% of the fastest |
+| ScanTile | CpuSimd512 | u32 | 1.23 / 1.06 | 1.36 / 1.10 | 1.40 / 1.18 | 1.36 / 1.13 | 8 | – | 64 KiB | all | 1.40x / 1.18x over size 1; smallest admitted size within 3% of the fastest |
 | ScanTile | Gpu | u32 | 1.12 / 1.48 | 1.56 / 1.82 | 1.53 / 1.85 | 1.51 / 1.88 | 8 | – | – | – | 1.53x / 1.85x over size 1; smallest admitted size within 3% of the fastest |
 | SortDigits | CpuSimd128 | u32 | 1.01 / 1.00 | 0.99 / 0.97 | 0.97 / 1.00 | 0.97 / 1.00 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.57x / 1.13x over all threads |
-| SortDigits | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| SortDigits | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| SortDigits | CpuSimd256 | u32 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| SortDigits | CpuSimd512 | u32 | 1.00 / 1.01 | 1.00 / 1.01 | 1.00 / 1.01 | 0.99 / 1.01 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | SortDigits | Gpu | u32 | 1.36 / 1.46 | 1.49 / 1.72 | 1.45 / 1.63 | 1.44 / 1.42 | 4 | – | – | – | 1.49x / 1.72x over size 1; smallest admitted size within 3% of the fastest |
 | Gather | CpuSimd128 | f32 | 1.24 / 0.99 | 1.25 / 0.98 | 1.27 / 1.00 | 1.39 / 0.98 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.11x / 1.03x over all threads |
 | Gather | CpuSimd128 | f64 | 1.04 / 1.00 | 1.10 / 1.05 | 1.20 / 1.03 | 1.14 / 1.00 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.63x / 1.00x over all threads |
 | Gather | CpuSimd128 | u32 | 1.09 / 1.00 | 1.30 / 0.99 | 1.44 / 1.01 | 1.38 / 1.03 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.11x / 1.03x over all threads |
-| Gather | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Gather | CpuSimd256 | f64 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Gather | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| Gather | CpuSimd512 | f32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| Gather | CpuSimd512 | f64 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| Gather | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| Gather | CpuSimd256 | f32 | – | – | – | – | 1 | – | 4 KiB | all | copies CpuSimd512: closest, 6.8% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
+| Gather | CpuSimd256 | f64 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: closest, 3.4% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
+| Gather | CpuSimd256 | u32 | – | – | – | – | 1 | – | 4 KiB | all | copies CpuSimd512: closest, 6.8% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
+| Gather | CpuSimd512 | f32 | 0.94 / 1.04 | 0.92 / 1.12 | 0.91 / 1.13 | 0.94 / 1.11 | 1 | – | 4 KiB | all | closest, 6.8% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
+| Gather | CpuSimd512 | f64 | 1.01 / 0.93 | 1.08 / 1.02 | 1.22 / 0.98 | 1.19 / 0.99 | 1 | – | 16 KiB | all | closest, 3.4% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
+| Gather | CpuSimd512 | u32 | 0.95 / 1.08 | 0.94 / 1.13 | 0.93 / 1.15 | 1.05 / 1.12 | 1 | – | 4 KiB | all | closest, 6.8% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | Gather | Gpu | f32 | 1.18 / 1.00 | 1.26 / 1.00 | 1.18 / 0.98 | 0.96 / 0.83 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | Gather | Gpu | f64 | 1.00 / 1.00 | 0.96 / 1.00 | 0.90 / 0.86 | 0.84 / 0.54 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | Gather | Gpu | u32 | 0.93 / 1.00 | 1.00 / 1.00 | 1.17 / 0.98 | 1.19 / 0.83 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
@@ -285,27 +285,27 @@ Speedup of each vector size over size 1 at 10^6 / 10^7 items: the best time over
 | Pack | Gpu | f32 | – | – | – | – | 1 | – | – | – | no kernel before M6/M9; measured in the M10 re-run |
 | Pack | Gpu | f64 | – | – | – | – | 1 | – | – | – | no kernel before M6/M9; measured in the M10 re-run |
 | TopologyKeys | CpuSimd128 | u32 | 0.65 / 0.64 | 0.65 / 0.62 | 0.66 / 0.67 | 0.85 / 0.81 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.07x / 1.13x over all threads |
-| TopologyKeys | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| TopologyKeys | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| TopologyKeys | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| TopologyKeys | CpuSimd512 | u32 | 0.61 / 0.84 | 0.61 / 0.87 | 0.62 / 0.88 | 0.62 / 0.88 | 1 | – | 16 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | TopologyKeys | Gpu | u32 | 0.77 / 0.75 | 0.75 / 0.75 | 0.65 / 0.65 | 0.62 / 0.60 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | PermutationInfo | CpuSimd128 | u32 | 0.76 / 0.77 | 0.86 / 0.87 | 0.88 / 0.85 | 0.87 / 0.82 | 1 | – | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.07x / 1.10x over all threads |
-| PermutationInfo | CpuSimd256 | u32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| PermutationInfo | CpuSimd512 | u32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| PermutationInfo | CpuSimd256 | u32 | – | – | – | – | 16 | – | 4 KiB | all | copies CpuSimd512: 3.11x / 1.43x over size 1; smallest admitted size within 3% of the fastest |
+| PermutationInfo | CpuSimd512 | u32 | 1.54 / 1.26 | 2.26 / 1.43 | 2.54 / 1.40 | 3.11 / 1.43 | 16 | – | 4 KiB | all | 3.11x / 1.43x over size 1; smallest admitted size within 3% of the fastest |
 | PermutationInfo | Gpu | u32 | 0.72 / 0.54 | 0.76 / 0.54 | 0.76 / 0.51 | 0.69 / 0.45 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | EVector | CpuSimd128 | f32 | 1.06 / 1.02 | 1.07 / 1.03 | 1.13 / 1.06 | 1.38 / 1.24 | 16 | – | 64 KiB | all | 1.38x / 1.24x over size 1; smallest admitted size within 3% of the fastest |
 | EVector | CpuSimd128 | f64 | 1.02 / 1.02 | 1.01 / 1.10 | 1.18 / 1.47 | 1.08 / 1.37 | 8 | – | 16 KiB | performance | 1.18x / 1.47x over size 1; smallest admitted size within 3% of the fastest; performance cores, 1.01x / 1.01x over all threads |
-| EVector | CpuSimd256 | f32 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| EVector | CpuSimd256 | f64 | – | – | – | – | 1 | – | 16 KiB | all | copies CpuSimd512: no data |
-| EVector | CpuSimd512 | f32 | – | – | – | – | 1 | – | 16 KiB | all | no data |
-| EVector | CpuSimd512 | f64 | – | – | – | – | 1 | – | 16 KiB | all | no data |
+| EVector | CpuSimd256 | f32 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| EVector | CpuSimd256 | f64 | – | – | – | – | 1 | – | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| EVector | CpuSimd512 | f32 | 1.03 / 0.96 | 1.05 / 0.98 | 1.05 / 0.98 | 0.98 / 0.95 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
+| EVector | CpuSimd512 | f64 | 1.00 / 1.11 | 0.99 / 1.11 | 1.07 / 1.30 | 1.03 / 1.16 | 1 | – | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | EVector | Gpu | f32 | 0.97 / 0.96 | 0.79 / 0.79 | 0.55 / 0.53 | 0.57 / 0.56 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | EVector | Gpu | f64 | 0.88 / 0.90 | 0.47 / 0.44 | 0.22 / 0.17 | 0.21 / 0.15 | 1 | – | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | GeomFactors | CpuSimd128 | f32 | 1.68 / 1.57 | 2.45 / 2.83 | 2.23 / 2.24 | 1.93 / 2.09 | 4 | 4 | 4 KiB | all | closest, 5.0% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
 | GeomFactors | CpuSimd128 | f64 | 1.17 / 1.21 | 1.40 / 1.33 | 1.18 / 1.00 | 1.09 / 0.96 | 4 | 4 | 64 KiB | all | closest, 5.7% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
-| GeomFactors | CpuSimd256 | f32 | – | – | – | – | 1 | 16 | 16 KiB | all | copies CpuSimd512: no data |
-| GeomFactors | CpuSimd256 | f64 | – | – | – | – | 1 | 16 | 16 KiB | all | copies CpuSimd512: no data |
-| GeomFactors | CpuSimd512 | f32 | – | – | – | – | 1 | 16 | 16 KiB | all | no data |
-| GeomFactors | CpuSimd512 | f64 | – | – | – | – | 1 | 16 | 16 KiB | all | no data |
+| GeomFactors | CpuSimd256 | f32 | – | – | – | – | 16 | 16 | 64 KiB | all | copies CpuSimd512: 2.78x / 3.49x over size 1; smallest admitted size within 3% of the fastest |
+| GeomFactors | CpuSimd256 | f64 | – | – | – | – | 16 | 16 | 4 KiB | all | copies CpuSimd512: 1.92x / 2.05x over size 1; smallest admitted size within 3% of the fastest |
+| GeomFactors | CpuSimd512 | f32 | 1.81 / 1.81 | 2.41 / 2.77 | 2.74 / 3.10 | 2.78 / 3.49 | 16 | 16 | 64 KiB | all | 2.78x / 3.49x over size 1; smallest admitted size within 3% of the fastest |
+| GeomFactors | CpuSimd512 | f64 | 1.53 / 1.58 | 1.78 / 1.95 | 1.80 / 1.96 | 1.92 / 2.05 | 16 | 16 | 4 KiB | all | 1.92x / 2.05x over size 1; smallest admitted size within 3% of the fastest |
 | GeomFactors | Gpu | f32 | 0.98 / 0.99 | 0.80 / 0.83 | 0.21 / 0.21 | 0.26 / 0.25 | 1 | 16 | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | GeomFactors | Gpu | f64 | 1.00 / 1.01 | 0.54 / 0.57 | 0.04 / 0.04 | 0.02 / 0.03 | 1 | 16 | – | – | no size at least 10% faster than 1 at 10^6 and 10^7 |
 | PullBack | CpuSimd128 | f32 | – | – | – | – | 1 | – | 16 KiB | all | no kernel before M6/M9; measured in the M10 re-run |
@@ -325,70 +325,88 @@ The speedups of each measured device, at 10^6 / 10^7 items.
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
 | Fill | f32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.02 / 1.58 | 1.11 / 4.79 | 1.03 / 5.74 | 1.04 / 5.95 |
 | Fill | f32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.39 / 1.34 | 1.49 / 1.28 | 1.52 / 1.32 | 1.54 / 1.33 |
+| Fill | f32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.28 / 1.43 | 1.10 / 1.85 | 0.96 / 1.89 | 0.87 / 2.03 |
 | Fill | f32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.05 / 1.42 | 1.10 / 1.64 | 1.01 / 1.07 | 0.96 / 0.94 |
 | Fill | f32 | Gpu | m3max metal (Apple M3 Max) | 0.90 / 1.16 | 1.05 / 1.21 | 1.04 / 1.23 (ran 4) | 1.04 / 1.20 (ran 4) |
 | Fill | f64 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.01 / 1.69 | 0.96 / 4.26 | 1.00 / 4.84 | 0.92 / 4.54 |
 | Fill | f64 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.11 / 1.11 | 1.18 / 1.14 | 1.15 / 1.14 | 1.19 / 1.14 |
+| Fill | f64 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.21 / 1.03 | 1.14 / 1.03 | 1.15 / 1.01 | 1.15 / 1.03 |
 | Fill | f64 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.06 / 1.10 | 0.87 / 0.68 | 0.83 / 0.57 | 0.76 / 0.28 |
 | Fill | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.08 / 1.62 | 1.09 / 5.66 | 1.03 / 6.06 | 1.01 / 5.86 |
 | Fill | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.27 / 1.29 | 1.44 / 1.34 | 1.44 / 1.36 | 1.45 / 1.36 |
+| Fill | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.07 / 2.36 | 1.00 / 2.64 | 1.34 / 2.76 | 1.15 / 2.84 |
 | Fill | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.07 / 1.42 | 1.09 / 1.64 | 1.00 / 1.08 | 0.96 / 0.93 |
 | Fill | u32 | Gpu | m3max metal (Apple M3 Max) | 1.16 / 1.15 | 1.09 / 1.22 | 1.09 / 1.33 (ran 4) | 1.09 / 1.11 (ran 4) |
 | Copy | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.16 / 1.35 | 1.14 / 4.51 | 1.16 / 5.46 | 1.11 / 4.72 |
 | Copy | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.23 / 1.05 | 1.34 / 1.08 | 1.40 / 0.95 | 1.37 / 0.99 |
+| Copy | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.34 / 1.03 | 1.31 / 1.07 | 1.09 / 1.09 | 1.35 / 1.09 |
 | Copy | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.06 / 1.25 | 1.07 / 1.30 | 1.03 / 1.28 | 0.98 / 1.00 |
 | Copy | u32 | Gpu | m3max metal (Apple M3 Max) | 1.19 / 0.92 | 1.16 / 1.00 | 1.17 / 1.01 (ran 4) | 1.17 / 1.01 (ran 4) |
 | Reduce | f32 | CpuSimd128 | locust cpu (Neoverse-V2) | 0.98 / 0.97 | 1.00 / 1.02 | 1.07 / 1.01 | 0.92 / 1.09 |
 | Reduce | f32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.20 / 1.45 | 1.35 / 1.69 | 1.48 / 1.91 | 1.48 / 1.87 |
+| Reduce | f32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.28 / 1.21 | 1.43 / 1.31 | 1.52 / 1.33 | 1.45 / 1.31 |
 | Reduce | f32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.07 / 1.39 | 1.36 / 1.78 | 1.39 / 2.04 | 1.35 / 2.30 |
 | Reduce | f32 | Gpu | m3max metal (Apple M3 Max) | 0.99 / 1.61 | 2.02 / 2.16 | 1.59 / 2.10 (ran 4) | 1.97 / 2.09 (ran 4) |
 | Reduce | f64 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.08 / 0.95 | 1.07 / 0.94 | 0.91 / 0.98 | 1.03 / 0.97 |
 | Reduce | f64 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.07 / 1.04 | 1.28 / 1.22 | 1.17 / 1.12 | 1.30 / 1.00 |
+| Reduce | f64 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.13 / 1.05 | 1.19 / 1.07 | 1.21 / 1.05 | 1.20 / 1.06 |
 | Reduce | f64 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.05 / 1.39 | 1.36 / 1.60 | 1.34 / 1.57 | 1.29 / 1.65 |
 | Reduce | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.09 / 0.97 | 1.20 / 0.92 | 1.24 / 0.95 | 1.18 / 0.93 |
 | Reduce | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.24 / 1.24 | 1.29 / 1.33 | 1.47 / 1.26 | 1.60 / 1.47 |
+| Reduce | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.12 / 0.99 | 1.17 / 1.00 | 1.23 / 1.12 | 1.22 / 1.10 |
 | Reduce | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.08 / 1.39 | 1.33 / 1.79 | 1.41 / 2.01 | 1.36 / 2.38 |
 | Reduce | u32 | Gpu | m3max metal (Apple M3 Max) | 1.51 / 1.56 | 1.55 / 1.92 | 1.72 / 2.02 (ran 4) | 1.59 / 1.50 (ran 4) |
 | ScanTile | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.10 / 1.03 | 0.97 / 1.00 | 1.05 / 1.01 | 1.09 / 1.01 |
 | ScanTile | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.12 / 1.07 | 1.20 / 1.23 | 1.23 / 1.24 | 1.33 / 1.22 |
+| ScanTile | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.23 / 1.06 | 1.36 / 1.10 | 1.40 / 1.18 | 1.36 / 1.13 |
 | ScanTile | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.06 / 1.50 | 1.60 / 1.98 | 1.54 / 2.04 | 1.49 / 2.09 |
 | ScanTile | u32 | Gpu | m3max metal (Apple M3 Max) | 1.19 / 1.46 | 1.52 / 1.68 | 1.52 / 1.68 (ran 4) | 1.53 / 1.69 (ran 4) |
 | SortDigits | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.05 / 0.99 | 1.01 / 0.94 | 1.01 / 1.00 | 0.98 / 1.01 |
 | SortDigits | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 0.98 / 1.01 | 0.97 / 1.00 | 0.94 / 1.00 | 0.95 / 1.00 |
+| SortDigits | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.00 / 1.01 | 1.00 / 1.01 | 1.00 / 1.01 | 0.99 / 1.01 |
 | SortDigits | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.25 / 1.31 | 1.23 / 1.27 | 1.15 / 1.13 | 1.14 / 0.86 |
 | SortDigits | u32 | Gpu | m3max metal (Apple M3 Max) | 1.49 / 1.62 | 1.81 / 2.34 | 1.81 / 2.34 (ran 4) | 1.83 / 2.35 (ran 4) |
 | Gather | f32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.37 / 0.98 | 1.42 / 0.99 | 1.19 / 1.02 | 1.52 / 0.98 |
 | Gather | f32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.10 / 1.02 | 1.23 / 0.98 | 1.30 / 0.98 | 1.30 / 1.02 |
+| Gather | f32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 0.94 / 1.04 | 0.92 / 1.12 | 0.91 / 1.13 | 0.94 / 1.11 |
 | Gather | f32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.98 / 1.00 | 0.98 / 0.99 | 0.97 / 0.96 | 0.95 / 0.69 |
 | Gather | f32 | Gpu | m3max metal (Apple M3 Max) | 1.42 / 1.00 | 1.61 / 1.00 | 1.44 / 0.99 (ran 4) | 0.98 / 1.00 (ran 4) |
 | Gather | f64 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.01 / 1.00 | 1.08 / 1.09 | 1.32 / 1.05 | 1.35 / 1.05 |
 | Gather | f64 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.08 / 1.00 | 1.12 / 1.01 | 1.16 / 1.02 | 1.07 / 0.96 |
+| Gather | f64 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.01 / 0.93 | 1.08 / 1.02 | 1.22 / 0.98 | 1.19 / 0.99 |
 | Gather | f64 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.00 / 1.00 | 0.96 / 1.00 | 0.90 / 0.86 | 0.84 / 0.54 |
 | Gather | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.13 / 1.00 | 1.57 / 0.99 | 1.90 / 1.02 | 1.62 / 1.05 |
 | Gather | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.02 / 1.00 | 1.09 / 1.00 | 1.14 / 1.00 | 1.19 / 1.02 |
+| Gather | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 0.95 / 1.08 | 0.94 / 1.13 | 0.93 / 1.15 | 1.05 / 1.12 |
 | Gather | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.99 / 1.00 | 0.98 / 0.99 | 0.97 / 0.96 | 0.95 / 0.69 |
 | Gather | u32 | Gpu | m3max metal (Apple M3 Max) | 0.87 / 1.01 | 1.02 / 1.00 | 1.41 / 1.00 (ran 4) | 1.48 / 1.00 (ran 4) |
 | TopologyKeys | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 0.57 / 0.56 | 0.52 / 0.50 | 0.55 / 0.59 | 0.95 / 0.83 |
 | TopologyKeys | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 0.77 / 0.72 | 0.79 / 0.77 | 0.78 / 0.77 | 0.76 / 0.79 |
+| TopologyKeys | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 0.61 / 0.84 | 0.61 / 0.87 | 0.62 / 0.88 | 0.62 / 0.88 |
 | TopologyKeys | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.79 / 0.74 | 0.79 / 0.74 | 0.58 / 0.56 | 0.53 / 0.48 |
 | TopologyKeys | u32 | Gpu | m3max metal (Apple M3 Max) | 0.75 / 0.76 | 0.72 / 0.75 | 0.73 / 0.75 (ran 4) | 0.72 / 0.75 (ran 4) |
 | PermutationInfo | u32 | CpuSimd128 | locust cpu (Neoverse-V2) | 0.58 / 0.81 | 0.65 / 0.86 | 0.73 / 0.88 | 0.66 / 0.85 |
 | PermutationInfo | u32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 0.99 / 0.71 | 1.15 / 0.84 | 1.10 / 0.79 | 1.16 / 0.80 |
+| PermutationInfo | u32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.54 / 1.26 | 2.26 / 1.43 | 2.54 / 1.40 | 3.11 / 1.43 |
 | PermutationInfo | u32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.71 / 0.63 | 0.71 / 0.63 | 0.66 / 0.57 | 0.60 / 0.45 |
 | PermutationInfo | u32 | Gpu | m3max metal (Apple M3 Max) | 0.74 / 0.46 | 0.82 / 0.46 | 0.88 / 0.46 (ran 4) | 0.79 / 0.45 (ran 4) |
 | EVector | f32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.02 / 1.01 | 1.02 / 1.00 | 1.13 / 1.02 | 1.92 / 1.56 |
 | EVector | f32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.08 / 1.02 | 1.13 / 1.06 | 1.13 / 1.09 | 0.98 / 0.97 |
+| EVector | f32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.03 / 0.96 | 1.05 / 0.98 | 1.05 / 0.98 | 0.98 / 0.95 |
 | EVector | f32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.95 / 0.97 | 0.64 / 0.66 | 0.32 / 0.29 | 0.34 / 0.33 |
 | EVector | f32 | Gpu | m3max metal (Apple M3 Max) | 0.99 / 0.95 | 0.98 / 0.95 | 0.95 / 0.95 (ran 4) | 0.98 / 0.94 (ran 4) |
 | EVector | f64 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.00 / 1.01 | 0.97 / 1.12 | 1.38 / 2.14 | 1.28 / 1.98 |
 | EVector | f64 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.05 / 1.03 | 1.04 / 1.04 | 0.99 / 1.00 | 0.90 / 0.92 |
+| EVector | f64 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.00 / 1.11 | 0.99 / 1.11 | 1.07 / 1.30 | 1.03 / 1.16 |
 | EVector | f64 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.88 / 0.90 | 0.47 / 0.44 | 0.22 / 0.17 | 0.21 / 0.15 |
 | GeomFactors | f32 | CpuSimd128 | locust cpu (Neoverse-V2) | 1.39 / 1.42 | 2.03 / 2.63 | 1.83 / 1.64 | 1.61 / 1.60 |
 | GeomFactors | f32 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.87 / 1.71 | 2.84 / 2.99 | 2.49 / 3.01 | 2.35 / 2.68 |
+| GeomFactors | f32 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.81 / 1.81 | 2.41 / 2.77 | 2.74 / 3.10 | 2.78 / 3.49 |
 | GeomFactors | f32 | Gpu | locust cuda (NVIDIA GH200 480GB) | 0.98 / 0.99 | 0.90 / 0.89 | 0.06 / 0.05 | 0.10 / 0.08 |
 | GeomFactors | f32 | Gpu | m3max metal (Apple M3 Max) | 0.98 / 0.99 | 0.71 / 0.78 | 0.71 / 0.78 (ran 4) | 0.71 / 0.78 (ran 4) |
 | GeomFactors | f64 | CpuSimd128 | locust cpu (Neoverse-V2) | 0.94 / 0.82 | 1.13 / 0.96 | 1.02 / 0.79 | 1.08 / 0.75 |
 | GeomFactors | f64 | CpuSimd128 | m3max cpu (Apple M3 Max) | 1.42 / 1.69 | 1.58 / 1.72 | 1.24 / 1.24 | 1.03 / 1.14 |
+| GeomFactors | f64 | CpuSimd512 | kathleen cpu (Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz) | 1.53 / 1.58 | 1.78 / 1.95 | 1.80 / 1.96 | 1.92 / 2.05 |
 | GeomFactors | f64 | Gpu | locust cuda (NVIDIA GH200 480GB) | 1.00 / 1.01 | 0.54 / 0.57 | 0.04 / 0.04 | 0.02 / 0.03 |
 
 ### Scalar kernels
@@ -399,9 +417,9 @@ CPU blocks and units of `KernelKind::Scalar` (vector size 1), from histogram (u3
 | --- | --- | ---: | --- | --- |
 | CpuSimd128 | u32 | 64 KiB | performance | no size at least 10% faster than 1 at 10^6 and 10^7; performance cores, 1.06x / 1.05x over all threads |
 | CpuSimd128 | f64 | 4 KiB | performance | closest, 4.2% slower: no admitted configuration within 3% of the fastest at both sizes (ADR-0018) |
-| CpuSimd256 | u32 | 16 KiB | all | copies CpuSimd512: no data |
-| CpuSimd256 | f64 | 16 KiB | all | copies CpuSimd512: no data |
-| CpuSimd512 | u32 | 16 KiB | all | no data |
-| CpuSimd512 | f64 | 16 KiB | all | no data |
+| CpuSimd256 | u32 | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| CpuSimd256 | f64 | 64 KiB | all | copies CpuSimd512: no size at least 10% faster than 1 at 10^6 and 10^7 |
+| CpuSimd512 | u32 | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
+| CpuSimd512 | f64 | 64 KiB | all | no size at least 10% faster than 1 at 10^6 and 10^7 |
 
 <!-- END GENERATED -->

@@ -84,8 +84,9 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
          threads or the performance cores; a device without a performance-core count gives \
          both the same time (ADR-0017). A reason \"closest, x% slower\" marks an entry where no \
          admitted configuration is within 3% of the fastest at both sizes, so the rule took the \
-         one with the smallest worst-case ratio, at most 10% slower; \"unresolved\" marks one \
-         where even that is more than 10% slower (ADR-0018).\n\n",
+         one with the smallest worst-case ratio, at most 10% slower (ADR-0018); \"closest \
+         across types\" marks a shared 4-byte entry whose types disagree, at most 25% slower \
+         (ADR-0021); \"unresolved\" marks one where even that bound is exceeded.\n\n",
     );
     writeln!(
         out,
