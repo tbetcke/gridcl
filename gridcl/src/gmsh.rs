@@ -538,9 +538,10 @@ mod tests {
     use std::thread::ThreadId;
 
     use cubecl::prelude::CubeElement;
-    use gridcl_parallel::{CommDyn, DType, Neighbourhood, ReduceOp, Serial};
+    use gridcl_parallel::Serial;
 
     use super::*;
+    use crate::test_comm::TwoRanks;
     use crate::{Codim, D2, PlanarMesh};
 
     fn fixture(name: &str) -> PathBuf {
@@ -623,53 +624,6 @@ mod tests {
                 Err(GridError::UnsupportedPrecision { scalar: "f64", .. })
             ));
         });
-    }
-
-    /// A communicator of two ranks; reading on it is refused before any collective.
-    #[derive(Clone)]
-    struct TwoRanks;
-
-    impl CommDyn for TwoRanks {
-        fn rank(&self) -> usize {
-            0
-        }
-        fn size(&self) -> usize {
-            2
-        }
-        fn barrier(&self) {
-            unreachable!()
-        }
-        fn all_reduce_bytes(&self, _: &mut [u8], _: DType, _: ReduceOp) {
-            unreachable!()
-        }
-        fn exscan_bytes(&self, _: &mut [u8], _: DType, _: ReduceOp) {
-            unreachable!()
-        }
-        fn all_to_all_v_bytes(
-            &self,
-            _: &[u8],
-            _: &[usize],
-            _: &mut [u8],
-            _: &[usize],
-            _: DType,
-        ) -> Result<()> {
-            unreachable!()
-        }
-        fn neighbour_all_to_all_v_bytes(
-            &self,
-            _: &Neighbourhood,
-            _: &[u8],
-            _: &[usize],
-            _: &mut [u8],
-            _: &[usize],
-            _: DType,
-        ) -> Result<()> {
-            unreachable!()
-        }
-        #[cfg(feature = "mpi")]
-        fn raw(&self) -> Option<mpi::ffi::MPI_Comm> {
-            None
-        }
     }
 
     #[test]

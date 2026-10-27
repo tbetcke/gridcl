@@ -132,6 +132,18 @@ where
         }
     }
 
+    /// The same mesh on `comm`, for tests of the rank checks (no collective runs).
+    #[cfg(test)]
+    pub(crate) fn with_comm<C2: Comm>(self, comm: C2) -> Mesh<F, TD, GD, C2> {
+        Mesh {
+            client: self.client,
+            comm,
+            topology: self.topology,
+            geometry: self.geometry,
+            tags: self.tags,
+        }
+    }
+
     /// The cell type of block `b`.
     fn cell(&self, b: usize) -> TD::Cell {
         self.topology.cell_blocks()[b].cell

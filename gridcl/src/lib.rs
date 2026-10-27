@@ -15,6 +15,8 @@ pub mod gmsh;
 mod mesh;
 pub mod prelude;
 mod tags;
+#[cfg(test)]
+mod test_comm;
 pub mod vtk;
 
 pub use any::{AnyMesh, AnyMeshRef};
