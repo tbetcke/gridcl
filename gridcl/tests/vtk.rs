@@ -1,6 +1,7 @@
 //! M5 acceptance tests (docs/design.md, "M5 VTK output", as amended by ADR-0024): VTK's
 //! reader reads every fixture, VTK integrates affine P2 and P3 meshes to `measure` and
-//! evaluates curved cells like `physical_points`, meshio reads identical raw arrays, and P2
+//! evaluates curved cells like `physical_points`, meshio reads identical raw arrays (ADR-0025:
+//! inline-base64 files, appended files through base64 twins), and P2
 //! pyramids are written linear with one warning.
 //!
 //! Every test checks the written files in Rust through `parse_vtu` first; the Python oracles
@@ -14,13 +15,14 @@ use std::path::PathBuf;
 
 use common::python::Oracle;
 use common::vtk::{
-    Case, Expected, TempDir, build_any, capture_warnings, check_file, corpus, data_cases,
-    decode_array, expected_geometry, expected_type, floats, ints, my_warnings, parse_file,
-    reference_cells, same_bits, variant, write_case,
+    Case, ENCODINGS, Expected, TempDir, build_any, capture_warnings, check_file, corpus,
+    data_cases, decode_array, expected_geometry, expected_type, floats, ints, my_warnings,
+    parse_file, reference_cells, same_bits, variant, write_case,
 };
 use common::{build, client, name};
 use cubecl::prelude::Client;
 use gridcl::prelude::*;
+use gridcl_io::vtk::VtuFile;
 use gridcl_testing::HostMesh;
 use serde_json::Value;
 
@@ -389,57 +391,113 @@ fn vtk_evaluates_curved_cells_like_gridcl() {
     }
 }
 
-/// The files of the meshio test for `F`: the data meshes in every encoding, and corpus meshes
-/// without data.
-fn meshio_files<F: Real>(client: &Client, dir: &TempDir) -> Vec<Expected> {
-    let mut cases: Vec<Case> = data_cases();
+/// The files of the meshio test for `F`, per mesh in the order of `ENCODINGS` (raw,
+/// raw + zlib, base64, base64 + zlib): the data meshes, and corpus meshes without data.
+fn meshio_files<F: Real>(client: &Client, dir: &TempDir) -> Vec<Vec<Expected>> {
+    let mut meshes: Vec<Case> = data_cases()
+        .into_iter()
+        .filter(|c| c.encoding == ENCODINGS[0])
+        .collect();
     let plain = common::vtk::corpus_meshes();
-    for (i, name) in [
+    for name in [
         "Hexahedron-p3",
         "Prism-p2",
         "Pyramid-p2",
         "curve3-p3",
         "mixed-p2",
-    ]
-    .iter()
-    .enumerate()
-    {
-        let mut c = plain
-            .iter()
-            .find(|c| c.name == *name)
-            .unwrap_or_else(|| panic!("no corpus mesh {name}"))
-            .clone();
-        c.encoding = common::vtk::ENCODINGS[i % 4];
-        cases.push(c);
+    ] {
+        meshes.push(
+            plain
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("no corpus mesh {name}"))
+                .clone(),
+        );
     }
-    cases
+    meshes
         .iter()
-        .map(|c| {
-            let e = write_case::<F>(client, c, dir);
-            check_file(&e, &parse_file(&e.path));
-            e
+        .map(|m| {
+            ENCODINGS
+                .iter()
+                .map(|&encoding| {
+                    let c = Case {
+                        encoding,
+                        ..m.clone()
+                    };
+                    let e = write_case::<F>(client, &c, dir);
+                    check_file(&e, &parse_file(&e.path));
+                    e
+                })
+                .collect()
         })
         .collect()
 }
 
-/// meshio reads identical raw arrays: points, connectivity, offsets, types and every point and
-/// cell array are bitwise equal to `parse_vtu` of the same file, and the data arrays equal the
-/// uploaded buffers.
+/// Asserts that two parsed files hold bitwise equal arrays, data arrays in the same order.
+fn assert_same_file(a: &VtuFile, b: &VtuFile, what: &str) {
+    assert!(same_bits(&a.points, &b.points), "{what}: points");
+    assert_eq!(a.connectivity, b.connectivity, "{what}: connectivity");
+    assert_eq!(a.offsets, b.offsets, "{what}: offsets");
+    assert_eq!(a.types, b.types, "{what}: types");
+    for (section, x, y) in [
+        ("point", &a.point_data, &b.point_data),
+        ("cell", &a.cell_data, &b.cell_data),
+    ] {
+        assert_eq!(x.len(), y.len(), "{what}: {section} arrays");
+        for (p, q) in x.iter().zip(y) {
+            assert_eq!(
+                (&p.name, p.components),
+                (&q.name, q.components),
+                "{what}: {section} data"
+            );
+            assert!(
+                same_bits(&p.values, &q.values),
+                "{what}: {section} data {:?}",
+                p.name
+            );
+        }
+    }
+}
+
+/// meshio reads identical raw arrays (ADR-0025): on the inline-base64 files, with and without
+/// zlib, points, connectivity, offsets, types and every point and cell array are bitwise equal
+/// to `parse_vtu` of the same file; every appended file parses bitwise equal to its base64 twin;
+/// the data arrays equal the uploaded buffers (`check_file`).
 #[test]
 fn meshio_reads_identical_raw_arrays() {
+    assert_eq!(
+        ENCODINGS,
+        [(false, false), (false, true), (true, false), (true, true)],
+        "twins: raw and base64 at the same zlib setting"
+    );
     let client = client();
     let dir = TempDir::new("meshio");
-    let mut files = meshio_files::<f32>(&client, &dir);
+    let mut groups = meshio_files::<f32>(&client, &dir);
     if gridcl_testing::supports::<f64>(&client) {
-        files.extend(meshio_files::<f64>(&client, &dir));
+        groups.extend(meshio_files::<f64>(&client, &dir));
+    }
+    for g in &groups {
+        for (appended, twin) in [(&g[0], &g[2]), (&g[1], &g[3])] {
+            assert_same_file(
+                &parse_file(&appended.path),
+                &parse_file(&twin.path),
+                &format!("{} vs its base64 twin", appended.what),
+            );
+        }
     }
     let Some(oracle) = Oracle::find("meshio_reads_identical_raw_arrays") else {
         return;
     };
+    let files: Vec<&Expected> = groups.iter().flat_map(|g| [&g[2], &g[3]]).collect();
     let paths: Vec<PathBuf> = files.iter().map(|e| e.path.clone()).collect();
     let results = oracle.run_files("meshio", &paths);
     for (e, r) in files.iter().zip(&results) {
         let what = &e.what;
+        assert_eq!(
+            r["version"].as_str(),
+            Some("2.2"),
+            "{what}: written version"
+        );
         let f = parse_file(&e.path);
         let (points, shape) = decode_array(&r["points"]);
         assert!(same_bits(&points, &f.points), "{what}: points");
