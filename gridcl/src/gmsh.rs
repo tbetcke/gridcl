@@ -149,7 +149,7 @@ where
         .iter()
         .map(|n| (n.name.clone(), n.dim, n.tag))
         .collect();
-    let mut registry = TagRegistry::new(tdim, names);
+    let mut registry = TagRegistry::new(client, tdim, names);
     let upload = |dim: usize, entries: &mut Entries| -> Result<MeshTags> {
         entries.sort_unstable();
         entries.dedup();
@@ -711,6 +711,32 @@ mod tests {
             GmshOptions::default(),
         );
         assert!(matches!(r, Err(GridError::Io(_))));
+    }
+
+    /// Physical names without elements, in D_TOP and below: empty groups of size 0.
+    #[test]
+    fn gmsh_read_named_groups_without_elements() {
+        let text = "$MeshFormat\n4.1 0 8\n$EndMeshFormat\n\
+            $PhysicalNames\n2\n2 1 \"domain\"\n1 5 \"empty\"\n$EndPhysicalNames\n\
+            $Nodes\n1 4 1 4\n2 1 0 4\n1\n2\n3\n4\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n$EndNodes\n\
+            $Elements\n1 2 1 2\n2 1 2 2\n1 1 2 3\n2 1 3 4\n$EndElements\n";
+        let path = std::env::temp_dir().join(format!("gridcl-m4r-{}.msh", std::process::id()));
+        std::fs::write(&path, text).unwrap();
+        let client = gridcl_testing::test_client();
+        let r = read::<f32, _>(&client, Serial, &path, GmshOptions::default());
+        let _ = std::fs::remove_file(&path);
+        let mesh = PlanarMesh::<f32>::try_from(r.unwrap()).unwrap();
+        let tags = mesh.tags();
+        for (codim, name, dim, value) in [(Codim::Vol, "domain", 2, 1), (Codim::Bnd, "empty", 1, 5)]
+        {
+            assert_eq!(tags.group_size(dim, value), Some(0), "{name}");
+            let t = tags.named(codim, name).unwrap();
+            assert_eq!(
+                (t.dim, t.indices.len(), t.values.len()),
+                (dim, 0, 0),
+                "{name}"
+            );
+        }
     }
 
     /// Cells are tagged in flat numbering over the blocks; tag elements through the entities.

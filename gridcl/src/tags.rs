@@ -99,7 +99,7 @@ impl Codim {
 
 /// The tags of a mesh: per dimension one physical and one elementary [`MeshTags`], the name
 /// table (name, dimension) → value, and each physical group's size, recorded on the host when
-/// the tags were read. `Default` is empty.
+/// the tags were read. A named group without entities has size 0. `Default` is empty.
 ///
 /// # Example
 ///
@@ -113,6 +113,8 @@ impl Codim {
 /// ```
 #[derive(Default)]
 pub struct TagRegistry {
+    /// The client of the mesh, for empty selections; `None` only in `Default`.
+    client: Option<Client>,
     /// The topological dimension of the mesh, for [`Codim`].
     tdim: usize,
     /// Physical tags by dimension.
@@ -173,14 +175,16 @@ fn fit(x: usize) -> Result<u32> {
 
 impl TagRegistry {
     /// An empty registry of a mesh of topological dimension `tdim` with the physical names
-    /// `names` ((name, dimension, value)).
-    pub(crate) fn new(tdim: usize, names: Vec<(String, usize, i32)>) -> Self {
+    /// `names` ((name, dimension, value)), each group of size 0 until set.
+    pub(crate) fn new(client: &Client, tdim: usize, names: Vec<(String, usize, i32)>) -> Self {
+        let sizes = names.iter().map(|&(_, d, v)| ((d, v), 0)).collect();
         TagRegistry {
+            client: Some(client.clone()),
             tdim,
             physical: (0..=tdim).map(|_| None).collect(),
             elementary: (0..=tdim).map(|_| None).collect(),
             names,
-            sizes: HashMap::new(),
+            sizes,
         }
     }
 
@@ -221,6 +225,7 @@ impl TagRegistry {
                 .collect::<Result<Vec<_>>>()
         };
         Ok(TagRegistry {
+            client: self.client.clone(),
             tdim: self.tdim,
             physical: clone(&self.physical)?,
             elementary: clone(&self.elementary)?,
@@ -303,8 +308,8 @@ impl TagRegistry {
     ///
     /// # Errors
     ///
-    /// `UnknownTag` (the value as the name) if dimension `dim` has no such group; allocation
-    /// and device errors.
+    /// `UnknownTag` (the value as the name) if dimension `dim` has no such group, named or
+    /// tagged; allocation and device errors.
     ///
     /// # Example
     ///
@@ -320,19 +325,22 @@ impl TagRegistry {
             dim,
         };
         let size = self.group_size(dim, value).ok_or_else(unknown)?;
-        let tags = self.physical(dim).ok_or_else(unknown)?;
-        let client = tags.indices.client();
+        let client = self.client.as_ref().ok_or_else(unknown)?;
         let mut values = DeviceBuffer::<i32>::uninit(client, size)?;
         fill(&mut values, value)?;
         let out = DeviceBuffer::<u32>::uninit(client, size)?;
+        let tags = match self.physical(dim) {
+            Some(tags) if size > 0 && tags.indices.len() > 0 => tags,
+            _ if size == 0 => {
+                return Ok(MeshTags {
+                    dim,
+                    indices: out,
+                    values,
+                });
+            }
+            _ => return Err(unknown()),
+        };
         let len = tags.indices.len();
-        if size == 0 || len == 0 {
-            return Ok(MeshTags {
-                dim,
-                indices: out,
-                values,
-            });
-        }
         let flags = DeviceBuffer::<u32>::uninit(client, len)?;
         let plan = LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)?;
         debug_assert_bindings(client, 2);
@@ -383,7 +391,8 @@ impl TagRegistry {
     /// # Errors
     ///
     /// `UnknownTag` if that dimension has no group of this name (with `dim` the mesh's tdim
-    /// when `codim` lies below dimension 0); allocation and device errors.
+    /// when `codim` lies below dimension 0); a named group without entities is empty;
+    /// allocation and device errors.
     ///
     /// # Example
     ///
@@ -426,6 +435,7 @@ mod tests {
     /// dimension 1 (entities 0 and 5 in both), an empty group, and elementary tags.
     fn registry(client: &Client) -> TagRegistry {
         let mut r = TagRegistry::new(
+            client,
             2,
             vec![
                 ("left".into(), 1, 1),
@@ -478,11 +488,16 @@ mod tests {
         assert_eq!(r.group_size(1, 2), Some(3));
         assert_eq!(r.names().count(), 5);
         assert!(r.elementary(1).is_some() && r.elementary(0).is_none());
-        // "domain" has a name but no tags of dimension 2.
+        // "domain" has a name but no tags of dimension 2: an empty group.
+        assert_eq!(r.group_size(2, 7), Some(0));
+        assert_eq!(
+            host(&r.named(Codim::Vol, "domain").unwrap()),
+            (2, vec![], vec![])
+        );
         for (result, name, dim) in [
             (r.named(Codim::Vol, "left"), "left", 2),
             (r.named(Codim::Bnd, "domain"), "domain", 1),
-            (r.named(Codim::Vol, "domain"), "7", 2),
+            (r.group(2, 8), "8", 2),
             (r.named(Codim::BBBnd, "left"), "left", 2),
             (r.group(1, 4), "4", 1),
             (r.group(3, 1), "1", 3),
@@ -515,7 +530,7 @@ mod tests {
         let entries: Vec<(u32, i32)> = (0..n)
             .flat_map(|i| [(i, 1 + (i % 3) as i32), (i, 10 + (i % 2) as i32)])
             .collect();
-        let mut r = TagRegistry::new(3, vec![]);
+        let mut r = TagRegistry::new(&client, 3, vec![]);
         let size = |v| entries.iter().filter(|e| e.1 == v).count();
         r.set_physical(tags(&client, 2, &entries), [(2, size(2)), (11, size(11))]);
         for v in [2, 11] {
@@ -543,6 +558,11 @@ mod tests {
     fn keeps_tags<F: Real>(client: &Client) {
         let mut m = mesh::<F>(client);
         assert!(m.tags().physical(1).is_none());
+        // A builder mesh's registry knows its tdim: Bnd addresses dimension 1.
+        assert!(matches!(
+            m.tags().named(Codim::Bnd, "wall"),
+            Err(GridError::UnknownTag { dim: 1, .. })
+        ));
         m.set_tags(registry(client));
         let copy = m.try_clone().unwrap();
         let (a, b) = (m.tags(), copy.tags());

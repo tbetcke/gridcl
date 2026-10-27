@@ -116,7 +116,9 @@ pub enum GridError {
     UnmatchedTagElement { dim: usize, tag: i64 },
     /// A file could not be read or written: the path and the `std::io::Error` text.
     Io(String),
-    /// A malformed file: the format, the byte offset of the error and what was wrong.
+    /// A malformed file: the format, the byte offset of the error and what was wrong. An error
+    /// in the file's content rather than its syntax (or in a model being written) has no byte
+    /// offset: `offset` is then 0 and the message says so.
     Parse {
         format: &'static str,
         offset: u64,

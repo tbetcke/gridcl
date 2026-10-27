@@ -10,6 +10,25 @@ use super::element_type::cell_name;
 use super::{ElementBlock, FORMAT, MshFile, PhysicalName, element_type, lagrange_element_type};
 
 /// The cells of one cell type and degree.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_dims::CellType;
+/// use gridcl_io::gmsh::{parse, to_gmsh_mesh};
+/// use gridcl_parallel::Serial;
+///
+/// // Two triangles and their shared edge as a tag element of entity 5.
+/// let text = b"$MeshFormat\n4.1 0 8\n$EndMeshFormat\n\
+///     $Nodes\n1 4 1 4\n2 1 0 4\n1\n2\n3\n4\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n$EndNodes\n\
+///     $Elements\n2 3 1 3\n2 1 2 2\n1 1 2 3\n2 1 3 4\n1 5 1 1\n3 1 3\n$EndElements\n";
+/// let mesh = to_gmsh_mesh(&parse(text)?, &Serial, None)?;
+/// let block = &mesh.blocks[0];
+/// assert_eq!((block.cell, block.degree), (CellType::Triangle, 1));
+/// assert_eq!((&block.tags[..], &block.elementary[..]), (&[1, 2][..], &[1, 1][..]));
+/// assert_eq!(block.nodes, [0, 1, 2, 0, 2, 3]);
+/// # Ok::<(), gridcl_device::GridError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GmshCellBlock {
     /// The cell type.
@@ -27,6 +46,25 @@ pub struct GmshCellBlock {
 }
 
 /// The lower-dimensional elements of one cell type, which become tags.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_dims::CellType;
+/// use gridcl_io::gmsh::{parse, to_gmsh_mesh};
+/// use gridcl_parallel::Serial;
+///
+/// // Two triangles and their shared edge as a tag element of entity 5.
+/// let text = b"$MeshFormat\n4.1 0 8\n$EndMeshFormat\n\
+///     $Nodes\n1 4 1 4\n2 1 0 4\n1\n2\n3\n4\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n$EndNodes\n\
+///     $Elements\n2 3 1 3\n2 1 2 2\n1 1 2 3\n2 1 3 4\n1 5 1 1\n3 1 3\n$EndElements\n";
+/// let mesh = to_gmsh_mesh(&parse(text)?, &Serial, None)?;
+/// let group = &mesh.tag_groups[0];
+/// assert_eq!((group.dim, group.cell), (1, CellType::Interval));
+/// assert_eq!((&group.corners[..], &group.tags[..]), (&[1, 3][..], &[3][..]));
+/// assert_eq!(group.elementary, [5]);
+/// # Ok::<(), gridcl_device::GridError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GmshTagGroup {
     /// The dimension of the elements.
@@ -46,6 +84,24 @@ pub struct GmshTagGroup {
 /// The mesh a file describes: D_TOP and D_GEO, nodes with tags, cell blocks of the D_TOP
 /// elements in `CellType` order, the lower-dimensional elements as tag groups, and the
 /// physical names.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_io::gmsh::{parse, to_gmsh_mesh};
+/// use gridcl_parallel::Serial;
+///
+/// // Two triangles and their shared edge as a tag element of entity 5.
+/// let text = b"$MeshFormat\n4.1 0 8\n$EndMeshFormat\n\
+///     $Nodes\n1 4 1 4\n2 1 0 4\n1\n2\n3\n4\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n$EndNodes\n\
+///     $Elements\n2 3 1 3\n2 1 2 2\n1 1 2 3\n2 1 3 4\n1 5 1 1\n3 1 3\n$EndElements\n";
+/// let mesh = to_gmsh_mesh(&parse(text)?, &Serial, None)?;
+/// assert_eq!((mesh.tdim, mesh.gdim), (2, 2));
+/// assert_eq!(mesh.node_tags, [1, 2, 3, 4]);
+/// assert_eq!(&mesh.nodes[4..6], [1.0, 1.0]);
+/// assert_eq!((mesh.blocks.len(), mesh.tag_groups.len()), (1, 1));
+/// # Ok::<(), gridcl_device::GridError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct GmshMesh {
     /// D_TOP: the highest element dimension.
@@ -69,13 +125,23 @@ fn content_error(message: impl Into<String>) -> GridError {
     GridError::Parse {
         format: FORMAT,
         offset: 0,
-        message: message.into(),
+        message: format!("{} (no byte offset: the file's content)", message.into()),
     }
 }
 
 /// u32 of `i`, or `TooLarge`.
 fn index_u32(i: usize) -> Result<u32> {
     u32::try_from(i).map_err(|_| GridError::TooLarge)
+}
+
+/// Fails with `LengthMismatch` unless `found` is `count · per`; `TooLarge` if that overflows.
+fn check_len(found: usize, count: usize, per: usize) -> Result<()> {
+    let expected = count.checked_mul(per).ok_or(GridError::TooLarge)?;
+    if found == expected {
+        Ok(())
+    } else {
+        Err(GridError::LengthMismatch { expected, found })
+    }
 }
 
 /// Fails with `DuplicateOriginId` at the first repeated tag.
@@ -327,6 +393,9 @@ fn upgrade(
 /// - `DimensionMismatch` for a `gdim` outside 1–3, below D_TOP or below the inferred D_GEO;
 /// - `UnmatchedTagElement` for a lower-dimensional element with a corner that is not a vertex
 ///   of a cell;
+/// - `UnsupportedElementType` for a type outside A.7; `Parse` for an element type of another
+///   dimension than its block, and `LengthMismatch` for an element block whose node list does
+///   not hold its type's node count per element (both only in a hand-built `MshFile`);
 /// - `TooLarge` if a count or tag overflows.
 ///
 /// # Example
@@ -355,6 +424,16 @@ pub fn to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> 
             .iter()
             .flat_map(|b| b.tags.iter().copied()),
     )?;
+    for b in &file.element_blocks {
+        let ty = element_type(b.element_type)?;
+        if gridcl_refcell::tdim(ty.cell) != b.dim {
+            return Err(content_error(format!(
+                "element type {} in an entity of dimension {}",
+                b.element_type, b.dim
+            )));
+        }
+        check_len(b.nodes.len(), b.tags.len(), ty.num_nodes)?;
+    }
     let info = entity_info(file);
     let kept: Vec<(&ElementBlock, i32, Vec<i32>)> = file
         .element_blocks
@@ -600,8 +679,9 @@ fn shift_to_one(tags: impl Iterator<Item = i64>) -> Result<i64> {
 ///
 /// # Errors
 ///
-/// `LengthMismatch` if the node arrays disagree; `IndexOutOfRange` for a cell node beyond the
-/// nodes; `UnsupportedDegree` for a cell Gmsh has no type for; `TooLarge` if a tag overflows.
+/// `LengthMismatch` if the node arrays disagree, or a block's or group's arrays disagree with
+/// its element count; `IndexOutOfRange` for a cell node beyond the nodes; `UnsupportedDegree`
+/// for a cell Gmsh has no type for; `TooLarge` if a tag overflows.
 ///
 /// # Example
 ///
@@ -654,6 +734,24 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
         })
         .collect();
 
+    // Shapes first, so that no index below goes out of range.
+    for b in &mesh.blocks {
+        let ty = lagrange_element_type(b.cell, b.degree)?;
+        check_len(b.nodes.len(), b.tags.len(), ty.num_nodes)?;
+        check_len(b.elementary.len(), b.tags.len(), 1)?;
+        if let Some(&i) = b.nodes.iter().find(|&&i| i as usize >= n) {
+            return Err(GridError::IndexOutOfRange {
+                index: i as usize,
+                len: n,
+            });
+        }
+    }
+    for g in &mesh.tag_groups {
+        let nv = gridcl_refcell::vertices(g.cell).len();
+        check_len(g.corners.len(), g.tags.len(), nv)?;
+        check_len(g.elementary.len(), g.tags.len(), 1)?;
+    }
+
     // Node tags: vertices keep theirs, the others follow the largest vertex tag.
     let mut is_vertex = vec![false; n];
     for b in &mesh.blocks {
@@ -661,12 +759,7 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
         let nv = gridcl_refcell::vertices(b.cell).len();
         for row in b.nodes.chunks_exact(k) {
             for &i in &row[..nv] {
-                *is_vertex
-                    .get_mut(i as usize)
-                    .ok_or(GridError::IndexOutOfRange {
-                        index: i as usize,
-                        len: n,
-                    })? = true;
+                is_vertex[i as usize] = true;
             }
         }
     }
@@ -1124,6 +1217,22 @@ mod tests {
             to_gmsh_mesh(&unmatched, &Serial, None),
             Err(GridError::UnmatchedTagElement { dim: 1, tag: 7 })
         ));
+        // Hand-built files: a node list one short, and a triangle in a curve.
+        let mut short = file(&nodes, &[(2, 2, &[1], &[1, 2, 3])]);
+        short.element_blocks[0].nodes.pop();
+        assert!(matches!(
+            to_gmsh_mesh(&short, &Serial, None),
+            Err(GridError::LengthMismatch {
+                expected: 3,
+                found: 2
+            })
+        ));
+        let mut wrong_dim = file(&nodes, &[(2, 2, &[1], &[1, 2, 3])]);
+        wrong_dim.element_blocks[0].dim = 1;
+        assert!(matches!(
+            to_gmsh_mesh(&wrong_dim, &Serial, None),
+            Err(GridError::Parse { .. })
+        ));
     }
 
     /// Upgraded serendipity boxes equal their complete-P2 twins to 10^−14: the same cells (by
@@ -1463,6 +1572,54 @@ mod tests {
         assert_eq!((e.curves[0].tag, e.surfaces[0].tag), (4, 3));
         assert_eq!(e.surfaces[0].physical_tags, [7]);
         assert_eq!(file.node_blocks[0].entity_tag, 3);
+    }
+
+    /// Malformed meshes give errors, not panics: a cell node beyond the nodes, and block or
+    /// group arrays that disagree with their element counts.
+    #[test]
+    fn convert_from_gmsh_mesh_rejects_malformed_meshes() {
+        let good = GmshMesh {
+            tdim: 2,
+            gdim: 2,
+            nodes: vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+            node_tags: vec![1, 2, 3],
+            blocks: vec![GmshCellBlock {
+                cell: CellType::Triangle,
+                degree: 1,
+                nodes: vec![0, 1, 2],
+                tags: vec![1],
+                elementary: vec![1],
+                physical: vec![],
+            }],
+            tag_groups: vec![GmshTagGroup {
+                dim: 1,
+                cell: CellType::Interval,
+                corners: vec![1, 2],
+                tags: vec![1],
+                elementary: vec![2],
+                physical: vec![],
+            }],
+            names: vec![],
+        };
+        assert!(from_gmsh_mesh(&good).is_ok());
+        type Edit = (&'static str, fn(&mut GmshMesh));
+        let edits: [Edit; 5] = [
+            ("cell node", |m| m.blocks[0].nodes[2] = 3),
+            ("cell nodes", |m| m.blocks[0].nodes.push(0)),
+            ("cell elementary", |m| m.blocks[0].elementary.clear()),
+            ("group corners", |m| {
+                m.tag_groups[0].corners.pop();
+            }),
+            ("group elementary", |m| m.tag_groups[0].elementary.push(2)),
+        ];
+        for (what, edit) in edits {
+            let mut bad = good.clone();
+            edit(&mut bad);
+            match from_gmsh_mesh(&bad) {
+                Err(GridError::IndexOutOfRange { .. } | GridError::LengthMismatch { .. }) => {}
+                r => panic!("{what}: {:?}", r.err()),
+            }
+        }
     }
 
     /// One entity per (dimension, elementary tag, physical set), with bounding boxes from its

@@ -5,9 +5,22 @@ use std::io::Write;
 
 use gridcl_device::{GridError, Result};
 
-use super::{Entity, MshFile, PartitionedEntity};
+use super::{Entity, FORMAT, MshFile, PartitionedEntity};
 
 /// The encoding of a written file. Binary files are little-endian with an 8-byte `size_t`.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_io::gmsh::{Encoding, MshFile};
+///
+/// for (encoding, header) in [(Encoding::Ascii, "4.1 0 8"), (Encoding::Binary, "4.1 1 8")] {
+///     let mut bytes = Vec::new();
+///     MshFile::default().write_to(&mut bytes, encoding)?;
+///     assert!(bytes.starts_with(format!("$MeshFormat\n{header}\n").as_bytes()));
+/// }
+/// # Ok::<(), gridcl_device::GridError>(())
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Encoding {
     /// Text, with shortest round-trip floats.
@@ -56,8 +69,8 @@ impl Out {
         self.size(n as u64);
     }
 
+    /// A node or element tag, ≥ 1 by `check_writable`.
     fn tag(&mut self, t: i64) {
-        // Tags are ≥ 1 in a valid model; a negative tag is written as its two's complement.
         self.size(t as u64);
     }
 
@@ -123,7 +136,49 @@ impl Out {
     }
 }
 
+/// `Parse` for a model whose file the parser would reject; a model has no byte offset.
+fn unwritable(message: String) -> GridError {
+    GridError::Parse {
+        format: FORMAT,
+        offset: 0,
+        message: format!("{message} (no byte offset: the model, not a file)"),
+    }
+}
+
 impl MshFile {
+    /// Fails unless the parser can read the written file: node and element tags of 1 or more
+    /// (the header range of an empty section aside), names without quotes or line breaks.
+    fn check_writable(&self) -> Result<()> {
+        for n in &self.physical_names {
+            if n.name.contains(['"', '\n', '\r']) {
+                return Err(unwritable(format!(
+                    "physical name {:?} has a quote or a line break",
+                    n.name
+                )));
+            }
+        }
+        let node_tags = self.node_blocks.iter().flat_map(|b| b.tags.iter());
+        let element_nodes = self.element_blocks.iter().flat_map(|b| b.nodes.iter());
+        let periodic_nodes = self
+            .periodic
+            .iter()
+            .flat_map(|l| l.nodes.iter().flat_map(|(a, b)| [a, b]));
+        let element_tags = self.element_blocks.iter().flat_map(|b| b.tags.iter());
+        let tags = node_tags
+            .chain(element_nodes)
+            .chain(periodic_nodes)
+            .map(|t| ("node", t))
+            .chain(element_tags.map(|t| ("element", t)));
+        for (what, &t) in tags {
+            if t < 1 {
+                return Err(unwritable(format!(
+                    "{what} tag {t}: tags must be 1 to 2^63 - 1"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Writes the file as MSH 4.1 in `encoding`: `$MeshFormat`, then `$PhysicalNames`,
     /// `$Entities` and `$PartitionedEntities` when present, `$Nodes`, `$Elements`, and
     /// `$Periodic` when present. The header counts and tag ranges of `$Nodes` and `$Elements`
@@ -131,6 +186,8 @@ impl MshFile {
     ///
     /// # Errors
     ///
+    /// `Parse` (no byte offset) before anything is written, for a model the parser would
+    /// reject: a node or element tag below 1, or a physical name with a quote or a line break;
     /// `Io` if writing fails.
     ///
     /// # Panics
@@ -166,6 +223,7 @@ impl MshFile {
     /// # Ok::<(), gridcl_device::GridError>(())
     /// ```
     pub fn write_to(&self, w: &mut dyn Write, encoding: Encoding) -> Result<()> {
+        self.check_writable()?;
         let binary = encoding == Encoding::Binary;
         let mut o = Out {
             bytes: Vec::new(),
@@ -481,6 +539,65 @@ mod tests {
             .write_to(&mut text, Encoding::Ascii)
             .unwrap();
         assert!(text.starts_with(b"$MeshFormat\n4.1 0 8\n$EndMeshFormat\n"));
+    }
+
+    /// Models the parser would reject give `Parse` and write nothing: tags below 1 (nodes,
+    /// element nodes, elements, periodic nodes) and names with a quote or a line break.
+    #[test]
+    fn write_rejects_unparsable_models() {
+        let good = MshFile {
+            physical_names: vec![PhysicalName {
+                dim: 2,
+                tag: 1,
+                name: "domain".into(),
+            }],
+            node_blocks: vec![NodeBlock {
+                dim: 2,
+                entity_tag: 1,
+                tags: vec![1, 2, 3],
+                coords: vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            }],
+            element_blocks: vec![ElementBlock {
+                dim: 2,
+                entity_tag: 1,
+                element_type: 2,
+                tags: vec![1],
+                nodes: vec![1, 2, 3],
+            }],
+            periodic: vec![Periodic {
+                dim: 1,
+                tag: 2,
+                master_tag: 1,
+                affine: vec![],
+                nodes: vec![(2, 1)],
+            }],
+            ..MshFile::default()
+        };
+        round_trip(&good);
+        type Edit = (&'static str, fn(&mut MshFile));
+        let edits: [Edit; 6] = [
+            ("node tag", |f| f.node_blocks[0].tags[0] = 0),
+            ("element node", |f| f.element_blocks[0].nodes[1] = -4),
+            ("element tag", |f| f.element_blocks[0].tags[0] = i64::MIN),
+            ("periodic node", |f| f.periodic[0].nodes[0].1 = 0),
+            ("quoted name", |f| f.physical_names[0].name = "a\"b".into()),
+            ("two-line name", |f| {
+                f.physical_names[0].name = "a\nb".into()
+            }),
+        ];
+        for (what, edit) in edits {
+            let mut bad = good.clone();
+            edit(&mut bad);
+            for encoding in [Encoding::Ascii, Encoding::Binary] {
+                let mut bytes = Vec::new();
+                let r = bad.write_to(&mut bytes, encoding);
+                assert!(
+                    matches!(r, Err(GridError::Parse { offset: 0, .. })),
+                    "{what}: {r:?}"
+                );
+                assert!(bytes.is_empty(), "{what}: bytes written");
+            }
+        }
     }
 
     /// A small model: one node block and one element block of type `ty` (A.7), random tags

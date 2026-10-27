@@ -122,12 +122,13 @@ where
         topology: Topology<TD>,
         geometry: Geometry<F, TD, GD>,
     ) -> Self {
+        let tags = TagRegistry::new(&client, TD::N, Vec::new());
         Mesh {
             client,
             comm,
             topology,
             geometry,
-            tags: TagRegistry::default(),
+            tags,
         }
     }
 

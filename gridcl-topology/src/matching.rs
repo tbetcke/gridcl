@@ -98,8 +98,11 @@ fn resolve_kernel(
             let p = payload[j];
             if p >= num_entities {
                 let head = first[group[j] as usize];
-                let mut r = offset + head;
-                if head >= num_entities {
+                // The sum only for an entity head, so a tag payload's head never wraps it.
+                let mut r = offset;
+                if head < num_entities {
+                    r += head;
+                } else {
                     r = u32::MAX;
                 }
                 out[(p - num_entities) as usize] = r;
