@@ -713,6 +713,8 @@ VtkWriter::vtu("out/scalp").lagrange(true).write(&scalp)?;          // generic o
 VtkWriter::vtu("out/scalp2").write_any(AnyMeshRef::Surface(&scalp))?; // erased path, no clone
 ```
 
+`VtkWriter` (gridcl) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. `vtu` and `pvtu` require one rank until M8 (ADR-0024).
+
 ## Reference cells and conventions
 
 gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 of Scroggs et al., [arXiv:2506.20188](https://arxiv.org/html/2506.20188), published 2026). ndelement main at f8cbffe implements them. gridcl-refcell holds its own copy of every table and depends only on gridcl-dims, so the tables are usable on the host, inside `comptime!` blocks and in tests. Agreement with ndelement is checked by the separate gridcl-conformance crate (A.10).
@@ -738,7 +740,7 @@ gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 
     - Intervals, triangles, quadrilaterals, tetrahedra and hexahedra use exactly ndelement's layout, so the FEM/BEM layer can apply ndelement's DOF transformations without a second convention.
     - ndelement has no Lagrange element on prisms or pyramids. gridcl defines those layouts in A.5, using the DefElement conventions and the same in-entity rule; Basix's equispaced lattices for these cells coincide with it.
     - The pyramid uses DefElement's Lagrange pyramid space (Definition 9), a rational space of dimension (p+1)(p+2)(2p+3)/6. A FEM layer that needs prism or pyramid elements must supply them itself.
-- **Node families.** Equispaced points on every cell are required for Gmsh and VTK interoperability. Gauss–Lobatto–Legendre (GLL) points are offered on intervals, quadrilaterals and hexahedra only, matching ndelement. Requesting GLL on any other cell returns `GridError::UnsupportedNodeFamily`. Conversion between families is an interpolation applied on the device; writers always convert to equispaced. (Until M5, `GmshWriter` rejects GLL geometry with `UnsupportedNodeFamily`; ADR-0022.)
+- **Node families.** Equispaced points on every cell are required for Gmsh and VTK interoperability. Gauss–Lobatto–Legendre (GLL) points are offered on intervals, quadrilaterals and hexahedra only, matching ndelement. Requesting GLL on any other cell returns `GridError::UnsupportedNodeFamily`. Conversion between families is an interpolation applied on the device; writers always convert to equispaced. Both writers call `gridcl_geometry::equispaced_nodes`; a node shared by several cells takes its value from its first cell in flat order, so the result is deterministic (ADR-0024).
 - **DOF transformations.** The base transformations of Scroggs, Dokken, Richardson and Wells (ACM TOMS 48(2), 2022, doi 10.1145/3524456) depend only on the sub-entity type. They are therefore identical in the DefElement and Basix numberings; only the block of the cell transformation that each one lands in moves.
 
 ## Device model and backends
@@ -1508,11 +1510,12 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 - **VTU** (XML with `version="2.2"`, appended raw or base64 binary, optional zlib). Cells are written as linear cells (1, 3, 5, 9, 10, 12, 13, 14) or, for p ≥ 2, Lagrange cells (68–73).
     - The version matters: VTK renumbers higher-order hexahedra in files with a version below 2.1 (`vtkUpdateCellsV8toV9`), and gridcl writes the VTK 9 ordering.
     - Degree is inferred from the point count for isotropic cells.
-- **High-order pyramids** are written as vertices only (VTK type 14) with a warning, or as a subdivided output mesh. VTK's type 74 (`VTK_LAGRANGE_PYRAMID`) is a placeholder, and DOLFINx's writer also refuses pyramids with more than five nodes.
-- **PVTU** for parallel runs: one piece per rank plus the parallel header. Ghost cells carry a `vtkGhostType` cell array (value 1 = duplicate cell) so that ParaView hides them.
+    - gridcl-io holds the file model (`VtuFile`), the cell-type table, the writer and `parse_vtu`; `gridcl::vtk::VtkWriter` downloads meshes. Points are all geometry nodes (Float64, or Float32 for f32 meshes), also for linear output. zlib through `flate2` (`rust_backend`) (ADR-0024).
+- **High-order pyramids** are written as vertices only (VTK type 14) with one warning per file (`log::warn!`). A subdivided output mesh is a possible later option (ADR-0024). VTK's type 74 (`VTK_LAGRANGE_PYRAMID`) is a placeholder, and DOLFINx's writer also refuses pyramids with more than five nodes.
+- **PVTU** for parallel runs: one piece per rank plus the parallel header. Ghost cells carry a `vtkGhostType` cell array (value 1 = duplicate cell) so that ParaView hides them. M5 writes the header and one piece on one rank; M8 adds more ranks and `vtkGhostType`.
 - **VTKHDF** (feature `hdf5`) through hdf5-metno with its `mpio` feature for parallel HDF5: a single file with per-rank offsets, the same cell types and the same ghost array.
-- **VTU reading** (linear and Lagrange) has lower priority and is used for round-trip tests.
-- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays; it writes version 0.1 and applies no conversion.
+- **VTU reading** (`parse_vtu`, file level; linear and Lagrange) has lower priority and is used for round-trip tests and the VTK-written fixtures; no mesh is built from a VTU (ADR-0024).
+- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays; it writes version 0.1 and applies no conversion. Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024).
 
 ### High-order node orderings
 
@@ -1571,7 +1574,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
-    - every VTU fixture read back by VTK's Python reader.
+    - every VTU fixture read back by VTK's Python reader (the files the M5 tests write, and the committed VTK-written reference cells).
 - **Conformance with ndelement:** gridcl-conformance (A.10).
 - **Property tests** (proptest) cover node-ordering permutations, primitives and IndexMap scatter consistency. They use sizes up to 10^5 with 256 cases, plus fixed sizes of 10^6 and 10^7 for primitives.
 - **Compile-fail tests:** trybuild, as in Listing B10.
@@ -1641,10 +1644,10 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); libc (macOS, ADR-0017); dev: proptest |
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
-| gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
+| gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
-| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU, VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; hdf5-metno (optional); dev: mshio, serde_json |
-| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, prelude | all of the above; log |
+| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional); dev: mshio, serde_json |
+| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
 | gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
@@ -1868,12 +1871,12 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M5 VTK output
 
-**Scope:** VTU (version 2.2) with linear and Lagrange cells, cell and point data, the PVTU skeleton and the pyramid fallback.
+**Scope:** VTU (version 2.2) with linear and Lagrange cells, cell and point data, the PVTU skeleton and the pyramid fallback, and the device GLL → equispaced conversion for both writers.
 
 **Acceptance:**
 
 - VTK's Python reader (pinned, ≥ 9.2) reads every fixture;
-- the integrated volume or area of P2 and P3 meshes (`vtkIntegrateAttributes`) equals gridcl's `measure` to 10^−10 (f64);
+- the integrated volume or area of affine P2 and P3 meshes (`vtkIntegrateAttributes`) equals gridcl's `measure` to 10^−10 (f64); on curved P2 and P3 meshes, VTK's `EvaluateLocation` at Gauss points equals `physical_points` to 10^−10 (f64) (ADR-0024);
 - meshio reads identical raw arrays;
 - a P2 pyramid mesh is written as linear cells with one warning.
 
@@ -2189,7 +2192,7 @@ Serendipity types are upgraded to complete Lagrange on read. All other incomplet
 | Tetrahedron | 10 | 24 (10) | 71 | 10 for p = 1, else 71 |
 | Hexahedron | 12 | 25 (20), 29 (27) | 72 | 12 for p = 1, else 72 |
 | Prism | 13 | 26 (15), 32 (18) | 73 | 13 for p = 1, else 73 |
-| Pyramid | 14 | 27 (13) | none usable | 14 for p = 1; for p ≥ 2 vertices only (14) with a warning, or a subdivided output mesh |
+| Pyramid | 14 | 27 (13) | none usable | 14 for p = 1; for p ≥ 2 vertices only (14) with one warning per file (ADR-0024) |
 
 VTK's enum defines 74 (`VTK_LAGRANGE_PYRAMID`) only as a placeholder, "Not Implemented yet", and DOLFINx's writer refuses pyramids with more than five nodes. High-order pyramids therefore go to Gmsh files at full degree and to VTK only as linear or subdivided cells. VTU files are written with `version="2.2"`, because VTK renumbers higher-order hexahedra in files below version 2.1.
 

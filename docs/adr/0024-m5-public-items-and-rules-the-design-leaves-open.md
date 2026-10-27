@@ -1,6 +1,6 @@
 # ADR-0024: M5 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-27
 - **Raised in:** M5 planning (docs/plans/M5.md, "Planned public API and rules", questions 2–13)
 - **Design sections affected:**
@@ -249,4 +249,4 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-27, as proposed (option 2, items 1–12), without conditions. Applied to docs/design.md in `adr: 0024 apply`.
