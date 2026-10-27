@@ -67,8 +67,20 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
     | Open MPI or MPICH (one of them) | Homebrew | local MPI runs; hosted CI covers the other |
     | rsync 3.x | Homebrew (the rsync that ships with macOS may lack the filter options the runner uses) | the remote-test runner |
     | Gmsh, one pinned version: the PyPI wheel `gmsh==4.15.2` | `.venv/bin/pip install gmsh==4.15.2` (`scripts/check-local-tools.sh` checks the pin) | the M4 fixture corpus (`scripts/fixtures/gmsh/generate.py`) |
-    | Python with `vtk` ≥ 9.2 and `meshio` | a virtual environment | M5 read-back tests |
+    | The M5 Python oracles, pinned: `vtk==9.7.1` and `meshio==5.3.5` (ADR-0024) | in `.venv`, see below (`scripts/check-local-tools.sh` checks the pins) | `scripts/oracles/vtk_oracle.py` (the M5 VTK tests) and `scripts/fixtures/vtk/generate.py` (the VTK-written reference cells) |
     | HDF5 built with MPI | Homebrew (`hdf5-mpi`) | M8 VTKHDF output |
+
+    **Python environment.** One virtual environment at the repository root, `.venv` (git-ignored), holds every pinned Python package:
+
+    ```sh
+    python3 -m venv .venv
+    .venv/bin/pip install vtk==9.7.1 meshio==5.3.5 gmsh==4.15.2
+    scripts/check-local-tools.sh    # checks the three pins
+    ```
+
+    pip needs pypi.org and files.pythonhosted.org. Inside Claude Code's sandbox the filtering proxy breaks pip's certificate check, so the install runs outside it. Every git worktree needs its own `.venv`, or `GRIDCL_PYTHON`.
+
+    The M5 tests run `scripts/oracles/vtk_oracle.py` with `GRIDCL_PYTHON`, else `<repo>/.venv/bin/python`. A missing interpreter, or one without the pinned versions, fails the test with the install command; `GRIDCL_SKIP_PYTHON=1` skips the oracle checks instead and says so (ADR-0024, item 11). Remote CUDA runs set `GRIDCL_SKIP_PYTHON=1`: the targets have no VTK, and the oracles check host-side files. meshio reads only the inline-base64 VTU files of these tests (ADR-0025).
 
 5. **Runner configuration.** After E0 has created `scripts/hpc/targets.example.env`, copy it to `scripts/hpc/targets.env` and fill in your aliases and paths.
 
@@ -180,7 +192,7 @@ GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu
 
 | Workflow | Jobs | Trigger | System packages |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push (a pull request shows its head commit's checks); manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools` |
+| `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push (a pull request shows its head commit's checks); manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools`; cpu and vulkan also install the pinned Python oracles, `vtk==9.7.1 meshio==5.3.5`, with pip into `.venv` (the runner's `python3`) |
 | `.github/workflows/conformance.yml` | conformance | nightly; pushes touching `conformance/` or `gridcl-refcell/`; manual | `libopenblas-dev` |
 | `.github/workflows/ptscotch.yml` | ptscotch (skeleton until M7) | nightly; pushes touching `gridcl-partition/` or `ptscotch-sys/`; manual | `libptscotch-dev` |
 
@@ -222,3 +234,4 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | 2026-10-19 | M0 review: MPI on CUDA row (Myriad V100); `mpi-test.sh` links the `GRIDCL_TEST_DEVICE` backend and needs no `jq`; debug profile and the buildid overflow override. |
 | 2026-10-24 | M3s T7: Myriad CPU-only target `myriad-cpu` (D nodes, ADR-0014): target row, reference section and test command; prologue line `cpus:`. |
 | 2026-10-24 | M3s T19: Kathleen target `kathleen` (Slurm, ADR-0016): target row, reference section, test commands; `myriad-cpu` becomes the CPU fallback. |
+| 2026-10-27 | M5 T1: pinned Python oracles `vtk==9.7.1` and `meshio==5.3.5` in `.venv` (ADR-0024, ADR-0025): setup, `GRIDCL_PYTHON` and `GRIDCL_SKIP_PYTHON`; hosted CI installs them in the cpu and vulkan jobs. |

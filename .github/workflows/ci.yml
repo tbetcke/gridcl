@@ -42,6 +42,11 @@ jobs:
           key: cpu
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
+          .venv/bin/python scripts/oracles/vtk_oracle.py versions
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -109,6 +114,11 @@ jobs:
           key: vulkan
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
+          .venv/bin/python scripts/oracles/vtk_oracle.py versions
       # Release build: the primitives' property tests are too slow on lavapipe in a debug
       # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
       - run: cargo test --release --workspace --features gridcl-testing/vulkan -- --nocapture
