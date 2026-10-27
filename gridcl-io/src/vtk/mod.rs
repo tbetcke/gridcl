@@ -8,6 +8,7 @@
 //!
 //! `gridcl::vtk::VtkWriter` downloads meshes.
 
+mod base64;
 mod cell_type;
 mod convert;
 mod model;
