@@ -2,7 +2,7 @@
 //!
 //! The facade crate: [`Mesh`], [`MeshBuilder`], [`AnyMesh`], [`AnyMeshRef`], [`with_mesh!`],
 //! [`DeviceGrid`] (re-exported), tags ([`TagRegistry`], [`MeshTags`], [`Codim`]), Gmsh I/O
-//! ([`gmsh`]), and the [`prelude`] (docs/design.md, "Architecture").
+//! ([`gmsh`]), VTK output ([`vtk`]), and the [`prelude`] (docs/design.md, "Architecture").
 //!
 //! A mesh is typed by its scalar `F`, its topological and geometric dimensions `TD` and `GD`,
 //! and its communicator `C` (default [`Serial`]). Methods exist only where they make sense:
@@ -15,6 +15,7 @@ pub mod gmsh;
 mod mesh;
 pub mod prelude;
 mod tags;
+pub mod vtk;
 
 pub use any::{AnyMesh, AnyMeshRef};
 pub use builder::MeshBuilder;
@@ -22,6 +23,7 @@ pub use entity_map::EntityMap;
 pub use gmsh::GmshOptions;
 pub use mesh::{CurveMesh, Mesh, PlanarMesh, SurfaceMesh, VolumeMesh};
 pub use tags::{Codim, MeshTags, TagRegistry};
+pub use vtk::VtkWriter;
 
 pub use gridcl_device::{
     ConnKey, DeviceBuffer, DeviceCsr, DeviceStrided, GridError, Real, Result, VECTOR_PAD,
