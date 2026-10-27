@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use gridcl_device::{DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
-use gridcl_geometry::{DeviceGrid, NodeFamily, equispaced_nodes};
+use gridcl_geometry::DeviceGrid;
 use gridcl_io::vtk::{
     Binary, DataArray, DataValues, VtkCellBlock, VtkMesh, VtuFile, to_vtu, write_pvtu,
 };
@@ -96,20 +96,7 @@ where
     GD: Dim,
     C: Comm,
 {
-    let gd = GD::N;
     let blocks = mesh.cell_blocks();
-    let gll = (0..blocks.len()).any(|b| mesh.geometry_block(b).element.family == NodeFamily::Gll);
-    let nodes = if gll {
-        equispaced_nodes(mesh)?.to_host()?
-    } else {
-        mesh.nodes().to_host()?
-    };
-    let origin = mesh.origin();
-    let nodes = nodes
-        .iter()
-        .enumerate()
-        .map(|(i, x)| x.widen() + origin.as_ref()[i % gd])
-        .collect();
     let mut out = Vec::with_capacity(blocks.len());
     for (b, block) in blocks.iter().enumerate() {
         let geometry = mesh.geometry_block(b);
@@ -127,8 +114,8 @@ where
         });
     }
     Ok(VtkMesh {
-        gdim: gd,
-        nodes,
+        gdim: GD::N,
+        nodes: mesh.equispaced_host_nodes()?,
         blocks: out,
     })
 }
@@ -554,6 +541,8 @@ impl<'a> VtkWriter<'a> {
 #[cfg(test)]
 mod tests {
     use gridcl_io::vtk::{DataValues, parse_vtu};
+
+    use gridcl_geometry::{NodeFamily, equispaced_nodes};
 
     use super::*;
     use crate::test_comm::TwoRanks;
