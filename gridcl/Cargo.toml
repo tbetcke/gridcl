@@ -30,5 +30,6 @@ log.workspace = true
 
 [dev-dependencies]
 gridcl-testing = { path = "../gridcl-testing" }
-serde_json.workspace = true
+# Exact float parsing: the oracles print f32 values that must compare bitwise.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 trybuild.workspace = true

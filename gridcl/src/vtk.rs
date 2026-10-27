@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use gridcl_device::{DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{DeviceGrid, NodeFamily, equispaced_nodes};
-use gridcl_io::vtk::{Binary, VtkCellBlock, VtkMesh, VtuFile, to_vtu};
+use gridcl_io::vtk::{
+    Binary, DataArray, DataValues, VtkCellBlock, VtkMesh, VtuFile, to_vtu, write_pvtu,
+};
 use gridcl_parallel::Comm;
 
 use crate::{AnyMeshRef, Mesh};
@@ -142,6 +144,73 @@ fn write_file(path: &Path, f: impl FnOnce(&mut dyn Write) -> Result<()>) -> Resu
     out.flush().map_err(io)
 }
 
+/// The number of values of `data`.
+fn data_len(data: sealed::DataRef<'_>) -> usize {
+    match data {
+        sealed::DataRef::F32(b) => b.len(),
+        sealed::DataRef::F64(b) => b.len(),
+        sealed::DataRef::I32(b) => b.len(),
+        sealed::DataRef::U32(b) => b.len(),
+    }
+}
+
+/// `LengthMismatch` unless every array of `arrays` has `entries · components` values and at
+/// least one component.
+fn check_lengths(arrays: &[Attached<'_>], entries: usize) -> Result<()> {
+    for (_, data, components) in arrays {
+        if *components == 0 {
+            return Err(GridError::LengthMismatch {
+                expected: 1,
+                found: 0,
+            });
+        }
+        let expected = entries
+            .checked_mul(*components)
+            .ok_or(GridError::TooLarge)?;
+        let found = data_len(*data);
+        if found != expected {
+            return Err(GridError::LengthMismatch { expected, found });
+        }
+    }
+    Ok(())
+}
+
+/// The arrays of `arrays`, downloaded.
+fn download_data(arrays: &[Attached<'_>]) -> Result<Vec<DataArray>> {
+    arrays
+        .iter()
+        .map(|(name, data, components)| {
+            let values = match data {
+                sealed::DataRef::F32(b) => DataValues::F32(b.to_host()?),
+                sealed::DataRef::F64(b) => DataValues::F64(b.to_host()?),
+                sealed::DataRef::I32(b) => DataValues::I32(b.to_host()?),
+                sealed::DataRef::U32(b) => DataValues::U32(b.to_host()?),
+            };
+            Ok(DataArray {
+                name: name.clone(),
+                components: *components,
+                values,
+            })
+        })
+        .collect()
+}
+
+/// `arrays` with `(name, data, components)` in place of an array of the same name, or added
+/// at the end.
+fn attach<'a>(
+    mut arrays: Vec<Attached<'a>>,
+    name: &str,
+    data: sealed::DataRef<'a>,
+    components: usize,
+) -> Vec<Attached<'a>> {
+    let entry = (name.to_owned(), data, components);
+    match arrays.iter_mut().find(|a| a.0 == name) {
+        Some(a) => *a = entry,
+        None => arrays.push(entry),
+    }
+    arrays
+}
+
 /// The warning of `pyramids` pyramids written from their vertices, naming their degrees.
 fn warn_pyramids(path: &Path, mesh: &VtkMesh, pyramids: usize) {
     let degrees: Vec<String> = mesh
@@ -190,10 +259,43 @@ impl<'a> VtkWriter<'a> {
         }
     }
 
-    /// A writer of `<stem>.pvtu` and its pieces `<stem>_<rank>.vtu` beside it.
+    /// A writer of `<stem>.pvtu` and its pieces `<stem>_<rank>.vtu` beside it. The stem is
+    /// `path` without a `.pvtu` extension.
+    ///
+    /// The PVTU declares the points and the data arrays of the pieces; ghost arrays come with
+    /// M8, and so does more than one rank.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: PlanarMesh<f32> = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let rank = DeviceBuffer::from_host(&client, &[0i32; 4])?;
+    /// let dir = std::env::temp_dir().join(format!("gridcl-doc-pvtu-{}", std::process::id()));
+    /// std::fs::create_dir_all(&dir).unwrap();
+    /// VtkWriter::pvtu(dir.join("square")).cell_data("rank", &rank, 1).write(&mesh)?;
+    /// let header = std::fs::read_to_string(dir.join("square.pvtu")).unwrap();
+    /// assert!(header.contains("<Piece Source=\"square_0.vtu\"/>"));
+    /// assert!(header.contains("Name=\"rank\""));
+    /// let piece = gridcl_io::vtk::parse_vtu(&std::fs::read(dir.join("square_0.vtu")).unwrap())?;
+    /// std::fs::remove_dir_all(&dir).ok();
+    /// assert_eq!(piece.types, [9; 4]);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn pvtu(path: impl AsRef<Path>) -> Self {
-        let _ = path;
-        todo!()
+        let path = path.as_ref();
+        let stem = if path.extension().is_some_and(|e| e == "pvtu") {
+            path.with_extension("")
+        } else {
+            path.to_path_buf()
+        };
+        VtkWriter {
+            path: stem,
+            pvtu: true,
+            ..VtkWriter::vtu("")
+        }
     }
 
     /// Lagrange cells for p ≥ 2 (the default), or linear cells from the corner nodes.
@@ -248,29 +350,80 @@ impl<'a> VtkWriter<'a> {
 
     /// Attaches point data `name`: `components` values per geometry node. A second array of
     /// the same name replaces the first.
+    ///
+    /// Geometry nodes are the points of the file, also for linear output, which leaves the
+    /// non-vertex nodes unreferenced.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: PlanarMesh<f32> = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
+    /// // One vector per node: the node's coordinates, relative to the origin.
+    /// let xy = mesh.nodes().to_host()?;
+    /// let vectors: Vec<f32> = xy.chunks_exact(2).flat_map(|x| [x[0], x[1], 0.0]).collect();
+    /// let vectors = DeviceBuffer::from_host(&client, &vectors)?;
+    /// let path = std::env::temp_dir().join(format!("gridcl-doc-point-data-{}.vtu", std::process::id()));
+    /// VtkWriter::vtu(&path).point_data("position", &vectors, 3).write(&mesh)?;
+    /// let file = gridcl_io::vtk::parse_vtu(&std::fs::read(&path).unwrap())?;
+    /// std::fs::remove_file(&path).ok();
+    /// assert_eq!((file.point_data[0].name.as_str(), file.point_data[0].components), ("position", 3));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn point_data<T: VtkScalar>(
         self,
         name: &str,
         data: &'a DeviceBuffer<T>,
         components: usize,
     ) -> Self {
-        let _ = (name, T::data_ref(data), components);
-        todo!()
+        VtkWriter {
+            point_data: attach(self.point_data, name, T::data_ref(data), components),
+            ..self
+        }
     }
 
     /// Attaches cell data `name`: `components` values per cell, in flat cell order over the
     /// blocks. A second array of the same name replaces the first.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: PlanarMesh<f32> = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let first = DeviceBuffer::from_host(&client, &[0u32; 4])?;
+    /// let index = DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3])?;
+    /// let path = std::env::temp_dir().join(format!("gridcl-doc-cell-data-{}.vtu", std::process::id()));
+    /// // The second "index" replaces the first.
+    /// VtkWriter::vtu(&path).cell_data("index", &first, 1).cell_data("index", &index, 1).write(&mesh)?;
+    /// let file = gridcl_io::vtk::parse_vtu(&std::fs::read(&path).unwrap())?;
+    /// std::fs::remove_file(&path).ok();
+    /// assert_eq!(file.cell_data.len(), 1);
+    /// assert_eq!(file.cell_data[0].values, gridcl_io::vtk::DataValues::U32(vec![0, 1, 2, 3]));
+    ///
+    /// // A wrong length is refused.
+    /// let short = DeviceBuffer::from_host(&client, &[0u32; 3])?;
+    /// let r = VtkWriter::vtu(&path).cell_data("index", &short, 1).write(&mesh);
+    /// assert!(matches!(r, Err(GridError::LengthMismatch { expected: 4, found: 3 })));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn cell_data<T: VtkScalar>(
         self,
         name: &str,
         data: &'a DeviceBuffer<T>,
         components: usize,
     ) -> Self {
-        let _ = (name, T::data_ref(data), components);
-        todo!()
+        VtkWriter {
+            cell_data: attach(self.cell_data, name, T::data_ref(data), components),
+            ..self
+        }
     }
 
-    /// Writes `mesh`, copying it to the host.
+    /// Writes `mesh`, copying it to the host: the VTU file, or the PVTU header and its one
+    /// piece.
     ///
     /// Pyramids of degree p ≥ 2 are written from their five vertices (VTK type 14), with one
     /// `log::warn!` per file, unless `.lagrange(false)` asks for linear cells anyway.
@@ -278,7 +431,9 @@ impl<'a> VtkWriter<'a> {
     /// # Errors
     ///
     /// `NotYetImplemented` for more than one rank (until M8); `LengthMismatch` for a data
-    /// array of the wrong length; `Io`; allocation and device errors.
+    /// array of the wrong length or without components, before anything is written; `Io`
+    /// (also for a PVTU stem without a UTF-8 file name); `TooLarge`; allocation and device
+    /// errors.
     ///
     /// # Example
     ///
@@ -305,18 +460,60 @@ impl<'a> VtkWriter<'a> {
         C: Comm,
     {
         if mesh.comm().size() > 1 {
-            return Err(GridError::NotYetImplemented("parallel VTU write (M8)"));
+            return Err(GridError::NotYetImplemented(if self.pvtu {
+                "parallel PVTU write (M8)"
+            } else {
+                "parallel VTU write (M8)"
+            }));
         }
-        // Point and cell data and the PVTU come with T7.
-        let _ = (self.pvtu, &self.point_data, &self.cell_data);
+        let num_points = mesh.nodes().len() / GD::N;
+        let num_cells = mesh
+            .cell_blocks()
+            .iter()
+            .try_fold(0usize, |n, b| n.checked_add(b.index_map.num_local()))
+            .ok_or(GridError::TooLarge)?;
+        check_lengths(&self.point_data, num_points)?;
+        check_lengths(&self.cell_data, num_cells)?;
+        let piece = self.piece(mesh.comm().rank())?;
+
         let host = download(mesh)?;
         let f32_points = size_of::<F>() < size_of::<f64>();
-        let (file, pyramids) = to_vtu(&host, self.lagrange, f32_points)?;
-        self.write_vtu(&self.path, &file)?;
+        let (mut file, pyramids) = to_vtu(&host, self.lagrange, f32_points)?;
+        file.point_data = download_data(&self.point_data)?;
+        file.cell_data = download_data(&self.cell_data)?;
+        let path = match &piece {
+            Some((path, _)) => path,
+            None => &self.path,
+        };
+        self.write_vtu(path, &file)?;
         if pyramids > 0 {
-            warn_pyramids(&self.path, &host, pyramids);
+            warn_pyramids(path, &host, pyramids);
+        }
+        if let Some((_, source)) = piece {
+            let mut header = self.path.as_os_str().to_owned();
+            header.push(".pvtu");
+            write_file(Path::new(&header), |w| write_pvtu(w, &[source], &file))?;
         }
         Ok(())
+    }
+
+    /// For a PVTU, the path of the piece of `rank` and its name relative to the header.
+    fn piece(&self, rank: usize) -> Result<Option<(PathBuf, String)>> {
+        if !self.pvtu {
+            return Ok(None);
+        }
+        let stem = self
+            .path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| {
+                GridError::Io(format!(
+                    "{}: a PVTU needs a UTF-8 file name",
+                    self.path.display()
+                ))
+            })?;
+        let source = format!("{stem}_{rank}.vtu");
+        Ok(Some((self.path.with_file_name(&source), source)))
     }
 
     /// Writes `file` to `path` in the chosen encoding.
@@ -455,6 +652,83 @@ mod tests {
         }
     }
 
+    /// A wrong length, or no components, is refused before anything is written; a repeated
+    /// name replaces the earlier array in its place.
+    #[test]
+    fn vtk_data_lengths_and_repeated_names() {
+        let client = gridcl_testing::test_client();
+        let h = gridcl_testing::square_box(Cell2::Triangle, 1, 2);
+        let element = CoordinateElement::<D2> {
+            cell: Cell2::Triangle,
+            degree: 2,
+            family: NodeFamily::Equispaced,
+        };
+        let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+            .nodes(&h.nodes, None)
+            .cell_block(element, &h.blocks[0].cells, None)
+            .build()
+            .unwrap();
+        // 9 nodes, 2 cells.
+        let nine = DeviceBuffer::from_host(&client, &[1.0f32; 9]).unwrap();
+        let eighteen = DeviceBuffer::from_host(&client, &[2i32; 18]).unwrap();
+        let two = DeviceBuffer::from_host(&client, &[3u32; 2]).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("gridcl-m5-lengths-{}.vtu", std::process::id()));
+        for (w, expected, found) in [
+            (VtkWriter::vtu(&path).point_data("a", &nine, 2), 18, 9),
+            (VtkWriter::vtu(&path).point_data("a", &nine, 0), 1, 0),
+            (VtkWriter::vtu(&path).cell_data("a", &nine, 1), 2, 9),
+            (VtkWriter::vtu(&path).cell_data("a", &two, 3), 6, 2),
+        ] {
+            let r = w.write(&mesh);
+            assert!(
+                matches!(r, Err(GridError::LengthMismatch { expected: e, found: f }) if (e, f) == (expected, found)),
+                "{r:?}"
+            );
+            assert!(!path.exists(), "nothing is written");
+        }
+
+        VtkWriter::vtu(&path)
+            .point_data("a", &nine, 1)
+            .point_data("b", &two, 1)
+            .point_data("c", &nine, 1)
+            .point_data("b", &eighteen, 2)
+            .cell_data("b", &two, 1)
+            .write(&mesh)
+            .unwrap();
+        let file = parse_vtu(&std::fs::read(&path).unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let names: Vec<(&str, usize)> = file
+            .point_data
+            .iter()
+            .map(|a| (a.name.as_str(), a.components))
+            .collect();
+        assert_eq!(names, [("a", 1), ("b", 2), ("c", 1)]);
+        assert_eq!(file.point_data[1].values, DataValues::I32(vec![2; 18]));
+        assert_eq!(file.cell_data[0].values, DataValues::U32(vec![3; 2]));
+    }
+
+    /// The PVTU stem drops a `.pvtu` extension only; the piece sits beside the header.
+    #[test]
+    fn pvtu_stem_and_piece() {
+        for (given, stem) in [
+            ("out/mesh", "out/mesh"),
+            ("out/mesh.pvtu", "out/mesh"),
+            ("out/mesh.v2", "out/mesh.v2"),
+        ] {
+            let w = VtkWriter::pvtu(given);
+            assert_eq!(w.path, Path::new(stem), "{given}");
+            let (piece, source) = w.piece(3).unwrap().unwrap();
+            let name = format!(
+                "{}_3.vtu",
+                Path::new(stem).file_name().unwrap().to_str().unwrap()
+            );
+            assert_eq!(piece, Path::new(stem).with_file_name(&name), "{given}");
+            assert_eq!(source, name, "{given}");
+        }
+        assert!(VtkWriter::vtu("out/mesh").piece(0).unwrap().is_none());
+    }
+
     /// More than one rank is refused before anything is written (until M8).
     #[test]
     fn vtk_write_needs_one_rank() {
@@ -470,5 +744,16 @@ mod tests {
             "{r:?}"
         );
         assert!(!path.exists(), "nothing is written");
+
+        let stem = std::env::temp_dir().join(format!("gridcl-m5-two-ranks-{}", std::process::id()));
+        let r = VtkWriter::pvtu(&stem).write(&mesh);
+        assert!(
+            matches!(
+                r,
+                Err(GridError::NotYetImplemented("parallel PVTU write (M8)"))
+            ),
+            "{r:?}"
+        );
+        assert!(!stem.with_extension("pvtu").exists(), "nothing is written");
     }
 }
