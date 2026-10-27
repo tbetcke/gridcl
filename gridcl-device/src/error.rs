@@ -112,6 +112,22 @@ pub enum GridError {
     CellNotInRule(&'static str),
     /// A method declared before the milestone that implements it.
     NotYetImplemented(&'static str),
+    /// A tag element (Gmsh element tag `tag`, of dimension `dim`) matches no mesh entity.
+    UnmatchedTagElement { dim: usize, tag: i64 },
+    /// A file could not be read or written: the path and the `std::io::Error` text.
+    Io(String),
+    /// A malformed file: the format, the byte offset of the error and what was wrong. An error
+    /// in the file's content rather than its syntax (or in a model being written) has no byte
+    /// offset: `offset` is then 0 and the message says so.
+    Parse {
+        format: &'static str,
+        offset: u64,
+        message: String,
+    },
+    /// The file's element type is not supported (A.7 for Gmsh).
+    UnsupportedElementType { format: &'static str, type_id: i32 },
+    /// No tag of this name exists in dimension `dim`.
+    UnknownTag { name: String, dim: usize },
 }
 
 impl fmt::Display for GridError {
@@ -170,6 +186,22 @@ impl fmt::Display for GridError {
                 write!(f, "the quadrature rule has no point set for {cell} cells")
             }
             GridError::NotYetImplemented(what) => write!(f, "not yet implemented: {what}"),
+            GridError::UnmatchedTagElement { dim, tag } => write!(
+                f,
+                "tag element {tag} of dimension {dim} matches no mesh entity"
+            ),
+            GridError::Io(message) => write!(f, "I/O error: {message}"),
+            GridError::Parse {
+                format,
+                offset,
+                message,
+            } => write!(f, "malformed {format} file at byte {offset}: {message}"),
+            GridError::UnsupportedElementType { format, type_id } => {
+                write!(f, "{format} element type {type_id} is not supported")
+            }
+            GridError::UnknownTag { name, dim } => {
+                write!(f, "no tag named {name:?} in dimension {dim}")
+            }
         }
     }
 }
@@ -186,5 +218,50 @@ impl std::error::Error for GridError {
 impl From<ServerError> for GridError {
     fn from(error: ServerError) -> Self {
         GridError::Server(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GridError;
+
+    /// The `Display` lines of the M4 variants (ADR-0022).
+    #[test]
+    fn m4_variants_display() {
+        let cases = [
+            (
+                GridError::UnmatchedTagElement { dim: 1, tag: 42 },
+                "tag element 42 of dimension 1 matches no mesh entity",
+            ),
+            (
+                GridError::Io("mesh.msh: No such file or directory".into()),
+                "I/O error: mesh.msh: No such file or directory",
+            ),
+            (
+                GridError::Parse {
+                    format: "Gmsh",
+                    offset: 17,
+                    message: "expected an integer".into(),
+                },
+                "malformed Gmsh file at byte 17: expected an integer",
+            ),
+            (
+                GridError::UnsupportedElementType {
+                    format: "Gmsh",
+                    type_id: 125,
+                },
+                "Gmsh element type 125 is not supported",
+            ),
+            (
+                GridError::UnknownTag {
+                    name: "scalp".into(),
+                    dim: 2,
+                },
+                "no tag named \"scalp\" in dimension 2",
+            ),
+        ];
+        for (e, want) in cases {
+            assert_eq!(e.to_string(), want);
+        }
     }
 }

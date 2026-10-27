@@ -11,7 +11,7 @@ use gridcl_geometry::{
 use gridcl_parallel::{Comm, CommDyn, CommExt, IndexMap, Serial};
 use gridcl_topology::{CellBlock, Connectivity, EntityBlock, Topology};
 
-use crate::EntityMap;
+use crate::{EntityMap, TagRegistry};
 
 /// A mesh, generic over scalar, dimensions and communicator, not over the backend
 /// (Listing B3). Constructors and methods require `TD: EmbeddedIn<GD>`. Not `Clone`: see
@@ -33,6 +33,8 @@ pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     comm: C,
     topology: Topology<TD>,
     geometry: Geometry<F, TD, GD>,
+    /// Physical and elementary MeshTags per dimension, names (ADR-0012, ADR-0022).
+    tags: TagRegistry,
 }
 
 /// A curve in 3D.
@@ -120,11 +122,13 @@ where
         topology: Topology<TD>,
         geometry: Geometry<F, TD, GD>,
     ) -> Self {
+        let tags = TagRegistry::new(&client, TD::N, Vec::new());
         Mesh {
             client,
             comm,
             topology,
             geometry,
+            tags,
         }
     }
 
@@ -194,7 +198,35 @@ where
         &self.client
     }
 
-    /// A deep copy of every device array.
+    /// Physical and elementary tags and the name table (empty unless read from a file).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // A builder mesh has no tags.
+    /// assert!(mesh.tags().physical(1).is_none());
+    /// assert_eq!(mesh.tags().names().count(), 0);
+    /// # Ok::<(), GridError>(())
+    /// ```
+    pub fn tags(&self) -> &TagRegistry {
+        &self.tags
+    }
+
+    /// Replaces the tags (the Gmsh reader).
+    pub(crate) fn set_tags(&mut self, tags: TagRegistry) {
+        self.tags = tags;
+    }
+
+    /// The topology (the Gmsh reader matches tag keys against it).
+    pub(crate) fn topology(&self) -> &Topology<TD> {
+        &self.topology
+    }
+
+    /// A deep copy of every device array, tags included.
     ///
     /// # Errors
     ///
@@ -217,6 +249,7 @@ where
             comm: self.comm.clone(),
             topology: self.topology.try_clone(&self.comm)?,
             geometry: self.geometry.try_clone(&self.comm)?,
+            tags: self.tags.try_clone()?,
         })
     }
 

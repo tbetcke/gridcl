@@ -6,7 +6,7 @@ use cubecl::prelude::Client;
 use gridcl_device::{DeviceBuffer, DeviceStrided, GridError, Real, Result, check_precision};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
-use gridcl_parallel::{IndexMap, Serial};
+use gridcl_parallel::{Comm, IndexMap, Serial};
 use gridcl_refcell::RefCellError;
 use gridcl_topology::{CellBlock, Topology, encode_origin_ids};
 
@@ -73,6 +73,10 @@ fn check_unique(ids: impl IntoIterator<Item = i64>) -> Result<()> {
 fn index_u32(i: usize) -> Result<u32> {
     u32::try_from(i).map_err(|_| GridError::TooLarge)
 }
+
+/// A built mesh and the local vertex index of each input node (`u32::MAX` for nodes that are
+/// no cell's vertex).
+pub(crate) type BuiltMesh<F, TD, GD, C> = (Mesh<F, TD, GD, C>, Vec<u32>);
 
 /// One `cell_block` call: element, cell → node lists and optional cell ids.
 struct BlockInput<TD: TopoDim> {
@@ -172,6 +176,13 @@ where
     ///   gridcl-refcell does not offer;
     /// - allocation and device errors.
     pub fn build(self) -> Result<Mesh<F, TD, GD>> {
+        Ok(self.build_with_comm(Serial)?.0)
+    }
+
+    /// [`build`](MeshBuilder::build) on the one-rank communicator `comm` (ADR-0022, item 5),
+    /// also returning the local vertex index of each input node (`u32::MAX` for nodes that are
+    /// no cell's vertex).
+    pub(crate) fn build_with_comm<C: Comm>(self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
         let client = &self.client;
         check_precision::<F>(client)?;
         let gd = GD::N;
@@ -279,7 +290,7 @@ where
                 .collect();
             cell_blocks.push(CellBlock::new(
                 b.element.cell,
-                IndexMap::new(&Serial, n)?,
+                IndexMap::new(&comm, n)?,
                 DeviceStrided {
                     data: DeviceBuffer::from_host(client, &verts)?,
                     stride: index_u32(nv)?,
@@ -298,15 +309,18 @@ where
         let topology = Topology::new(
             client,
             cell_blocks,
-            IndexMap::new(&Serial, vertices_used.len())?,
+            IndexMap::new(&comm, vertices_used.len())?,
             &vertex_ids,
         )?;
         let geometry = Geometry::new(
             geometry_blocks,
             DeviceBuffer::from_host(client, &relative)?,
-            IndexMap::new(&Serial, nodes_used.len())?,
+            IndexMap::new(&comm, nodes_used.len())?,
             origin,
         )?;
-        Ok(Mesh::from_parts(client.clone(), Serial, topology, geometry))
+        Ok((
+            Mesh::from_parts(client.clone(), comm, topology, geometry),
+            vertex_number,
+        ))
     }
 }

@@ -17,6 +17,7 @@ mod connectivity;
 mod emission;
 mod entity;
 mod keys;
+mod matching;
 mod origin;
 mod permutation;
 mod renumber;

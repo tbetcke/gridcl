@@ -16,6 +16,7 @@
 //!   from origin ids.
 //! - [`reference_facet_normals`], [`facet_points_to_cell`]: facet normals and facet point maps.
 //! - [`gmsh_to_internal`], [`vtk_to_internal`]: node maps between files and gridcl (A.9).
+//! - [`serendipity_upgrade`]: the complete-P2 nodes of Gmsh's serendipity elements.
 
 mod cell;
 mod error;
@@ -28,6 +29,7 @@ mod node_maps;
 mod orientation;
 mod polynomials;
 mod quadrature;
+mod serendipity;
 mod tabulation;
 
 pub use cell::{num_sub_entities, sub_entities, sub_entity_types, tdim, vertices};
@@ -40,4 +42,5 @@ pub use lagrange::{
 pub use node_maps::{gmsh_to_internal, vtk_to_internal};
 pub use orientation::{canonical_order, orientation_bits};
 pub use quadrature::{QuadratureRule, gauss_rule};
+pub use serendipity::{SerendipityUpgrade, serendipity_upgrade};
 pub use tabulation::{LagrangeElement, Tabulation};
