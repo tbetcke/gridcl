@@ -2,15 +2,17 @@
 //! Gmsh MSH 4.1"; ADR-0022). The file model and the conversion to a host mesh description are
 //! in `gridcl_io::gmsh`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use cubecl::prelude::Client;
 use gridcl_device::{DeviceBuffer, GridError, Real, Result, SortKeys, check_precision};
 use gridcl_dims::{CellType, D1, D2, D3, Dim, EmbeddedIn, TopoDim};
-use gridcl_geometry::{CoordinateElement, NodeFamily};
-use gridcl_io::gmsh::GmshMesh;
+use gridcl_geometry::{CoordinateElement, DeviceGrid, NodeFamily};
+use gridcl_io::gmsh::{Encoding, GmshCellBlock, GmshMesh, GmshTagGroup, PhysicalName};
 use gridcl_parallel::Comm;
+use gridcl_topology::decode_origin_ids;
 
 use crate::{AnyMesh, AnyMeshRef, Mesh, MeshBuilder, MeshTags, TagRegistry};
 
@@ -248,15 +250,197 @@ pub fn read<F: Real, C: Comm>(
     })
 }
 
-/// Writes meshes as Gmsh MSH 4.1 files, ASCII by default.
+/// Writes meshes as Gmsh MSH 4.1 files, ASCII by default (ADR-0022, item 10).
+///
+/// - Node tags are the vertex origin ids; the other nodes are numbered after the largest vertex
+///   id. Element tags are the cell origin ids; tag elements are numbered after the largest cell
+///   id. Tags below 1 are shifted by one constant per kind so that the smallest is 1.
+/// - Tagged entities of dimension < D_TOP are written as linear tag elements from
+///   `EntityBlock::vertices` (canonical A.6 orientation); cells carry their physical and
+///   elementary tags. A mesh without tags gets one entity with tag 1.
+/// - `$Entities` is rebuilt from the elementary tags: one entity per (elementary tag, set of
+///   physical tags).
+///
+/// # Example
+///
+/// ```
+/// use gridcl::prelude::*;
+///
+/// let client = gridcl_testing::test_client();
+/// let mesh: PlanarMesh<f32> = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+/// let path = std::env::temp_dir().join(format!("gridcl-doc-{}.msh", std::process::id()));
+/// gmsh::GmshWriter::new(&path).binary(true).write(&mesh)?;
+/// let back = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, &path, GmshOptions::default())?)?;
+/// std::fs::remove_file(&path).ok();
+/// assert_eq!(back.cell_blocks()[0].index_map.num_local(), 4);
+/// assert!((back.measure(1)? - 1.0).abs() < 1e-6);
+/// # Ok::<(), GridError>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct GmshWriter {
     path: PathBuf,
     binary: bool,
 }
 
+/// The (entity index → values) map of `tags`, downloaded.
+fn values_by_index(tags: Option<&MeshTags>) -> Result<BTreeMap<u32, Vec<i32>>> {
+    let mut out: BTreeMap<u32, Vec<i32>> = BTreeMap::new();
+    if let Some(t) = tags {
+        let indices = t.indices.to_host()?;
+        let values = t.values.to_host()?;
+        for (i, v) in indices.into_iter().zip(values) {
+            out.entry(i).or_default().push(v);
+        }
+    }
+    Ok(out)
+}
+
+/// The elementary tag of entity `i`: its first elementary value, or 1 without one.
+fn elementary_of(elementary: &BTreeMap<u32, Vec<i32>>, i: u32) -> i32 {
+    elementary.get(&i).map_or(1, |v| v[0])
+}
+
+/// The host description of `mesh` (one rank): nodes with the origin added back, vertex origin
+/// ids as node tags (other nodes' tags are renumbered by `from_gmsh_mesh`), cell blocks with
+/// their tags, and one tag group per entity type of each tagged dimension below D_TOP.
+fn download<F, TD, GD, C>(mesh: &Mesh<F, TD, GD, C>) -> Result<GmshMesh>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let gd = GD::N;
+    let td = TD::N;
+    let origin = mesh.origin();
+    let nodes: Vec<f64> = mesh
+        .nodes()
+        .to_host()?
+        .iter()
+        .enumerate()
+        .map(|(i, x)| x.widen() + origin.as_ref()[i % gd])
+        .collect();
+    let vertex_ids = decode_origin_ids(&mesh.vertex_origin_ids().to_host()?);
+    let mut node_tags = vec![0i64; nodes.len() / gd];
+    let tags = mesh.tags();
+    let elementary = values_by_index(tags.elementary(td))?;
+    let physical = values_by_index(tags.physical(td))?;
+    let mut blocks = Vec::new();
+    let mut first = 0u32;
+    for (b, block) in mesh.cell_blocks().iter().enumerate() {
+        let geometry = mesh.geometry_block(b);
+        let cell: CellType = block.cell.into();
+        if geometry.element.family == NodeFamily::Gll {
+            return Err(GridError::UnsupportedNodeFamily {
+                cell: crate::builder::cell_name(cell),
+                family: "Gll",
+            });
+        }
+        let dofmap = geometry.dofmap.data.to_host()?;
+        let vertices = block.vertices.data.to_host()?;
+        let k = geometry.dofmap.stride as usize;
+        let nv = block.vertices.stride as usize;
+        let cells = block.index_map.num_local();
+        for c in 0..cells {
+            for j in 0..nv {
+                node_tags[dofmap[c * k + j] as usize] = vertex_ids[vertices[c * nv + j] as usize];
+            }
+        }
+        let mut out = GmshCellBlock {
+            cell,
+            degree: geometry.element.degree,
+            nodes: dofmap,
+            tags: decode_origin_ids(&block.origin_ids.to_host()?),
+            elementary: Vec::with_capacity(cells),
+            physical: Vec::new(),
+        };
+        for c in 0..cells {
+            let flat = first + u32::try_from(c).map_err(|_| GridError::TooLarge)?;
+            out.elementary.push(elementary_of(&elementary, flat));
+            if let Some(values) = physical.get(&flat) {
+                out.physical.extend(values.iter().map(|&v| (c as u32, v)));
+            }
+        }
+        first += u32::try_from(cells).map_err(|_| GridError::TooLarge)?;
+        blocks.push(out);
+    }
+
+    let mut tag_groups = Vec::new();
+    for dim in 0..td {
+        let elementary = values_by_index(tags.elementary(dim))?;
+        let physical = values_by_index(tags.physical(dim))?;
+        if elementary.is_empty() && physical.is_empty() {
+            continue;
+        }
+        for block in mesh.entity_blocks(dim)? {
+            let n = u32::try_from(block.index_map.num_local()).map_err(|_| GridError::TooLarge)?;
+            let range = block.offset..block.offset + n;
+            let tagged: Vec<u32> = elementary
+                .keys()
+                .chain(physical.keys())
+                .copied()
+                .filter(|i| range.contains(i))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            if tagged.is_empty() {
+                continue;
+            }
+            let rows = block.vertices.data.to_host()?;
+            let nv = block.vertices.stride as usize;
+            let mut group = GmshTagGroup {
+                dim,
+                cell: block.cell,
+                corners: Vec::with_capacity(tagged.len() * nv),
+                tags: Vec::with_capacity(tagged.len()),
+                elementary: Vec::with_capacity(tagged.len()),
+                physical: Vec::new(),
+            };
+            for (e, &i) in tagged.iter().enumerate() {
+                let local = (i - block.offset) as usize;
+                group.corners.extend(
+                    rows[local * nv..(local + 1) * nv]
+                        .iter()
+                        .map(|&v| vertex_ids[v as usize]),
+                );
+                group.tags.push(i64::from(i));
+                group.elementary.push(elementary_of(&elementary, i));
+                if let Some(values) = physical.get(&i) {
+                    group.physical.extend(values.iter().map(|&v| (e as u32, v)));
+                }
+            }
+            tag_groups.push(group);
+        }
+    }
+    Ok(GmshMesh {
+        tdim: td,
+        gdim: gd,
+        nodes,
+        node_tags,
+        blocks,
+        tag_groups,
+        names: tags
+            .names()
+            .map(|(name, dim, tag)| PhysicalName {
+                dim,
+                tag,
+                name: name.to_owned(),
+            })
+            .collect(),
+    })
+}
+
 impl GmshWriter {
     /// A writer of the file at `path`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::gmsh::GmshWriter;
+    ///
+    /// let writer = GmshWriter::new("mesh.msh").binary(true);
+    /// # let _ = writer;
+    /// ```
     pub fn new(path: impl AsRef<Path>) -> Self {
         GmshWriter {
             path: path.as_ref().to_path_buf(),
@@ -265,16 +449,41 @@ impl GmshWriter {
     }
 
     /// Binary (little-endian, 8-byte `size_t`) instead of ASCII.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::gmsh::GmshWriter;
+    ///
+    /// let ascii = GmshWriter::new("mesh.msh").binary(false);
+    /// # let _ = ascii;
+    /// ```
     pub fn binary(self, binary: bool) -> Self {
         GmshWriter { binary, ..self }
     }
 
-    /// Writes `mesh`.
+    /// Writes `mesh`, copying it to the host.
     ///
     /// # Errors
     ///
     /// `NotYetImplemented` for more than one rank (until M8); `UnsupportedNodeFamily` for GLL
-    /// geometry (until M5); `Io`; device errors.
+    /// geometry (until M5); `EntitiesNotCreated` for tags of a dimension without entities;
+    /// `Io`; `TooLarge` if a tag overflows; device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: VolumeMesh<f32> = gridcl_testing::cube_box(Cell3::Tetrahedron, 1, 2).build(&client)?;
+    /// let path = std::env::temp_dir().join(format!("gridcl-doc-write-{}.msh", std::process::id()));
+    /// gmsh::GmshWriter::new(&path).write(&mesh)?;
+    /// let text = std::fs::read_to_string(&path).unwrap();
+    /// std::fs::remove_file(&path).ok();
+    /// assert!(text.starts_with("$MeshFormat\n4.1 0 8\n"));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn write<F, TD, GD, C>(&self, mesh: &Mesh<F, TD, GD, C>) -> Result<()>
     where
         F: Real,
@@ -282,8 +491,22 @@ impl GmshWriter {
         GD: Dim,
         C: Comm,
     {
-        let _ = (mesh, &self.path, self.binary);
-        todo!("M4 T13")
+        if mesh.comm().size() > 1 {
+            return Err(GridError::NotYetImplemented("parallel Gmsh write (M8)"));
+        }
+        let file = gridcl_io::gmsh::from_gmsh_mesh(&download(mesh)?)?;
+        let io = |e: std::io::Error| GridError::Io(format!("{}: {e}", self.path.display()));
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&self.path).map_err(io)?);
+        let encoding = if self.binary {
+            Encoding::Binary
+        } else {
+            Encoding::Ascii
+        };
+        file.write_to(&mut out, encoding).map_err(|e| match e {
+            GridError::Io(m) => GridError::Io(format!("{}: {m}", self.path.display())),
+            other => other,
+        })?;
+        out.flush().map_err(io)
     }
 
     /// Writes the mesh behind `mesh`.
@@ -291,6 +514,19 @@ impl GmshWriter {
     /// # Errors
     ///
     /// As [`write`](GmshWriter::write).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let any = AnyMesh::Curve1(gridcl_testing::interval_box(4, 1).build::<f32, D1, D1>(&client)?);
+    /// let path = std::env::temp_dir().join(format!("gridcl-doc-any-{}.msh", std::process::id()));
+    /// gmsh::GmshWriter::new(&path).write_any(any.as_ref())?;
+    /// std::fs::remove_file(&path).ok();
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn write_any<F: Real, C: Comm>(&self, mesh: AnyMeshRef<'_, F, C>) -> Result<()> {
         crate::with_mesh!(mesh, m => self.write(m))
     }
@@ -305,7 +541,7 @@ mod tests {
     use gridcl_parallel::{CommDyn, DType, Neighbourhood, ReduceOp, Serial};
 
     use super::*;
-    use crate::{Codim, PlanarMesh};
+    use crate::{Codim, D2, PlanarMesh};
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -511,5 +747,73 @@ mod tests {
         assert_eq!(tags.elementary(2).unwrap().indices.len(), 35);
         assert_eq!(tags.elementary(1).unwrap().indices.len(), 21);
         assert_eq!(tags.elementary(0).unwrap().indices.len(), 6);
+    }
+
+    /// A builder mesh of `family`: a 2 × 2 square of P2 quadrilaterals, ids from 0.
+    fn builder_mesh(family: NodeFamily) -> Result<PlanarMesh<f32>> {
+        let client = gridcl_testing::test_client();
+        let h = gridcl_testing::square_box(crate::Cell2::Quadrilateral, 2, 2);
+        let b = &h.blocks[0];
+        let element = CoordinateElement::<D2> {
+            cell: crate::Cell2::Quadrilateral,
+            degree: b.degree,
+            family,
+        };
+        MeshBuilder::new(&client)
+            .nodes(&h.nodes, None)
+            .cell_block(element, &b.cells, None)
+            .build()
+    }
+
+    /// Without tags and with origin ids from 0: written with ids shifted by one, read back with
+    /// the same cells, coordinates and one elementary tag 1.
+    #[test]
+    fn gmsh_write_untagged_builder_mesh() {
+        let client = gridcl_testing::test_client();
+        let mesh = builder_mesh(NodeFamily::Equispaced).unwrap();
+        let path = std::env::temp_dir().join(format!("gridcl-t13-{}.msh", std::process::id()));
+        GmshWriter::new(&path).write(&mesh).unwrap();
+        let back = PlanarMesh::<f32>::try_from(
+            read::<f32, _>(&client, Serial, &path, GmshOptions::default()).unwrap(),
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let ids =
+            |m: &PlanarMesh<f32>| decode_origin_ids(&m.vertex_origin_ids().to_host().unwrap());
+        let cells = |m: &PlanarMesh<f32>| {
+            decode_origin_ids(&m.cell_blocks()[0].origin_ids.to_host().unwrap())
+        };
+        let shifted: Vec<i64> = ids(&mesh).iter().map(|i| i + 1).collect();
+        assert_eq!(ids(&back), shifted);
+        assert_eq!(
+            cells(&back),
+            cells(&mesh).iter().map(|i| i + 1).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            mesh.nodes().to_host().unwrap(),
+            back.nodes().to_host().unwrap()
+        );
+        let elementary = back.tags().elementary(2).unwrap();
+        assert!(elementary.values.to_host().unwrap().iter().all(|&v| v == 1));
+        assert!(back.tags().physical(2).is_none() && back.tags().names().next().is_none());
+        // One entity, tag 1, holding the node block.
+        assert!(text.contains("$Entities\n0 0 1 0\n1 "), "{text}");
+    }
+
+    /// GLL geometry is rejected until M5 (ADR-0022, item 9).
+    #[test]
+    fn gmsh_write_rejects_gll() {
+        let mesh = builder_mesh(NodeFamily::Gll).unwrap();
+        let path = std::env::temp_dir().join(format!("gridcl-t13-gll-{}.msh", std::process::id()));
+        let r = GmshWriter::new(&path).write(&mesh);
+        assert!(matches!(
+            r,
+            Err(GridError::UnsupportedNodeFamily {
+                cell: "Quadrilateral",
+                family: "Gll"
+            })
+        ));
+        assert!(!path.exists(), "nothing is written");
     }
 }
