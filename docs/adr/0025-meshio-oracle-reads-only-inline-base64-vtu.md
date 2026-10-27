@@ -1,6 +1,6 @@
 # ADR-0025: The meshio oracle reads only inline-base64 VTU files
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-27
 - **Raised in:** M5 T1, the risk check of docs/plans/M5.md ("check first that meshio 5.3.5 reads appended raw data and Lagrange types 68–73")
 - **Design sections affected:** "Import and export / VTK" (the "Test oracles" bullet); "Implementation roadmap / M5 VTK output" (the third acceptance bullet)
@@ -151,4 +151,4 @@ release reads version 2.2 and appended data, the pin can move and the restrictio
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-27, as proposed (option 3), without conditions. Applied to docs/design.md in `adr: 0025 apply`.

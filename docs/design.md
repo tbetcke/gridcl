@@ -1515,7 +1515,7 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 - **PVTU** for parallel runs: one piece per rank plus the parallel header. Ghost cells carry a `vtkGhostType` cell array (value 1 = duplicate cell) so that ParaView hides them. M5 writes the header and one piece on one rank; M8 adds more ranks and `vtkGhostType`.
 - **VTKHDF** (feature `hdf5`) through hdf5-metno with its `mpio` feature for parallel HDF5: a single file with per-rank offsets, the same cell types and the same ghost array.
 - **VTU reading** (`parse_vtu`, file level; linear and Lagrange) has lower priority and is used for round-trip tests and the VTK-written fixtures; no mesh is built from a VTU (ADR-0024).
-- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays; it writes version 0.1 and applies no conversion. Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024).
+- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays of the inline-base64 files (with and without zlib); it writes version 0.1 and applies no conversion. meshio 5.3.5 accepts only versions 0.1 and 1.0, so the oracle hands it a copy whose version attribute reads 1.0. Its appended-data decoder fails on VTK's own appended files under CPython ≥ 3.13, so appended files are checked through base64 twins (ADR-0025). Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024).
 
 ### High-order node orderings
 
@@ -1877,7 +1877,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 - VTK's Python reader (pinned, ≥ 9.2) reads every fixture;
 - the integrated volume or area of affine P2 and P3 meshes (`vtkIntegrateAttributes`) equals gridcl's `measure` to 10^−10 (f64); on curved P2 and P3 meshes, VTK's `EvaluateLocation` at Gauss points equals `physical_points` to 10^−10 (f64) (ADR-0024);
-- meshio reads identical raw arrays;
+- meshio reads identical raw arrays from the inline-base64 files (with and without zlib), and every appended file parses to the same arrays as its base64 twin (ADR-0025);
 - a P2 pyramid mesh is written as linear cells with one warning.
 
 ### M6 Parallel core
