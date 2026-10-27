@@ -215,10 +215,14 @@ where
         &self.tags
     }
 
-    /// Replaces the tags (the Gmsh reader, M4 T11).
-    #[allow(dead_code)] // used by the unit tests until gmsh::read (T11)
+    /// Replaces the tags (the Gmsh reader).
     pub(crate) fn set_tags(&mut self, tags: TagRegistry) {
         self.tags = tags;
+    }
+
+    /// The topology (the Gmsh reader matches tag keys against it).
+    pub(crate) fn topology(&self) -> &Topology<TD> {
+        &self.topology
     }
 
     /// A deep copy of every device array, tags included.

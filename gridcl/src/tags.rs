@@ -171,7 +171,6 @@ fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
-#[allow(dead_code)] // the constructors are used by the unit tests until gmsh::read (T11)
 impl TagRegistry {
     /// An empty registry of a mesh of topological dimension `tdim` with the physical names
     /// `names` ((name, dimension, value)).
