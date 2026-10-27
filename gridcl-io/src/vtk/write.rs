@@ -127,7 +127,7 @@ fn values_with_header_room(v: &DataValues) -> Vec<u8> {
 /// `s` as XML attribute text: the five predefined entities, and character references for tab,
 /// line feed and carriage return, which attribute-value normalisation would otherwise turn
 /// into spaces.
-fn escape(s: &str) -> String {
+pub(super) fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {

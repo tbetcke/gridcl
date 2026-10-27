@@ -22,5 +22,4 @@ pub use parse::parse_vtu;
 pub use write::{Binary, write_pvtu};
 
 /// The format name in `GridError::Parse`.
-#[allow(dead_code)] // used by the parser (T4)
 pub(crate) const FORMAT: &str = "VTU";

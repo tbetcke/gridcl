@@ -55,7 +55,6 @@ fn sextet(c: u8) -> Option<u32> {
 ///
 /// A character outside the alphabet, padding other than `xx==` or `xxx=` at the end of a
 /// quantum, or input that ends inside a quantum.
-#[allow(dead_code)] // used by the parser (T4)
 pub(crate) fn decode(input: &[u8]) -> Result<Vec<u8>, DecodeError> {
     let mut out = Vec::with_capacity(input.len() / 4 * 3);
     // The quantum being read: its characters' values, their count and the padding count.
