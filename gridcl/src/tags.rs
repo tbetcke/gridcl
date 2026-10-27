@@ -175,9 +175,14 @@ fn fit(x: usize) -> Result<u32> {
 
 impl TagRegistry {
     /// An empty registry of a mesh of topological dimension `tdim` with the physical names
-    /// `names` ((name, dimension, value)), each group of size 0 until set.
+    /// `names` ((name, dimension, value)), each group up to dimension `tdim` of size 0 until
+    /// set.
     pub(crate) fn new(client: &Client, tdim: usize, names: Vec<(String, usize, i32)>) -> Self {
-        let sizes = names.iter().map(|&(_, d, v)| ((d, v), 0)).collect();
+        let sizes = names
+            .iter()
+            .filter(|&&(_, d, _)| d <= tdim)
+            .map(|&(_, d, v)| ((d, v), 0))
+            .collect();
         TagRegistry {
             client: Some(client.clone()),
             tdim,
@@ -443,6 +448,7 @@ mod tests {
                 ("left".into(), 0, 1),
                 ("domain".into(), 2, 7),
                 ("nothing".into(), 1, 9),
+                ("solid".into(), 3, 4),
             ],
         );
         r.set_physical(
@@ -486,7 +492,7 @@ mod tests {
         assert_eq!(r.lookup(1, "walls"), Some(2));
         assert_eq!(r.lookup(2, "walls"), None);
         assert_eq!(r.group_size(1, 2), Some(3));
-        assert_eq!(r.names().count(), 5);
+        assert_eq!(r.names().count(), 6);
         assert!(r.elementary(1).is_some() && r.elementary(0).is_none());
         // "domain" has a name but no tags of dimension 2: an empty group.
         assert_eq!(r.group_size(2, 7), Some(0));
@@ -501,6 +507,8 @@ mod tests {
             (r.named(Codim::BBBnd, "left"), "left", 2),
             (r.group(1, 4), "4", 1),
             (r.group(3, 1), "1", 3),
+            // A name above tdim has no group.
+            (r.group(3, 4), "4", 3),
         ] {
             match result {
                 Err(GridError::UnknownTag { name: n, dim: d }) => {

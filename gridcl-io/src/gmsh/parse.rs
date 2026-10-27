@@ -266,6 +266,9 @@ fn physical_name_list(c: &mut Cursor<'_>) -> Result<Vec<PhysicalName>> {
             .ok_or_else(|| c.error_at(at, "unterminated name"))?;
         let name = std::str::from_utf8(&rest[1..1 + len])
             .map_err(|_| c.error_at(at, "a name that is not UTF-8"))?;
+        if name.contains(['\n', '\r']) {
+            return Err(c.error_at(at, "a name with a line break"));
+        }
         names.push(PhysicalName {
             dim,
             tag,
@@ -724,6 +727,16 @@ $Elements\n2 3 1 3\n1 1 1 1\n3 1 4\n2 1 2 2\n1 1 2 3\n2 1 3 4\n$EndElements\n";
             let text = FILE.replace(from, to);
             assert_ne!(text, FILE);
             parse_err(&text);
+        }
+    }
+
+    /// A name is one line, as Gmsh reads it: a line break inside the quotes is an error.
+    #[test]
+    fn parse_rejects_names_with_line_breaks() {
+        for broken in ["left\nside", "left\r\nside"] {
+            let text = FILE.replace("left side", broken);
+            let (_, message) = parse_err(&text);
+            assert!(message.contains("line break"), "{message}");
         }
     }
 

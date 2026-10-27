@@ -147,7 +147,8 @@ fn unwritable(message: String) -> GridError {
 
 impl MshFile {
     /// Fails unless the parser can read the written file: node and element tags of 1 or more
-    /// (the header range of an empty section aside), names without quotes or line breaks.
+    /// (the header range of an empty section aside), names without quotes or line breaks (a
+    /// name is one line in Gmsh, so the parser rejects both).
     fn check_writable(&self) -> Result<()> {
         for n in &self.physical_names {
             if n.name.contains(['"', '\n', '\r']) {

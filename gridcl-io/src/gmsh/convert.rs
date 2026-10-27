@@ -395,7 +395,8 @@ fn upgrade(
 ///   of a cell;
 /// - `UnsupportedElementType` for a type outside A.7; `Parse` for an element type of another
 ///   dimension than its block, and `LengthMismatch` for an element block whose node list does
-///   not hold its type's node count per element (both only in a hand-built `MshFile`);
+///   not hold its type's node count per element or a node block with more or fewer coordinates
+///   than tags (both only in a hand-built `MshFile`);
 /// - `TooLarge` if a count or tag overflows.
 ///
 /// # Example
@@ -433,6 +434,9 @@ pub fn to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> 
             )));
         }
         check_len(b.nodes.len(), b.tags.len(), ty.num_nodes)?;
+    }
+    for b in &file.node_blocks {
+        check_len(b.coords.len(), b.tags.len(), 1)?;
     }
     let info = entity_info(file);
     let kept: Vec<(&ElementBlock, i32, Vec<i32>)> = file
@@ -1226,6 +1230,12 @@ mod tests {
                 expected: 3,
                 found: 2
             })
+        ));
+        let mut no_coords = file(&nodes, &[(2, 2, &[1], &[1, 2, 3])]);
+        no_coords.node_blocks[0].coords.pop();
+        assert!(matches!(
+            to_gmsh_mesh(&no_coords, &Serial, None),
+            Err(GridError::LengthMismatch { .. })
         ));
         let mut wrong_dim = file(&nodes, &[(2, 2, &[1], &[1, 2, 3])]);
         wrong_dim.element_blocks[0].dim = 1;
