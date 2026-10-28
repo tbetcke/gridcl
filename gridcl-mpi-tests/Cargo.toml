@@ -8,9 +8,8 @@ license.workspace = true
 publish = false
 
 [features]
-# The direct mpi dependency is temporary: the smoke test switches to CommExt::sum once gridcl's
-# Mpi exists (docs/plans/M0.md, question 6).
-mpi = ["gridcl/mpi", "dep:mpi"]
+# The direct mpi dependency initialises MPI (`mpi::initialize`) and aborts the job on a panic.
+mpi = ["gridcl/mpi", "gridcl-testing/mpi", "dep:mpi"]
 
 [dependencies]
 gridcl = { path = "../gridcl" }
@@ -19,5 +18,25 @@ mpi = { workspace = true, optional = true }
 
 [[test]]
 name = "allreduce_smoke"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "parallel_invariance"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "scatter"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "determinism"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "locality"
 harness = false
 required-features = ["mpi"]

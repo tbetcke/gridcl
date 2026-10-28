@@ -122,6 +122,9 @@ impl CommDyn for Serial {
     fn raw(&self) -> Option<mpi::ffi::MPI_Comm> {
         None
     }
+    fn duplicate(&self) -> std::rc::Rc<dyn CommDyn> {
+        todo!("M6 T1: Serial::duplicate")
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 //! `IndexMap` without ghosts (M2); M6 adds ghosts, `scatterer` and the device field.
 
-use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result};
+use gridcl_device::Client;
+
+use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result, Scatterer};
 
 /// Ownership of a distributed index set in the DOLFINx sense: `[owned | ghost]` local indices.
 ///
@@ -84,6 +86,25 @@ impl IndexMap {
             size_global,
             neighbourhood: Neighbourhood::empty(),
         })
+    }
+    /// With ghosts: `ghosts[k]` is the global index of ghost k and `ghost_owners[k]` its owning
+    /// rank. Collective. Ghosts request their indices from their owners, which range-check them
+    /// (`IndexOutOfRange`, agreed); destinations by `all_to_all_v`; forward and transposed
+    /// reverse neighbourhoods; send lists ordered by (neighbour rank, ghost position on the
+    /// receiver) (ADR-0026).
+    pub fn with_ghosts(
+        comm: &dyn CommDyn,
+        num_owned: usize,
+        ghosts: Vec<i64>,
+        ghost_owners: Vec<i32>,
+    ) -> Result<IndexMap> {
+        let _ = (comm, num_owned, ghosts, ghost_owners);
+        todo!("M6 T5: IndexMap::with_ghosts")
+    }
+    /// The scatterer of this map for `block_size` values per index on `client`.
+    pub fn scatterer(&self, client: &Client, block_size: usize) -> Result<Scatterer> {
+        let _ = (client, block_size);
+        todo!("M6 T7: IndexMap::scatterer")
     }
     /// Global indices `[begin, end)` owned by this rank.
     ///
@@ -181,6 +202,13 @@ impl IndexMap {
     }
 }
 
+/// Shares the neighbourhoods; the device cache is not copied (ADR-0026).
+impl Clone for IndexMap {
+    fn clone(&self) -> Self {
+        todo!("M6 T5: IndexMap::clone")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +273,9 @@ mod tests {
         #[cfg(feature = "mpi")]
         fn raw(&self) -> Option<mpi::ffi::MPI_Comm> {
             None
+        }
+        fn duplicate(&self) -> std::rc::Rc<dyn CommDyn> {
+            std::rc::Rc::new(self.clone())
         }
     }
 

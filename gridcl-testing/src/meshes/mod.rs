@@ -7,12 +7,14 @@
 
 mod ball;
 mod boxes;
+mod chunk;
 mod lattice;
 mod sphere;
 mod surface;
 
 pub use ball::ball;
 pub use boxes::{cube_box, interval_box, mixed_box, square_box, triangle_strip};
+pub use chunk::{HostChunk, HostChunkBlock, HostTags};
 pub use sphere::sphere;
 pub use surface::mixed_surface;
 
@@ -119,21 +121,12 @@ impl HostMesh {
         TD: TopoDim + EmbeddedIn<GD>,
         GD: Dim,
     {
-        if GD::N != self.gdim {
-            return Err(GridError::DimensionMismatch {
-                expected: (TD::N, self.gdim),
-                found: (TD::N, GD::N),
-            });
-        }
+        check_dims::<TD, GD>(self.gdim)?;
         self.blocks
             .iter()
             .map(|block| {
-                let cell = TD::Cell::try_from(block.cell).map_err(|e| GridError::WrongCellDim {
-                    found: cell_name(e.found),
-                    expected_tdim: e.expected_tdim,
-                })?;
                 Ok(CoordinateElement {
-                    cell,
+                    cell: td_cell::<TD>(block.cell)?,
                     degree: block.degree,
                     family: NodeFamily::Equispaced,
                 })
@@ -363,6 +356,25 @@ impl HostMesh {
         }
         out
     }
+}
+
+/// `DimensionMismatch` unless `GD::N` is `gdim` (expected (TD::N, gdim)).
+fn check_dims<TD: TopoDim, GD: Dim>(gdim: usize) -> Result<()> {
+    if GD::N != gdim {
+        return Err(GridError::DimensionMismatch {
+            expected: (TD::N, gdim),
+            found: (TD::N, GD::N),
+        });
+    }
+    Ok(())
+}
+
+/// `cell` as a cell of dimension `TD`; `WrongCellDim` otherwise.
+fn td_cell<TD: TopoDim>(cell: CellType) -> Result<TD::Cell> {
+    TD::Cell::try_from(cell).map_err(|e| GridError::WrongCellDim {
+        found: cell_name(e.found),
+        expected_tdim: e.expected_tdim,
+    })
 }
 
 /// The name of a cell type, for `GridError`.

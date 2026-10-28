@@ -1,5 +1,7 @@
 //! The communicator traits (Listing S2c).
 
+use std::rc::Rc;
+
 use crate::{ReduceOp, Result};
 
 /// Object-safe communicator interface used by IndexMap, Scatterer and partitioners.
@@ -57,6 +59,9 @@ pub trait CommDyn: 'static {
     /// Raw handle for PT-Scotch and ParMETIS; None for Serial.
     #[cfg(feature = "mpi")]
     fn raw(&self) -> Option<mpi::ffi::MPI_Comm>;
+    /// Cheap clone that refers to the same communicator (for `Mpi` an `Rc` clone, not
+    /// `MPI_Comm_dup`), so a [`Neighbourhood`] can hold it (ADR-0026).
+    fn duplicate(&self) -> Rc<dyn CommDyn>;
 }
 
 /// The communicator stored in a Mesh. Not required to be Send or Sync.
@@ -116,6 +121,26 @@ pub trait CommExt {
     /// assert_eq!(Serial.exscan_sum(9_u32), 0);
     /// ```
     fn exscan_sum<T: CommScalar>(&self, x: T) -> T;
+    /// The minimum of `x` over all ranks.
+    fn min<T: CommScalar>(&self, x: T) -> T;
+    /// `x` of every rank, in rank order.
+    fn all_gather<T: CommScalar>(&self, x: T) -> Vec<T>;
+    /// Variable all-to-all: `send_counts[r]` values of `send` go to rank r, in order. Exchanges
+    /// the counts first; returns the received values, grouped by source rank, and the counts.
+    fn all_to_all_v<T: CommScalar>(
+        &self,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)>;
+    /// Neighbourhood all-to-all: `send_counts[i]` values go to `nb.destinations()[i]`.
+    /// Exchanges the counts first; returns the received values, grouped by
+    /// `nb.sources()`, and the counts.
+    fn neighbour_all_to_all_v<T: CommScalar>(
+        &self,
+        nb: &Neighbourhood,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)>;
 }
 
 impl<C: CommDyn + ?Sized> CommExt for C {
@@ -133,6 +158,31 @@ impl<C: CommDyn + ?Sized> CommExt for C {
         let mut v = x;
         self.exscan_bytes(bytemuck::bytes_of_mut(&mut v), T::DTYPE, ReduceOp::Sum);
         v
+    }
+    fn min<T: CommScalar>(&self, x: T) -> T {
+        let _ = x;
+        todo!("M6 T1: CommExt::min")
+    }
+    fn all_gather<T: CommScalar>(&self, x: T) -> Vec<T> {
+        let _ = x;
+        todo!("M6 T1: CommExt::all_gather")
+    }
+    fn all_to_all_v<T: CommScalar>(
+        &self,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)> {
+        let _ = (send, send_counts);
+        todo!("M6 T1: CommExt::all_to_all_v")
+    }
+    fn neighbour_all_to_all_v<T: CommScalar>(
+        &self,
+        nb: &Neighbourhood,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)> {
+        let _ = (nb, send, send_counts);
+        todo!("M6 T1: CommExt::neighbour_all_to_all_v")
     }
 }
 
@@ -294,6 +344,14 @@ impl Neighbourhood {
             sources: Vec::new(),
             destinations: Vec::new(),
         }
+    }
+    /// The neighbourhood of `comm` with these source and destination ranks. Collective: with
+    /// `comm.raw()` = `Some` it creates the graph communicator by
+    /// `MPI_Dist_graph_create_adjacent` (unweighted, `reorder = 0`); otherwise it keeps the
+    /// rank lists. `Serial` accepts only empty lists (ADR-0026).
+    pub fn new(comm: &dyn CommDyn, sources: Vec<usize>, destinations: Vec<usize>) -> Result<Self> {
+        let _ = (comm, sources, destinations);
+        todo!("M6 T1: Neighbourhood::new")
     }
     /// A neighbourhood with the given ranks, for tests of the empty-only rule.
     #[cfg(test)]

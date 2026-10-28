@@ -1966,6 +1966,7 @@ dependencies = [
  "gridcl-testing",
  "gridcl-topology",
  "log",
+ "mpi",
  "serde_json",
  "trybuild",
 ]
@@ -2078,6 +2079,7 @@ dependencies = [
  "gridcl-device",
  "gridcl-dims",
  "gridcl-refcell",
+ "mpi",
 ]
 
 [[package]]

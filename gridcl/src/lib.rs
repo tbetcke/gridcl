@@ -20,7 +20,7 @@ mod test_comm;
 pub mod vtk;
 
 pub use any::{AnyMesh, AnyMeshRef};
-pub use builder::MeshBuilder;
+pub use builder::{CellOrdering, GhostMode, MeshBuilder};
 pub use entity_map::EntityMap;
 pub use gmsh::GmshOptions;
 pub use mesh::{CurveMesh, Mesh, PlanarMesh, SurfaceMesh, VolumeMesh};
@@ -39,5 +39,11 @@ pub use gridcl_geometry::{
     QuadRule, ScalarShape, VecShape, detj_block, facet_normals_block, jacobians_block,
     measure_block, normals_block, physical_points_block, pseudo_inverse_block,
 };
-pub use gridcl_parallel::{Comm, CommDyn, CommExt, IndexMap, Serial};
+#[cfg(feature = "mpi")]
+pub use gridcl_parallel::Mpi;
+pub use gridcl_parallel::{
+    Comm, CommDyn, CommExt, CommScalar, DType, IndexMap, Neighbourhood, ReverseOp, ScatterNumeric,
+    Scatterer, Serial, Transport,
+};
+pub use gridcl_partition::{Block, DistGraph, Partitioner};
 pub use gridcl_topology::{CellBlock, Connectivity, EntityBlock};

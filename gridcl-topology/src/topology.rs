@@ -224,6 +224,14 @@ impl<TD: TopoDim> Topology<TD> {
             .ok_or(GridError::ConnectivityNotCreated(key))
     }
 
+    /// Stores the sharer sets of the local vertices, uploads one shared flag per vertex and
+    /// derives the sharing neighbourhood: every rank that shares a vertex with this one
+    /// (ADR-0026). Without sharers every vertex is unshared.
+    pub fn set_vertex_sharers(&mut self, s: crate::VertexSharers) {
+        let _ = s;
+        todo!("M6 T12: Topology::set_vertex_sharers")
+    }
+
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
     /// connectivity (tdim, dim). Does nothing if they exist.
     ///

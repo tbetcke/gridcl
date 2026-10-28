@@ -21,6 +21,7 @@ mod matching;
 mod origin;
 mod permutation;
 mod renumber;
+mod sharers;
 mod topology;
 mod transpose;
 
@@ -28,4 +29,5 @@ pub use cell_block::CellBlock;
 pub use entity::{Connectivity, EntityBlock};
 pub use gridcl_device::ConnKey;
 pub use origin::{decode_origin_ids, encode_origin_ids, origin_ids_fit_u32};
+pub use sharers::VertexSharers;
 pub use topology::Topology;

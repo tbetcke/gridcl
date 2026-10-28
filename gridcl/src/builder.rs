@@ -7,6 +7,7 @@ use gridcl_device::{DeviceBuffer, DeviceStrided, GridError, Real, Result, check_
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
 use gridcl_parallel::{Comm, IndexMap, Serial};
+use gridcl_partition::Partitioner;
 use gridcl_refcell::RefCellError;
 use gridcl_topology::{CellBlock, Topology, encode_origin_ids};
 
@@ -72,6 +73,34 @@ fn check_unique(ids: impl IntoIterator<Item = i64>) -> Result<()> {
 /// A u32 index of `i`.
 fn index_u32(i: usize) -> Result<u32> {
     u32::try_from(i).map_err(|_| GridError::TooLarge)
+}
+
+/// The ghost cells each rank holds besides its owned cells (docs/design.md, "Distributed mesh
+/// model"; ADR-0026).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GhostMode {
+    /// No ghost cells.
+    None,
+    /// The cells of other ranks that share a facet with an owned cell.
+    SharedFacet,
+    /// `layers` rounds of cells of other ranks that share a vertex; `layers: 0` is `None`.
+    SharedVertex {
+        /// The number of rounds.
+        layers: usize,
+    },
+}
+
+/// The order of the owned cells of each rank (pipeline stage 7; ADR-0026). Ghost cells follow,
+/// ordered by (owner rank, origin id).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellOrdering {
+    /// Source rank, then input position (the default).
+    Input,
+    /// A Hilbert curve of the vertex centroids, ties broken by cell origin id.
+    Hilbert,
+    /// Reverse Cuthill–McKee on the local facet graph, from a minimum-degree cell, ties broken
+    /// by origin id.
+    ReverseCuthillMcKee,
 }
 
 /// A built mesh and the local vertex index of each input node (`u32::MAX` for nodes that are
@@ -161,6 +190,58 @@ where
             origin_ids: origin_ids.map(<[i64]>::to_vec),
         });
         self
+    }
+
+    /// A cell block whose cells reference nodes by node origin id: `node_ids` holds one row of
+    /// the element's node count per cell, in A.5 order; `origin_ids` optionally one id per
+    /// cell. A cell may reference the nodes of any rank (ADR-0026).
+    pub fn cell_block_by_ids(
+        self,
+        element: CoordinateElement<TD>,
+        node_ids: &[i64],
+        origin_ids: Option<&[i64]>,
+    ) -> Self {
+        let _ = (element, node_ids, origin_ids);
+        todo!("M6 T9: MeshBuilder::cell_block_by_ids")
+    }
+
+    /// The ghost cells of each rank; default [`GhostMode::None`].
+    pub fn ghosts(self, mode: GhostMode) -> Self {
+        let _ = mode;
+        todo!("M6 T9: MeshBuilder::ghosts")
+    }
+
+    /// The partitioner of pipeline stage 3; default [`Block`](gridcl_partition::Block).
+    pub fn partitioner(self, p: impl Partitioner + 'static) -> Self {
+        let _ = p;
+        todo!("M6 T9: MeshBuilder::partitioner")
+    }
+
+    /// The order of the owned cells; default [`CellOrdering::Input`].
+    pub fn ordering(self, o: CellOrdering) -> Self {
+        let _ = o;
+        todo!("M6 T9: MeshBuilder::ordering")
+    }
+
+    /// Physical tags of entities of type `entity`: one entry per entity, with
+    /// `entity.num_vertices()` corner origin ids in `corners` and one value in `values`.
+    /// Entries are matched by their sorted corner ids (ADR-0026).
+    pub fn physical_tags(self, entity: CellType, corners: &[i64], values: &[i32]) -> Self {
+        let _ = (entity, corners, values);
+        todo!("M6 T9: MeshBuilder::physical_tags")
+    }
+
+    /// The tag name table: (name, dimension, value).
+    pub fn tag_names(self, names: &[(&str, usize, i32)]) -> Self {
+        let _ = names;
+        todo!("M6 T9: MeshBuilder::tag_names")
+    }
+
+    /// Builds the distributed mesh on `comm` through the parallel creation pipeline.
+    /// Collective; every rank passes its chunk of nodes, cells and tags (ADR-0026).
+    pub fn build_on<C: Comm>(self, comm: C) -> Result<Mesh<F, TD, GD, C>> {
+        let _ = comm;
+        todo!("M6 T12: MeshBuilder::build_on")
     }
 
     /// Checks, numbers and uploads the mesh.

@@ -223,6 +223,14 @@ impl<T: CubeElement> DeviceBuffer<T> {
         decode(&bytes, self.len)
     }
 
+    /// Overwrites the logical length with `data` through `Client::write`; the padding is left
+    /// as it is. A length other than [`len`](DeviceBuffer::len) gives `LengthMismatch`
+    /// (ADR-0026).
+    pub fn write_host(&mut self, data: &[T]) -> Result<()> {
+        let _ = data;
+        todo!("M6 T4: DeviceBuffer::write_host")
+    }
+
     /// Explicit device-to-host copy of the logical length.
     ///
     /// # Example
