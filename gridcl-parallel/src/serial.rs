@@ -17,7 +17,7 @@ use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result};
 ///   and buffers. A neighbourhood with `k` sources or destinations returns
 ///   `LengthMismatch { expected: 0, found: k }`; a non-empty count slice or buffer returns
 ///   `LengthMismatch { expected: 0, found: its length }`.
-/// - `raw()` (feature `mpi`) is `None`.
+/// - `raw()` (feature `mpi`) is `None`, and `duplicate()` is another `Serial`.
 ///
 /// In debug builds the reduce and scan assert that `buf.len()` is a multiple of the size of
 /// `dtype`.
@@ -123,7 +123,7 @@ impl CommDyn for Serial {
         None
     }
     fn duplicate(&self) -> std::rc::Rc<dyn CommDyn> {
-        todo!("M6 T1: Serial::duplicate")
+        std::rc::Rc::new(Serial)
     }
 }
 
@@ -340,6 +340,74 @@ mod tests {
             bytemuck::bytes_of(&zero)
         );
         assert_eq!(Serial.sum(x), Serial.sum(x));
+        assert_eq!(bytemuck::bytes_of(&comm.min(x)), bytemuck::bytes_of(&x));
+        assert_eq!(comm.all_gather(x).len(), 1);
+        assert_eq!(
+            bytemuck::bytes_of(&comm.all_gather(x)[0]),
+            bytemuck::bytes_of(&x)
+        );
+    }
+
+    #[test]
+    fn typed_all_to_all_v_counts_and_errors() {
+        let comm: &dyn CommDyn = &Serial;
+        let (recv, counts) = comm.all_to_all_v(&[3_i64, -4, 5], &[3]).unwrap();
+        assert_eq!((recv, counts), (vec![3, -4, 5], vec![3]));
+        let (recv, counts) = comm.all_to_all_v::<f32>(&[], &[0]).unwrap();
+        assert!(recv.is_empty() && counts == [0]);
+        // One count per rank, adding up to the values sent.
+        assert!(matches!(
+            comm.all_to_all_v(&[1_u32], &[1, 0]),
+            Err(GridError::LengthMismatch {
+                expected: 1,
+                found: 2
+            })
+        ));
+        assert!(matches!(
+            comm.all_to_all_v(&[1_u32, 2], &[1]),
+            Err(GridError::LengthMismatch {
+                expected: 1,
+                found: 2
+            })
+        ));
+    }
+
+    #[test]
+    fn typed_neighbour_exchange_on_the_empty_neighbourhood() {
+        let comm: &dyn CommDyn = &Serial;
+        let nb = Neighbourhood::empty();
+        let (recv, counts) = comm.neighbour_all_to_all_v::<f64>(&nb, &[], &[]).unwrap();
+        assert!(recv.is_empty() && counts.is_empty());
+        assert!(matches!(
+            comm.neighbour_all_to_all_v(&nb, &[1_i32], &[1]),
+            Err(GridError::LengthMismatch {
+                expected: 0,
+                found: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn neighbourhoods_of_serial() {
+        let nb = Neighbourhood::new(&Serial, vec![], vec![]).unwrap();
+        assert!(nb.sources().is_empty() && nb.destinations().is_empty());
+        assert_eq!(nb.comm().map(|c| c.size()), Some(1));
+        for (sources, destinations) in [(vec![0], vec![]), (vec![], vec![0]), (vec![], vec![1])] {
+            assert!(matches!(
+                Neighbourhood::new(&Serial, sources, destinations),
+                Err(GridError::IndexOutOfRange { len: 1, .. })
+            ));
+        }
+        let dup = Serial.duplicate();
+        assert_eq!((dup.rank(), dup.size()), (0, 1));
+    }
+
+    #[test]
+    fn agreed_errors_on_one_rank() {
+        let ok: Result<u32> = crate::comm::agree(&Serial, Ok(3));
+        assert_eq!(ok.unwrap(), 3);
+        let err: Result<u32> = crate::comm::agree(&Serial, Err(GridError::DuplicateOriginId(7)));
+        assert!(matches!(err, Err(GridError::DuplicateOriginId(7))));
     }
 
     proptest! {

@@ -238,6 +238,19 @@ mod tests {
     use super::GridError;
 
     /// The `Display` lines of the M4 variants (ADR-0022).
+    /// The `Display` lines of the M6 variants (ADR-0026).
+    #[test]
+    fn m6_variants_display() {
+        assert_eq!(
+            GridError::MessageTooLarge { count: 1 << 31 }.to_string(),
+            "a message count or displacement of 2147483648 elements exceeds i32::MAX"
+        );
+        assert_eq!(
+            GridError::RemoteFailure { rank: 3 }.to_string(),
+            "the operation failed on rank 3"
+        );
+    }
+
     #[test]
     fn m4_variants_display() {
         let cases = [

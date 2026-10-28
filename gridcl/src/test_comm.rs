@@ -50,6 +50,6 @@ impl CommDyn for TwoRanks {
         None
     }
     fn duplicate(&self) -> std::rc::Rc<dyn CommDyn> {
-        todo!("M6 T1: TwoRanks::duplicate")
+        std::rc::Rc::new(TwoRanks)
     }
 }
