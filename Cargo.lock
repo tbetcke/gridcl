@@ -1967,6 +1967,7 @@ dependencies = [
  "gridcl-topology",
  "log",
  "mpi",
+ "proptest",
  "serde_json",
  "trybuild",
 ]

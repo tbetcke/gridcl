@@ -1,6 +1,7 @@
 //! `Mpi` against the expected values of the `ThreadComm` tests (gridcl_testing::comm_checks):
 //! every `CommDyn` and `CommExt` method, an asymmetric neighbourhood, and neighbourhood
-//! exchange on 64 random graphs (docs/plans/M6.md, T3).
+//! exchange on 64 random graphs (docs/plans/M6.md, T3); `IndexMap::with_ghosts` on 16 random
+//! layouts (T5).
 
 use std::process::ExitCode;
 
@@ -23,6 +24,13 @@ fn main() -> ExitCode {
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             comm_checks::neighbour_exchange(comm, seed);
+        }
+        comm_checks::index_map_basics(comm);
+        for _ in 0..16 {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            comm_checks::index_map_layout(comm, seed);
         }
         let dup = comm.duplicate();
         assert_eq!((dup.rank(), dup.size()), (comm.rank(), comm.size()));
