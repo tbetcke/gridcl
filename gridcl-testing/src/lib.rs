@@ -6,6 +6,7 @@
 //! "Cargo features", "Dependency rules").
 
 mod comm;
+pub mod comm_checks;
 mod meshes;
 pub mod parallel;
 

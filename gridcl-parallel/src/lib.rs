@@ -5,6 +5,9 @@
 //! rules" 5). Milestone M2 builds the communication core; M6 adds `Mpi` and `Scatterer`.
 
 mod comm;
+mod counts;
+#[cfg(feature = "mpi")]
+mod graph;
 mod hash;
 mod index_map;
 #[cfg(feature = "mpi")]

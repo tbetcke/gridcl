@@ -480,6 +480,9 @@ pub struct Neighbourhood {
     destinations: Vec<usize>,
     /// The parent communicator; `None` for [`Neighbourhood::empty`].
     comm: Option<Rc<dyn CommDyn>>,
+    /// The distributed-graph communicator, when the parent has an MPI handle.
+    #[cfg(feature = "mpi")]
+    graph: Option<Rc<crate::graph::GraphComm>>,
 }
 
 impl Neighbourhood {
@@ -498,6 +501,8 @@ impl Neighbourhood {
             sources: Vec::new(),
             destinations: Vec::new(),
             comm: None,
+            #[cfg(feature = "mpi")]
+            graph: None,
         }
     }
     /// The neighbourhood of `comm` in which this rank receives from `sources` and sends to
@@ -548,11 +553,27 @@ impl Neighbourhood {
         };
         let local = check(&sources).and_then(|()| check(&destinations));
         agree(comm, local)?;
+        #[cfg(feature = "mpi")]
+        let graph = match comm.raw() {
+            Some(raw) => Some(Rc::new(crate::graph::GraphComm::create(
+                raw,
+                &sources,
+                &destinations,
+            )?)),
+            None => None,
+        };
         Ok(Neighbourhood {
             sources,
             destinations,
             comm: Some(comm.duplicate()),
+            #[cfg(feature = "mpi")]
+            graph,
         })
+    }
+    /// The distributed-graph communicator; `None` unless made on an MPI communicator.
+    #[cfg(feature = "mpi")]
+    pub(crate) fn graph(&self) -> Option<&crate::graph::GraphComm> {
+        self.graph.as_deref()
     }
     /// The communicator the neighbourhood was made on; `None` for [`Neighbourhood::empty`].
     #[allow(dead_code)] // The scatterer exchanges through it (M6 T7).
@@ -566,6 +587,8 @@ impl Neighbourhood {
             sources,
             destinations,
             comm: None,
+            #[cfg(feature = "mpi")]
+            graph: None,
         }
     }
     /// The ranks this rank receives from.

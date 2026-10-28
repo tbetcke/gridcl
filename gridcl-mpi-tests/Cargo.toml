@@ -22,6 +22,11 @@ harness = false
 required-features = ["mpi"]
 
 [[test]]
+name = "comm"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
 name = "parallel_invariance"
 harness = false
 required-features = ["mpi"]

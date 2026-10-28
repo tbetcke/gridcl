@@ -370,92 +370,22 @@ impl CommDyn for ThreadComm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gridcl::{CommExt, Serial};
+    use crate::comm_checks;
     use proptest::prelude::*;
 
     #[test]
     fn one_rank_matches_serial() {
-        let out = ThreadComm::run(1, |comm| {
-            let serial: &dyn CommDyn = &Serial;
-            assert_eq!((comm.rank(), comm.size()), (0, 1));
-            comm.barrier();
-            for op in [ReduceOp::Sum, ReduceOp::Min, ReduceOp::Max] {
-                let mut a = [1.5_f64.to_ne_bytes(), (-2.0_f64).to_ne_bytes()].concat();
-                let mut b = a.clone();
-                comm.all_reduce_bytes(&mut a, DType::F64, op);
-                serial.all_reduce_bytes(&mut b, DType::F64, op);
-                assert_eq!(a, b);
-                for dtype in [DType::I32, DType::U64, DType::F32] {
-                    let mut a = vec![7_u8; 8];
-                    let mut b = a.clone();
-                    comm.exscan_bytes(&mut a, dtype, op);
-                    serial.exscan_bytes(&mut b, dtype, op);
-                    assert_eq!(a, b, "{dtype:?} {op:?}");
-                }
-            }
-            let send = 9_u32.to_ne_bytes();
-            let (mut a, mut b) = ([0_u8; 4], [0_u8; 4]);
-            comm.all_to_all_v_bytes(&send, &[1], &mut a, &[1], DType::U32)
-                .unwrap();
-            serial
-                .all_to_all_v_bytes(&send, &[1], &mut b, &[1], DType::U32)
-                .unwrap();
-            assert_eq!(a, b);
-            let nb = Neighbourhood::new(&comm, vec![], vec![]).unwrap();
-            comm.neighbour_all_to_all_v_bytes(&nb, &[], &[], &mut [], &[], DType::F32)
-                .unwrap();
-            assert!(Neighbourhood::new(&comm, vec![0], vec![]).is_err());
-            assert_eq!(comm.duplicate().size(), 1);
-            (
-                comm.min(3_i64),
-                comm.all_gather(4_u32),
-                comm.exscan_sum(5_u64),
-            )
-        });
-        assert_eq!(out, [(3, vec![4], 0)]);
+        ThreadComm::run(1, |comm| comm_checks::matches_serial(&comm));
     }
 
     #[test]
-    fn identities_on_two_to_five_ranks() {
-        for n in 2..=5 {
+    fn identities_on_one_to_five_ranks() {
+        for n in 1..=5 {
             let out = ThreadComm::run(n, |comm| {
-                let r = comm.rank();
                 assert_eq!(comm.size(), n);
-                assert_eq!(comm.sum(r as u64), (n * (n - 1) / 2) as u64);
-                assert_eq!(comm.min(r as i32 - 1), -1);
-                assert_eq!(comm.max(r as f32), (n - 1) as f32);
-                assert_eq!(
-                    comm.exscan_sum(r as i64),
-                    (r * r.saturating_sub(1) / 2) as i64
-                );
-                assert_eq!(
-                    comm.all_gather(10 * r as u32),
-                    (0..n as u32).map(|i| 10 * i).collect::<Vec<_>>()
-                );
-                // Exscan Min and Max: the identities on rank 0 (ADR-0011).
-                let mut lo = (r as f64).to_ne_bytes();
-                comm.exscan_bytes(&mut lo, DType::F64, ReduceOp::Min);
-                let lo = f64::from_ne_bytes(lo);
-                assert_eq!(lo, if r == 0 { f64::MAX } else { 0.0 });
-                let mut hi = (r as i32).to_ne_bytes();
-                comm.exscan_bytes(&mut hi, DType::I32, ReduceOp::Max);
-                assert_eq!(
-                    i32::from_ne_bytes(hi),
-                    if r == 0 { i32::MIN } else { r as i32 - 1 }
-                );
-                // Rank r sends s + 1 copies of 100 r + s to rank s.
-                let counts: Vec<usize> = (0..n).map(|s| s + 1).collect();
-                let send: Vec<u32> = (0..n)
-                    .flat_map(|s| vec![(100 * r + s) as u32; s + 1])
-                    .collect();
-                let (recv, recv_counts) = comm.all_to_all_v(&send, &counts).unwrap();
-                assert_eq!(recv_counts, vec![r + 1; n]);
-                let want: Vec<u32> = (0..n)
-                    .flat_map(|src| vec![(100 * src + r) as u32; r + 1])
-                    .collect();
-                assert_eq!(recv, want);
-                comm.barrier();
-                r
+                comm_checks::identities(&comm);
+                comm_checks::ring(&comm);
+                comm.rank()
             });
             assert_eq!(out, (0..n).collect::<Vec<_>>());
         }
@@ -463,22 +393,7 @@ mod tests {
 
     #[test]
     fn wrong_counts_are_length_mismatch() {
-        ThreadComm::run(2, |comm| {
-            assert!(matches!(
-                comm.all_to_all_v(&[1_i32], &[1]),
-                Err(GridError::LengthMismatch {
-                    expected: 2,
-                    found: 1
-                })
-            ));
-            assert!(matches!(
-                comm.all_to_all_v(&[1_i32], &[1, 1]),
-                Err(GridError::LengthMismatch {
-                    expected: 2,
-                    found: 1
-                })
-            ));
-        });
+        ThreadComm::run(2, |comm| comm_checks::wrong_counts(&comm));
     }
 
     #[test]
@@ -500,45 +415,12 @@ mod tests {
         assert_eq!(message.as_deref(), Some("rank 1 fails"));
     }
 
-    /// A random directed graph on `n` ranks without self-loops, from bits of `seed`.
-    fn graph(n: usize, seed: u64) -> Vec<Vec<bool>> {
-        (0..n)
-            .map(|i| {
-                (0..n)
-                    .map(|j| i != j && (seed >> ((i * n + j) % 64)) & 1 == 1)
-                    .collect()
-            })
-            .collect()
-    }
-
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(64))]
 
-        /// Neighbourhood exchange on random graphs: rank i sends (j + 1) · (i + 1) mod 4
-        /// values 1000 i + j + k to each destination j.
         #[test]
         fn neighbour_exchange_on_random_graphs(n in 1..=5_usize, seed in any::<u64>()) {
-            let g = graph(n, seed);
-            let count = |i: usize, j: usize| ((j + 1) * (i + 1)) % 4;
-            ThreadComm::run(n, |comm| {
-                let r = comm.rank();
-                let dsts: Vec<usize> = (0..n).filter(|&j| g[r][j]).collect();
-                let srcs: Vec<usize> = (0..n).filter(|&i| g[i][r]).collect();
-                let nb = Neighbourhood::new(&comm, srcs.clone(), dsts.clone()).unwrap();
-                let counts: Vec<usize> = dsts.iter().map(|&j| count(r, j)).collect();
-                let send: Vec<i64> = dsts
-                    .iter()
-                    .flat_map(|&j| (0..count(r, j)).map(move |k| (1000 * r + j + k) as i64))
-                    .collect();
-                let (recv, recv_counts) = comm.neighbour_all_to_all_v(&nb, &send, &counts).unwrap();
-                let want_counts: Vec<usize> = srcs.iter().map(|&i| count(i, r)).collect();
-                let want: Vec<i64> = srcs
-                    .iter()
-                    .flat_map(|&i| (0..count(i, r)).map(move |k| (1000 * i + r + k) as i64))
-                    .collect();
-                assert_eq!(recv_counts, want_counts);
-                assert_eq!(recv, want);
-            });
+            ThreadComm::run(n, |comm| comm_checks::neighbour_exchange(&comm, seed));
         }
     }
 }
