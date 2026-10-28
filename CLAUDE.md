@@ -39,7 +39,10 @@
   at mesh creation, and of quadrature points and tabulations when a rule is created or a
   tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
   and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
-  checks of gather and scatter, and the host-staged halo exchange.
+  checks of gather and scatter, the host-staged halo exchange, the boundary-entity ownership
+  exchange of entity creation (the candidate count and keys to the host; owners and global
+  numbers back), the upload of an IndexMap's send and receive index lists when its scatterer
+  is first created, and the vertex shared flags at mesh creation (ADR-0026).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,

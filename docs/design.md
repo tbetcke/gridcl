@@ -250,7 +250,7 @@ pub struct GeometryBlock<TD: TopoDim> {
 }
 ```
 
-The communicator parameter defaults to `Serial`, so tests and single-GPU users never see MPI types. `Serial` implements `Comm` with no-op collectives, and its IndexMaps have no ghosts. `Mesh<…, Mpi>` is deliberately not `Send`: gridcl runs one host thread per rank (see "Streams and threading").
+The communicator parameter defaults to `Serial`, so tests and single-GPU users never see MPI types. `Serial` implements `Comm` with no-op collectives, and its IndexMaps have no ghosts. `Mesh` is deliberately not `Send` (its index maps hold the communicator, ADR-0026): gridcl runs one host thread per rank (see "Streams and threading").
 
 ### Methods that exist only where they make sense
 
@@ -601,7 +601,7 @@ use gridcl::prelude::*;
 
 let universe = mpi::initialize().expect("MPI already initialised"); // one host thread per rank
 let comm = Mpi::world(&universe);
-let gpu = local_gpu_index(&comm);                                    // node-local rank
+let gpu = local_gpu_index(&comm);                                    // node-local rank; arrives with M10 (ADR-0026)
 let device = Device::cuda(gpu)
     .or_else(|_| Device::rocm(gpu))
     .or_else(|_| Device::vulkan(WgpuDeviceKind::default()))
@@ -804,6 +804,9 @@ impl<T: CubeElement> DeviceBuffer<T> {
         let mut out = self.client.read_async(vec![self.handle.clone()]).await?;
         Ok(T::from_bytes(&out.remove(0))[..self.len].to_vec())
     }
+    /// Explicit host-to-device copy into this buffer (Client::write); data.len() != len() gives
+    /// LengthMismatch (ADR-0026).
+    pub fn write_host(&mut self, data: &[T]) -> Result<()>;
     /// Scalar kernel argument. In CubeCL 0.11 the handle's size, not this length, bounds the
     /// kernel's slice, so every kernel also takes its lengths as explicit arguments.
     /// Unsafe: the kernel must stay within `len` and the padding.
@@ -845,7 +848,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -956,6 +959,13 @@ pub fn scatter<T: DeviceScalar>(src: &DeviceBuffer<T>, idx: &DeviceBuffer<u32>,
 /// Values >= num_bins are not counted.
 pub fn histogram(values: &DeviceBuffer<u32>, num_bins: u32) -> Result<DeviceBuffer<u32>>;
 
+/// out[k·block .. (k+1)·block] = src[idx[k]·block .. (idx[k]+1)·block], as u32 words (ADR-0026).
+pub fn pack<T: CubeElement>(src: &DeviceBuffer<T>, idx: &DeviceBuffer<u32>, block: usize,
+                            out: &mut DeviceBuffer<T>) -> Result<()>;
+/// dst[idx[k]·block ..] = packed[k·block ..]; indices distinct (debug check, as scatter).
+pub fn unpack<T: CubeElement>(packed: &DeviceBuffer<T>, idx: &DeviceBuffer<u32>, block: usize,
+                              dst: &mut DeviceBuffer<T>) -> Result<()>;
+
 /// `len` keys of 1..=4 u32 words, planar: word w of key i at w * pad_len(len) + i; word 0 most
 /// significant.
 pub struct SortKeys { /* words: DeviceBuffer<u32>, num_words, len */ }
@@ -982,7 +992,7 @@ pub struct Unique { pub keys: SortKeys, pub first: DeviceBuffer<u32>, pub group:
 pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<Unique>;
 ```
 
-The primitives are re-exported at the root of gridcl-device. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
+The primitives are re-exported at the root of gridcl-device, together with `Client` and `CubeElement` for gridcl-parallel, which has no cubecl dependency (ADR-0026). `pack` and `unpack` plan as `KernelKind::Pack`, are generic over the vector size (lanes over output elements for pack, over input elements for unpack), and require `size_of::<T>()` to be a multiple of 4, as `copy` does. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
 
 ### Streams and threading
 
@@ -1219,6 +1229,9 @@ A vertex is *shared* if it appears on more than one rank, whether in owned or gh
 - **Candidates.** An entity whose vertices are all shared is a sharing candidate. Its key (the sorted origin ids of its vertices) is sent to every rank in the intersection of its vertices' sharer sets. Each receiving rank replies whether it holds the entity, and whether it holds it in an owned cell.
 - **Entity owner.** Chosen among the ranks that hold the entity in an owned cell, as the one at position hash(key) mod (number of candidates). There is always at least one such rank, because the owner of any cell containing the entity holds all its vertices. Every other holder keeps the entity as a ghost.
 - **Global numbers** flow from owner to ghost holders (forward direction).
+- **Hash** (ADR-0026). `gridcl_parallel::owner_hash(key: &[i64]) -> u64` starts at h = 0x6772_6964_636C_0006 and sets h = mix(h ^ (w as u64)) for each word w, where mix is SplitMix64's finaliser (z += 0x9E37_79B9_7F4A_7C15; z = (z ^ (z >> 30)) · 0xBF58_476D_1CE4_E5B9; z = (z ^ (z >> 27)) · 0x94D0_49BB_1331_11EB; z ^ (z >> 31), wrapping). The vertex and node owner is the candidate at position `owner_hash(&[origin id]) mod n`, the entity owner the one at `owner_hash(sorted origin ids) mod n`, and the rendezvous rank of any key `owner_hash(key) mod P`.
+- **Local order.** Owned vertices and nodes are numbered in order of first touching cell; ghost vertices, nodes and entities are ordered by (owner rank, global index) (ADR-0026).
+- **Sharer sets in the topology.** `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (gridcl-topology) is a host CSR over local vertices: row v lists every rank holding vertex v, this one included, in ascending order, and `owned_cell` says whether that rank holds v in an owned cell. `Topology::set_vertex_sharers(&mut self, s: VertexSharers)` stores it, uploads one shared flag per vertex and derives the sharing neighbourhood (every rank sharing a vertex with this one). Without sharers, as in every serial mesh, every vertex is unshared (ADR-0026).
 
 All exchanges use the neighbourhood communicator and touch only process-boundary entities, so the volume is small and the exchange runs on the host. Keys are origin ids, so ownership does not depend on local numbering. For a given input and partition the owners are deterministic.
 
@@ -1306,6 +1319,9 @@ pub trait CommDyn: 'static {
     /// Raw handle for PT-Scotch and ParMETIS; None for Serial.
     #[cfg(feature = "mpi")]
     fn raw(&self) -> Option<mpi::ffi::MPI_Comm>;
+    /// Cheap clone that refers to the same communicator (for Mpi an Rc clone, not
+    /// MPI_Comm_dup), so a Neighbourhood can hold it (ADR-0026).
+    fn duplicate(&self) -> Rc<dyn CommDyn>;
 }
 
 /// The communicator stored in a Mesh. Not required to be Send or Sync.
@@ -1317,8 +1333,16 @@ pub trait CommExt {
     fn sum<T: CommScalar>(&self, x: T) -> T;
     fn max<T: CommScalar>(&self, x: T) -> T;
     fn exscan_sum<T: CommScalar>(&self, x: T) -> T;
+    // M6 (ADR-0026):
+    fn min<T: CommScalar>(&self, x: T) -> T;
+    fn all_gather<T: CommScalar>(&self, x: T) -> Vec<T>;
+    /// Exchanges the counts first; returns the received values and counts.
+    fn all_to_all_v<T: CommScalar>(&self, send: &[T], send_counts: &[usize])
+        -> Result<(Vec<T>, Vec<usize>)>;
+    fn neighbour_all_to_all_v<T: CommScalar>(&self, nb: &Neighbourhood, send: &[T],
+                                             send_counts: &[usize]) -> Result<(Vec<T>, Vec<usize>)>;
 }
-impl<C: CommDyn + ?Sized> CommExt for C { /* through all_reduce_bytes and exscan_bytes */ }
+impl<C: CommDyn + ?Sized> CommExt for C { /* through the byte-level methods of CommDyn */ }
 
 #[derive(Clone, Copy, Debug)] pub enum DType { I32, I64, U32, U64, F32, F64 }
 pub use gridcl_device::ReduceOp;                              // Sum, Min, Max (Listing S1b)
@@ -1327,15 +1351,28 @@ pub trait CommScalar: bytemuck::Pod { const DTYPE: DType; }   // i32, i64, u32, 
 #[derive(Clone, Copy, Debug, Default)] pub struct Serial;      // no-op collectives
 #[cfg(feature = "mpi")]
 #[derive(Clone)] pub struct Mpi(Rc<mpi::topology::SimpleCommunicator>); // deliberately not Send
+#[cfg(feature = "mpi")]
+impl Mpi {
+    pub fn world(universe: &mpi::environment::Universe) -> Mpi;
+    pub fn new(comm: mpi::topology::SimpleCommunicator) -> Mpi;
+}
 
 /// Source and destination ranks of a distributed-graph communicator. Opaque; Serial accepts
-/// only the empty one. M6 adds construction over a graph communicator.
-pub struct Neighbourhood { /* sources, destinations, graph communicator (mpi) */ }
+/// only the empty one. Holds the parent communicator (Option<Rc<dyn CommDyn>>, None when empty)
+/// and, under `mpi`, the graph communicator (ADR-0026).
+pub struct Neighbourhood { /* sources, destinations, parent communicator, graph communicator (mpi) */ }
 impl Neighbourhood {
     pub fn empty() -> Self;
+    /// Collective. With comm.raw() = Some, creates the graph communicator by
+    /// MPI_Dist_graph_create_adjacent (unweighted, reorder = 0); otherwise keeps the rank lists.
+    pub fn new(comm: &dyn CommDyn, sources: Vec<usize>, destinations: Vec<usize>) -> Result<Self>;
     pub fn sources(&self) -> &[usize];
     pub fn destinations(&self) -> &[usize];
 }
+
+/// Owner and rendezvous hash: a SplitMix64 fold over the words (see "Ownership of vertices
+/// and entities"; ADR-0026).
+pub fn owner_hash(key: &[i64]) -> u64;
 
 pub struct IndexMap {
     owned_range: (i64, i64),          // global indices [begin, end) owned by this rank
@@ -1348,8 +1385,13 @@ pub struct IndexMap {
 
 impl IndexMap {
     /// Without ghosts: owned range from exscan_sum of num_owned, size from sum; an i64
-    /// overflow gives TooLarge. M6 adds the constructor with ghosts.
+    /// overflow gives TooLarge.
     pub fn new(comm: &dyn CommDyn, num_owned: usize) -> Result<IndexMap>;
+    /// Collective. Ghosts request their indices from their owners, which range-check them
+    /// (IndexOutOfRange, agreed); destinations by all_to_all_v; forward and transposed reverse
+    /// neighbourhoods; send lists ordered by (neighbour rank, ghost position on the receiver).
+    pub fn with_ghosts(comm: &dyn CommDyn, num_owned: usize, ghosts: Vec<i64>,
+                       ghost_owners: Vec<i32>) -> Result<IndexMap>;
     pub fn owned_range(&self) -> (i64, i64);
     pub fn ghosts(&self) -> &[i64];
     pub fn ghost_owners(&self) -> &[i32];
@@ -1359,6 +1401,8 @@ impl IndexMap {
     pub fn size_global(&self) -> i64;
     pub fn scatterer(&self, client: &Client, block_size: usize) -> Result<Scatterer>;
 }
+/// Shares the neighbourhoods; the device cache is not copied (ADR-0026).
+impl Clone for IndexMap { /* ... */ }
 
 pub struct Scatterer {
     send_idx: DeviceBuffer<u32>,      // owned local indices to pack, grouped by neighbour
@@ -1378,14 +1422,23 @@ impl Scatterer {
     /// ghosts -> owner by a segmented reduce: deterministic and free of atomics.
     /// ReverseOp::Insert takes the contribution of the lowest neighbour rank.
     pub fn reverse<T: ScatterNumeric>(&self, x: &mut DeviceBuffer<T>, op: ReverseOp) -> Result<()>;
+    pub fn transport(&self) -> Transport;
 }
+
+/// Add, Min and Max combine the owner's value with every ghost contribution in a fixed order;
+/// Insert replaces it by the lowest neighbour rank's contribution (unchanged without any).
+/// Ghost values are unchanged by reverse; empty segments use the ADR-0011 identities (ADR-0026).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum ReverseOp { Add, Min, Max, Insert }
+pub trait ScatterNumeric: DeviceScalar {}                      // f32, f64, i32, u32
+/// M6 always chooses HostStaged; M10 adds GpuAware (ADR-0026).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Transport { HostStaged, GpuAware }
 ```
 
-`ScatterNumeric` is implemented for f32, f64, i32 and u32. Device support for the chosen type is checked when the scatterer is created. The reverse segments are built once, when the scatterer is created, so every reverse exchange is a gather followed by a segmented reduce in a fixed order.
+`ScatterNumeric` is implemented for f32, f64, i32 and u32. Device support for the chosen type is checked when the scatterer is created. The reverse segments are built once, when the scatterer is created, so every reverse exchange is a gather followed by a segmented reduce in a fixed order. `Scatterer` exchanges through the communicator its `Neighbourhood` holds, and every device step is a gridcl-device primitive: `forward` is `pack`, `to_host`, the neighbourhood exchange, `write_host` and `unpack`; `reverse` packs and exchanges the ghost values, gathers [owner values by `rev_targets` | received values] by `rev_order`, reduces over `rev_segments` and scatters the result to the targets (ADR-0026).
 
 ### Transports
 
-- **HostStaged** (default, every backend): a pack kernel fills the send buffer, `Client::read_one` copies it to the host, and the data moves by a neighbourhood all-to-all-v. `Client::write` then uploads the receive buffer and an unpack kernel scatters it. This is the one host–device copy allowed on a library hot path.
+- **HostStaged** (default, every backend): a pack kernel fills the send buffer, `Client::read_one` copies it to the host, and the data moves by a neighbourhood all-to-all-v. `DeviceBuffer::write_host` (`Client::write`) then uploads the receive buffer and an unpack kernel scatters it. This is the one host–device copy allowed on a library hot path.
 - **GpuAware** (CUDA, feature `gpu-aware-cuda`; HIP later as `gpu-aware-hip`): device pointers are handed to a CUDA-aware MPI, using `Client::get_resource` as in Listing S2b. Keep CubeCL's CUDA allocator at its default, `CudaAllocator::Sync`; the stream-ordered `Async` pool may not work with CUDA IPC in MPI libraries.
 - **CubeCL collectives:** `Client::all_reduce` and `Client::to_client` (both take `&mut self`) move data between GPUs of one process when `has_device_transport()` is true. They are not used in the one-GPU-per-rank model.
 
@@ -1424,18 +1477,18 @@ pub fn device_ptr(client: &Client, h: &Handle) -> Result<PinnedDevicePtr<impl Se
 
 ### Parallel creation pipeline
 
-Locality ordering happens before any numbering, so global numbers are assigned once. Each stage is a pure function from documented inputs to documented outputs, so it can be tested in isolation and handed to an implementation agent one stage at a time.
+Locality ordering happens before any numbering, so global numbers are assigned once; it is chosen by `CellOrdering`, default `Input` (ADR-0026). Each stage is a pure function from documented inputs to documented outputs, so it can be tested in isolation and handed to an implementation agent one stage at a time.
 
 | Stage | Where | What | Output |
 | --- | --- | --- | --- |
-| 1 Read | host, all ranks | Chunked read: rank r gets cells [rN/P, (r+1)N/P) with origin ids, types and tags, and an independent chunk of nodes (origin node ids and coordinates). For ASCII files, rank 0 reads and scatters. | cell chunk, node chunk |
-| 2 Dual graph | host + MPI | Facet keys (sorted origin vertex ids) are hashed to ranks and matched; cells are adjacent if they share a facet. | distributed CSR graph (vtxdist, xadj, adjncy) |
+| 1 Read | host, all ranks | Builder chunks (`MeshBuilder::build_on`) or file chunks: for files, rank r gets cells [rN/P, (r+1)N/P) with origin ids, types and tags, and an independent chunk of nodes (origin node ids and coordinates); for ASCII files, rank 0 reads and scatters. Cells reference nodes by origin id; global duplicate checks and cell-tag matching by rendezvous (ADR-0026). | cell chunk, node chunk |
+| 2 Dual graph | host + MPI | Facet keys (sorted origin vertex ids) are hashed to ranks and matched; cells are adjacent if they share a facet (M6; M7 adds vertex weights; ADR-0026). | distributed CSR graph (vtxdist, xadj, adjncy) |
 | 3 Partition | host | `Partitioner` trait; vertex weights from the cost model by cell type and degree. | destination rank per cell |
 | 4 Migrate | MPI all-to-all-v | Send cells with origin ids and tags to their destination. | owned cells per rank |
 | 5 Ghost cells | host + MPI | Cells sharing a vertex or facet with another rank's cells, per GhostMode. | ghost cells with owner ranks |
-| 6 Fetch nodes | MPI | Fetch the coordinates of all nodes of owned and ghost cells, by origin node id, from the stage-1 chunk owners. | node coordinates by origin id |
-| 7 Order cells | host | Owned cells along a Hilbert curve of their centroids (reverse Cuthill–McKee as an option); ghost cells after, ordered by (owner rank, origin id). | local cell order |
-| 8 Number | host + MPI | Sharer sets; owners chosen by hash of origin id among owned-cell sharers. Local numbering is owned-first, with vertices and nodes in order of first touching cell. Global numbering by exclusive scan; ghost numbers come from owners. | cell, vertex and node IndexMaps; local cell-to-vertex arrays and dofmaps |
+| 6 Fetch nodes | MPI | Fetch the coordinates of all nodes of owned and ghost cells, by origin node id, from the rendezvous directory `owner_hash(id) mod P` (ADR-0026). | node coordinates by origin id |
+| 7 Order cells | host | Owned cells in `CellOrdering`: input order (default), Hilbert curve of their centroids, or reverse Cuthill–McKee; ghost cells after, ordered by (owner rank, origin id) (ADR-0026). | local cell order |
+| 8 Number | host + MPI | Sharer sets; owners chosen by hash of origin id among owned-cell sharers. Local numbering is owned-first, with vertices and nodes in order of first touching cell; ghosts by (owner rank, global index) (ADR-0026). Global numbering by exclusive scan; ghost numbers come from owners. | cell, vertex and node IndexMaps; local cell-to-vertex arrays and dofmaps |
 | 9 Upload | device | Upload cells, dofmaps, nodes (relative to the global origin) and origin ids; compute permutation info. | device-resident mesh |
 | 10 Entities | device + small MPI | On demand: sort-based entity creation and boundary ownership exchange. | entity IndexMaps, connectivity |
 
@@ -1458,6 +1511,11 @@ pub trait Partitioner {
     /// Destination rank of every local graph vertex (cell).
     fn partition(&self, comm: &dyn CommDyn, g: &DistGraph, nparts: usize) -> Result<Vec<i32>>;
 }
+
+/// Built-in block partitioner: global graph vertex i goes to rank ⌊i · nparts / N⌋, with
+/// N = vtxdist[nranks] (ADR-0026).
+#[derive(Clone, Copy, Debug, Default)] pub struct Block;
+impl Partitioner for Block { /* ... */ }
 ```
 
 | Backend | Integration | Feature | Role |
@@ -1533,7 +1591,7 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 
 Tags and submeshes connect the volume mesh to boundary problems; the boundary of a volume mesh becomes the BEM surface mesh with outward orientation.
 
-- **MeshTags:** (dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device, covering owned and ghost entities. An index repeats only with distinct values. Ghost values are made consistent by a forward scatter. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value, filled from Gmsh physical names, and each group's size; `named` and `group` select one group on the device (ADR-0022).
+- **MeshTags:** (dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device, covering owned and ghost entities. An index repeats only with distinct values. Every holder of an entity, owner or ghost, receives its tags by key matching, so ghost values equal the owner's (ADR-0026). `MeshBuilder::physical_tags` and `tag_names` give tags with host arrays. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value, filled from Gmsh physical names, and each group's size; `named` and `group` select one group on the device (ADR-0022).
 - **Codimension addressing** (NGSolve): `Codim::Vol`, `Bnd`, `BBnd` and `BBBnd` map to D_TOP, D_TOP−1, D_TOP−2 and D_TOP−3 (`Codim::dim(tdim) -> Option<usize>`). The same region code then works for curve, surface and volume meshes.
 - **Submeshes:** tagged cells (same D_TOP), tagged boundary facets (`facet_submesh`, D_TOP−1), and tagged edges of 3D meshes (curves in 3D). Each comes with an `EntityMap`: child → parent indices on the device, parent → child as a sparse map.
     - Ownership and ghosting are inherited from the parent.
@@ -1641,16 +1699,16 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- |
 | gridcl-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
 | gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
-| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); libc (macOS, ADR-0017); dev: proptest |
+| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, re-exports of `Client` and `CubeElement` (ADR-0026), GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); libc (macOS, ADR-0017); dev: proptest |
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
 | gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional); dev: mshio, serde_json |
-| gridcl | Facade: `Mesh`, builder, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log |
+| gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
-| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers; forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
+| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
 | gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
@@ -1890,7 +1948,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Acceptance** on 1–4 ranks under MPICH and Open MPI:
 
-- global entity counts, total volume and tag counts are identical to one rank;
+- global entity counts and tag counts are identical to one rank, and total volume agrees to 10^−12 (f64) and 10^−5 (f32) relative (ADR-0026);
 - canonical entity vertex lists (origin ids) and permutation bits per cell origin id are identical to one rank;
 - a forward scatter of global ids reproduces the ghost global ids;
 - a reverse Add of ones equals the number of ranks holding each index;
@@ -1899,7 +1957,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M7 Partitioners
 
-**Scope:** the distributed dual graph, ptscotch-sys and its wrapper, parmetis-sys and its wrapper (feature-gated), METIS on rank 0 (vendored), Scotch on rank 0, and vertex weights.
+**Scope:** vertex weights on M6's distributed dual graph (ADR-0026), ptscotch-sys and its wrapper, parmetis-sys and its wrapper (feature-gated), METIS on rank 0 (vendored) and Scotch on rank 0.
 
 **Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Kathleen node through `scripts/hpc`; ADR-0016):
 
@@ -1937,7 +1995,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M10 Hardening
 
-**Scope:** the GPU-aware transport (CUDA), benchmarks (including a re-run of the M3s vectorization study for every kernel family), documentation and examples.
+**Scope:** the GPU-aware transport (CUDA) and `local_gpu_index` (ADR-0026), benchmarks (including a re-run of the M3s vectorization study for every kernel family), documentation and examples.
 
 **Acceptance:**
 
@@ -2025,7 +2083,10 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   at mesh creation, and of quadrature points and tabulations when a rule is created or a
   tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
   and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
-  checks of gather and scatter, and the host-staged halo exchange.
+  checks of gather and scatter, the host-staged halo exchange, the boundary-entity ownership
+  exchange of entity creation (the candidate count and keys to the host; owners and global
+  numbers back), the upload of an IndexMap's send and receive index lists when its scatterer
+  is first created, and the vertex shared flags at mesh creation (ADR-0026).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,

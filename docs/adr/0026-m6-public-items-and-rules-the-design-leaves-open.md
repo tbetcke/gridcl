@@ -1,6 +1,6 @@
 # ADR-0026: M6 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-28
 - **Raised in:** M6 planning (docs/plans/M6.md, "Planned public API and rules" and questions 1–17)
 - **Design sections affected:**
@@ -299,4 +299,4 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-28, as proposed (option 2, items 1–17), without conditions. Applied to docs/design.md and CLAUDE.md in `adr: 0026 apply`.
