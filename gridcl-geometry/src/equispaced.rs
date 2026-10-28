@@ -24,10 +24,11 @@ use crate::names::element_error;
 use crate::{DeviceGrid, PointSet, QuadField, VecShape};
 
 /// The occurrences of one GLL block: its local cells' dofmap rows, flat indices
-/// `start..start + cells · k`.
+/// `start..start + len`, `len = cells · k`.
 struct Occurrences {
     block: usize,
     start: usize,
+    len: usize,
     k: usize,
 }
 
@@ -116,6 +117,10 @@ fn fit(x: usize) -> Result<u32> {
 /// local cells are evaluated, so on a distributed grid a ghost node that no local GLL cell
 /// touches keeps its GLL value.
 ///
+/// The copy into the L-vector runs once per field chunk, and each run scans all unique nodes,
+/// so its work is (unique nodes) × (chunks). A block has one chunk unless its field exceeds
+/// the device's largest allocation.
+///
 /// # Errors
 ///
 /// `LengthMismatch` if a GLL block's dofmap has fewer rows than local cells; `TooLarge` if
@@ -175,6 +180,7 @@ pub fn equispaced_nodes<G: DeviceGrid>(grid: &G) -> Result<DeviceBuffer<G::F>> {
         blocks.push(Occurrences {
             block: b,
             start: total,
+            len,
             k,
         });
         total = total.checked_add(len).ok_or(GridError::TooLarge)?;
@@ -190,7 +196,7 @@ pub fn equispaced_nodes<G: DeviceGrid>(grid: &G) -> Result<DeviceBuffer<G::F>> {
     let mut keys = SortKeys::uninit(client, total, 1)?;
     let payload = DeviceBuffer::<u32>::uninit(client, total)?;
     for occ in &blocks {
-        let len = grid.cell_blocks()[occ.block].index_map.num_local() * occ.k;
+        let len = occ.len;
         let dofmap = &grid.geometry_block(occ.block).dofmap.data;
         let plan = LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)?;
         debug_assert_bindings(client, 3);
@@ -243,8 +249,16 @@ pub fn equispaced_nodes<G: DeviceGrid>(grid: &G) -> Result<DeviceBuffer<G::F>> {
         )?;
         let tile = x.tile();
         for chunk in x.chunks().iter().filter(|c| c.num_cells > 0) {
-            let start = occ.start + chunk.first_cell * occ.k;
-            let end = start + chunk.num_cells * occ.k;
+            let start = chunk
+                .first_cell
+                .checked_mul(occ.k)
+                .and_then(|r| occ.start.checked_add(r))
+                .ok_or(GridError::TooLarge)?;
+            let end = chunk
+                .num_cells
+                .checked_mul(occ.k)
+                .and_then(|r| start.checked_add(r))
+                .ok_or(GridError::TooLarge)?;
             fit(chunk.data.len())?;
             let plan = LaunchPlan::elementwise(
                 client,
