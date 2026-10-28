@@ -38,6 +38,8 @@ trybuild = "1"
 # The test oracle of gridcl-io's Gmsh reader (ADR-0022).
 mshio = "=0.4.2"
 log = "0.4"
+# zlib for VTU output, pure Rust (ADR-0024, item 10).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 # buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
 # some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback

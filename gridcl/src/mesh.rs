@@ -5,8 +5,9 @@ use gridcl_device::{ConnKey, DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{Codim0, Codim1, D1, D2, D3, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{
     BlockFields, DeviceGrid, EVector, FacetQuadRule, FieldShape, Geometry, GeometryBlock, JacShape,
-    PinvShape, QuadField, QuadRule, ScalarShape, VecShape, detj_block, facet_normals_block,
-    jacobians_block, measure_block, normals_block, physical_points_block, pseudo_inverse_block,
+    NodeFamily, PinvShape, QuadField, QuadRule, ScalarShape, VecShape, detj_block,
+    facet_normals_block, jacobians_block, measure_block, normals_block, physical_points_block,
+    pseudo_inverse_block,
 };
 use gridcl_parallel::{Comm, CommDyn, CommExt, IndexMap, Serial};
 use gridcl_topology::{CellBlock, Connectivity, EntityBlock, Topology};
@@ -130,6 +131,37 @@ where
             geometry,
             tags,
         }
+    }
+
+    /// The same mesh on `comm`, for tests of the rank checks (no collective runs).
+    #[cfg(test)]
+    pub(crate) fn with_comm<C2: Comm>(self, comm: C2) -> Mesh<F, TD, GD, C2> {
+        Mesh {
+            client: self.client,
+            comm,
+            topology: self.topology,
+            geometry: self.geometry,
+            tags: self.tags,
+        }
+    }
+
+    /// The geometry nodes `[node][GD]` as the writers write them: converted to equispaced
+    /// nodes on the device if a block is GLL (`equispaced_nodes`), downloaded, and with the
+    /// origin added in f64 (ADR-0024, item 7).
+    pub(crate) fn equispaced_host_nodes(&self) -> Result<Vec<f64>> {
+        let blocks = self.geometry.blocks();
+        let nodes = if blocks.iter().any(|b| b.element.family == NodeFamily::Gll) {
+            gridcl_geometry::equispaced_nodes(self)?.to_host()?
+        } else {
+            self.nodes().to_host()?
+        };
+        let origin = self.origin();
+        let origin = origin.as_ref();
+        Ok(nodes
+            .iter()
+            .enumerate()
+            .map(|(i, x)| x.widen() + origin[i % GD::N])
+            .collect())
     }
 
     /// The cell type of block `b`.

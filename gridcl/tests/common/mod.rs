@@ -3,7 +3,9 @@
 #![allow(dead_code)]
 
 pub mod gmsh;
+pub mod python;
 pub mod reference;
+pub mod vtk;
 
 use cubecl::prelude::*;
 use gridcl::prelude::*;

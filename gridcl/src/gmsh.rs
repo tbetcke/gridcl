@@ -300,7 +300,8 @@ fn elementary_of(elementary: &BTreeMap<u32, Vec<i32>>, i: u32) -> i32 {
     elementary.get(&i).map_or(1, |v| v[0])
 }
 
-/// The host description of `mesh` (one rank): nodes with the origin added back, vertex origin
+/// The host description of `mesh` (one rank): nodes converted to equispaced nodes if a block is
+/// GLL and with the origin added back (ADR-0022, item 9; ADR-0024, item 7), vertex origin
 /// ids as node tags (other nodes' tags are renumbered by `from_gmsh_mesh`), cell blocks with
 /// their tags, and one tag group per entity type of each tagged dimension below D_TOP.
 fn download<F, TD, GD, C>(mesh: &Mesh<F, TD, GD, C>) -> Result<GmshMesh>
@@ -312,14 +313,7 @@ where
 {
     let gd = GD::N;
     let td = TD::N;
-    let origin = mesh.origin();
-    let nodes: Vec<f64> = mesh
-        .nodes()
-        .to_host()?
-        .iter()
-        .enumerate()
-        .map(|(i, x)| x.widen() + origin.as_ref()[i % gd])
-        .collect();
+    let nodes = mesh.equispaced_host_nodes()?;
     let vertex_ids = decode_origin_ids(&mesh.vertex_origin_ids().to_host()?);
     let mut node_tags = vec![0i64; nodes.len() / gd];
     let tags = mesh.tags();
@@ -330,12 +324,6 @@ where
     for (b, block) in mesh.cell_blocks().iter().enumerate() {
         let geometry = mesh.geometry_block(b);
         let cell: CellType = block.cell.into();
-        if geometry.element.family == NodeFamily::Gll {
-            return Err(GridError::UnsupportedNodeFamily {
-                cell: crate::builder::cell_name(cell),
-                family: "Gll",
-            });
-        }
         let dofmap = geometry.dofmap.data.to_host()?;
         let vertices = block.vertices.data.to_host()?;
         let k = geometry.dofmap.stride as usize;
@@ -466,9 +454,11 @@ impl GmshWriter {
     ///
     /// # Errors
     ///
-    /// `NotYetImplemented` for more than one rank (until M8); `UnsupportedNodeFamily` for GLL
-    /// geometry (until M5); `EntitiesNotCreated` for tags of a dimension without entities;
-    /// `Io`; `TooLarge` if a tag overflows; device errors.
+    /// `NotYetImplemented` for more than one rank (until M8); `EntitiesNotCreated` for tags of a
+    /// dimension without entities; `Io`; `TooLarge` if a tag overflows; device errors.
+    ///
+    /// GLL geometry is written as its equispaced interpolant, converted on the device (ADR-0022,
+    /// item 9).
     ///
     /// # Example
     ///
@@ -538,9 +528,10 @@ mod tests {
     use std::thread::ThreadId;
 
     use cubecl::prelude::CubeElement;
-    use gridcl_parallel::{CommDyn, DType, Neighbourhood, ReduceOp, Serial};
+    use gridcl_parallel::Serial;
 
     use super::*;
+    use crate::test_comm::TwoRanks;
     use crate::{Codim, D2, PlanarMesh};
 
     fn fixture(name: &str) -> PathBuf {
@@ -623,53 +614,6 @@ mod tests {
                 Err(GridError::UnsupportedPrecision { scalar: "f64", .. })
             ));
         });
-    }
-
-    /// A communicator of two ranks; reading on it is refused before any collective.
-    #[derive(Clone)]
-    struct TwoRanks;
-
-    impl CommDyn for TwoRanks {
-        fn rank(&self) -> usize {
-            0
-        }
-        fn size(&self) -> usize {
-            2
-        }
-        fn barrier(&self) {
-            unreachable!()
-        }
-        fn all_reduce_bytes(&self, _: &mut [u8], _: DType, _: ReduceOp) {
-            unreachable!()
-        }
-        fn exscan_bytes(&self, _: &mut [u8], _: DType, _: ReduceOp) {
-            unreachable!()
-        }
-        fn all_to_all_v_bytes(
-            &self,
-            _: &[u8],
-            _: &[usize],
-            _: &mut [u8],
-            _: &[usize],
-            _: DType,
-        ) -> Result<()> {
-            unreachable!()
-        }
-        fn neighbour_all_to_all_v_bytes(
-            &self,
-            _: &Neighbourhood,
-            _: &[u8],
-            _: &[usize],
-            _: &mut [u8],
-            _: &[usize],
-            _: DType,
-        ) -> Result<()> {
-            unreachable!()
-        }
-        #[cfg(feature = "mpi")]
-        fn raw(&self) -> Option<mpi::ffi::MPI_Comm> {
-            None
-        }
     }
 
     #[test]
@@ -775,10 +719,10 @@ mod tests {
         assert_eq!(tags.elementary(0).unwrap().indices.len(), 6);
     }
 
-    /// A builder mesh of `family`: a 2 × 2 square of P2 quadrilaterals, ids from 0.
-    fn builder_mesh(family: NodeFamily) -> Result<PlanarMesh<f32>> {
+    /// A builder mesh of `family`: a 2 × 2 square of quadrilaterals of degree `p`, ids from 0.
+    fn builder_mesh<F: Real>(family: NodeFamily, p: u32) -> Result<PlanarMesh<F>> {
         let client = gridcl_testing::test_client();
-        let h = gridcl_testing::square_box(crate::Cell2::Quadrilateral, 2, 2);
+        let h = gridcl_testing::square_box(crate::Cell2::Quadrilateral, 2, p);
         let b = &h.blocks[0];
         let element = CoordinateElement::<D2> {
             cell: crate::Cell2::Quadrilateral,
@@ -796,7 +740,7 @@ mod tests {
     #[test]
     fn gmsh_write_untagged_builder_mesh() {
         let client = gridcl_testing::test_client();
-        let mesh = builder_mesh(NodeFamily::Equispaced).unwrap();
+        let mesh = builder_mesh::<f32>(NodeFamily::Equispaced, 2).unwrap();
         let path = std::env::temp_dir().join(format!("gridcl-t13-{}.msh", std::process::id()));
         GmshWriter::new(&path).write(&mesh).unwrap();
         let back = PlanarMesh::<f32>::try_from(
@@ -827,19 +771,59 @@ mod tests {
         assert!(text.contains("$Entities\n0 0 1 0\n1 "), "{text}");
     }
 
-    /// GLL geometry is rejected until M5 (ADR-0022, item 9).
+    /// A P3 GLL mesh (the box's equispaced nodes taken as GLL nodes) is written as its
+    /// equispaced interpolant: read back, every node equals `equispaced_nodes` with the origin
+    /// added, to the precision's tolerance (ADR-0022, item 9).
+    fn writes_gll_as_equispaced<F: Real>(name: &str, tol: f64) {
+        let client = gridcl_testing::test_client();
+        let mesh = builder_mesh::<F>(NodeFamily::Gll, 3).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("gridcl-m5-gll-{name}-{}.msh", std::process::id()));
+        GmshWriter::new(&path).write(&mesh).unwrap();
+        let back = PlanarMesh::<F>::try_from(
+            read::<F, _>(&client, Serial, &path, GmshOptions::default()).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            back.geometry_block(0).element.family,
+            NodeFamily::Equispaced,
+            "{name}"
+        );
+        let absolute = |m: &PlanarMesh<F>, x: Vec<F>| -> Vec<f64> {
+            let origin = m.origin();
+            x.iter()
+                .enumerate()
+                .map(|(i, v)| v.widen() + origin.as_ref()[i % 2])
+                .collect()
+        };
+        let want = absolute(
+            &mesh,
+            gridcl_geometry::equispaced_nodes(&mesh)
+                .unwrap()
+                .to_host()
+                .unwrap(),
+        );
+        let got = absolute(&back, back.nodes().to_host().unwrap());
+        let raw = absolute(&mesh, mesh.nodes().to_host().unwrap());
+        assert_eq!(got.len(), want.len(), "{name}");
+        for (i, (a, b)) in got.iter().zip(&want).enumerate() {
+            assert!(
+                (a - b).abs() <= tol * b.abs().max(1.0),
+                "{name}: coordinate {i}: {a} vs {b}"
+            );
+        }
+        assert!(
+            raw.iter().zip(&want).any(|(a, b)| (a - b).abs() > 1e-3),
+            "{name}: the conversion moves nodes"
+        );
+    }
+
     #[test]
-    fn gmsh_write_rejects_gll() {
-        let mesh = builder_mesh(NodeFamily::Gll).unwrap();
-        let path = std::env::temp_dir().join(format!("gridcl-t13-gll-{}.msh", std::process::id()));
-        let r = GmshWriter::new(&path).write(&mesh);
-        assert!(matches!(
-            r,
-            Err(GridError::UnsupportedNodeFamily {
-                cell: "Quadrilateral",
-                family: "Gll"
-            })
-        ));
-        assert!(!path.exists(), "nothing is written");
+    fn gmsh_write_converts_gll() {
+        writes_gll_as_equispaced::<f32>("f32", 1e-5);
+        if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
+            writes_gll_as_equispaced::<f64>("f64", 1e-12);
+        }
     }
 }

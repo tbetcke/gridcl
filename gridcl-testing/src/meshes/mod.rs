@@ -202,6 +202,41 @@ impl HostMesh {
         out
     }
 
+    /// The mesh with every node x replaced by f(x), which has `gdim_out` coordinates: affine
+    /// images, or planar meshes embedded in 3D.
+    ///
+    /// # Panics
+    ///
+    /// If `gdim_out` is not 1–3, or if `f` returns other than `gdim_out` coordinates.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_dims::Cell2;
+    ///
+    /// // The unit square on the plane z = x.
+    /// let h = gridcl_testing::square_box(Cell2::Triangle, 1, 1).mapped(3, |x| vec![x[0], x[1], x[0]]);
+    /// assert_eq!((h.gdim, h.num_nodes()), (3, 4));
+    /// assert!(h.nodes.chunks(3).all(|x| x[2] == x[0]));
+    /// ```
+    pub fn mapped(&self, gdim_out: usize, f: impl Fn(&[f64]) -> Vec<f64>) -> HostMesh {
+        assert!(
+            (1..=3).contains(&gdim_out),
+            "gdim_out = {gdim_out} is not 1-3"
+        );
+        let mut nodes = Vec::with_capacity(self.num_nodes() * gdim_out);
+        for x in self.nodes.chunks_exact(self.gdim) {
+            let y = f(x);
+            assert_eq!(y.len(), gdim_out, "the map gives {} coordinates", y.len());
+            nodes.extend(y);
+        }
+        HostMesh {
+            gdim: gdim_out,
+            nodes,
+            ..self.clone()
+        }
+    }
+
     /// The mesh with node and cell origin ids replaced by a random injective map onto
     /// [−2^40, 2^40], seeded by `seed`.
     ///

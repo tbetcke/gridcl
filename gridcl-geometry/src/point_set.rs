@@ -70,6 +70,22 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
         })
     }
 
+    /// A point set of `cell` with points `[q][tdim]` and zero weights, made on the device
+    /// without an upload: an interpolation lattice (`equispaced_nodes`), whose weights no
+    /// kernel reads.
+    pub(crate) fn lattice(client: &Client, cell: TD::Cell, points: Vec<f64>) -> Result<Self> {
+        debug_assert!(points.len().is_multiple_of(TD::N));
+        let num_points = points.len() / TD::N;
+        Ok(Self {
+            cell,
+            points,
+            weights: vec![0.0; num_points],
+            client: client.clone(),
+            weights_device: DeviceBuffer::zeros(client, num_points)?,
+            cache: RefCell::new(HashMap::new()),
+        })
+    }
+
     /// The weights on the device, narrowed to `F` (uploaded when the rule was created).
     pub(crate) fn weights_device(&self) -> &DeviceBuffer<F> {
         &self.weights_device

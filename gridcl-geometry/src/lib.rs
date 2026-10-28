@@ -7,6 +7,7 @@
 
 mod detj_pinv;
 mod element;
+mod equispaced;
 mod evector;
 mod facet_rule;
 mod facets;
@@ -23,6 +24,7 @@ mod shape;
 
 pub use detj_pinv::{detj_block, pseudo_inverse_block};
 pub use element::{CoordinateElement, GeometryBlock};
+pub use equispaced::equispaced_nodes;
 pub use evector::EVector;
 pub use facet_rule::{FacetPointSet, FacetQuadRule};
 pub use facets::{facet_normals_block, normals_block};
