@@ -28,3 +28,6 @@ gridcl-device = { path = "../gridcl-device", features = ["testing"] }
 gridcl-dims = { path = "../gridcl-dims" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 mpi = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
