@@ -576,7 +576,6 @@ impl Neighbourhood {
         self.graph.as_deref()
     }
     /// The communicator the neighbourhood was made on; `None` for [`Neighbourhood::empty`].
-    #[allow(dead_code)] // The scatterer exchanges through it (M6 T7).
     pub(crate) fn comm(&self) -> Option<&Rc<dyn CommDyn>> {
         self.comm.as_ref()
     }

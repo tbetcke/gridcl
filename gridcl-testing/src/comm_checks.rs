@@ -189,6 +189,15 @@ pub fn neighbour_exchange(comm: &dyn CommDyn, seed: u64) {
 /// The random index-map layout of `seed` on `n` ranks: per rank the owned count, and its ghosts
 /// as (global index, owner) in ghost order. Every rank computes the same layout.
 pub fn ghost_layout(n: usize, seed: u64) -> (Vec<usize>, Vec<Vec<(i64, i32)>>) {
+    ghost_layout_sized(n, seed, 20)
+}
+
+/// [`ghost_layout`] with fewer than `max_owned` owned indices per rank.
+pub fn ghost_layout_sized(
+    n: usize,
+    seed: u64,
+    max_owned: u64,
+) -> (Vec<usize>, Vec<Vec<(i64, i32)>>) {
     let mut state = seed;
     let mut next = move |m: u64| {
         state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -197,7 +206,7 @@ pub fn ghost_layout(n: usize, seed: u64) -> (Vec<usize>, Vec<Vec<(i64, i32)>>) {
         z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         ((z ^ (z >> 31)) % m.max(1)) as usize
     };
-    let owned: Vec<usize> = (0..n).map(|_| next(20)).collect();
+    let owned: Vec<usize> = (0..n).map(|_| next(max_owned)).collect();
     let first: Vec<usize> = owned
         .iter()
         .scan(0, |at, &c| {

@@ -1,10 +1,12 @@
 //! `IndexMap` without ghosts (M2); M6 adds ghosts, `scatterer` and the device field.
 
+use std::cell::OnceCell;
 use std::rc::Rc;
 
 use gridcl_device::Client;
 
 use crate::comm::agree;
+use crate::scatterer::SharedIndices;
 use crate::{CommDyn, CommExt, DType, GridError, Neighbourhood, ReduceOp, Result, Scatterer};
 
 /// Ownership of a distributed index set in the DOLFINx sense: `[owned | ghost]` local indices.
@@ -28,6 +30,8 @@ pub struct IndexMap {
     size_global: i64,
     /// The neighbourhoods and host index lists, shared by clones.
     exchange: Rc<Exchange>,
+    /// The device index lists of the scatterers, for the first client; not copied by clones.
+    device: OnceCell<SharedIndices>,
 }
 
 /// The communication pattern of an [`IndexMap`] (ADR-0026, item 5).
@@ -39,7 +43,6 @@ pub struct IndexMap {
 /// neighbourhood is the transpose.
 pub(crate) struct Exchange {
     pub(crate) forward: Neighbourhood,
-    #[allow(dead_code)] // The scatterer's reverse direction (M6 T7).
     pub(crate) reverse: Neighbourhood,
     pub(crate) send_idx: Vec<u32>,
     pub(crate) send_counts: Vec<usize>,
@@ -119,6 +122,7 @@ impl IndexMap {
             ghost_owners: Vec::new(),
             size_global,
             exchange: Rc::new(Exchange::empty()),
+            device: OnceCell::new(),
         })
     }
     /// With ghosts: `ghosts[k]` is the global index of ghost k and `ghost_owners[k]` its owning
@@ -231,10 +235,30 @@ impl IndexMap {
             ..base
         })
     }
-    /// The scatterer of this map for `block_size` values per index on `client`.
+    /// The scatterer of this map for `block_size` values per index on `client`. Not
+    /// collective. The first call uploads the send and receive index lists and caches them
+    /// for `client`; a scatterer on another client uploads its own copy.
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` if `block_size` is 0; `TooLarge` if the local values or the reverse
+    /// buffer do not fit u32 indices; device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::Client;
+    /// use gridcl_parallel::{IndexMap, Result, Serial};
+    ///
+    /// fn scatterers(client: &Client) -> Result<()> {
+    ///     let map = IndexMap::new(&Serial, 4)?;
+    ///     assert!(map.scatterer(client, 3).is_ok());
+    ///     assert!(map.scatterer(client, 0).is_err());
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn scatterer(&self, client: &Client, block_size: usize) -> Result<Scatterer> {
-        let _ = (client, block_size);
-        todo!("M6 T7: IndexMap::scatterer")
+        Scatterer::new(self, client, block_size)
     }
     /// The forward send lists: (destination ranks, count per destination, owned local
     /// indices in send order). For tests of the exchange pattern; not part of the stable API.
@@ -251,9 +275,12 @@ impl IndexMap {
         (e.forward.sources(), &e.recv_counts, &e.recv_idx)
     }
     /// The communication pattern, for the scatterer.
-    #[allow(dead_code)] // M6 T7.
-    pub(crate) fn exchange(&self) -> &Exchange {
-        &self.exchange
+    pub(crate) fn exchange_rc(&self) -> Rc<Exchange> {
+        Rc::clone(&self.exchange)
+    }
+    /// The cached device index lists, for the scatterer.
+    pub(crate) fn device_cache(&self) -> &OnceCell<SharedIndices> {
+        &self.device
     }
     /// Global indices `[begin, end)` owned by this rank.
     ///
@@ -370,6 +397,7 @@ impl Clone for IndexMap {
             ghost_owners: self.ghost_owners.clone(),
             size_global: self.size_global,
             exchange: Rc::clone(&self.exchange),
+            device: OnceCell::new(),
         }
     }
 }
