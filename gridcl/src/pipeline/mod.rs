@@ -8,13 +8,17 @@
 //!    ids, and cell tags matched to their cells.
 //! 2. [`dual_graph::dual_graph`]: the facet dual graph of the input cells.
 //! 3. [`dual_graph::partition`]: a destination rank per input cell.
+//! 4. [`migrate::migrate`]: the cells move to their destinations.
+//! 5. [`ghosts::ghost_cells`]: the ghost cells of the [`GhostMode`](crate::GhostMode).
 
-// Stages 1–3 are wired into `MeshBuilder::build_on` by M6 T12; until then only the tests call
+// Stages 1–5 are wired into `MeshBuilder::build_on` by M6 T12; until then only the tests call
 // them.
 #![allow(dead_code)]
 
 pub(crate) mod dual_graph;
+pub(crate) mod ghosts;
 pub(crate) mod input;
+pub(crate) mod migrate;
 pub(crate) mod rendezvous;
 
 use gridcl_device::{GridError, Result};
