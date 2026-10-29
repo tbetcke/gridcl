@@ -10,16 +10,6 @@ use gridcl_parallel::{CommDyn, IndexMap};
 
 use crate::{CellBlock, Connectivity, EntityBlock, encode_origin_ids, origin_ids_fit_u32};
 
-/// A ghost-free index map rebuilt on `comm` with the same owned count (collective).
-pub(crate) fn clone_map(map: &IndexMap, comm: &dyn CommDyn) -> Result<IndexMap> {
-    assert_eq!(
-        map.num_ghosts(),
-        0,
-        "try_clone: index maps with ghosts arrive in M6"
-    );
-    IndexMap::new(comm, map.num_owned())
-}
-
 /// A deep copy of a strided array.
 pub(crate) fn clone_strided(s: &DeviceStrided<u32>) -> Result<DeviceStrided<u32>> {
     Ok(DeviceStrided {
@@ -334,11 +324,13 @@ impl<TD: TopoDim> Topology<TD> {
         Ok(())
     }
 
-    /// A deep copy of every device array; index maps are rebuilt on `comm` (collective).
+    /// A deep copy of every device array. Index maps, ghosts included, are cloned and share
+    /// their neighbourhoods with the original, so the copy is not collective and `comm` is
+    /// unused (it stays in the signature, ADR-0012).
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    /// Errors of `DeviceBuffer::deep_clone`.
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
         let clone_opt =
             |b: &Option<DeviceBuffer<u32>>| b.as_ref().map(DeviceBuffer::deep_clone).transpose();
@@ -349,7 +341,7 @@ impl<TD: TopoDim> Topology<TD> {
                 .iter()
                 .map(|b| b.try_clone(comm))
                 .collect::<Result<_>>()?,
-            vertex_index_map: clone_map(&self.vertex_index_map, comm)?,
+            vertex_index_map: self.vertex_index_map.clone(),
             vertex_origin_ids: self.vertex_origin_ids.deep_clone()?,
             ids_fit_u32: self.ids_fit_u32,
             permutation_info: self

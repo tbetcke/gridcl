@@ -147,18 +147,15 @@ where
         Ok(cache.get_or_init(|| xe))
     }
 
-    /// A deep copy of every device array; the node index map is rebuilt on `comm`
-    /// (collective) and the E-vector cache starts empty.
+    /// A deep copy of every device array; the E-vector cache starts empty. The node index
+    /// map, ghosts included, is cloned and shares its neighbourhoods with the original, so the
+    /// copy is not collective and `comm` is unused.
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    /// Errors of `DeviceBuffer::deep_clone`.
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
-        assert_eq!(
-            self.node_index_map.num_ghosts(),
-            0,
-            "Geometry::try_clone: index maps with ghosts arrive in M6"
-        );
+        let _ = comm;
         let blocks: Vec<GeometryBlock<TD>> = self
             .blocks
             .iter()
@@ -168,7 +165,7 @@ where
         Ok(Geometry {
             blocks,
             nodes: self.nodes.deep_clone()?,
-            node_index_map: IndexMap::new(comm, self.node_index_map.num_owned())?,
+            node_index_map: self.node_index_map.clone(),
             origin: self.origin,
             origin_device: self.origin_device.deep_clone()?,
             evectors,

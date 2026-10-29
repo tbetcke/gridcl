@@ -42,11 +42,12 @@ pub struct EntityBlock {
 }
 
 impl EntityBlock {
-    /// A deep copy of every device array; the index map is rebuilt on `comm` (collective).
+    /// A deep copy of every device array. The index map, ghosts included, is cloned and
+    /// shares its neighbourhoods with the original; `comm` is unused.
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    /// Errors of `DeviceBuffer::deep_clone`.
     ///
     /// # Example
     ///
@@ -63,9 +64,10 @@ impl EntityBlock {
     /// # Ok::<(), GridError>(())
     /// ```
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
+        let _ = comm;
         Ok(EntityBlock {
             cell: self.cell,
-            index_map: crate::topology::clone_map(&self.index_map, comm)?,
+            index_map: self.index_map.clone(),
             vertices: crate::topology::clone_strided(&self.vertices)?,
             offset: self.offset,
         })
