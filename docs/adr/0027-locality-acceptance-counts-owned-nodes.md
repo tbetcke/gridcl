@@ -1,6 +1,6 @@
 # ADR-0027: The locality acceptance check counts owned node indices
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Raised in:** M6 T12 (docs/plans/M6.md)
 - **Design sections affected:** "Implementation roadmap / M6", last acceptance bullet.
@@ -73,4 +73,4 @@ Option 2. Ghost nodes come after the owned nodes in an order that ADR-0009 and A
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer, 2026-10-29 (option 2), without conditions.

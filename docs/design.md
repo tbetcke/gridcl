@@ -1953,7 +1953,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - a forward scatter of global ids reproduces the ghost global ids;
 - a reverse Add of ones equals the number of ranks holding each index;
 - two runs are bitwise identical;
-- on a randomly permuted structured box, locality ordering at least halves the mean over cells of (max − min local node index in the cell).
+- on a randomly permuted structured box, locality ordering at least halves the mean over owned cells of (max − min local index of the cell's owned nodes); ghost nodes, ordered by (owner rank, global index), are excluded (ADR-0027).
 
 ### M7 Partitioners
 
