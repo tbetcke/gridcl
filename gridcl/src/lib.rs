@@ -13,6 +13,7 @@ mod builder;
 mod entity_map;
 pub mod gmsh;
 mod mesh;
+mod pipeline;
 pub mod prelude;
 mod tags;
 #[cfg(test)]

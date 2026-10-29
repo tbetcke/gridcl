@@ -7,11 +7,12 @@ use gridcl_device::{DeviceBuffer, DeviceStrided, GridError, Real, Result, check_
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
 use gridcl_parallel::{Comm, IndexMap, Serial};
-use gridcl_partition::Partitioner;
+use gridcl_partition::{Block, Partitioner};
 use gridcl_refcell::RefCellError;
 use gridcl_topology::{CellBlock, Topology, encode_origin_ids};
 
 use crate::Mesh;
+use crate::pipeline::input::{NodeRefs, TagInput};
 
 /// The name of a cell type in errors.
 pub(crate) fn cell_name(cell: CellType) -> &'static str {
@@ -28,7 +29,7 @@ pub(crate) fn cell_name(cell: CellType) -> &'static str {
 }
 
 /// `GridError` of an element gridcl-refcell does not offer.
-fn element_error(e: RefCellError) -> GridError {
+pub(crate) fn element_error(e: RefCellError) -> GridError {
     match e {
         RefCellError::UnsupportedNodeFamily { cell, family } => GridError::UnsupportedNodeFamily {
             cell: cell_name(cell),
@@ -46,7 +47,7 @@ fn element_error(e: RefCellError) -> GridError {
 }
 
 /// `ids`, or `0..n` offset by `first`, after checking the length.
-fn ids_or_index(ids: Option<&[i64]>, n: usize, first: usize) -> Result<Vec<i64>> {
+pub(crate) fn ids_or_index(ids: Option<&[i64]>, n: usize, first: usize) -> Result<Vec<i64>> {
     match ids {
         Some(ids) if ids.len() != n => Err(GridError::LengthMismatch {
             expected: n,
@@ -107,10 +108,11 @@ pub enum CellOrdering {
 /// no cell's vertex).
 pub(crate) type BuiltMesh<F, TD, GD, C> = (Mesh<F, TD, GD, C>, Vec<u32>);
 
-/// One `cell_block` call: element, cell → node lists and optional cell ids.
+/// One `cell_block` or `cell_block_by_ids` call: element, cell → node lists and optional cell
+/// ids.
 struct BlockInput<TD: TopoDim> {
     element: CoordinateElement<TD>,
-    nodes: Vec<u32>,
+    nodes: NodeRefs,
     origin_ids: Option<Vec<i64>>,
 }
 
@@ -149,6 +151,11 @@ pub struct MeshBuilder<F: Real, TD: TopoDim, GD: Dim> {
     coords: Vec<f64>,
     node_ids: Option<Vec<i64>>,
     blocks: Vec<BlockInput<TD>>,
+    tags: Vec<TagInput>,
+    tag_names: Vec<(String, usize, i32)>,
+    ghosts: GhostMode,
+    partitioner: Box<dyn Partitioner>,
+    ordering: CellOrdering,
     _f: core::marker::PhantomData<(F, GD)>,
 }
 
@@ -165,6 +172,11 @@ where
             coords: Vec::new(),
             node_ids: None,
             blocks: Vec::new(),
+            tags: Vec::new(),
+            tag_names: Vec::new(),
+            ghosts: GhostMode::None,
+            partitioner: Box::new(Block),
+            ordering: CellOrdering::Input,
             _f: core::marker::PhantomData,
         }
     }
@@ -186,7 +198,7 @@ where
     ) -> Self {
         self.blocks.push(BlockInput {
             element,
-            nodes: nodes.to_vec(),
+            nodes: NodeRefs::Indices(nodes.to_vec()),
             origin_ids: origin_ids.map(<[i64]>::to_vec),
         });
         self
@@ -196,45 +208,57 @@ where
     /// the element's node count per cell, in A.5 order; `origin_ids` optionally one id per
     /// cell. A cell may reference the nodes of any rank (ADR-0026).
     pub fn cell_block_by_ids(
-        self,
+        mut self,
         element: CoordinateElement<TD>,
         node_ids: &[i64],
         origin_ids: Option<&[i64]>,
     ) -> Self {
-        let _ = (element, node_ids, origin_ids);
-        todo!("M6 T9: MeshBuilder::cell_block_by_ids")
+        self.blocks.push(BlockInput {
+            element,
+            nodes: NodeRefs::Ids(node_ids.to_vec()),
+            origin_ids: origin_ids.map(<[i64]>::to_vec),
+        });
+        self
     }
 
     /// The ghost cells of each rank; default [`GhostMode::None`].
-    pub fn ghosts(self, mode: GhostMode) -> Self {
-        let _ = mode;
-        todo!("M6 T9: MeshBuilder::ghosts")
+    pub fn ghosts(mut self, mode: GhostMode) -> Self {
+        self.ghosts = mode;
+        self
     }
 
-    /// The partitioner of pipeline stage 3; default [`Block`](gridcl_partition::Block).
-    pub fn partitioner(self, p: impl Partitioner + 'static) -> Self {
-        let _ = p;
-        todo!("M6 T9: MeshBuilder::partitioner")
+    /// The partitioner of pipeline stage 3; default [`Block`].
+    pub fn partitioner(mut self, p: impl Partitioner + 'static) -> Self {
+        self.partitioner = Box::new(p);
+        self
     }
 
     /// The order of the owned cells; default [`CellOrdering::Input`].
-    pub fn ordering(self, o: CellOrdering) -> Self {
-        let _ = o;
-        todo!("M6 T9: MeshBuilder::ordering")
+    pub fn ordering(mut self, o: CellOrdering) -> Self {
+        self.ordering = o;
+        self
     }
 
     /// Physical tags of entities of type `entity`: one entry per entity, with
     /// `entity.num_vertices()` corner origin ids in `corners` and one value in `values`.
     /// Entries are matched by their sorted corner ids (ADR-0026).
-    pub fn physical_tags(self, entity: CellType, corners: &[i64], values: &[i32]) -> Self {
-        let _ = (entity, corners, values);
-        todo!("M6 T9: MeshBuilder::physical_tags")
+    pub fn physical_tags(mut self, entity: CellType, corners: &[i64], values: &[i32]) -> Self {
+        self.tags.push(TagInput {
+            entity,
+            corners: corners.to_vec(),
+            values: values.to_vec(),
+        });
+        self
     }
 
     /// The tag name table: (name, dimension, value).
-    pub fn tag_names(self, names: &[(&str, usize, i32)]) -> Self {
-        let _ = names;
-        todo!("M6 T9: MeshBuilder::tag_names")
+    pub fn tag_names(mut self, names: &[(&str, usize, i32)]) -> Self {
+        self.tag_names.extend(
+            names
+                .iter()
+                .map(|&(name, dim, value)| (name.to_owned(), dim, value)),
+        );
+        self
     }
 
     /// Builds the distributed mesh on `comm` through the parallel creation pipeline.
@@ -275,13 +299,22 @@ where
         }
         let num_input = self.coords.len() / gd;
         let node_ids = ids_or_index(self.node_ids.as_deref(), num_input, 0)?;
+        // Cells by node id need the pipeline (M6 T12).
+        let rows: Vec<&[u32]> = self
+            .blocks
+            .iter()
+            .map(|b| match &b.nodes {
+                NodeRefs::Indices(v) => Ok(v.as_slice()),
+                NodeRefs::Ids(_) => Err(GridError::NotYetImplemented("cell_block_by_ids: M6 T12")),
+            })
+            .collect::<Result<_>>()?;
         check_unique(node_ids.iter().copied())?;
 
         // Per block: element checks, lengths, index ranges and cell ids.
         let mut cells_seen = HashSet::new();
         let mut cell_ids = Vec::with_capacity(self.blocks.len());
         let mut first_cell = 0;
-        for b in &self.blocks {
+        for (b, nodes) in self.blocks.iter().zip(&rows) {
             let cell: CellType = b.element.cell.into();
             if !cells_seen.insert(cell) {
                 return Err(GridError::DuplicateCellBlock(cell_name(cell)));
@@ -289,19 +322,19 @@ where
             gridcl_refcell::lagrange_points(cell, b.element.degree, b.element.family)
                 .map_err(element_error)?;
             let k = gridcl_refcell::num_lagrange_nodes(cell, b.element.degree);
-            if !b.nodes.len().is_multiple_of(k) {
+            if !nodes.len().is_multiple_of(k) {
                 return Err(GridError::LengthMismatch {
-                    expected: b.nodes.len().next_multiple_of(k),
-                    found: b.nodes.len(),
+                    expected: nodes.len().next_multiple_of(k),
+                    found: nodes.len(),
                 });
             }
-            if let Some(&bad) = b.nodes.iter().find(|&&n| n as usize >= num_input) {
+            if let Some(&bad) = nodes.iter().find(|&&n| n as usize >= num_input) {
                 return Err(GridError::IndexOutOfRange {
                     index: bad as usize,
                     len: num_input,
                 });
             }
-            let n = b.nodes.len() / k;
+            let n = nodes.len() / k;
             cell_ids.push(ids_or_index(b.origin_ids.as_deref(), n, first_cell)?);
             first_cell += n;
         }
@@ -313,11 +346,11 @@ where
         let mut node_number = vec![NONE; num_input];
         let mut vertex_number = vec![NONE; num_input];
         let (mut nodes_used, mut vertices_used) = (Vec::new(), Vec::new());
-        for b in &self.blocks {
+        for (b, nodes) in self.blocks.iter().zip(&rows) {
             let cell: CellType = b.element.cell.into();
             let k = gridcl_refcell::num_lagrange_nodes(cell, b.element.degree);
             let nv = gridcl_refcell::vertices(cell).len();
-            for row in b.nodes.chunks_exact(k) {
+            for row in nodes.chunks_exact(k) {
                 for (j, &node) in row.iter().enumerate() {
                     let node = node as usize;
                     let is_vertex = j < nv;
@@ -358,14 +391,13 @@ where
 
         let mut cell_blocks = Vec::with_capacity(self.blocks.len());
         let mut geometry_blocks = Vec::with_capacity(self.blocks.len());
-        for (b, ids) in self.blocks.iter().zip(&cell_ids) {
+        for ((b, nodes), ids) in self.blocks.iter().zip(&rows).zip(&cell_ids) {
             let cell: CellType = b.element.cell.into();
             let k = gridcl_refcell::num_lagrange_nodes(cell, b.element.degree);
             let nv = gridcl_refcell::vertices(cell).len();
             let n = ids.len();
-            let dofmap: Vec<u32> = b.nodes.iter().map(|&x| node_number[x as usize]).collect();
-            let verts: Vec<u32> = b
-                .nodes
+            let dofmap: Vec<u32> = nodes.iter().map(|&x| node_number[x as usize]).collect();
+            let verts: Vec<u32> = nodes
                 .chunks_exact(k)
                 .flat_map(|row| row[..nv].iter().map(|&x| vertex_number[x as usize]))
                 .collect();
