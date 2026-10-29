@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use gridcl_dims::{Cell2, Cell3, CellType};
 use gridcl_geometry::NodeFamily;
 use gridcl_parallel::CommDyn;
-use gridcl_partition::Block;
+use gridcl_partition::{Block, Partitioner};
 use gridcl_testing::{HostChunk, HostMesh};
 
 use super::BlockSpec;
@@ -102,9 +102,19 @@ pub(crate) fn local_cells(
     input: &Input<'_>,
     mode: GhostMode,
 ) -> (Read, LocalCells) {
+    local_cells_by(comm, input, mode, &Block)
+}
+
+/// Stages 1–5 with `partitioner`: the stage-1 output and the local cells.
+pub(crate) fn local_cells_by(
+    comm: &dyn CommDyn,
+    input: &Input<'_>,
+    mode: GhostMode,
+    partitioner: &dyn Partitioner,
+) -> (Read, LocalCells) {
     let read = read(comm, input).unwrap();
     let g = dual_graph(comm, &read.blocks, &read.cells).unwrap();
-    let dest = partition(comm, &Block, &g).unwrap();
+    let dest = partition(comm, partitioner, &g).unwrap();
     let owned = migrate(comm, &read.cells, &dest).unwrap();
     let local = ghost_cells(comm, &read.blocks, owned, mode).unwrap();
     (read, local)

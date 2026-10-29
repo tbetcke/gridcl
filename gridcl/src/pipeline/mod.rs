@@ -13,8 +13,10 @@
 //! 6. [`nodes::fetch_nodes`]: the coordinates of the local cells' nodes, and the agreed
 //!    bounding box and origin.
 //! 7. [`order::order_cells`]: the owned cells in the [`CellOrdering`](crate::CellOrdering).
+//! 8. [`number::number`]: sharer sets, owners, and local and global numbers of the cells,
+//!    vertices and nodes.
 
-// Stages 1–7 are wired into `MeshBuilder::build_on` by M6 T12; until then only the tests call
+// Stages 1–8 are wired into `MeshBuilder::build_on` by M6 T12; until then only the tests call
 // them.
 #![allow(dead_code)]
 
@@ -23,6 +25,7 @@ pub(crate) mod ghosts;
 pub(crate) mod input;
 pub(crate) mod migrate;
 pub(crate) mod nodes;
+pub(crate) mod number;
 pub(crate) mod order;
 pub(crate) mod rendezvous;
 
