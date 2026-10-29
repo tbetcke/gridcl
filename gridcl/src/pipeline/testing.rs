@@ -4,10 +4,16 @@ use std::collections::BTreeMap;
 
 use gridcl_dims::{Cell2, Cell3, CellType};
 use gridcl_geometry::NodeFamily;
+use gridcl_parallel::CommDyn;
+use gridcl_partition::Block;
 use gridcl_testing::{HostChunk, HostMesh};
 
 use super::BlockSpec;
-use super::input::{BlockInput, Input, NodeRefs, TagInput};
+use super::dual_graph::{dual_graph, partition};
+use super::ghosts::{LocalCells, ghost_cells};
+use super::input::{BlockInput, Input, NodeRefs, Read, TagInput, read};
+use super::migrate::migrate;
+use crate::GhostMode;
 
 /// An owned [`Input`].
 pub(crate) struct OwnedInput {
@@ -88,6 +94,20 @@ impl OwnedInput {
             tags: &self.tags,
         }
     }
+}
+
+/// Stages 1–5 with the block partitioner: the stage-1 output and the local cells.
+pub(crate) fn local_cells(
+    comm: &dyn CommDyn,
+    input: &Input<'_>,
+    mode: GhostMode,
+) -> (Read, LocalCells) {
+    let read = read(comm, input).unwrap();
+    let g = dual_graph(comm, &read.blocks, &read.cells).unwrap();
+    let dest = partition(comm, &Block, &g).unwrap();
+    let owned = migrate(comm, &read.cells, &dest).unwrap();
+    let local = ghost_cells(comm, &read.blocks, owned, mode).unwrap();
+    (read, local)
 }
 
 /// The test meshes of the stage tests: several cell types, dimensions and degrees, with
