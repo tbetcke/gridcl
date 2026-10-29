@@ -8,7 +8,9 @@ use gridcl_device::{ConnKey, DeviceBuffer, DeviceStrided, GridError, Result};
 use gridcl_dims::{CellType, TopoDim};
 use gridcl_parallel::{CommDyn, IndexMap};
 
-use crate::{CellBlock, Connectivity, EntityBlock, encode_origin_ids, origin_ids_fit_u32};
+use crate::{
+    CellBlock, Connectivity, EntityBlock, VertexSharers, encode_origin_ids, origin_ids_fit_u32,
+};
 
 /// A deep copy of a strided array.
 pub(crate) fn clone_strided(s: &DeviceStrided<u32>) -> Result<DeviceStrided<u32>> {
@@ -58,6 +60,13 @@ pub struct Topology<TD: TopoDim> {
     /// Entity blocks of dimension d < tdim, once created.
     entities: Vec<Option<Vec<EntityBlock>>>,
     connectivity: HashMap<ConnKey, Connectivity>,
+    /// The sharer sets of the local vertices; empty rows until `set_vertex_sharers`.
+    vertex_sharers: VertexSharers,
+    /// One word per local vertex, 1 if another rank holds it; `None` without sharers.
+    vertex_shared: Option<DeviceBuffer<u32>>,
+    /// The sharing neighbourhood: the ranks, ascending, of every shared vertex's row (this
+    /// rank included, which entity creation drops).
+    sharing_ranks: Vec<i32>,
 }
 
 impl<TD: TopoDim> Topology<TD> {
@@ -135,6 +144,9 @@ impl<TD: TopoDim> Topology<TD> {
             permutation_info,
             entities: (0..TD::N).map(|_| None).collect(),
             connectivity: HashMap::new(),
+            vertex_sharers: VertexSharers::default(),
+            vertex_shared: None,
+            sharing_ranks: Vec::new(),
         })
     }
 
@@ -216,10 +228,41 @@ impl<TD: TopoDim> Topology<TD> {
 
     /// Stores the sharer sets of the local vertices, uploads one shared flag per vertex and
     /// derives the sharing neighbourhood: every rank that shares a vertex with this one
-    /// (ADR-0026). Without sharers every vertex is unshared.
-    pub fn set_vertex_sharers(&mut self, s: crate::VertexSharers) {
-        let _ = s;
-        todo!("M6 T12: Topology::set_vertex_sharers")
+    /// (ADR-0026). Without sharers every vertex is unshared. Pipeline stage 9 calls it at mesh
+    /// creation.
+    ///
+    /// # Panics
+    ///
+    /// If `s` does not have one row per local vertex, or `ranks` and `owned_cell` do not
+    /// match the offsets; if the upload of the flags fails.
+    pub fn set_vertex_sharers(&mut self, s: VertexSharers) {
+        let n = self.vertex_index_map.num_local();
+        assert!(
+            s.offsets.len() == n + 1
+                && s.offsets[0] == 0
+                && s.offsets.is_sorted()
+                && s.ranks.len() == s.offsets[n]
+                && s.owned_cell.len() == s.ranks.len(),
+            "VertexSharers must have one row per local vertex ({n})"
+        );
+        let mut flags = Vec::with_capacity(n);
+        let mut ranks = Vec::new();
+        for row in s.offsets.windows(2) {
+            let row = &s.ranks[row[0]..row[1]];
+            let shared = row.len() > 1;
+            flags.push(u32::from(shared));
+            if shared {
+                ranks.extend_from_slice(row);
+            }
+        }
+        ranks.sort_unstable();
+        ranks.dedup();
+        // The vertex shared flags at mesh creation (CLAUDE.md, ADR-0026).
+        let flags = DeviceBuffer::from_host(&self.client, &flags)
+            .expect("the upload of the vertex shared flags");
+        self.vertex_sharers = s;
+        self.vertex_shared = Some(flags);
+        self.sharing_ranks = ranks;
     }
 
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
@@ -368,6 +411,64 @@ impl<TD: TopoDim> Topology<TD> {
                 .iter()
                 .map(|(k, c)| Ok((*k, c.try_clone()?)))
                 .collect::<Result<_>>()?,
+            vertex_sharers: self.vertex_sharers.clone(),
+            vertex_shared: clone_opt(&self.vertex_shared)?,
+            sharing_ranks: self.sharing_ranks.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gridcl_dims::{Cell2, D2};
+    use gridcl_parallel::Serial;
+
+    /// Two triangles sharing the edge (1, 2).
+    fn two_triangles() -> Topology<D2> {
+        let client = gridcl_testing::test_client();
+        let block = CellBlock::<D2>::new(
+            Cell2::Triangle,
+            IndexMap::new(&Serial, 2).unwrap(),
+            DeviceStrided {
+                data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1]).unwrap(),
+                stride: 3,
+            },
+            DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1])).unwrap(),
+            DeviceBuffer::zeros(&client, 2).unwrap(),
+        );
+        let map = IndexMap::new(&Serial, 4).unwrap();
+        Topology::new(&client, vec![block], map, &[10, 11, 12, 13]).unwrap()
+    }
+
+    /// Rows with more than one rank are shared; the neighbourhood is the union of their ranks;
+    /// `try_clone` keeps both.
+    #[test]
+    fn sharers_give_flags_and_neighbourhood() {
+        let mut t = two_triangles();
+        assert!(t.vertex_shared.is_none() && t.sharing_ranks.is_empty());
+        let s = VertexSharers {
+            offsets: vec![0, 1, 3, 6, 7],
+            ranks: vec![1, 1, 4, 0, 1, 2, 1],
+            owned_cell: vec![true, true, false, true, true, false, true],
+        };
+        t.set_vertex_sharers(s.clone());
+        let flags = t.vertex_shared.as_ref().unwrap().to_host().unwrap();
+        assert_eq!(flags, [0, 1, 1, 0]);
+        assert_eq!(t.sharing_ranks, [0, 1, 2, 4]);
+        assert_eq!(t.vertex_sharers, s);
+        let c = t.try_clone(&Serial).unwrap();
+        assert_eq!(c.vertex_shared.unwrap().to_host().unwrap(), flags);
+        assert_eq!((c.sharing_ranks, c.vertex_sharers), (t.sharing_ranks, s));
+    }
+
+    #[test]
+    #[should_panic(expected = "one row per local vertex")]
+    fn sharers_need_one_row_per_vertex() {
+        two_triangles().set_vertex_sharers(VertexSharers {
+            offsets: vec![0, 1],
+            ranks: vec![0],
+            owned_cell: vec![true],
+        });
     }
 }

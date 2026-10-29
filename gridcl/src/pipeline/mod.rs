@@ -15,10 +15,9 @@
 //! 7. [`order::order_cells`]: the owned cells in the [`CellOrdering`](crate::CellOrdering).
 //! 8. [`number::number`]: sharer sets, owners, and local and global numbers of the cells,
 //!    vertices and nodes.
-
-// Stages 1–8 are wired into `MeshBuilder::build_on` by M6 T12; until then only the tests call
-// them.
-#![allow(dead_code)]
+//! 9. [`upload::upload`]: index maps, and the device arrays of topology and geometry.
+//!
+//! [`MeshBuilder::build_on`](crate::MeshBuilder::build_on) runs the stages in order.
 
 pub(crate) mod dual_graph;
 pub(crate) mod ghosts;
@@ -28,6 +27,7 @@ pub(crate) mod nodes;
 pub(crate) mod number;
 pub(crate) mod order;
 pub(crate) mod rendezvous;
+pub(crate) mod upload;
 
 use gridcl_device::{GridError, Result};
 use gridcl_dims::CellType;

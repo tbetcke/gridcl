@@ -837,7 +837,10 @@ pub fn determinism<C: Comm>(comm: &C, client: &Client, case: &Case) {
     dispatch(client, case, &mut Determinism { comm, client });
 }
 
-/// The mean over owned cells of all ranks of (max − min local node index in the cell).
+/// The mean over owned cells of all ranks of (max − min local index of the cell's owned
+/// nodes); ghost nodes, whose order (owner rank, global index) the cell ordering does not
+/// control, are excluded, and a cell with fewer than two owned nodes counts 0 (ADR-0027). On
+/// one rank every node is owned.
 ///
 /// # Errors
 ///
@@ -849,6 +852,7 @@ where
     GD: Dim,
     C: Comm,
 {
+    let owned_nodes = u32::try_from(mesh.node_index_map().num_owned()).expect("u32 nodes");
     let (mut sum, mut cells) = (0_u64, 0_u64);
     for (b, block) in mesh.cell_blocks().iter().enumerate() {
         let dofmap = &mesh.geometry_block(b).dofmap;
@@ -859,8 +863,9 @@ where
         {
             let (lo, hi) = row
                 .iter()
+                .filter(|&&n| n < owned_nodes)
                 .fold((u32::MAX, 0), |(lo, hi), &n| (lo.min(n), hi.max(n)));
-            sum += u64::from(hi - lo);
+            sum += u64::from(hi.saturating_sub(lo));
             cells += 1;
         }
     }
@@ -869,14 +874,18 @@ where
 }
 
 /// The locality check on `comm`: on a box of hexahedra or tetrahedra at p = 1 and 2, with
-/// shuffled cells and nodes and at least 64 cells per rank, Hilbert ordering at least halves
-/// the mean spread of [`mean_spread`] against input ordering.
+/// shuffled cells and nodes, at least 8 cells per edge and at least 64 cells per rank, Hilbert
+/// ordering at least halves the mean spread of [`mean_spread`] against input ordering
+/// (ADR-0027).
+///
+/// The edge bound matters: the Hilbert spread grows like n², the shuffled one like n³, and
+/// below 5 cells per edge the bound of 1/2 fails even on one rank (hexahedra, n = 4: 0.55).
 pub fn locality<C: Comm>(comm: &C, client: &Client) {
     let rank = comm.rank();
     let size = comm.size();
     for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
         let per_cube = if cell == Cell3::Hexahedron { 1 } else { 6 };
-        let n = (1..)
+        let n = (8..)
             .find(|&n: &usize| per_cube * n * n * n >= 64 * size)
             .expect("a box size");
         for p in 1..=2 {

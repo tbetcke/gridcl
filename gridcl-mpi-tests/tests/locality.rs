@@ -1,5 +1,5 @@
-//! M6 acceptance: on a randomly permuted structured box, locality ordering at least halves the
-//! mean over cells of (max − min local node index in the cell).
+//! M6 acceptance (ADR-0027): on a randomly permuted structured box, locality ordering at least
+//! halves the mean over owned cells of (max − min local index of the cell's owned nodes).
 
 use std::process::ExitCode;
 
