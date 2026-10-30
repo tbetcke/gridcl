@@ -67,10 +67,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # bind: one hardware thread per rank. Each rank's CPU runtime starts one thread per
+          # CPU it may use; unbound, 3-4 ranks oversubscribe the 4 vCPUs and exceed the time
+          # limit (M6).
           - mpi: mpich
             packages: mpich libmpich-dev
+            bind: -bind-to hwthread
           - mpi: openmpi
             packages: openmpi-bin libopenmpi-dev
+            bind: --use-hwthread-cpus --bind-to hwthread
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: MPI and libclang (rsmpi's bindgen)
@@ -94,6 +99,7 @@ jobs:
           # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
           # (ibv_create_srq: Operation not supported), so MPI_Init fails.
           UCX_TLS: self,sm,tcp
+          GRIDCL_MPIRUN_FLAGS: ${{ matrix.bind }}
 
   vulkan:
     runs-on: ubuntu-24.04
