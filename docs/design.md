@@ -848,7 +848,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). M7 adds `PartitionerFailed { name: &'static str, code: i32 }` and `NeedsMpiCommunicator(&'static str)` (ADR-0029). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -1482,8 +1482,8 @@ Locality ordering happens before any numbering, so global numbers are assigned o
 | Stage | Where | What | Output |
 | --- | --- | --- | --- |
 | 1 Read | host, all ranks | Builder chunks (`MeshBuilder::build_on`) or file chunks: for files, rank r gets cells [rN/P, (r+1)N/P) with origin ids, types and tags, and an independent chunk of nodes (origin node ids and coordinates); for ASCII files, rank 0 reads and scatters. Cells reference nodes by origin id; global duplicate checks and cell-tag matching by rendezvous (ADR-0026). | cell chunk, node chunk |
-| 2 Dual graph | host + MPI | Facet keys (sorted origin vertex ids) are hashed to ranks and matched; cells are adjacent if they share a facet (M6; M7 adds vertex weights; ADR-0026). | distributed CSR graph (vtxdist, xadj, adjncy) |
-| 3 Partition | host | `Partitioner` trait; vertex weights from the cost model by cell type and degree. | destination rank per cell |
+| 2 Dual graph | host + MPI | Facet keys (sorted origin vertex ids) are hashed to ranks and matched; cells are adjacent if they share a facet (M6; vertex weights from M7: the Lagrange node count of the cell's type and degree; ADR-0026, ADR-0029). | distributed CSR graph (vtxdist, xadj, adjncy) |
+| 3 Partition | host | `Partitioner` trait; vertex weights from the cost model by cell type and degree (ADR-0029). | destination rank per cell |
 | 4 Migrate | MPI all-to-all-v | Send cells with origin ids and tags to their destination. | owned cells per rank |
 | 5 Ghost cells | host + MPI | Cells sharing a vertex or facet with another rank's cells, per GhostMode. | ghost cells with owner ranks |
 | 6 Fetch nodes | MPI | Fetch the coordinates of all nodes of owned and ghost cells, by origin node id, from the rendezvous directory `owner_hash(id) mod P` (ADR-0026). A cell node id that no rank posted is `IndexOutOfRange { index: id, len: global node count }` (`usize::MAX` for a negative id; ADR-0028). | node coordinates by origin id |
@@ -1516,19 +1516,31 @@ pub trait Partitioner {
 /// N = vtxdist[nranks] (ADR-0026).
 #[derive(Clone, Copy, Debug, Default)] pub struct Block;
 impl Partitioner for Block { /* ... */ }
+
+// External partitioners, each behind its feature (ADR-0029); Metis and Scotch run on rank 0.
+#[cfg(feature = "ptscotch")] #[derive(Clone, Copy, Debug, Default)] pub struct PtScotch { /* seed */ }
+#[cfg(feature = "parmetis")] #[derive(Clone, Copy, Debug, Default)] pub struct ParMetis { /* seed */ }
+#[cfg(feature = "metis")]    #[derive(Clone, Copy, Debug, Default)] pub struct Metis    { /* seed */ }
+#[cfg(feature = "scotch")]   #[derive(Clone, Copy, Debug, Default)] pub struct Scotch   { /* seed */ }
+impl PtScotch { pub fn seed(self, seed: u32) -> Self; }   // likewise ParMetis, Metis, Scotch; default 0
+impl Partitioner for PtScotch { /* ... */ }              // name(): "ptscotch", "parmetis", "metis", "scotch"
+
+// gridcl: the graph `build_on` gives the partitioner (stages 1–2), a hidden test accessor:
+// #[doc(hidden)] pub fn MeshBuilder::dual_graph_on<C: Comm>(self, comm: C) -> Result<DistGraph>;
 ```
 
 | Backend | Integration | Feature | Role |
 | --- | --- | --- | --- |
 | Block | built in | – | CI default for pipeline tests. Also honours partition data stored in Gmsh files. |
 | METIS on rank 0 | `metis` crate with its `vendored` feature, which builds METIS from source | `metis` | CI default for partition-quality tests; small and medium meshes |
-| PT-Scotch | own `ptscotch-sys` (bindgen of `ptscotch.h`, `SCOTCH_Num` width probed at build time) plus a safe wrapper; the existing `scotch-sys` binds only `scotch.h` | `ptscotch` | production default; tested in its own CI job on an image with a known PT-Scotch build |
-| Scotch on rank 0 | `scotch` crate | `scotch` | rank-0 alternative; the reference edge cut in M7 |
-| ParMETIS | own `parmetis-sys` (no crate exists; `idx_t` and `real_t` widths probed at build time) | `parmetis` | optional; check the licence terms before redistributing binaries |
+| PT-Scotch | own `ptscotch-sys` (bindgen of `ptscotch.h`, `SCOTCH_Num` width probed at build time) plus a safe wrapper; the existing `scotch-sys` binds only `scotch.h`; feature `mpi` of ptscotch-sys; libraries from `SCOTCH_DIR` or the system paths | `ptscotch` | production default; tested in its own CI job on an image with a known PT-Scotch build |
+| Scotch on rank 0 | `scotch` crate, plus `scotch-sys` for the seed and strategy | `scotch` | rank-0 alternative; the reference edge cut in M7 |
+| ParMETIS | own `parmetis-sys` (no crate exists; `idx_t` and `real_t` widths probed at build time); feature `mpi` of parmetis-sys; libraries from `PARMETIS_DIR`, `METIS_DIR` or the system paths | `parmetis` | optional; check the licence terms before redistributing binaries |
 
-- **Rank-0 partitioners** gather the graph on rank 0, partition it and scatter the destinations. Rank 0 then needs memory for the whole graph, which limits them to meshes of about 10^7 cells.
+- **Rank-0 partitioners** gather the graph on rank 0, partition it and scatter the destinations, through `all_to_all_v`. Rank 0 then needs memory for the whole graph, which limits them to meshes of about 10^7 cells.
 - **Default choice** for distributed reads: PT-Scotch when the `ptscotch` feature is enabled, otherwise METIS on rank 0 when `metis` is enabled, otherwise Block with a warning. Serial meshes need no partitioner.
-- **Reproducibility:** PT-Scotch is called with a fixed seed (`SCOTCH_randomSeed`, then `SCOTCH_randomReset` before each call), METIS with `METIS_OPTION_SEED`. Results are reproducible for a fixed number of ranks only.
+- **Reproducibility:** PT-Scotch is called with a fixed seed (`SCOTCH_randomSeed`, then `SCOTCH_randomReset` before each call), METIS with `METIS_OPTION_SEED`. Scotch on rank 0 seeds and resets under a process-wide mutex (and METIS, if its random state is global); ParMETIS takes the seed in `options`. Results are reproducible for a fixed number of ranks only.
+- **Checks and balance:** every external partitioner validates the graph (ranges, self-loops, symmetry, non-negative weights, totals within the library's index type) before calling the library, returns zeros for one part, and targets 3% imbalance. PT-Scotch builds with `SCOTCH_PTHREAD_MPI` are not supported (MPI runs at `Threading::Single`). ParMETIS needs every rank to hold a vertex (ADR-0029).
 
 ## Import and export
 
@@ -1703,11 +1715,11 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
-| gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
+| gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional) |
 | gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional); dev: mshio, serde_json |
 | gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
-| ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
-| parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
+| ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
+| parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
 | gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml |
@@ -1725,7 +1737,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 
 ### Cargo features
 
-- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`.
+- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029).
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
 - **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it.
 - **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on.
@@ -1959,7 +1971,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Scope:** vertex weights on M6's distributed dual graph (ADR-0026), ptscotch-sys and its wrapper, parmetis-sys and its wrapper (feature-gated), METIS on rank 0 (vendored) and Scotch on rank 0.
 
-**Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Kathleen node through `scripts/hpc`; ADR-0016):
+**Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Kathleen node through `scripts/hpc`; ADR-0016), read as in ADR-0029 (imbalance for every external partitioner; cut ≤ 1.10 · Scotch's; reproducibility per partitioner and rank count):
 
 - weighted imbalance ≤ 5%;
 - PT-Scotch's edge cut is within 10% of sequential Scotch on the same graph, and METIS's within 10% of Scotch;
@@ -2089,8 +2101,9 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   upload of an IndexMap's send and receive index lists when its first scatterer is created,
   and of a scatterer's reverse lists when it is created, and the vertex shared flags at
   mesh creation (ADR-0026, ADR-0028).
-- FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
-  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
+- FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
+  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
+  (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.

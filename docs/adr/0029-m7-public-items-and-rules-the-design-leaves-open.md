@@ -1,6 +1,6 @@
 # ADR-0029: M7 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-30
 - **Raised in:** M7 planning (docs/plans/M7.md, "Planned public API and rules" and questions 1–13, 17, 18)
 - **Design sections affected:**
@@ -156,4 +156,4 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-30, as proposed (option 2, items 1–15, with item 11's logged cuts and slab bound), without conditions. Applied to docs/design.md and CLAUDE.md in `adr: 0029 apply`.
