@@ -1,7 +1,7 @@
 //! Pack and unpack (KernelKind::Pack), generic over the vector size: the device side of the
 //! host-staged halo exchange (ADR-0026, item 13).
 //!
-//! Both move u32 words. With w = size_of::<T>() / 4 words per element, an index addresses a
+//! Both move u32 words. With `w = size_of::<T>() / 4` words per element, an index addresses a
 //! block of `block · w` words; word o of the packed buffer belongs to index k = o / (block · w)
 //! at offset o mod (block · w). Lanes run over packed words: pack writes one vector of packed
 //! words per step, unpack reads one.

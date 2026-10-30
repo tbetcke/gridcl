@@ -3,9 +3,9 @@
 //! Each test is a `[[test]]` target with `harness = false` and the `mpi` feature, run on 1–4
 //! ranks by `scripts/mpi-test.sh`. A test exits with a non-zero status on any rank that fails.
 //!
-//! [`run`] initialises MPI and installs a panic hook that aborts the whole job, so that a
-//! panic on one rank (a failed check, or a `todo!()`) ends every rank instead of leaving the
-//! others waiting in the next collective. The checks themselves are in
+//! `run` (feature `mpi`) initialises MPI and installs a panic hook that aborts the whole job,
+//! so that a panic on one rank (a failed check, or a `todo!()`) ends every rank instead of
+//! leaving the others waiting in the next collective. The checks themselves are in
 //! `gridcl_testing::parallel`, shared with the `ThreadComm` tests of gridcl.
 
 #[cfg(feature = "mpi")]

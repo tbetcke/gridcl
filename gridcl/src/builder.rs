@@ -302,7 +302,6 @@ where
     ///
     /// ```
     /// use gridcl::prelude::*;
-    /// use gridcl::CommDyn;
     /// use gridcl_testing::ThreadComm;
     ///
     /// // Two ranks, one P1 interval each, sharing the node with id 1.
@@ -312,7 +311,7 @@ where
     ///     let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
     ///     // Rank 0 passes the nodes 0 and 1, rank 1 the node 2.
     ///     let (coords, ids): (&[f64], &[i64]) = if r == 0 { (&[0.0, 1.0], &[0, 1]) } else { (&[3.0], &[2]) };
-    ///     let mesh: Mesh<f64, D1, D1, ThreadComm> = MeshBuilder::new(&client)
+    ///     let mesh: Mesh<f32, D1, D1, ThreadComm> = MeshBuilder::new(&client)
     ///         .nodes(coords, Some(ids))
     ///         .cell_block_by_ids(element, &[r, r + 1], None)
     ///         .build_on(comm)?;

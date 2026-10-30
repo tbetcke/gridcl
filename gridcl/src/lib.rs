@@ -7,6 +7,11 @@
 //! A mesh is typed by its scalar `F`, its topological and geometric dimensions `TD` and `GD`,
 //! and its communicator `C` (default [`Serial`]). Methods exist only where they make sense:
 //! inverse Jacobians and facet normals in codimension 0, normals in codimension 1.
+//!
+//! Distributed meshes come from [`MeshBuilder::build_on`] on any communicator (`Mpi` with
+//! the feature `mpi`), which partitions the cells ([`Partitioner`], default [`Block`]), adds
+//! ghost cells ([`GhostMode`]) and orders them ([`CellOrdering`]). Their index maps exchange
+//! values between ranks through a [`Scatterer`] (docs/design.md, "Distributed mesh model").
 
 mod any;
 mod builder;
