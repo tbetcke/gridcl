@@ -49,4 +49,7 @@ impl CommDyn for TwoRanks {
     fn raw(&self) -> Option<mpi::ffi::MPI_Comm> {
         None
     }
+    fn duplicate(&self) -> std::rc::Rc<dyn CommDyn> {
+        std::rc::Rc::new(TwoRanks)
+    }
 }

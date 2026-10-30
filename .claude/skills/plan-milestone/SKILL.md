@@ -24,6 +24,8 @@ after the user approves it.
   to create it from an up-to-date main, and stop.
 - If `docs/plans/<milestone>.md` already exists, read it and ask whether to revise it or start
   over.
+- If `.venv/bin/python` or `scripts/hpc/targets.env` is missing (a new worktree), run
+  `scripts/setup-worktree.sh` outside the sandbox (pip needs PyPI) before any test run.
 
 ## 2. Read
 
@@ -72,7 +74,10 @@ Wait for approval. If the user changes the plan, revise and present it again.
 
 1. Write `docs/plans/<milestone>.md` with `Status: approved` if every open question is
    answered, otherwise `Status: draft`.
-2. Fill in the branch and base commit (`git merge-base HEAD main`).
+2. Fill in the branch, the base commit (`git merge-base HEAD main`) and the **Issue** line:
+   the milestone's GitHub issue (`gh issue list --search "<milestone> in:title" --state all`;
+   create it with label `enhancement` from the roadmap section if it is missing). Add the
+   plan's tasks to the issue as a "Tasks" checklist and link the plan in its **Plan** line.
 3. Commit with the message `plan: <milestone>`.
 4. Stop. Tell the user the next step: resolve any open questions or ADR candidates
    (`/draft-adr`), then start a fresh session and run `/implement-milestone <milestone>`.

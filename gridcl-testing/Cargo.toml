@@ -17,6 +17,9 @@ vulkan = ["cubecl/vulkan"]
 metal = ["cubecl/metal"]
 metal-native = ["cubecl/metal-native"]
 wgpu = ["cubecl/wgpu"]
+# ThreadComm implements `CommDyn::raw`, which exists only under gridcl-parallel's `mpi`: turn
+# this on whenever gridcl's `mpi` is on (gridcl-mpi-tests does).
+mpi = ["gridcl/mpi", "dep:mpi"]
 
 [dependencies]
 cubecl.workspace = true
@@ -24,3 +27,7 @@ gridcl = { path = "../gridcl" }
 gridcl-device = { path = "../gridcl-device", features = ["testing"] }
 gridcl-dims = { path = "../gridcl-dims" }
 gridcl-refcell = { path = "../gridcl-refcell" }
+mpi = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true

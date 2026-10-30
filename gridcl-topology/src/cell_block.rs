@@ -57,15 +57,17 @@ impl<TD: TopoDim> CellBlock<TD> {
         }
     }
 
-    /// A deep copy of every device array; the index map is rebuilt on `comm` (collective).
+    /// A deep copy of every device array. The index map, ghosts included, is cloned and
+    /// shares its neighbourhoods with the original; `comm` is unused.
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone` and `IndexMap::new`.
+    /// Errors of `DeviceBuffer::deep_clone`.
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
+        let _ = comm;
         Ok(CellBlock {
             cell: self.cell,
-            index_map: crate::topology::clone_map(&self.index_map, comm)?,
+            index_map: self.index_map.clone(),
             vertices: crate::topology::clone_strided(&self.vertices)?,
             origin_ids: self.origin_ids.deep_clone()?,
             flags: self.flags.deep_clone()?,

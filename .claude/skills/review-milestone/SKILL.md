@@ -15,6 +15,8 @@ If the milestone is empty, ask the user which milestone to review.
 - `docs/plans/<milestone>.md` must have `Status: implemented` and every task ticked.
   If not, stop and list what is missing.
 - Be on the plan's branch with a clean working tree.
+- If `.venv/bin/python` or `scripts/hpc/targets.env` is missing (a new worktree), run
+  `scripts/setup-worktree.sh` outside the sandbox (pip needs PyPI) before any test run.
 
 ## 2. Gather evidence (in parallel)
 
@@ -54,7 +56,10 @@ counted as missing.
     - a summary;
     - the acceptance criteria with their tests and results;
     - deviations and ADRs;
-    - targets and backends not tested, and why.
+    - targets and backends not tested, and why;
+    - `Closes #<n>` with the milestone issue from the plan's **Issue** line.
+
+   Tick the acceptance boxes in the milestone issue whose tests passed.
 4. Tell the user the next steps: push the branch, open the PR, merge after CI passes, then
    set `Status: done` in the plan on main. Offer to do these steps; do them only when the
    user agrees.

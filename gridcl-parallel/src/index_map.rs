@@ -1,8 +1,19 @@
 //! `IndexMap` without ghosts (M2); M6 adds ghosts, `scatterer` and the device field.
 
-use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result};
+use std::cell::OnceCell;
+use std::rc::Rc;
+
+use gridcl_device::Client;
+
+use crate::comm::agree;
+use crate::scatterer::SharedIndices;
+use crate::{CommDyn, CommExt, DType, GridError, Neighbourhood, ReduceOp, Result, Scatterer};
 
 /// Ownership of a distributed index set in the DOLFINx sense: `[owned | ghost]` local indices.
+///
+/// Dropping the last clone of a map with ghosts under `Mpi` frees the communicators of its
+/// neighbourhoods, which MPI makes collective (`MPI_Comm_free`): every rank drops its
+/// distributed maps, and the meshes that hold them, in the same order.
 ///
 /// # Example
 ///
@@ -21,8 +32,40 @@ pub struct IndexMap {
     ghosts: Vec<i64>,
     ghost_owners: Vec<i32>,
     size_global: i64,
-    #[allow(dead_code)] // M6 reads it for the scatterer.
-    neighbourhood: Neighbourhood,
+    /// The neighbourhoods and host index lists, shared by clones.
+    exchange: Rc<Exchange>,
+    /// The device index lists of the scatterers, for the first client; not copied by clones.
+    device: OnceCell<SharedIndices>,
+}
+
+/// The communication pattern of an [`IndexMap`] (ADR-0026, item 5).
+///
+/// The forward direction (owner → ghosts) sends `send_counts[i]` values, the owned local
+/// indices `send_idx` in order, to `forward.destinations()[i]`, ordered within each
+/// destination by the ghost position on the receiver, and receives `recv_counts[i]` values
+/// from `forward.sources()[i]` into the ghost local indices `recv_idx`. The reverse
+/// neighbourhood is the transpose.
+pub(crate) struct Exchange {
+    pub(crate) forward: Neighbourhood,
+    pub(crate) reverse: Neighbourhood,
+    pub(crate) send_idx: Vec<u32>,
+    pub(crate) send_counts: Vec<usize>,
+    pub(crate) recv_idx: Vec<u32>,
+    pub(crate) recv_counts: Vec<usize>,
+}
+
+impl Exchange {
+    /// No neighbours.
+    fn empty() -> Self {
+        Exchange {
+            forward: Neighbourhood::empty(),
+            reverse: Neighbourhood::empty(),
+            send_idx: Vec::new(),
+            send_counts: Vec::new(),
+            recv_idx: Vec::new(),
+            recv_counts: Vec::new(),
+        }
+    }
 }
 
 /// Splits `n` into its high and low 32-bit halves, each held in a u64.
@@ -82,8 +125,166 @@ impl IndexMap {
             ghosts: Vec::new(),
             ghost_owners: Vec::new(),
             size_global,
-            neighbourhood: Neighbourhood::empty(),
+            exchange: Rc::new(Exchange::empty()),
+            device: OnceCell::new(),
         })
+    }
+    /// With ghosts: `ghosts[k]` is the global index of ghost k and `ghost_owners[k]` its owning
+    /// rank. Collective. Ghosts request their indices from their owners, which range-check them
+    /// (`IndexOutOfRange`, agreed); destinations by `all_to_all_v`; forward and transposed
+    /// reverse neighbourhoods; send lists ordered by (neighbour rank, ghost position on the
+    /// receiver) (ADR-0026).
+    ///
+    /// The forward neighbourhood receives from the owners of this rank's ghosts and sends to
+    /// the ranks that ghost its owned indices, both in ascending rank order; the reverse
+    /// neighbourhood is its transpose.
+    ///
+    /// # Errors
+    ///
+    /// Agreed over the ranks (ADR-0026, item 15); ranks without a local error return
+    /// `RemoteFailure` with the lowest failing rank.
+    /// - `LengthMismatch` if `ghost_owners` and `ghosts` differ in length;
+    /// - `IndexOutOfRange { index: owner, len: size }` for an owner that is not another rank;
+    /// - `IndexOutOfRange { index: g, len: size_global }` on the owner, for a requested global
+    ///   index g it does not own;
+    /// - `TooLarge` if the local count does not fit u32, or as [`IndexMap::new`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{GridError, IndexMap, Serial};
+    ///
+    /// // One rank has no other rank to take ghosts from.
+    /// let map = IndexMap::with_ghosts(&Serial, 4, vec![], vec![])?;
+    /// assert_eq!((map.owned_range(), map.num_ghosts()), ((0, 4), 0));
+    /// let err = IndexMap::with_ghosts(&Serial, 4, vec![2], vec![0]);
+    /// assert!(matches!(err, Err(GridError::IndexOutOfRange { index: 0, len: 1 })));
+    /// # Ok::<(), GridError>(())
+    /// ```
+    pub fn with_ghosts(
+        comm: &dyn CommDyn,
+        num_owned: usize,
+        ghosts: Vec<i64>,
+        ghost_owners: Vec<i32>,
+    ) -> Result<IndexMap> {
+        let base = IndexMap::new(comm, num_owned)?;
+        let (p, rank) = (comm.size(), comm.rank());
+
+        // Local checks, agreed before any exchange.
+        let local = (|| {
+            if ghost_owners.len() != ghosts.len() {
+                return Err(GridError::LengthMismatch {
+                    expected: ghosts.len(),
+                    found: ghost_owners.len(),
+                });
+            }
+            if let Some(&o) = ghost_owners
+                .iter()
+                .find(|&&o| usize::try_from(o).map_or(true, |o| o >= p || o == rank))
+            {
+                return Err(GridError::IndexOutOfRange {
+                    index: usize::try_from(o).unwrap_or(usize::MAX),
+                    len: p,
+                });
+            }
+            let local = num_owned
+                .checked_add(ghosts.len())
+                .ok_or(GridError::TooLarge)?;
+            u32::try_from(local).map_err(|_| GridError::TooLarge)?;
+            Ok(())
+        })();
+        agree(comm, local)?;
+
+        // Requests to the owners: ghosts grouped by owner, in ghost order within each owner.
+        let mut order: Vec<usize> = (0..ghosts.len()).collect();
+        order.sort_by_key(|&k| ghost_owners[k]);
+        let mut request_counts = vec![0_usize; p];
+        for &o in &ghost_owners {
+            request_counts[o as usize] += 1;
+        }
+        let request: Vec<i64> = order.iter().map(|&k| ghosts[k]).collect();
+        let (requested, requested_counts) = comm.all_to_all_v(&request, &request_counts)?;
+
+        // Owners range-check the requests.
+        let (begin, end) = base.owned_range;
+        let local = match requested.iter().find(|g| !(begin..end).contains(g)) {
+            Some(&g) => Err(GridError::IndexOutOfRange {
+                index: usize::try_from(g).unwrap_or(usize::MAX),
+                len: usize::try_from(base.size_global).unwrap_or(usize::MAX),
+            }),
+            None => Ok(()),
+        };
+        agree(comm, local)?;
+
+        // In range and below u32 (checked above), so the casts are exact.
+        let send_idx: Vec<u32> = requested.iter().map(|&g| (g - begin) as u32).collect();
+        let destinations: Vec<usize> = (0..p).filter(|&r| requested_counts[r] > 0).collect();
+        let send_counts: Vec<usize> = destinations.iter().map(|&r| requested_counts[r]).collect();
+        let sources: Vec<usize> = (0..p).filter(|&r| request_counts[r] > 0).collect();
+        let recv_counts: Vec<usize> = sources.iter().map(|&r| request_counts[r]).collect();
+        let recv_idx: Vec<u32> = order.iter().map(|&k| (num_owned + k) as u32).collect();
+        let forward = Neighbourhood::new(comm, sources.clone(), destinations.clone())?;
+        let reverse = Neighbourhood::new(comm, destinations, sources)?;
+        Ok(IndexMap {
+            ghosts,
+            ghost_owners,
+            exchange: Rc::new(Exchange {
+                forward,
+                reverse,
+                send_idx,
+                send_counts,
+                recv_idx,
+                recv_counts,
+            }),
+            ..base
+        })
+    }
+    /// The scatterer of this map for `block_size` values per index on `client`. Not
+    /// collective. The first call uploads the send and receive index lists and caches them
+    /// for `client`; a scatterer on another client uploads its own copy.
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` if `block_size` is 0; `TooLarge` if the local values or the reverse
+    /// buffer do not fit u32 indices; device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::Client;
+    /// use gridcl_parallel::{IndexMap, Result, Serial};
+    ///
+    /// fn scatterers(client: &Client) -> Result<()> {
+    ///     let map = IndexMap::new(&Serial, 4)?;
+    ///     assert!(map.scatterer(client, 3).is_ok());
+    ///     assert!(map.scatterer(client, 0).is_err());
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn scatterer(&self, client: &Client, block_size: usize) -> Result<Scatterer> {
+        Scatterer::new(self, client, block_size)
+    }
+    /// The forward send lists: (destination ranks, count per destination, owned local
+    /// indices in send order). For tests of the exchange pattern; not part of the stable API.
+    #[doc(hidden)]
+    pub fn send_lists(&self) -> (&[usize], &[usize], &[u32]) {
+        let e = &self.exchange;
+        (e.forward.destinations(), &e.send_counts, &e.send_idx)
+    }
+    /// The forward receive lists: (source ranks, count per source, ghost local indices in
+    /// receive order). For tests of the exchange pattern; not part of the stable API.
+    #[doc(hidden)]
+    pub fn recv_lists(&self) -> (&[usize], &[usize], &[u32]) {
+        let e = &self.exchange;
+        (e.forward.sources(), &e.recv_counts, &e.recv_idx)
+    }
+    /// The communication pattern, for the scatterer.
+    pub(crate) fn exchange_rc(&self) -> Rc<Exchange> {
+        Rc::clone(&self.exchange)
+    }
+    /// The cached device index lists, for the scatterer.
+    pub(crate) fn device_cache(&self) -> &OnceCell<SharedIndices> {
+        &self.device
     }
     /// Global indices `[begin, end)` owned by this rank.
     ///
@@ -181,6 +382,30 @@ impl IndexMap {
     }
 }
 
+/// Shares the neighbourhoods; the device cache is not copied (ADR-0026).
+///
+/// # Example
+///
+/// ```
+/// use gridcl_parallel::{IndexMap, Serial};
+///
+/// let map = IndexMap::new(&Serial, 5).unwrap();
+/// let copy = map.clone();
+/// assert_eq!((copy.owned_range(), copy.size_global()), (map.owned_range(), map.size_global()));
+/// ```
+impl Clone for IndexMap {
+    fn clone(&self) -> Self {
+        IndexMap {
+            owned_range: self.owned_range,
+            ghosts: self.ghosts.clone(),
+            ghost_owners: self.ghost_owners.clone(),
+            size_global: self.size_global,
+            exchange: Rc::clone(&self.exchange),
+            device: OnceCell::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +470,9 @@ mod tests {
         #[cfg(feature = "mpi")]
         fn raw(&self) -> Option<mpi::ffi::MPI_Comm> {
             None
+        }
+        fn duplicate(&self) -> std::rc::Rc<dyn CommDyn> {
+            std::rc::Rc::new(self.clone())
         }
     }
 

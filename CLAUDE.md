@@ -39,7 +39,12 @@
   at mesh creation, and of quadrature points and tabulations when a rule is created or a
   tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
   and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
-  checks of gather and scatter, and the host-staged halo exchange.
+  checks of gather and scatter, the host-staged halo exchange, the boundary-entity
+  ownership exchange of entity creation (the candidate count, keys and the local indices of
+  owned candidates to the host; owners, global numbers and ghost placements back), the
+  upload of an IndexMap's send and receive index lists when its first scatterer is created,
+  and of a scatterer's reverse lists when it is created, and the vertex shared flags at
+  mesh creation (ADR-0026, ADR-0028).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
@@ -62,12 +67,24 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
 - docs/design.md is the source of truth and is not edited during implementation. A change to a
   public API, crate boundary, convention or acceptance test needs an ADR (skill: draft-adr);
   the design is updated only after the maintainer accepts the ADR.
+- CubeCL or CubeK bugs, surprising behaviour, missing settings and documentation gaps go into
+  docs/cubecl-upstream.md as a `C<n>` entry (version, observation with source location,
+  evidence, gridcl workaround, suggestion, status), in the same commit as the work that found
+  them. Check claims against the crate source first; update the status when reported or fixed.
 - Delegated work (subagents): include the task text, the design sections it depends on and
   this rule: "If the design is ambiguous or an API must change, stop and return an ADR draft
   instead of deviating." Subagents cannot ask the user questions.
 - Use the test-runner subagent for full-suite, multi-backend and MPI runs, so logs stay out of
   the main context. Use the design-reviewer subagent before a plan is approved and before a
   milestone PR.
+- A new worktree lacks the git-ignored `.venv` (pinned Python oracles) and
+  `scripts/hpc/targets.env`: run `scripts/setup-worktree.sh` outside the sandbox before testing.
+- Every roadmap milestone has a GitHub issue titled `<milestone> <name>` (label `enhancement`),
+  named in its plan's **Issue** line. Keep it in step with the plan: tick a task in the issue
+  after its commit; when an accepted ADR changes a milestone's scope or acceptance, update the
+  issue text and comment with the ADR; tick the acceptance boxes at the review; the milestone PR
+  says `Closes #<n>`. Tick a box with
+  `gh issue view <n> --json body -q .body | sed 's/- \[ \] T<k> /- [x] T<k> /' | gh issue edit <n> --body-file -`.
 - Claude may push branches and merge into main. Never force-push or rewrite history.
 
 ## Test targets

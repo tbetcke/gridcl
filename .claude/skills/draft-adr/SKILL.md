@@ -24,4 +24,5 @@ Title (may be empty; then derive one from the problem): $ARGUMENTS
 5. **Stop.** Summarise the decision needed in two or three sentences and wait. Do not edit
    docs/design.md, and do not continue the affected task, until the maintainer sets the ADR
    to Accepted or Rejected. When asked to apply an accepted ADR, edit exactly the sections it
-   names and commit with `adr: NNNN apply`.
+   names and commit with `adr: NNNN apply`. If it changes a milestone's scope or acceptance,
+   update that milestone's GitHub issue text to match and comment with the ADR number.

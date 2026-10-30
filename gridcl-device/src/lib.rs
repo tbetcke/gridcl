@@ -17,6 +17,9 @@ pub mod testing;
 mod testing;
 
 pub use buffer::{DeviceBuffer, DeviceCsr, DeviceStrided, VECTOR_PAD, pad_len};
+/// The CubeCL client and element trait, for gridcl-parallel, which has no cubecl dependency
+/// (ADR-0026, item 12).
+pub use cubecl::prelude::{Client, CubeElement};
 pub use error::{ConnKey, GridError, Result};
 pub use plan::{LaunchPlan, debug_assert_bindings};
 pub use policy::{CpuUnits, DeviceClass, KernelKind, VectorPolicy, VectorSizeOverride};

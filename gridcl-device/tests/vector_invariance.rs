@@ -154,6 +154,86 @@ fn gather_t<T: TestScalar>(client: &Client) {
     );
 }
 
+/// Pack and unpack of `len` blocks of 2: pack from a source of len / 2 + 1 blocks at random
+/// indices, unpack to the first `len` blocks of a random permutation of len + 3 blocks.
+fn pack_inputs<T: TestScalar>(len: usize) -> (Vec<T>, Vec<u32>, Vec<u32>) {
+    let mut rng = SplitMix::new(SEED ^ len as u64);
+    let src = any_vec::<T>(2 * (len / 2 + 1), SEED);
+    let idx: Vec<u32> = (0..len)
+        .map(|_| rng.below((len / 2 + 1) as u64) as u32)
+        .collect();
+    let mut perm: Vec<u32> = (0..len as u32 + 3).collect();
+    for i in (1..perm.len()).rev() {
+        perm.swap(i, rng.below(i as u64 + 1) as usize);
+    }
+    perm.truncate(len);
+    (src, idx, perm)
+}
+
+fn pack_t<T: TestScalar>(client: &Client) {
+    sweep::<T>(
+        client,
+        KernelKind::Pack,
+        size_of::<u32>(),
+        true,
+        |len| {
+            let (src, idx, _) = pack_inputs::<T>(len);
+            let mut out = DeviceBuffer::<T>::uninit(client, 2 * len).expect("uninit");
+            pack(&upload(client, &src), &upload(client, &idx), 2, &mut out).expect("pack");
+            out.to_host().expect("read")
+        },
+        |len, got| {
+            let (src, idx, _) = pack_inputs::<T>(len);
+            let want: Vec<T> = idx
+                .iter()
+                .flat_map(|&k| src[2 * k as usize..2 * k as usize + 2].iter().copied())
+                .collect();
+            assert_bits(got, &want, "pack");
+        },
+    );
+}
+
+fn unpack_t<T: TestScalar>(client: &Client) {
+    sweep::<T>(
+        client,
+        KernelKind::Pack,
+        size_of::<u32>(),
+        true,
+        |len| {
+            let (_, _, perm) = pack_inputs::<T>(len);
+            let packed = any_vec::<T>(2 * len, SEED ^ 2);
+            let mut dst = upload(client, &any_vec::<T>(2 * (len + 3), SEED ^ 3));
+            unpack(
+                &upload(client, &packed),
+                &upload(client, &perm),
+                2,
+                &mut dst,
+            )
+            .expect("unpack");
+            dst.to_host().expect("read")
+        },
+        |len, got| {
+            let (_, _, perm) = pack_inputs::<T>(len);
+            let packed = any_vec::<T>(2 * len, SEED ^ 2);
+            let mut want = any_vec::<T>(2 * (len + 3), SEED ^ 3);
+            for (k, &i) in perm.iter().enumerate() {
+                want[2 * i as usize..2 * i as usize + 2].copy_from_slice(&packed[2 * k..2 * k + 2]);
+            }
+            assert_bits(got, &want, "unpack");
+        },
+    );
+}
+
+#[test]
+fn pack_sizes() {
+    each_scalar!(&test_client(), pack_t);
+}
+
+#[test]
+fn unpack_sizes() {
+    each_scalar!(&test_client(), unpack_t);
+}
+
 #[test]
 fn fill_sizes() {
     each_scalar!(&test_client(), fill_t);

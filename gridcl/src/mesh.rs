@@ -29,6 +29,32 @@ use crate::{EntityMap, TagRegistry};
 /// assert!((mesh.measure(1)? - 1.0).abs() < 1e-6);
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// A distributed mesh (feature `mpi`, run under `mpirun`): every rank passes its chunk of the
+/// input to [`MeshBuilder::build_on`](crate::MeshBuilder::build_on), which partitions it with
+/// [`Block`](crate::Block) and adds one layer of ghost cells across facets.
+///
+/// ```no_run
+/// # #[cfg(feature = "mpi")] {
+/// use gridcl::prelude::*;
+///
+/// let universe = mpi::initialize().expect("MPI is not initialised yet");
+/// let comm = Mpi::world(&universe);
+/// let client = gridcl_testing::test_client();
+/// let chunk = gridcl_testing::cube_box(Cell3::Tetrahedron, 8, 1).chunk(comm.rank(), comm.size());
+/// let mesh: VolumeMesh<f32, Mpi> = chunk
+///     .builder(&client)?
+///     .ghosts(GhostMode::SharedFacet)
+///     .build_on(comm.clone())?;
+/// let owned: usize = mesh.cell_blocks().iter().map(|b| b.index_map.num_owned()).sum();
+/// assert_eq!(comm.sum(owned as u64), 6 * 8 * 8 * 8);
+/// assert!((mesh.measure(1)? - 1.0).abs() < 1e-5); // collective: sums the owned cells
+/// # }
+/// # Ok::<(), gridcl::GridError>(())
+/// ```
+///
+/// Dropping a distributed mesh is collective: it frees the MPI communicators of its index
+/// maps (see [`IndexMap`](crate::IndexMap)), so every rank drops its meshes in the same order.
 pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     client: Client,
     comm: C,
@@ -458,9 +484,13 @@ where
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and the connectivity
     /// (tdim, dim).
     ///
+    /// Collective: on more than one rank, every rank calls it with the same `dim`, and the
+    /// owners of the entities on process boundaries are agreed by an exchange.
+    ///
     /// # Errors
     ///
-    /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation and device errors.
+    /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation, device and communication errors;
+    /// `RemoteFailure` if another rank failed.
     ///
     /// # Example
     ///
@@ -482,7 +512,8 @@ where
         self.topology.create_entities(&self.comm, dim)
     }
 
-    /// Creates the connectivity `from` → `to` and the entities it needs.
+    /// Creates the connectivity `from` → `to` and the entities it needs. Collective, as
+    /// [`create_entities`](Mesh::create_entities).
     ///
     /// # Errors
     ///

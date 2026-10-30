@@ -8,7 +8,7 @@ Personal details (user ids, host names that are not public, project codes) never
 
 | Target | Hardware | Access | Role |
 | --- | --- | --- | --- |
-| M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CubeCL CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
+| M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CubeCL CPU runtime (f32, f64) and Metal (f32) on every change; MPI on the CPU runtime on 1 rank and on Metal on 1–4 ranks (M6) |
 | Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240), 192 GB RAM, 2 × V100 (compute capability 7.0) | SGE: `-l gpu=N` with `-ac allow=EF` | multi-GPU tests, architecture comparisons and the fallback (ADR-0014) |
 | Myriad A100 | L nodes: 36 cores, 192 GB RAM, 4 × A100 40 GB (compute capability 8.0) | SGE: `-l gpu=N` with `-ac allow=L` | second CUDA architecture; comparisons and fallback (no CUDA 13: Myriad's driver supports CUDA 12.4) |
 | Myriad CPU (`myriad-cpu`) | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB RAM, no GPU | SGE: `-ac allow=D`, no `-l gpu`; `--cores 36` for the whole node; the job sets `GRIDCL_TEST_DEVICE=cpu` | fallback for CPU-only runs when Kathleen is unavailable (ADR-0014, ADR-0016) |
@@ -78,7 +78,7 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
     scripts/check-local-tools.sh    # checks the three pins
     ```
 
-    pip needs pypi.org and files.pythonhosted.org. Inside Claude Code's sandbox the filtering proxy breaks pip's certificate check, so the install runs outside it. Every git worktree needs its own `.venv`, or `GRIDCL_PYTHON`.
+    pip needs pypi.org and files.pythonhosted.org. Inside Claude Code's sandbox the filtering proxy breaks pip's certificate check, so the install runs outside it. Every git worktree needs its own `.venv`, or `GRIDCL_PYTHON`. `scripts/setup-worktree.sh` does all of this in a new worktree, with the pins of `scripts/check-local-tools.sh`, and also copies the git-ignored `scripts/hpc/targets.env` from the main checkout; it keeps existing files.
 
     The M5 tests run `scripts/oracles/vtk_oracle.py` with `GRIDCL_PYTHON`, else `<repo>/.venv/bin/python`. A missing interpreter, or one without the pinned versions, fails the test with the install command; `GRIDCL_SKIP_PYTHON=1` skips the oracle checks instead and says so (ADR-0024, item 11). Remote CUDA runs set `GRIDCL_SKIP_PYTHON=1`: the targets have no VTK, and the oracles check host-side files. meshio reads only the inline-base64 VTU files of these tests (ADR-0025).
 
@@ -209,7 +209,7 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
 | CPU runtime on a Kathleen node (AVX-512; the runner sets `GRIDCL_TEST_DEVICE=cpu`) | `scripts/hpc/remote-test.sh kathleen -- cargo test --release --workspace` |
 | CPU runtime on a Myriad D node (fallback; the runner sets `GRIDCL_TEST_DEVICE=cpu`) | `scripts/hpc/remote-test.sh myriad-cpu --cores 36 -- cargo test --release --workspace` |
-| MPI on two Kathleen nodes (reviews from M6) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- scripts/mpi-test.sh 2 4 8 16` |
+| MPI on two Kathleen nodes (reviews from M6) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- 'GRIDCL_MPIRUN_FLAGS="--map-by node:PE=5 --bind-to core" scripts/mpi-test.sh 2 4 8 16'` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
 | MPI on CUDA (Myriad V100; both ranks use GPU 0 until per-rank selection) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
@@ -219,6 +219,14 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 `scripts/hpc/remote-test.sh` runs everything after `--` as one shell command line (`bash -c`). Pass a compound command as one quoted argument, `-- 'A && B'`, not as `-- bash -c 'A && B'`.
 
 `scripts/mpi-test.sh` takes its rank counts from its arguments, else `GRIDCL_RANKS`, else 1–4. `GRIDCL_MPIRUN_FLAGS` adds launcher flags and `GRIDCL_MPI_TEST_TIMEOUT` sets the per-run limit (600 s); each run's output is in `target/mpi-test/`. A `GRIDCL_TEST_DEVICE` other than `cpu` adds the gridcl-testing feature of the same name to the build, so inside `scripts/hpc` jobs the ranks open CUDA. The build uses the debug profile; on Myriad debug builds rely on the root `Cargo.toml`'s `[profile.dev.package.buildid]` override (buildid 1.0.5 otherwise aborts on an overflow), which separate cargo roots such as env-check and conformance do not inherit. Every rank opens `Device::cuda(0)` for now; choosing the node-local GPU per rank (`local_gpu_index` in the API walkthrough) is a follow-up.
+
+### MPI and multi-rank tests (M6)
+
+- **Selecting targets.** `GRIDCL_MPI_TESTS` takes comma-separated target names of `gridcl-mpi-tests` (`allreduce_smoke`, `comm`, `parallel_invariance`, `scatter`, `determinism`, `locality`) and runs only those, for example `GRIDCL_MPI_TESTS=comm,scatter scripts/mpi-test.sh 1 2`. An unknown name is an error.
+- **Abort hook.** Every target runs through `gridcl_mpi_tests::run`, which installs a panic hook that prints the panic and calls `MPI_Abort` (rsmpi's safe `Communicator::abort`). A failed check or a `todo!()` on one rank therefore ends the whole job with a non-zero status, instead of leaving the other ranks waiting in their next collective until the time limit.
+- **`ThreadComm`.** `gridcl_testing::ThreadComm` is an in-process communicator with one thread per rank: `ThreadComm::run(n, |comm| …)` runs the closure on `n` ranks and returns the results in rank order. It runs multi-rank code in `cargo test --workspace` without MPI (`gridcl/tests/{parallel_threads,build_on_threads,index_map_threads,scatter_threads,partition_threads,tags_threads}.rs`); the acceptance checks themselves are in `gridcl_testing::parallel`, shared by the ThreadComm tests and the MPI targets. Each rank thread opens its own `test_client()`. A panic on one rank stops the others at their next communication, and `run` resumes the first panic, so a failed rank never hangs the test. The `gridcl_device::testing::with_*` overrides are thread-local and do not reach the rank threads: set them inside the closure, or use `GRIDCL_VECTOR_SIZE`.
+- **Local MPI runs on the M3 Max** use the CPU runtime on 1 rank and Metal on 1–4 ranks: `scripts/mpi-test.sh 1` and `GRIDCL_TEST_DEVICE=metal scripts/mpi-test.sh 1 2 3 4` (unsandboxed, for Metal). Each rank's CubeCL CPU runtime starts one worker thread per core, and macOS has no affinity mask to limit it, so 2–4 CPU ranks oversubscribe the 16 cores (load average about 105) and exceed the time limit (M6 T14). Multi-rank CPU MPI runs belong to hosted CI (`mpi-mpich`, `mpi-openmpi`) and Kathleen, where Linux binding limits each rank's threads.
+- **Binding ranks.** Each rank's CPU runtime starts one thread per CPU it may use, and without explicit binding a rank may use every core of its socket or node. Multi-rank CPU runs therefore bind each rank to its share of the cores. In hosted CI the MPI jobs bind one hardware thread per rank (`-bind-to hwthread` under MPICH, `--use-hwthread-cpus --bind-to hwthread` under Open MPI, through `GRIDCL_MPIRUN_FLAGS`); unbound, `parallel_invariance` took 454 s on 3 ranks against 14 s on 2 and exceeded the limit on 4. On Kathleen, bind each rank to its share of a node's 40 cores with `GRIDCL_MPIRUN_FLAGS="--map-by node:PE=<40 / ranks per node> --bind-to core"`, set in the command so that it replaces the runner's `--map-by node`: `PE=5` for 16 ranks on two nodes. Unbound, the M6 review run exceeded the 600 s limit at 8 and 16 ranks (job 614434); bound, it passed in 217 s (job 614468).
 
 ## Change history
 
@@ -235,3 +243,5 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | 2026-10-24 | M3s T7: Myriad CPU-only target `myriad-cpu` (D nodes, ADR-0014): target row, reference section and test command; prologue line `cpus:`. |
 | 2026-10-24 | M3s T19: Kathleen target `kathleen` (Slurm, ADR-0016): target row, reference section, test commands; `myriad-cpu` becomes the CPU fallback. |
 | 2026-10-27 | M5 T1: pinned Python oracles `vtk==9.7.1` and `meshio==5.3.5` in `.venv` (ADR-0024, ADR-0025): setup, `GRIDCL_PYTHON` and `GRIDCL_SKIP_PYTHON`; hosted CI installs them in the cpu and vulkan jobs. |
+| 2026-10-30 | M6 T16: MPI and multi-rank tests: `GRIDCL_MPI_TESTS`, the abort hook, `ThreadComm`, and local MPI runs on the M3 Max (CPU runtime on 1 rank, Metal on 1–4). |
+| 2026-10-30 | M6 final run: multi-rank CPU MPI runs bind their ranks: one hardware thread per rank in hosted CI, `--map-by node:PE=… --bind-to core` on Kathleen. |

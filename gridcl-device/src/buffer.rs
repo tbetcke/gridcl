@@ -223,6 +223,43 @@ impl<T: CubeElement> DeviceBuffer<T> {
         decode(&bytes, self.len)
     }
 
+    /// Overwrites the buffer with `data` through `Client::write` and zeroes the padding, as
+    /// [`from_host`](DeviceBuffer::from_host) does (ADR-0026): the write covers the whole
+    /// allocation, which the CPU runtime requires. The host-staged halo exchange uploads its
+    /// receive buffer with it.
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` if `data.len()` is not [`len`](DeviceBuffer::len).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, GridError};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut b = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
+    /// b.write_host(&[7, 8, 9]).unwrap();
+    /// assert_eq!(b.to_host().unwrap(), vec![7, 8, 9]);
+    /// assert!(matches!(b.write_host(&[1]), Err(GridError::LengthMismatch { expected: 3, found: 1 })));
+    /// ```
+    pub fn write_host(&mut self, data: &[T]) -> Result<()> {
+        if data.len() != self.len {
+            return Err(GridError::LengthMismatch {
+                expected: self.len,
+                found: data.len(),
+            });
+        }
+        if data.is_empty() {
+            return Ok(());
+        }
+        let mut host = T::as_bytes(data).to_vec();
+        host.resize(self.padded * size_of::<T>(), 0);
+        self.client
+            .write(&self.handle, cubecl::bytes::Bytes::from_bytes_vec(host));
+        Ok(())
+    }
+
     /// Explicit device-to-host copy of the logical length.
     ///
     /// # Example

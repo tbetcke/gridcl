@@ -128,6 +128,11 @@ pub enum GridError {
     UnsupportedElementType { format: &'static str, type_id: i32 },
     /// No tag of this name exists in dimension `dim`.
     UnknownTag { name: String, dim: usize },
+    /// An MPI count or displacement of `count` elements exceeds `i32::MAX` (ADR-0026).
+    MessageTooLarge { count: usize },
+    /// A collective operation failed on another rank; `rank` is the lowest failing rank
+    /// (ADR-0026).
+    RemoteFailure { rank: usize },
 }
 
 impl fmt::Display for GridError {
@@ -202,6 +207,13 @@ impl fmt::Display for GridError {
             GridError::UnknownTag { name, dim } => {
                 write!(f, "no tag named {name:?} in dimension {dim}")
             }
+            GridError::MessageTooLarge { count } => write!(
+                f,
+                "a message count or displacement of {count} elements exceeds i32::MAX"
+            ),
+            GridError::RemoteFailure { rank } => {
+                write!(f, "the operation failed on rank {rank}")
+            }
         }
     }
 }
@@ -224,6 +236,19 @@ impl From<ServerError> for GridError {
 #[cfg(test)]
 mod tests {
     use super::GridError;
+
+    /// The `Display` lines of the M6 variants (ADR-0026).
+    #[test]
+    fn m6_variants_display() {
+        assert_eq!(
+            GridError::MessageTooLarge { count: 1 << 31 }.to_string(),
+            "a message count or displacement of 2147483648 elements exceeds i32::MAX"
+        );
+        assert_eq!(
+            GridError::RemoteFailure { rank: 3 }.to_string(),
+            "the operation failed on rank 3"
+        );
+    }
 
     /// The `Display` lines of the M4 variants (ADR-0022).
     #[test]

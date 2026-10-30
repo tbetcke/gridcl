@@ -9,6 +9,8 @@
 # Environment:
 #   GRIDCL_MPIRUN_FLAGS      extra mpirun flags, split on whitespace (as in env-check)
 #   GRIDCL_MPI_TEST_TIMEOUT  time limit of one run in seconds (default 600)
+#   GRIDCL_MPI_TESTS         comma-separated target names to run (default: every target); an
+#                            unknown name is an error
 #   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default);
 #                            a backend other than cpu also builds with gridcl-testing/<backend>
 #                            (scripts/hpc jobs set cuda)
@@ -18,6 +20,11 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# Indents stdin for the summary, without NUL bytes.
+show_lines() {
+    LC_ALL=C tr -d '\000' | LC_ALL=C sed 's/^/      /' || true
+}
 
 die() {
     echo "mpi-test.sh: $*" >&2
@@ -103,6 +110,23 @@ done < <(grep -F '"reason":"compiler-artifact"' "$build_json" |
     sort -u)
 [[ ${#tests[@]} -gt 0 ]] || die "no gridcl-mpi-tests targets were built"
 
+# The GRIDCL_MPI_TESTS filter.
+if [[ -n "${GRIDCL_MPI_TESTS:-}" ]]; then
+    IFS=, read -r -a wanted <<<"$GRIDCL_MPI_TESTS"
+    selected=()
+    for name in "${wanted[@]}"; do
+        found=
+        for entry in "${tests[@]}"; do
+            if [[ ${entry%% *} == "$name" ]]; then
+                selected+=("$entry")
+                found=1
+            fi
+        done
+        [[ -n $found ]] || die "GRIDCL_MPI_TESTS: no target named '$name'"
+    done
+    tests=("${selected[@]}")
+fi
+
 echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), features $features, time limit ${time_limit} s"
 failed=0
 for n in "${ranks[@]}"; do
@@ -122,13 +146,14 @@ for n in "${ranks[@]}"; do
             reason="exit status $status"
             [[ $status -eq 124 || $status -eq 137 ]] && reason="time limit of $time_limit s exceeded"
             printf 'FAIL  ranks=%-2s %s (%d s, %s; log %s)\n' "$n" "$name" "$elapsed" "$reason" "$log"
-            # The panic message comes first and a backtrace last; show both ends.
+            # The panic message comes first and a backtrace last; show both ends. prterun may
+            # write NUL bytes, on which macOS sed aborts: strip them and read bytes as C.
             if [[ $(wc -l <"$log") -le 80 ]]; then
-                sed 's/^/      /' "$log"
+                show_lines <"$log"
             else
-                head -n 50 "$log" | sed 's/^/      /'
+                head -n 50 "$log" | show_lines
                 echo "      [...]"
-                tail -n 30 "$log" | sed 's/^/      /'
+                tail -n 30 "$log" | show_lines
             fi
         fi
     done

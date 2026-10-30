@@ -2,6 +2,7 @@
 
 - **Status:** draft | approved | implemented | done
 - **Branch:** <milestone id in lower case>-<slug>, for example e0-dev-environment
+- **Issue:** #<n>, the milestone's GitHub issue (`gh issue list --search "<milestone id> in:title" --state all`)
 - **Base commit:** <sha of main when the branch was created>
 - **Design sections:** <docs/design.md sections this plan implements, e.g. "Implementation roadmap / M3", "Topology construction on the device">
 - **Depends on:** <milestones, each with status done and merged>

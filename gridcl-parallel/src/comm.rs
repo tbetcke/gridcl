@@ -1,6 +1,8 @@
 //! The communicator traits (Listing S2c).
 
-use crate::{ReduceOp, Result};
+use std::rc::Rc;
+
+use crate::{GridError, ReduceOp, Result};
 
 /// Object-safe communicator interface used by IndexMap, Scatterer and partitioners.
 ///
@@ -57,6 +59,9 @@ pub trait CommDyn: 'static {
     /// Raw handle for PT-Scotch and ParMETIS; None for Serial.
     #[cfg(feature = "mpi")]
     fn raw(&self) -> Option<mpi::ffi::MPI_Comm>;
+    /// Cheap clone that refers to the same communicator (for `Mpi` an `Rc` clone, not
+    /// `MPI_Comm_dup`), so a [`Neighbourhood`] can hold it (ADR-0026).
+    fn duplicate(&self) -> Rc<dyn CommDyn>;
 }
 
 /// The communicator stored in a Mesh. Not required to be Send or Sync.
@@ -116,6 +121,67 @@ pub trait CommExt {
     /// assert_eq!(Serial.exscan_sum(9_u32), 0);
     /// ```
     fn exscan_sum<T: CommScalar>(&self, x: T) -> T;
+    /// The minimum of `x` over all ranks.
+    ///
+    /// ```
+    /// use gridcl_parallel::{CommExt, Serial};
+    ///
+    /// assert_eq!(Serial.min(2.5_f64), 2.5);
+    /// ```
+    fn min<T: CommScalar>(&self, x: T) -> T;
+    /// `x` of every rank, in rank order.
+    ///
+    /// ```
+    /// use gridcl_parallel::{CommExt, Serial};
+    ///
+    /// assert_eq!(Serial.all_gather(7_i32), vec![7]);
+    /// ```
+    fn all_gather<T: CommScalar>(&self, x: T) -> Vec<T>;
+    /// Variable all-to-all: the first `send_counts[0]` values of `send` go to rank 0, the next
+    /// `send_counts[1]` to rank 1, and so on. Exchanges the counts first; returns the received
+    /// values, grouped by source rank, and the count from each rank.
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` unless there is one count per rank and the counts add up to
+    /// `send.len()`; `TooLarge` if a sum overflows; the communicator's errors (for `Mpi`,
+    /// `MessageTooLarge`).
+    ///
+    /// ```
+    /// use gridcl_parallel::{CommExt, GridError, Serial};
+    ///
+    /// let (values, counts) = Serial.all_to_all_v(&[1_u64, 2], &[2])?;
+    /// assert_eq!((values, counts), (vec![1, 2], vec![2]));
+    /// # Ok::<(), GridError>(())
+    /// ```
+    fn all_to_all_v<T: CommScalar>(
+        &self,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)>;
+    /// Neighbourhood all-to-all: `send_counts[i]` consecutive values of `send` go to
+    /// `nb.destinations()[i]`. Exchanges the counts first; returns the received values, grouped
+    /// in the order of `nb.sources()`, and the count from each source.
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` unless there is one count per destination and the counts add up to
+    /// `send.len()`; `TooLarge` if a sum overflows; the communicator's errors.
+    ///
+    /// ```
+    /// use gridcl_parallel::{CommExt, GridError, Neighbourhood, Serial};
+    ///
+    /// let nb = Neighbourhood::new(&Serial, vec![], vec![])?;
+    /// let (values, counts) = Serial.neighbour_all_to_all_v::<f32>(&nb, &[], &[])?;
+    /// assert!(values.is_empty() && counts.is_empty());
+    /// # Ok::<(), GridError>(())
+    /// ```
+    fn neighbour_all_to_all_v<T: CommScalar>(
+        &self,
+        nb: &Neighbourhood,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)>;
 }
 
 impl<C: CommDyn + ?Sized> CommExt for C {
@@ -133,6 +199,139 @@ impl<C: CommDyn + ?Sized> CommExt for C {
         let mut v = x;
         self.exscan_bytes(bytemuck::bytes_of_mut(&mut v), T::DTYPE, ReduceOp::Sum);
         v
+    }
+    fn min<T: CommScalar>(&self, x: T) -> T {
+        let mut v = x;
+        self.all_reduce_bytes(bytemuck::bytes_of_mut(&mut v), T::DTYPE, ReduceOp::Min);
+        v
+    }
+    fn all_gather<T: CommScalar>(&self, x: T) -> Vec<T> {
+        let p = self.size();
+        let send = vec![x; p];
+        let mut recv = vec![x; p];
+        let ones = vec![1; p];
+        self.all_to_all_v_bytes(
+            bytemuck::cast_slice(&send),
+            &ones,
+            bytemuck::cast_slice_mut(&mut recv),
+            &ones,
+            T::DTYPE,
+        )
+        .expect("all_gather: one element per rank always fits");
+        recv
+    }
+    fn all_to_all_v<T: CommScalar>(
+        &self,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)> {
+        let p = self.size();
+        check_counts(send, send_counts, p)?;
+        let ones = vec![1; p];
+        let recv_counts = exchange_counts(send_counts, p, |s, r| {
+            self.all_to_all_v_bytes(s, &ones, r, &ones, DType::U64)
+        })?;
+        let mut recv = vec![T::zeroed(); total(&recv_counts)?];
+        self.all_to_all_v_bytes(
+            bytemuck::cast_slice(send),
+            send_counts,
+            bytemuck::cast_slice_mut(&mut recv),
+            &recv_counts,
+            T::DTYPE,
+        )?;
+        Ok((recv, recv_counts))
+    }
+    fn neighbour_all_to_all_v<T: CommScalar>(
+        &self,
+        nb: &Neighbourhood,
+        send: &[T],
+        send_counts: &[usize],
+    ) -> Result<(Vec<T>, Vec<usize>)> {
+        check_counts(send, send_counts, nb.destinations().len())?;
+        let out_ones = vec![1; nb.destinations().len()];
+        let in_ones = vec![1; nb.sources().len()];
+        let recv_counts = exchange_counts(send_counts, nb.sources().len(), |s, r| {
+            self.neighbour_all_to_all_v_bytes(nb, s, &out_ones, r, &in_ones, DType::U64)
+        })?;
+        let mut recv = vec![T::zeroed(); total(&recv_counts)?];
+        self.neighbour_all_to_all_v_bytes(
+            nb,
+            bytemuck::cast_slice(send),
+            send_counts,
+            bytemuck::cast_slice_mut(&mut recv),
+            &recv_counts,
+            T::DTYPE,
+        )?;
+        Ok((recv, recv_counts))
+    }
+}
+
+/// `LengthMismatch` unless there are `n` counts and they add up to `send.len()`; `TooLarge`
+/// if the sum overflows.
+fn check_counts<T>(send: &[T], send_counts: &[usize], n: usize) -> Result<()> {
+    if send_counts.len() != n {
+        return Err(GridError::LengthMismatch {
+            expected: n,
+            found: send_counts.len(),
+        });
+    }
+    let sum = total(send_counts)?;
+    if sum != send.len() {
+        return Err(GridError::LengthMismatch {
+            expected: sum,
+            found: send.len(),
+        });
+    }
+    Ok(())
+}
+
+/// The sum of `counts`; `TooLarge` on overflow.
+fn total(counts: &[usize]) -> Result<usize> {
+    counts
+        .iter()
+        .try_fold(0_usize, |a, &c| a.checked_add(c))
+        .ok_or(GridError::TooLarge)
+}
+
+/// Sends one u64 count per peer through `exchange` (one element to and from each peer) and
+/// returns the `num_sources` counts received.
+fn exchange_counts(
+    send_counts: &[usize],
+    num_sources: usize,
+    exchange: impl FnOnce(&[u8], &mut [u8]) -> Result<()>,
+) -> Result<Vec<usize>> {
+    let send: Vec<u64> = send_counts.iter().map(|&c| c as u64).collect();
+    let mut recv = vec![0_u64; num_sources];
+    exchange(
+        bytemuck::cast_slice(&send),
+        bytemuck::cast_slice_mut(&mut recv),
+    )?;
+    recv.into_iter()
+        .map(|c| usize::try_from(c).map_err(|_| GridError::TooLarge))
+        .collect()
+}
+
+/// The agreed result of a collective step (ADR-0026, item 15): every rank learns the lowest
+/// failing rank. That rank, and every other failing rank, returns its own error; the others
+/// return `RemoteFailure { rank }`. Collective.
+pub(crate) fn agree<T>(comm: &dyn CommDyn, local: Result<T>) -> Result<T> {
+    let mine = if local.is_err() {
+        comm.rank() as u64
+    } else {
+        u64::MAX
+    };
+    let mut lowest = mine;
+    comm.all_reduce_bytes(
+        bytemuck::bytes_of_mut(&mut lowest),
+        DType::U64,
+        ReduceOp::Min,
+    );
+    match local {
+        Err(e) => Err(e),
+        Ok(_) if lowest != u64::MAX => Err(GridError::RemoteFailure {
+            rank: lowest as usize,
+        }),
+        Ok(v) => Ok(v),
     }
 }
 
@@ -261,21 +460,32 @@ impl CommScalar for f64 {
     const DTYPE: DType = DType::F64;
 }
 
-/// Source and destination ranks of a distributed-graph communicator. Opaque; Serial accepts
-/// only the empty one. M6 adds construction over a graph communicator.
+/// Source and destination ranks of a distributed-graph communicator, with the communicator it
+/// was made on (ADR-0026). Opaque; Serial accepts only the empty one.
+///
+/// Under `Mpi` it owns a distributed-graph communicator, and dropping it is collective
+/// (`MPI_Comm_free`): every rank of the communicator drops its neighbourhoods in the same order.
 ///
 /// # Example
 ///
 /// ```
-/// use gridcl_parallel::Neighbourhood;
+/// use gridcl_parallel::{Neighbourhood, Serial};
 ///
 /// let nb = Neighbourhood::empty();
 /// assert!(nb.sources().is_empty());
 /// assert!(nb.destinations().is_empty());
+/// // Serial has no other rank to name.
+/// assert!(Neighbourhood::new(&Serial, vec![], vec![]).is_ok());
+/// assert!(Neighbourhood::new(&Serial, vec![0], vec![]).is_err());
 /// ```
 pub struct Neighbourhood {
     sources: Vec<usize>,
     destinations: Vec<usize>,
+    /// The parent communicator; `None` for [`Neighbourhood::empty`].
+    comm: Option<Rc<dyn CommDyn>>,
+    /// The distributed-graph communicator, when the parent has an MPI handle.
+    #[cfg(feature = "mpi")]
+    graph: Option<Rc<crate::graph::GraphComm>>,
 }
 
 impl Neighbourhood {
@@ -293,7 +503,84 @@ impl Neighbourhood {
         Neighbourhood {
             sources: Vec::new(),
             destinations: Vec::new(),
+            comm: None,
+            #[cfg(feature = "mpi")]
+            graph: None,
         }
+    }
+    /// The neighbourhood of `comm` in which this rank receives from `sources` and sends to
+    /// `destinations`. Collective; every rank's lists must be the transpose of the others'.
+    /// With `comm.raw()` = `Some` it creates the graph communicator by
+    /// `MPI_Dist_graph_create_adjacent` (unweighted, `reorder = 0`); otherwise it keeps the rank
+    /// lists. It holds `comm.duplicate()` for the exchanges (ADR-0026).
+    ///
+    /// # Errors
+    ///
+    /// Agreed over the ranks (ADR-0026, item 15): `IndexOutOfRange` if a rank is not below
+    /// `comm.size()` or is this rank (so `Serial` accepts only empty lists), `LengthMismatch`
+    /// if a list repeats a rank (expected: the distinct count); `RemoteFailure` on the other
+    /// ranks.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{GridError, Neighbourhood, Serial};
+    ///
+    /// let nb = Neighbourhood::new(&Serial, vec![], vec![])?;
+    /// assert!(nb.sources().is_empty());
+    /// let err = Neighbourhood::new(&Serial, vec![], vec![0]);
+    /// assert!(matches!(err, Err(GridError::IndexOutOfRange { index: 0, len: 1 })));
+    /// # Ok::<(), GridError>(())
+    /// ```
+    pub fn new(comm: &dyn CommDyn, sources: Vec<usize>, destinations: Vec<usize>) -> Result<Self> {
+        let check = |ranks: &[usize]| -> Result<()> {
+            if let Some(&r) = ranks
+                .iter()
+                .find(|&&r| r >= comm.size() || r == comm.rank())
+            {
+                return Err(GridError::IndexOutOfRange {
+                    index: r,
+                    len: comm.size(),
+                });
+            }
+            let mut sorted = ranks.to_vec();
+            sorted.sort_unstable();
+            sorted.dedup();
+            if sorted.len() != ranks.len() {
+                return Err(GridError::LengthMismatch {
+                    expected: sorted.len(),
+                    found: ranks.len(),
+                });
+            }
+            Ok(())
+        };
+        let local = check(&sources).and_then(|()| check(&destinations));
+        agree(comm, local)?;
+        #[cfg(feature = "mpi")]
+        let graph = match comm.raw() {
+            Some(raw) => Some(Rc::new(crate::graph::GraphComm::create(
+                raw,
+                &sources,
+                &destinations,
+            )?)),
+            None => None,
+        };
+        Ok(Neighbourhood {
+            sources,
+            destinations,
+            comm: Some(comm.duplicate()),
+            #[cfg(feature = "mpi")]
+            graph,
+        })
+    }
+    /// The distributed-graph communicator; `None` unless made on an MPI communicator.
+    #[cfg(feature = "mpi")]
+    pub(crate) fn graph(&self) -> Option<&crate::graph::GraphComm> {
+        self.graph.as_deref()
+    }
+    /// The communicator the neighbourhood was made on; `None` for [`Neighbourhood::empty`].
+    pub(crate) fn comm(&self) -> Option<&Rc<dyn CommDyn>> {
+        self.comm.as_ref()
     }
     /// A neighbourhood with the given ranks, for tests of the empty-only rule.
     #[cfg(test)]
@@ -301,6 +588,9 @@ impl Neighbourhood {
         Neighbourhood {
             sources,
             destinations,
+            comm: None,
+            #[cfg(feature = "mpi")]
+            graph: None,
         }
     }
     /// The ranks this rank receives from.
