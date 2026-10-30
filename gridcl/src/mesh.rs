@@ -52,6 +52,9 @@ use crate::{EntityMap, TagRegistry};
 /// # }
 /// # Ok::<(), gridcl::GridError>(())
 /// ```
+///
+/// Dropping a distributed mesh is collective: it frees the MPI communicators of its index
+/// maps (see [`IndexMap`](crate::IndexMap)), so every rank drops its meshes in the same order.
 pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     client: Client,
     comm: C,

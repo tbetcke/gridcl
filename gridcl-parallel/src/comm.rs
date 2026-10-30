@@ -463,6 +463,9 @@ impl CommScalar for f64 {
 /// Source and destination ranks of a distributed-graph communicator, with the communicator it
 /// was made on (ADR-0026). Opaque; Serial accepts only the empty one.
 ///
+/// Under `Mpi` it owns a distributed-graph communicator, and dropping it is collective
+/// (`MPI_Comm_free`): every rank of the communicator drops its neighbourhoods in the same order.
+///
 /// # Example
 ///
 /// ```

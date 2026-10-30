@@ -11,6 +11,10 @@ use crate::{CommDyn, CommExt, DType, GridError, Neighbourhood, ReduceOp, Result,
 
 /// Ownership of a distributed index set in the DOLFINx sense: `[owned | ghost]` local indices.
 ///
+/// Dropping the last clone of a map with ghosts under `Mpi` frees the communicators of its
+/// neighbourhoods, which MPI makes collective (`MPI_Comm_free`): every rank drops its
+/// distributed maps, and the meshes that hold them, in the same order.
+///
 /// # Example
 ///
 /// ```

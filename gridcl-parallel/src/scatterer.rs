@@ -278,18 +278,29 @@ impl Scatterer {
             return Ok(None);
         };
         let client = x.client();
-        let mut packed = DeviceBuffer::<T>::uninit(client, idx.len() * self.block)?;
+        let packed_len = idx
+            .len()
+            .checked_mul(self.block)
+            .ok_or(GridError::TooLarge)?;
+        let mut packed = DeviceBuffer::<T>::uninit(client, packed_len)?;
         pack(x, idx, self.block, &mut packed)?;
         let send = packed.to_host()?;
         // Counts in u32 words.
-        let per_block = self.block * size_of::<T>() / 4;
+        let per_block = self
+            .block
+            .checked_mul(size_of::<T>() / 4)
+            .ok_or(GridError::TooLarge)?;
         let words = |counts: &[usize]| -> Result<Vec<usize>> {
             counts
                 .iter()
                 .map(|&c| c.checked_mul(per_block).ok_or(GridError::TooLarge))
                 .collect()
         };
-        let total: usize = recv_counts.iter().sum::<usize>() * self.block;
+        let total = recv_counts
+            .iter()
+            .try_fold(0_usize, |s, &c| s.checked_add(c))
+            .and_then(|n| n.checked_mul(self.block))
+            .ok_or(GridError::TooLarge)?;
         let mut recv = vec![<T as bytemuck::Zeroable>::zeroed(); total];
         comm.neighbour_all_to_all_v_bytes(
             nb,

@@ -237,7 +237,6 @@ impl From<ServerError> for GridError {
 mod tests {
     use super::GridError;
 
-    /// The `Display` lines of the M4 variants (ADR-0022).
     /// The `Display` lines of the M6 variants (ADR-0026).
     #[test]
     fn m6_variants_display() {
@@ -251,6 +250,7 @@ mod tests {
         );
     }
 
+    /// The `Display` lines of the M4 variants (ADR-0022).
     #[test]
     fn m4_variants_display() {
         let cases = [
