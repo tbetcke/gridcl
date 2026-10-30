@@ -39,7 +39,8 @@ If the milestone is empty, ask the user which milestone to implement.
    result before starting a task that depends on this one, and fix failures before
    `Status: implemented`.
 5. **Commit** with the message `<milestone> T<n>: <summary>`, in the same commit tick the
-   task (`- [x]`) in the plan and add any Deviations-log row.
+   task (`- [x]`) in the plan and add any Deviations-log row. Then tick the task in the
+   milestone's GitHub issue (the plan's **Issue** line; command in CLAUDE.md, Workflow).
 6. **Context:** after each task, if the conversation is long or the next task touches other
    crates, tell the user to run `/clear` and then `/implement-milestone <milestone>`; the plan
    is enough to resume.
@@ -74,5 +75,6 @@ When every task is ticked:
    gridcl-parallel or later crates, and conformance if gridcl-refcell or conformance/ changed.
 2. Fix failures as new tasks or as commits to the task they belong to (note them in the
    Deviations log).
-3. Set `Status: implemented` in the plan, commit, and tell the user to run
-   `/review-milestone <milestone>` in a fresh session.
+3. Set `Status: implemented` in the plan, commit, update the plan status in the milestone
+   issue's **Plan** line, and tell the user to run `/review-milestone <milestone>` in a
+   fresh session.

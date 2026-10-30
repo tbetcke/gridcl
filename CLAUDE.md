@@ -71,6 +71,12 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
 - Use the test-runner subagent for full-suite, multi-backend and MPI runs, so logs stay out of
   the main context. Use the design-reviewer subagent before a plan is approved and before a
   milestone PR.
+- Every roadmap milestone has a GitHub issue titled `<milestone> <name>` (label `enhancement`),
+  named in its plan's **Issue** line. Keep it in step with the plan: tick a task in the issue
+  after its commit; when an accepted ADR changes a milestone's scope or acceptance, update the
+  issue text and comment with the ADR; tick the acceptance boxes at the review; the milestone PR
+  says `Closes #<n>`. Tick a box with
+  `gh issue view <n> --json body -q .body | sed 's/- \[ \] T<k> /- [x] T<k> /' | gh issue edit <n> --body-file -`.
 - Claude may push branches and merge into main. Never force-push or rewrite history.
 
 ## Test targets

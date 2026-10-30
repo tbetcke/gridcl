@@ -72,7 +72,10 @@ Wait for approval. If the user changes the plan, revise and present it again.
 
 1. Write `docs/plans/<milestone>.md` with `Status: approved` if every open question is
    answered, otherwise `Status: draft`.
-2. Fill in the branch and base commit (`git merge-base HEAD main`).
+2. Fill in the branch, the base commit (`git merge-base HEAD main`) and the **Issue** line:
+   the milestone's GitHub issue (`gh issue list --search "<milestone> in:title" --state all`;
+   create it with label `enhancement` from the roadmap section if it is missing). Add the
+   plan's tasks to the issue as a "Tasks" checklist and link the plan in its **Plan** line.
 3. Commit with the message `plan: <milestone>`.
 4. Stop. Tell the user the next step: resolve any open questions or ADR candidates
    (`/draft-adr`), then start a fresh session and run `/implement-milestone <milestone>`.

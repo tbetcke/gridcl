@@ -54,7 +54,10 @@ counted as missing.
     - a summary;
     - the acceptance criteria with their tests and results;
     - deviations and ADRs;
-    - targets and backends not tested, and why.
+    - targets and backends not tested, and why;
+    - `Closes #<n>` with the milestone issue from the plan's **Issue** line.
+
+   Tick the acceptance boxes in the milestone issue whose tests passed.
 4. Tell the user the next steps: push the branch, open the PR, merge after CI passes, then
    set `Status: done` in the plan on main. Offer to do these steps; do them only when the
    user agrees.
