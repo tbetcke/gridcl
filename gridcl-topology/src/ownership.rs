@@ -1,11 +1,13 @@
-//! Entity creation, step 6: the owners of the entities whose vertices are all shared
-//! (docs/design.md, "Ownership of vertices and entities"; ADR-0026, items 8, 9 and 14).
+//! Entity creation, step 6, and the exchange of step 8: the owners of the entities whose
+//! vertices are all shared, and the global numbers of the ghosts among them (docs/design.md,
+//! "Ownership of vertices and entities"; ADR-0026, items 8, 9 and 14).
 //!
 //! A scalar kernel marks the sharing candidates, which are compacted on the device; their
 //! local vertices, origin-id keys and owned-cell flags go to the host with one count read. The
 //! keys are sent to every rank in the intersection of their vertices' sharer sets, which reply
-//! whether they hold the entity in an owned cell, and the owner is the holder at position
-//! `owner_hash(key) mod n` among the owned-cell holders.
+//! whether they hold the entity, and in an owned cell, and the owner is the holder at position
+//! `owner_hash(key) mod n` among the owned-cell holders. Once the owners have numbered their
+//! entities, each sends the global numbers to the other holders (forward direction).
 
 use std::collections::HashMap;
 
@@ -70,10 +72,70 @@ impl Candidates {
 
 /// The owner rank of each candidate of one entity type; every other entity of the type is
 /// owned by this rank.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Ownership {
     pub(crate) candidates: Candidates,
     pub(crate) owners: Vec<i32>,
+    /// The other ranks that hold each candidate, in any cell, ascending.
+    pub(crate) holders: Vec<Vec<i32>>,
+}
+
+impl Ownership {
+    /// No candidates of entities with `words` vertices: every entity is owned here.
+    pub(crate) fn none(words: usize) -> Self {
+        Ownership {
+            candidates: Candidates::none(words),
+            ..Ownership::default()
+        }
+    }
+
+    /// The provisional ids of the candidates owned by another rank, ascending.
+    pub(crate) fn ghosts(&self, me: i32) -> Vec<u32> {
+        self.candidates
+            .entities
+            .iter()
+            .zip(&self.owners)
+            .filter(|&(_, &o)| o != me)
+            .map(|(&g, _)| g)
+            .collect()
+    }
+}
+
+/// The sharing neighbourhood of a topology: the ranks, other than this one, that share a
+/// vertex with it, ascending, and the neighbourhood over them in both directions.
+pub(crate) struct SharingExchange {
+    nb: Neighbourhood,
+    neighbours: Vec<usize>,
+    slot: HashMap<usize, usize>,
+}
+
+impl SharingExchange {
+    /// The exchange over the sharing ranks of `sharing` (none without sharers). Collective.
+    ///
+    /// # Errors
+    ///
+    /// Errors of `Neighbourhood::new`.
+    pub(crate) fn new(comm: &dyn CommDyn, sharing: Option<Sharing<'_>>) -> Result<Self> {
+        let me = comm.rank() as i32;
+        let neighbours: Vec<usize> = sharing
+            .map(|s| s.ranks)
+            .unwrap_or_default()
+            .iter()
+            .filter(|&&r| r != me)
+            .map(|&r| r as usize)
+            .collect();
+        let nb = Neighbourhood::new(comm, neighbours.clone(), neighbours.clone())?;
+        let slot = neighbours
+            .iter()
+            .enumerate()
+            .map(|(i, &r)| (r, i))
+            .collect();
+        Ok(SharingExchange {
+            nb,
+            neighbours,
+            slot,
+        })
+    }
 }
 
 /// `flags[g] = 1` if every vertex of provisional entity g < count is shared, else 0. The
@@ -270,9 +332,9 @@ const HELD_IN_OWNED: i32 = 2;
 /// calls it once per dimension, with its candidates of every type (in any type order).
 ///
 /// Each candidate's key goes to every other rank in the intersection of its vertices' sharer
-/// sets, over the sharing neighbourhood; the reply says whether that rank holds the entity in
-/// an owned cell. Keys are prefixed with their length, which identifies the entity type within
-/// a dimension.
+/// sets, over the sharing neighbourhood `ex`; the reply says whether that rank holds the
+/// entity, and whether in an owned cell. Keys are prefixed with their length, which
+/// identifies the entity type within a dimension.
 ///
 /// # Errors
 ///
@@ -284,23 +346,16 @@ const HELD_IN_OWNED: i32 = 2;
 /// not consistent across ranks.
 pub(crate) fn owners(
     comm: &dyn CommDyn,
+    ex: &SharingExchange,
     sharing: Option<Sharing<'_>>,
     types: Vec<Candidates>,
 ) -> Result<Vec<Ownership>> {
     let me = comm.rank() as i32;
-    let neighbours: Vec<usize> = sharing
-        .map(|s| s.ranks)
-        .unwrap_or_default()
-        .iter()
-        .filter(|&&r| r != me)
-        .map(|&r| r as usize)
-        .collect();
-    let nb = Neighbourhood::new(comm, neighbours.clone(), neighbours.clone())?;
-    let slot: HashMap<usize, usize> = neighbours
-        .iter()
-        .enumerate()
-        .map(|(i, &r)| (r, i))
-        .collect();
+    let SharingExchange {
+        nb,
+        neighbours,
+        slot,
+    } = ex;
 
     // Queries: per neighbour, the keys and the (type, candidate) they ask about.
     let mut queries: Vec<Vec<i64>> = vec![Vec::new(); neighbours.len()];
@@ -326,7 +381,7 @@ pub(crate) fn owners(
     }
     let counts: Vec<usize> = queries.iter().map(Vec::len).collect();
     let (received, received_counts) =
-        comm.neighbour_all_to_all_v(&nb, &queries.concat(), &counts)?;
+        comm.neighbour_all_to_all_v(nb, &queries.concat(), &counts)?;
 
     // Replies, in the order of the queries of each source.
     let mut lookup: HashMap<&[i64], (usize, usize)> = HashMap::new();
@@ -353,9 +408,11 @@ pub(crate) fn owners(
         }
         reply_counts.push(replies.len() - before);
     }
-    let (answers, answer_counts) = comm.neighbour_all_to_all_v(&nb, &replies, &reply_counts)?;
+    let (answers, answer_counts) = comm.neighbour_all_to_all_v(nb, &replies, &reply_counts)?;
 
-    // The owned-cell holders of each candidate, ascending, and the owner among them.
+    // The owned-cell holders of each candidate, ascending, and the owner among them; the
+    // other holders, ascending (neighbours are ascending).
+    let mut others: Vec<Vec<Vec<i32>>> = types.iter().map(|c| vec![Vec::new(); c.len()]).collect();
     let mut holders: Vec<Vec<Vec<i32>>> = types
         .iter()
         .map(|c| {
@@ -371,13 +428,17 @@ pub(crate) fn owners(
             if a == HELD_IN_OWNED {
                 holders[t][i].push(neighbours[k] as i32);
             }
+            if a != NOT_HELD {
+                others[t][i].push(neighbours[k] as i32);
+            }
         }
         at += n;
     }
     Ok(types
         .into_iter()
         .zip(holders)
-        .map(|(c, holders)| {
+        .zip(others)
+        .map(|((c, holders), others)| {
             let owners = holders
                 .into_iter()
                 .enumerate()
@@ -394,9 +455,82 @@ pub(crate) fn owners(
             Ownership {
                 candidates: c,
                 owners,
+                holders: others,
             }
         })
         .collect())
+}
+
+/// The global number of every candidate of every entity type, given those of the candidates
+/// this rank owns (`owned[t][i]`; other entries are ignored). Collective, like [`owners`]:
+/// each owner sends the length-prefixed key and global number of its candidates to their other
+/// holders, over the sharing neighbourhood `ex`.
+///
+/// # Errors
+///
+/// The communicator's errors.
+///
+/// # Panics
+///
+/// If a ghost candidate receives no number, which happens only if the vertex sharers are not
+/// consistent across ranks.
+pub(crate) fn global_numbers(
+    comm: &dyn CommDyn,
+    ex: &SharingExchange,
+    types: &[Ownership],
+    owned: &[Vec<i64>],
+) -> Result<Vec<Vec<i64>>> {
+    let me = comm.rank() as i32;
+    let mut sends: Vec<Vec<i64>> = vec![Vec::new(); ex.neighbours.len()];
+    for (o, globals) in types.iter().zip(owned) {
+        let c = &o.candidates;
+        for i in (0..c.len()).filter(|&i| o.owners[i] == me) {
+            for r in &o.holders[i] {
+                let send = &mut sends[ex.slot[&(*r as usize)]];
+                send.push(c.words as i64);
+                send.extend_from_slice(c.key(i));
+                send.push(globals[i]);
+            }
+        }
+    }
+    let counts: Vec<usize> = sends.iter().map(Vec::len).collect();
+    let (received, _) = comm.neighbour_all_to_all_v(&ex.nb, &sends.concat(), &counts)?;
+
+    let mut lookup: HashMap<&[i64], (usize, usize)> = HashMap::new();
+    for (t, o) in types.iter().enumerate() {
+        for i in 0..o.candidates.len() {
+            lookup.insert(o.candidates.key(i), (t, i));
+        }
+    }
+    let mut out: Vec<Vec<i64>> = types
+        .iter()
+        .zip(owned)
+        .map(|(o, globals)| {
+            (0..o.candidates.len())
+                .map(|i| if o.owners[i] == me { globals[i] } else { -1 })
+                .collect()
+        })
+        .collect();
+    let mut at = 0;
+    while at < received.len() {
+        let words = received[at] as usize;
+        let key = &received[at + 1..at + 1 + words];
+        // Only the other holders receive, so the key is a candidate here.
+        let &(t, i) = lookup
+            .get(key)
+            .expect("a received key is a local candidate");
+        out[t][i] = received[at + 1 + words];
+        at += 2 + words;
+    }
+    for (o, globals) in types.iter().zip(&out) {
+        if let Some(i) = globals.iter().position(|&g| g < 0) {
+            panic!(
+                "ghost entity {:?} received no global number: inconsistent vertex sharers",
+                o.candidates.key(i)
+            );
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -570,51 +704,80 @@ mod tests {
     }
 
     /// Creates the entities of every dimension 1 ≤ d < tdim on this rank and checks each
-    /// local entity's owner against the rules, and that the owned entities of all ranks are
-    /// the global entities, each once.
+    /// local entity's owner, from its index map, against the rules; that the owned entities of
+    /// all ranks are the global entities, each once, numbered 0, 1, … globally; that every
+    /// ghost has its owner's global number; and that ghosts are ordered by (owner, global).
     fn check<TD: TopoDim>(comm: &ThreadComm, spread: &Spread, at: &str) {
         let me = comm.rank();
         let (t, vertex_ids) = spread.topology::<TD>(comm);
         for dim in 1..TD::N {
             let want = spread.owners(dim);
-            let crate::entity::Dimension {
-                blocks, ownership, ..
-            } = crate::entity::create_dimension(t.client(), comm, &t.entity_cells(), dim).unwrap();
-            let mut owner_of: HashMap<Vec<i64>, usize> = HashMap::new();
-            for o in &ownership {
-                for (i, &q) in o.owners.iter().enumerate() {
-                    owner_of.insert(o.candidates.key(i).to_vec(), q as usize);
-                }
-            }
-            let mut owned = 0i64;
+            let crate::entity::Dimension { blocks, .. } =
+                crate::entity::create_dimension(t.client(), comm, &t.entity_cells(), dim).unwrap();
             let mut ghosts = 0i64;
+            let mut global = 0i64;
             for block in &blocks {
+                let map = &block.index_map;
                 let stride = block.vertices.stride as usize;
-                for row in block.vertices.data.to_host().unwrap().chunks_exact(stride) {
+                let rows = block.vertices.data.to_host().unwrap();
+                assert_eq!(rows.len(), map.num_local() * stride, "{at}, dim {dim}");
+                let order: Vec<(i32, i64)> = map
+                    .ghost_owners()
+                    .iter()
+                    .copied()
+                    .zip(map.ghosts().iter().copied())
+                    .collect();
+                assert!(order.is_sorted(), "{at}, rank {me}, dim {dim}: ghost order");
+                // Per entity: global number, owned flag, key.
+                let mut flat = Vec::new();
+                for (e, row) in rows.chunks_exact(stride).enumerate() {
                     let mut key: Vec<i64> = row.iter().map(|&v| vertex_ids[v as usize]).collect();
                     key.sort_unstable();
-                    let got = owner_of.get(&key).copied().unwrap_or(me);
+                    let (got, g) = match e.checked_sub(map.num_owned()) {
+                        None => (me, map.owned_range().0 + e as i64),
+                        Some(k) => (map.ghost_owners()[k] as usize, map.ghosts()[k]),
+                    };
                     assert_eq!(
                         got, want[&key],
                         "{at}, rank {me}, dim {dim}: owner of {key:?}"
                     );
-                    owned += i64::from(got == me);
                     ghosts += i64::from(got != me);
+                    flat.push(g);
+                    flat.push(i64::from(got == me));
+                    flat.extend_from_slice(&key);
                 }
+                let all = gridcl_testing::parallel::gather_to_root(comm, &flat).unwrap();
+                if me == 0 {
+                    let mut numbers: BTreeMap<Vec<i64>, i64> = BTreeMap::new();
+                    for row in all.chunks_exact(2 + stride).filter(|r| r[1] == 1) {
+                        assert!(
+                            numbers.insert(row[2..].to_vec(), row[0]).is_none(),
+                            "{at}, dim {dim}: {:?} owned twice",
+                            &row[2..]
+                        );
+                    }
+                    let mut owned: Vec<i64> = numbers.values().copied().collect();
+                    owned.sort_unstable();
+                    assert!(
+                        owned.iter().copied().eq(0..map.size_global()),
+                        "{at}, dim {dim}: global numbers"
+                    );
+                    for row in all.chunks_exact(2 + stride).filter(|r| r[1] == 0) {
+                        assert_eq!(
+                            numbers[&row[2..]],
+                            row[0],
+                            "{at}, dim {dim}: global number of ghost {:?}",
+                            &row[2..]
+                        );
+                    }
+                }
+                global += map.size_global();
             }
             // Every multi-rank case shares entities, and some are ghosts somewhere.
-            let found = comm.sum(owner_of.len() as i64);
             if comm.size() > 1 {
-                assert!(
-                    found > 0 && comm.sum(ghosts) > 0,
-                    "{at}, dim {dim}: no sharing"
-                );
+                assert!(comm.sum(ghosts) > 0, "{at}, dim {dim}: no ghosts");
             }
-            assert_eq!(
-                comm.sum(owned),
-                want.len() as i64,
-                "{at}, dim {dim}: owned entities"
-            );
+            assert_eq!(global, want.len() as i64, "{at}, dim {dim}: entity count");
         }
     }
 
@@ -664,18 +827,19 @@ mod tests {
         });
     }
 
-    /// On one rank there are no candidates and no exchange, even with sharers.
+    /// On one rank there are no candidates, even with sharers: every entity is owned.
     #[test]
     fn no_candidates_on_one_rank() {
         let (_, d3) = meshes();
         ThreadComm::run(1, |comm| {
             let (t, _) = Spread::new(&d3[0], 1, true).topology::<D3>(&comm);
+            assert!(t.entity_cells().sharing.is_some());
             for dim in 1..3 {
-                let ownership =
+                let blocks =
                     crate::entity::create_dimension(t.client(), &comm, &t.entity_cells(), dim)
                         .unwrap()
-                        .ownership;
-                assert!(ownership.is_empty());
+                        .blocks;
+                assert!(blocks.iter().all(|b| b.index_map.num_ghosts() == 0));
             }
         });
     }

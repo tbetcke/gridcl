@@ -1,13 +1,15 @@
-//! Entity creation, step 7: entities ordered by the smallest flat cell index that touches
-//! them, owned cells first, applied to entity → vertex and cell → entity.
+//! Entity creation, step 7: owned entities ordered by the smallest flat cell index that touches
+//! them, then the ghosts by (owner rank, global index), applied to entity → vertex and
+//! cell → entity.
 
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, GridError, KernelKind, LaunchPlan, ReduceOp, Result, SortKeys,
-    debug_assert_bindings, fill, radix_sort, run_length, scatter, segmented_reduce,
+    debug_assert_bindings, fill, gather, radix_sort, run_length, scatter, segmented_reduce,
 };
 
 use crate::emission::EmissionPlan;
+use crate::ownership::GHOST_CELL;
 
 /// `out[i] = i` for `i < len`.
 #[cube(launch_unchecked)]
@@ -162,21 +164,58 @@ pub(crate) fn touching_cells(
     segmented_reduce(&values, &offsets, ReduceOp::Min)
 }
 
-/// Step 7 (every entity owned until T14): the renumbering `old2new` of the `runs` provisional
-/// entities of one type, by their smallest touching-cell value `mins` ([`touching_cells`]):
-/// entities in an owned cell first, by their smallest owned cell, then those only in ghost
-/// cells, by their smallest cell; ties in provisional order (a stable sort). On one rank every
-/// cell is owned, so entities are ordered by the smallest flat cell index that touches them,
-/// and the sentinel group comes last.
+/// Step 7, first pass: the renumbering `old2new` of the `runs` provisional entities of one
+/// type that places the owned ones, by their smallest touching-cell value `mins`
+/// ([`touching_cells`]): entities in an owned cell first, by their smallest owned cell, then
+/// those only in ghost cells, by their smallest cell; ties in provisional order (a stable
+/// sort). The provisional ids `ghosts` (ascending), owned by other ranks, follow every owned
+/// entity, in provisional order, until [`place_ghosts`] orders them. An owned entity lies in
+/// an owned cell, so with ghosts the owned entities come first; on one rank every cell is
+/// owned, so entities are ordered by the smallest flat cell index that touches them. The
+/// sentinel group comes last.
 pub(crate) fn renumber(
     client: &Client,
-    mins: &DeviceBuffer<u32>,
+    mut mins: DeviceBuffer<u32>,
     runs: usize,
+    ghosts: &[u32],
 ) -> Result<DeviceBuffer<u32>> {
-    let keys = one_word_keys(mins)?;
+    if !ghosts.is_empty() {
+        // The ghosts' owners and global numbers back (ADR-0026, item 14).
+        let idx = DeviceBuffer::from_host(client, ghosts)?;
+        let mut last = DeviceBuffer::<u32>::uninit(client, ghosts.len())?;
+        fill(&mut last, GHOST_CELL)?;
+        scatter(&last, &idx, &mut mins)?;
+    }
+    let keys = one_word_keys(&mins)?;
     let ids = iota(client, runs)?;
     let (_, new2old) = radix_sort(&keys, &ids)?;
     let mut old2new = DeviceBuffer::<u32>::uninit(client, runs)?;
     scatter(&ids, &new2old, &mut old2new)?;
     Ok(old2new)
+}
+
+/// Step 7, second pass: `old2new[ghosts[k]] = new[k]`, the ghosts' final local indices.
+pub(crate) fn place_ghosts(
+    old2new: &mut DeviceBuffer<u32>,
+    ghosts: &[u32],
+    new: &[u32],
+) -> Result<()> {
+    if ghosts.is_empty() {
+        return Ok(());
+    }
+    // Global numbers back (ADR-0026, item 14).
+    let client = old2new.client().clone();
+    let idx = DeviceBuffer::from_host(&client, ghosts)?;
+    let new = DeviceBuffer::from_host(&client, new)?;
+    scatter(&new, &idx, old2new)
+}
+
+/// `old2new[g]` for the provisional ids `g` in `entities`, on the host: the local indices of
+/// the owned sharing candidates, which their global numbers need (ADR-0026, item 14).
+pub(crate) fn local_indices(old2new: &DeviceBuffer<u32>, entities: &[u32]) -> Result<Vec<u32>> {
+    if entities.is_empty() {
+        return Ok(Vec::new());
+    }
+    let idx = DeviceBuffer::from_host(old2new.client(), entities)?;
+    gather(old2new, &idx)?.to_host()
 }

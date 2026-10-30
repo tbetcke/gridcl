@@ -293,6 +293,10 @@ impl<TD: TopoDim> Topology<TD> {
     /// Entities whose vertices are all shared ([`set_vertex_sharers`](Topology::set_vertex_sharers))
     /// get their owners by an exchange over the sharing neighbourhood (docs/design.md,
     /// "Ownership of vertices and entities"), and errors are agreed (ADR-0026, item 15).
+    /// Each entity block is numbered [owned | ghost]: owned entities by their smallest touching
+    /// cell, ghosts by (owner rank, global index), with global numbers from an exclusive scan
+    /// of the owned counts and, for ghosts, from their owners. The dimension-0 `Point` block
+    /// shares the vertex index map.
     ///
     /// # Errors
     ///
@@ -302,8 +306,9 @@ impl<TD: TopoDim> Topology<TD> {
     ///
     /// # Panics
     ///
-    /// If an entity whose vertices are all shared has no holder in an owned cell, which
-    /// happens only if the vertex sharers are not consistent across ranks.
+    /// If an entity whose vertices are all shared has no holder in an owned cell, or a ghost
+    /// entity receives no global number, which happens only if the vertex sharers are not
+    /// consistent across ranks.
     pub fn create_entities(&mut self, comm: &dyn CommDyn, dim: usize) -> Result<()> {
         if dim >= TD::N {
             return Err(GridError::EntitiesNotCreated(dim));
@@ -312,11 +317,11 @@ impl<TD: TopoDim> Topology<TD> {
             return Ok(());
         }
         if dim == 0 {
-            // One Point block of the vertices.
+            // One Point block of the vertices, with the vertex index map.
             let n = self.vertex_index_map.num_local();
             let block = EntityBlock {
                 cell: CellType::Point,
-                index_map: IndexMap::new(comm, n)?,
+                index_map: self.vertex_index_map.clone(),
                 vertices: DeviceStrided {
                     data: crate::renumber::iota(&self.client, n)?,
                     stride: 1,
@@ -326,9 +331,8 @@ impl<TD: TopoDim> Topology<TD> {
             self.entities[0] = Some(vec![block]);
             return Ok(());
         }
-        let crate::entity::Dimension {
-            blocks, downward, ..
-        } = crate::entity::create_dimension(&self.client, comm, &self.entity_cells(), dim)?;
+        let crate::entity::Dimension { blocks, downward } =
+            crate::entity::create_dimension(&self.client, comm, &self.entity_cells(), dim)?;
         self.entities[dim] = Some(blocks);
         self.connectivity.insert(
             ConnKey {

@@ -1,5 +1,5 @@
-//! Entity creation, steps 3–7: sort, unique, ownership (`crate::ownership`), renumbering and
-//! canonical vertex lists; `EntityBlock` and `Connectivity` (Listing T1).
+//! Entity creation, steps 3–8: sort, unique, ownership (`crate::ownership`), renumbering,
+//! canonical vertex lists and global numbers; `EntityBlock` and `Connectivity` (Listing T1).
 
 use cubecl::prelude::*;
 use gridcl_device::{
@@ -7,11 +7,11 @@ use gridcl_device::{
     debug_assert_bindings, gather, radix_sort, scatter, unique_by_key,
 };
 use gridcl_dims::CellType;
-use gridcl_parallel::{CommDyn, IndexMap};
+use gridcl_parallel::{CommDyn, CommExt, IndexMap};
 
 use crate::emission::{EmissionPlan, emission_plans, sub_entity_vertices};
 use crate::keys::emit_keys;
-use crate::ownership::{Candidates, GHOST_CELL, Ownership, Sharing, agree};
+use crate::ownership::{Candidates, GHOST_CELL, Ownership, Sharing, SharingExchange, agree};
 
 /// The entities of one type and dimension (Listing T1).
 ///
@@ -319,17 +319,17 @@ fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
-/// The entities of one type: the entity block and, per emission index, the entity of the
-/// emitted sub-entity (padding positions hold arbitrary values).
-struct TypeEntities {
-    block: EntityBlock,
+/// The local arrays of one entity type: entity → vertex in canonical orientation and, per
+/// emission index, the entity of the emitted sub-entity (padding positions hold arbitrary
+/// values).
+struct TypeArrays {
+    vertices: DeviceBuffer<u32>,
     flat: DeviceBuffer<u32>,
 }
 
 /// What every entity type of one dimension shares.
 struct DimContext<'a> {
     client: &'a Client,
-    comm: &'a dyn CommDyn,
     cells: &'a [(CellType, &'a DeviceStrided<u32>)],
     /// The owned cell count of each cell block.
     owned: &'a [usize],
@@ -403,37 +403,20 @@ fn provisional(
     Ok((Some(p), candidates))
 }
 
-/// Step 7 and the arrays of one entity type of `plan`, with the block offset `offset`.
-fn finish_type(
-    cx: &DimContext<'_>,
-    plan: &EmissionPlan,
-    p: Option<Provisional>,
-    offset: usize,
-) -> Result<TypeEntities> {
-    let DimContext {
-        client,
-        comm,
-        cells,
-        ids,
-        fast,
-        dim,
-        ..
-    } = *cx;
-    let words = gridcl_refcell::vertices(plan.entity).len();
-    let Some(p) = p else {
-        return Ok(TypeEntities {
-            block: EntityBlock {
-                cell: plan.entity,
-                index_map: IndexMap::new(comm, 0)?,
-                vertices: DeviceStrided {
-                    data: DeviceBuffer::uninit(client, 0)?,
-                    stride: fit(words)?,
-                },
-                offset: fit(offset)?,
-            },
-            flat: DeviceBuffer::uninit(client, plan.total)?,
-        });
-    };
+/// One entity type after the first pass of step 7.
+struct Staged {
+    payload: DeviceBuffer<u32>,
+    unique: Unique,
+    count: usize,
+    old2new: DeviceBuffer<u32>,
+    num_owned: usize,
+    /// The local indices of the candidates this rank owns, in candidate order.
+    owned_local: Vec<u32>,
+}
+
+/// The first pass of step 7 for one entity type: owned entities first, ghosts after them
+/// (`crate::renumber::renumber`), and the local indices of the owned candidates.
+fn stage(cx: &DimContext<'_>, p: Provisional, o: &Ownership, me: i32) -> Result<Staged> {
     let Provisional {
         payload,
         unique,
@@ -441,7 +424,66 @@ fn finish_type(
         count,
         mins,
     } = p;
-    let old2new = crate::renumber::renumber(client, &mins, runs)?;
+    let ghosts = o.ghosts(me);
+    let old2new = crate::renumber::renumber(cx.client, mins, runs, &ghosts)?;
+    let owned: Vec<u32> = o
+        .candidates
+        .entities
+        .iter()
+        .zip(&o.owners)
+        .filter(|&(_, &q)| q == me)
+        .map(|(&g, _)| g)
+        .collect();
+    let owned_local = crate::renumber::local_indices(&old2new, &owned)?;
+    Ok(Staged {
+        payload,
+        unique,
+        count,
+        old2new,
+        num_owned: count - ghosts.len(),
+        owned_local,
+    })
+}
+
+/// The ghosts of one entity type ordered by (owner rank, global index): their provisional ids,
+/// global numbers and owners, from the owners and global numbers of the candidates.
+fn ghost_order(o: &Ownership, globals: &[i64], me: i32) -> (Vec<u32>, Vec<i64>, Vec<i32>) {
+    let mut ghosts: Vec<(i32, i64, u32)> = (0..o.candidates.len())
+        .filter(|&i| o.owners[i] != me)
+        .map(|i| (o.owners[i], globals[i], o.candidates.entities[i]))
+        .collect();
+    ghosts.sort_unstable();
+    let ids = ghosts.iter().map(|g| g.2).collect();
+    let globals = ghosts.iter().map(|g| g.1).collect();
+    let owners = ghosts.iter().map(|g| g.0).collect();
+    (ids, globals, owners)
+}
+
+/// Entity → vertex and the renumbered cell → entity by emission index of one entity type of
+/// `plan`, after step 7.
+fn finish_type(cx: &DimContext<'_>, plan: &EmissionPlan, s: Option<Staged>) -> Result<TypeArrays> {
+    let DimContext {
+        client,
+        cells,
+        ids,
+        fast,
+        dim,
+        ..
+    } = *cx;
+    let words = gridcl_refcell::vertices(plan.entity).len();
+    let Some(Staged {
+        payload,
+        unique,
+        count,
+        old2new,
+        ..
+    }) = s
+    else {
+        return Ok(TypeArrays {
+            vertices: DeviceBuffer::uninit(client, 0)?,
+            flat: DeviceBuffer::uninit(client, plan.total)?,
+        });
+    };
 
     // Entity → vertex in canonical orientation, one launch per block.
     let vertices_len = count.checked_mul(words).ok_or(GridError::TooLarge)?;
@@ -492,18 +534,7 @@ fn finish_type(
     let mut flat = DeviceBuffer::<u32>::uninit(client, plan.total)?;
     scatter(&unique.group, &payload, &mut flat)?;
     let flat = gather(&old2new, &flat)?;
-    Ok(TypeEntities {
-        block: EntityBlock {
-            cell: plan.entity,
-            index_map: IndexMap::new(comm, count)?,
-            vertices: DeviceStrided {
-                data: vertices,
-                stride: fit(words)?,
-            },
-            offset: fit(offset)?,
-        },
-        flat,
-    })
+    Ok(TypeArrays { vertices, flat })
 }
 
 /// The cell type and cell count of each cell block.
@@ -534,19 +565,16 @@ pub(crate) struct Cells<'a> {
     pub(crate) sharing: Option<Sharing<'a>>,
 }
 
-/// The entities of one dimension and the owners entity creation found for them.
+/// The entities of one dimension.
 pub(crate) struct Dimension {
-    /// One entity block per entity type.
+    /// One entity block per entity type, with [owned | ghost] index maps.
     pub(crate) blocks: Vec<EntityBlock>,
     /// The downward connectivity (tdim, dim), one strided array per cell block.
     pub(crate) downward: Vec<DeviceStrided<u32>>,
-    /// The owners of the sharing candidates of each entity type; empty on one rank.
-    #[cfg_attr(not(test), expect(dead_code, reason = "T14 numbers the ghosts from it"))]
-    pub(crate) ownership: Vec<Ownership>,
 }
 
 /// The entity blocks of dimension `dim` ≥ 1 and the downward connectivity (tdim, dim) of
-/// `cells`, and the owners of the sharing candidates of each entity type (step 6). Collective
+/// `cells`, with owners (step 6) and global numbers (step 8) on more than one rank. Collective
 /// on more than one rank, with an agreed status (ADR-0026, item 15).
 pub(crate) fn create_dimension(
     client: &Client,
@@ -575,7 +603,6 @@ pub(crate) fn create_dimension(
     )?;
     let cx = DimContext {
         client,
-        comm,
         cells: &cells.rows,
         owned: &cells.owned,
         sharing: if parallel { cells.sharing } else { None },
@@ -595,26 +622,132 @@ pub(crate) fn create_dimension(
             .collect::<Result<Vec<_>>>(),
     )?;
     let (provisionals, candidates): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
-    let ownership = if parallel {
-        crate::ownership::owners(comm, cx.sharing, candidates)?
+    let me = comm.rank() as i32;
+    let exchange = if parallel {
+        Some(SharingExchange::new(comm, cx.sharing)?)
     } else {
-        Vec::new()
+        None
+    };
+    let ownership = match &exchange {
+        Some(ex) => crate::ownership::owners(comm, ex, cx.sharing, candidates)?,
+        None => candidates
+            .iter()
+            .map(|c| Ownership::none(c.words))
+            .collect(),
     };
 
+    // Step 7, first pass: owned entities numbered, ghosts after them.
+    let staged = agree(
+        comm,
+        provisionals
+            .into_iter()
+            .zip(&ownership)
+            .map(|(p, o)| p.map(|p| stage(&cx, p, o, me)).transpose())
+            .collect::<Result<Vec<_>>>(),
+    )?;
+
+    // Step 8: owned ranges by an exclusive scan, and the ghosts' global numbers from their
+    // owners.
+    let num_owned: Vec<usize> = staged
+        .iter()
+        .map(|s| s.as_ref().map_or(0, |s| s.num_owned))
+        .collect();
+    let owned_globals: Vec<Vec<i64>> = staged
+        .iter()
+        .zip(&ownership)
+        .zip(&num_owned)
+        .map(|((s, o), &n)| {
+            let begin = comm.exscan_sum(n as u64) as i64;
+            let mut local = s.iter().flat_map(|s| s.owned_local.iter());
+            o.owners
+                .iter()
+                .map(|&q| {
+                    if q == me {
+                        begin + i64::from(*local.next().expect("one index per owned candidate"))
+                    } else {
+                        -1
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let globals = match &exchange {
+        Some(ex) => crate::ownership::global_numbers(comm, ex, &ownership, &owned_globals)?,
+        None => owned_globals,
+    };
+
+    // Step 7, second pass: the ghosts by (owner rank, global index); the local arrays.
+    let ghosts: Vec<_> = ownership
+        .iter()
+        .zip(&globals)
+        .map(|(o, g)| ghost_order(o, g, me))
+        .collect();
+    let arrays = agree(
+        comm,
+        plans
+            .iter()
+            .zip(staged)
+            .zip(&ghosts)
+            .zip(&num_owned)
+            .map(|(((plan, mut s), (ids, ..)), &n)| {
+                if let Some(s) = &mut s {
+                    let new: Vec<u32> =
+                        (0..ids.len()).map(|k| fit(n + k)).collect::<Result<_>>()?;
+                    crate::renumber::place_ghosts(&mut s.old2new, ids, &new)?;
+                }
+                finish_type(&cx, plan, s)
+            })
+            .collect::<Result<Vec<_>>>(),
+    )?;
+
+    // The index maps (collective) and the blocks' flat offsets.
     let mut types = Vec::with_capacity(plans.len());
-    let mut offset = 0usize;
-    let finished = (|| -> Result<()> {
-        for (plan, p) in plans.iter().zip(provisionals) {
-            let t = finish_type(&cx, plan, p, offset)?;
-            offset = offset
-                .checked_add(t.block.index_map.num_local())
-                .ok_or(GridError::TooLarge)?;
-            types.push(t);
-        }
-        fit(offset)?;
-        Ok(())
-    })();
-    agree(comm, finished)?;
+    for ((plan, a), ((_, ghost_globals, ghost_owners), &n)) in plans
+        .iter()
+        .zip(arrays)
+        .zip(ghosts.into_iter().zip(&num_owned))
+    {
+        let index_map = if parallel {
+            IndexMap::with_ghosts(comm, n, ghost_globals, ghost_owners)?
+        } else {
+            IndexMap::new(comm, n)?
+        };
+        let words = gridcl_refcell::vertices(plan.entity).len();
+        types.push((plan.entity, index_map, a, words));
+    }
+    let offsets = agree(
+        comm,
+        (|| {
+            let mut offsets = Vec::with_capacity(types.len());
+            let mut next = 0usize;
+            for (_, map, ..) in &types {
+                offsets.push(fit(next)?);
+                next = next
+                    .checked_add(map.num_local())
+                    .ok_or(GridError::TooLarge)?;
+            }
+            fit(next)?;
+            Ok(offsets)
+        })(),
+    )?;
+    let types: Vec<(EntityBlock, DeviceBuffer<u32>)> = types
+        .into_iter()
+        .zip(offsets)
+        .map(|((cell, index_map, a, words), offset)| {
+            Ok((
+                EntityBlock {
+                    cell,
+                    index_map,
+                    vertices: DeviceStrided {
+                        data: a.vertices,
+                        stride: fit(words)?,
+                    },
+                    offset,
+                },
+                a.flat,
+            ))
+        })
+        .collect::<Result<_>>()?;
     let cells = &cells.rows;
 
     // cell → entity of each block, with flat indices.
@@ -658,13 +791,13 @@ pub(crate) fn create_dimension(
             let p0 = used[0];
             let dummy;
             let flat1 = match used.get(1) {
-                Some(&p1) => &types[p1].flat,
+                Some(&p1) => &types[p1].1,
                 None => {
                     dummy = DeviceBuffer::<u32>::uninit(client, 0)?;
                     &dummy
                 }
             };
-            let offset1 = used.get(1).map_or(0, |&p1| types[p1].block.offset);
+            let offset1 = used.get(1).map_or(0, |&p1| types[p1].0.offset);
             let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, n, 4, 1, 1)?;
             debug_assert_bindings(client, 3);
             // SAFETY: cells c < n write out[c · k + i] < n · k (checked to fit u32 above), the
@@ -677,14 +810,14 @@ pub(crate) fn create_dimension(
                     client,
                     launch.cube_count,
                     launch.cube_dim,
-                    types[p0].flat.arg(),
+                    types[p0].1.arg(),
                     flat1.arg(),
                     out.arg(),
                     fit(n)?,
                     fit(range(0).padded)?,
                     fit(range(0).start)?,
                     fit(range(used.len() - 1).start)?,
-                    types[p0].block.offset,
+                    types[p0].0.offset,
                     offset1,
                     launch.items_per_unit,
                     DownTables { slots },
@@ -697,8 +830,7 @@ pub(crate) fn create_dimension(
         });
     }
     Ok(Dimension {
-        blocks: types.into_iter().map(|t| t.block).collect(),
+        blocks: types.into_iter().map(|t| t.0).collect(),
         downward,
-        ownership,
     })
 }
