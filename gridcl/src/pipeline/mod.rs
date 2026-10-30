@@ -17,6 +17,9 @@
 //!    vertices and nodes.
 //! 9. [`upload::upload`]: index maps, and the device arrays of topology and geometry.
 //!
+//! [`tags::registry`] then matches the physical tags, creating the entities of each tagged
+//! dimension (stage 10).
+//!
 //! [`MeshBuilder::build_on`](crate::MeshBuilder::build_on) runs the stages in order.
 
 pub(crate) mod dual_graph;
@@ -27,6 +30,7 @@ pub(crate) mod nodes;
 pub(crate) mod number;
 pub(crate) mod order;
 pub(crate) mod rendezvous;
+pub(crate) mod tags;
 pub(crate) mod upload;
 
 use gridcl_device::{GridError, Result};

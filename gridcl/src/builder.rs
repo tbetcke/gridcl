@@ -19,6 +19,7 @@ use crate::pipeline::migrate::migrate;
 use crate::pipeline::nodes::fetch_nodes;
 use crate::pipeline::number::number;
 use crate::pipeline::order::order_cells;
+use crate::pipeline::tags::{TagInputs, cell_tags, registry};
 use crate::pipeline::upload::upload;
 use crate::pipeline::{BlockSpec, agree};
 
@@ -238,7 +239,31 @@ where
 
     /// Physical tags of entities of type `entity`: one entry per entity, with
     /// `entity.num_vertices()` corner origin ids in `corners` and one value in `values`.
-    /// Entries are matched by their sorted corner ids (ADR-0026).
+    /// Entries are matched by their sorted corner ids, cells and lower-dimensional entities
+    /// alike; the build creates the entities of every tagged dimension below the cells'. Every
+    /// holder of an entity, owner or ghost, gets its values, and an entity in several groups
+    /// gets each value once (ADR-0026).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let coords = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+    ///     .nodes(&coords, Some(&[10, 11, 12, 13]))
+    ///     .cell_block(tri, &[0, 1, 2, 3, 2, 1], None)
+    ///     // The second triangle in group 5; the edges (10, 11) and (13, 11) in group 1.
+    ///     .physical_tags(CellType::Triangle, &[13, 12, 11], &[5])
+    ///     .physical_tags(CellType::Interval, &[10, 11, 13, 11], &[1, 1])
+    ///     .tag_names(&[("wall", 1, 1), ("domain", 2, 5)])
+    ///     .build()?;
+    /// assert_eq!(mesh.tags().named(Codim::Vol, "domain")?.indices.to_host()?, [1]);
+    /// assert_eq!(mesh.tags().group_size(1, 1), Some(2));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn physical_tags(mut self, entity: CellType, corners: &[i64], values: &[i32]) -> Self {
         self.tags.push(TagInput {
             entity,
@@ -248,7 +273,9 @@ where
         self
     }
 
-    /// The tag name table: (name, dimension, value).
+    /// The tag name table: (name, dimension, value), in the mesh's
+    /// [`TagRegistry`](crate::TagRegistry). The tables of all ranks are agreed: rank 0's
+    /// entries, then each further rank's entries that no lower rank gave.
     pub fn tag_names(mut self, names: &[(&str, usize, i32)]) -> Self {
         self.tag_names.extend(
             names
@@ -268,7 +295,8 @@ where
     /// Agreed over the ranks: a rank with a local error returns it, every other rank
     /// `RemoteFailure` with the lowest failing rank. The errors of [`build`](MeshBuilder::build);
     /// `IndexOutOfRange` for a node id of `cell_block_by_ids` that no rank passed; errors of the
-    /// partitioner and the exchanges.
+    /// partitioner and the exchanges. `UnmatchedTagElement` for a tag entry of dimension below
+    /// the cells' is the same on every rank: the entry of lowest global input position.
     ///
     /// # Example
     ///
@@ -310,6 +338,9 @@ where
     ///   vertex of one cell and a non-vertex node of another; `DuplicateCellBlock` for a second
     ///   block of one cell type; `UnsupportedNodeFamily` or `UnsupportedDegree` for an element
     ///   gridcl-refcell does not offer;
+    /// - `UnmatchedTagElement` for a tag entry that matches no cell or entity, `tag` being its
+    ///   global input position (entries counted over the `physical_tags` calls in call order,
+    ///   ranks in order);
     /// - allocation and device errors.
     pub fn build(self) -> Result<Mesh<F, TD, GD>> {
         self.build_on(Serial)
@@ -341,12 +372,12 @@ where
                 .collect(),
             tags: &self.tags,
         };
-        // Stages 1–8. Lower-dimension tags and the name table are M6 T15's.
+        // Stages 1–8.
         let Read {
             blocks,
             nodes: chunk,
             cells,
-            ..
+            lower_tags,
         } = input::read(&comm, &input)?;
         let owned = if comm.size() == 1 {
             cells
@@ -358,7 +389,7 @@ where
         let local = ghost_cells(&comm, &blocks, owned, self.ghosts)?;
         let nodes = fetch_nodes(&comm, &blocks, GD::N, &chunk, &local)?;
         let local = order_cells(&blocks, local, &nodes, self.ordering);
-        let numbered = number(&comm, &blocks, &local, &nodes)?;
+        let mut numbered = number(&comm, &blocks, &local, &nodes)?;
 
         let vertex_local: HashMap<i64, u32> = numbered
             .vertex_ids
@@ -371,11 +402,20 @@ where
             .iter()
             .map(|id| vertex_local.get(id).copied().unwrap_or(u32::MAX))
             .collect();
-        // Stage 9.
-        let (topology, geometry) = upload(client, &comm, &blocks, &nodes, numbered)?;
-        Ok((
-            Mesh::from_parts(client.clone(), comm, topology, geometry),
-            vertex_of_node,
-        ))
+        let cells = agree(&comm, cell_tags(&numbered.blocks))?;
+        let directory = std::mem::take(&mut numbered.directory);
+        // Stage 9, then the tags.
+        let (mut topology, geometry) = upload(client, &comm, &blocks, &nodes, numbered)?;
+        let tags = TagInputs {
+            cells,
+            lower: &lower_tags,
+            names: &self.tag_names,
+            directory: &directory,
+            vertex_local: &vertex_local,
+        };
+        let tags = registry(client, &comm, &mut topology, tags)?;
+        let mut mesh = Mesh::from_parts(client.clone(), comm, topology, geometry);
+        mesh.set_tags(tags);
+        Ok((mesh, vertex_of_node))
     }
 }

@@ -51,6 +51,9 @@ pub(crate) struct Numbered {
     pub(crate) node_ids: Vec<i64>,
     /// `[node][gdim]` in local order, not relative to the origin.
     pub(crate) coords: Vec<f64>,
+    /// This rank's part of the rendezvous directory: the holding ranks, ascending, of every
+    /// node id whose rendezvous rank this is; tag matching asks it for holders.
+    pub(crate) directory: HashMap<i64, Vec<i32>>,
 }
 
 /// The sharer set of a node, and its owner.
@@ -328,6 +331,10 @@ pub(crate) fn number(
         node_map,
         node_ids,
         coords,
+        directory: directory
+            .into_iter()
+            .map(|(id, (ranks, _))| (id, ranks.iter().map(|&r| r as i32).collect()))
+            .collect(),
     })
 }
 
