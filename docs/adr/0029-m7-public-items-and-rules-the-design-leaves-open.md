@@ -119,6 +119,9 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
     - The edge cut counts each undirected dual-graph edge whose ends lie in different parts once. "Within 10%" is one-sided: cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.10 · cut(Scotch).
     - nparts equals the number of ranks, and every partitioner works on the graph that stage 2 gives for even input chunks.
     - Reproducibility: per partitioner, the same seed twice in one run, with a different seed in between, gives identical parts on every rank, and the hash of the parts agrees between two `mpirun` runs.
+    - The one-sided reading cannot detect a poor reference: a misconfigured Scotch wrapper would let PT-Scotch and METIS pass easily. Two checks outside the acceptance bullets cover this:
+      - **Logged cuts.** `partition_quality` prints, on rank 0, the cut of every partitioner and the ratios cut(PtScotch)/cut(Scotch) and cut(Metis)/cut(Scotch), for each mesh and rank count, so a suspicious reference is visible in every log (M3 Max, CI, Kathleen).
+      - **Slab bound.** Every partitioner's cut, Scotch's included, is at most the cut of k slabs separated by k − 1 grid planes normal to x: 2(k − 1)n² on the tetrahedral box `cube_box(Tetrahedron, n, 1)` (two triangles per grid square) and (k − 1)n² on the hexahedron/prism/pyramid box (one quadrilateral per grid square on an x-plane), with k = nparts. A random or scrambled partition cuts about (1 − 1/k) of all edges, far above the bound; a good k-way partition beats slabs (for k = 8, 2 × 2 × 2 blocks cut 3 planes instead of 7). Failing the bound is a test failure.
 12. **ParMETIS with empty ranks.** When any rank holds no vertices, `ParMetis` returns an agreed `PartitionerFailed { name: "parmetis", code: -1 }`, documented. M8's even read chunks give every rank cells when there are at least as many cells as ranks.
 13. **Threading.** gridcl supports PT-Scotch builds without `SCOTCH_PTHREAD_MPI`, so MPI stays at `Threading::Single`. M7 T5 probes the Homebrew and Ubuntu builds under `Single` on 2 ranks, and the Kathleen build is configured without it. If a probe fails, M7 stops and a further ADR decides.
 14. **METIS link clash.** If vendored METIS and ParMETIS's `libmetis` clash, `parmetis` switches the `metis` crate to its system build (`parmetis = [..., "metis?/use-system"]`), so both use one METIS. M7 T9 checks the build with both features.
@@ -146,7 +149,7 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
   - ptscotch-sys and parmetis-sys: the bindings and the width constants, behind `mpi`;
   - gridcl: root and prelude re-exports; hidden `MeshBuilder::dual_graph_on`.
   - No existing signature changes. Pipeline graphs now carry `vwgt: Some`; `Block`'s results do not change.
-- **Acceptance tests affected:** M7's three bullets, read as in item 11 (new tests `gridcl-mpi-tests::{partition_quality, partition_seed}`). No earlier acceptance test changes.
+- **Acceptance tests affected:** M7's three bullets, read as in item 11 (new tests `gridcl-mpi-tests::{partition_quality, partition_seed}`), plus item 11's logged cuts and slab bound in `partition_quality`, which are not acceptance bullets. No earlier acceptance test changes.
 - **Later milestones affected:**
   - M8: chooses the default partitioner for distributed reads by the existing rule and adds `GmshOptions::partitioner` (ADR-0022); even read chunks satisfy item 12.
   - M10: benchmarks may revisit the cost model and the balance target.
