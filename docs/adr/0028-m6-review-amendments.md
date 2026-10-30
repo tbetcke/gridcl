@@ -1,6 +1,6 @@
 # ADR-0028: M6 review amendments
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-30
 - **Raised in:** M6 review (design review of T0, T5, T7, T10 and T14)
 - **Design sections affected:** "Distributed mesh model" / "Communicators, IndexMap and Scatterer" (the paragraph after Listing S2c); "Workspace layout" (crate table: gridcl, gridcl-testing); "Parallel creation pipeline", stage 6; Listing H1 (CLAUDE.md, host↔device copies)
@@ -57,4 +57,4 @@ Option 2:
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer, 2026-10-30, as proposed (option 2). Applied to docs/design.md and CLAUDE.md in the same branch.

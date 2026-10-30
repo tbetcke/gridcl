@@ -1434,7 +1434,7 @@ pub trait ScatterNumeric: DeviceScalar {}                      // f32, f64, i32,
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Transport { HostStaged, GpuAware }
 ```
 
-`ScatterNumeric` is implemented for f32, f64, i32 and u32. Device support for the chosen type is checked when the scatterer is created. The reverse segments are built once, when the scatterer is created, so every reverse exchange is a gather followed by a segmented reduce in a fixed order. `Scatterer` exchanges through the communicator its `Neighbourhood` holds, and every device step is a gridcl-device primitive: `forward` is `pack`, `to_host`, the neighbourhood exchange, `write_host` and `unpack`; `reverse` packs and exchanges the ghost values, gathers [owner values by `rev_targets` | received values] by `rev_order`, reduces over `rev_segments` and scatters the result to the targets (ADR-0026).
+`ScatterNumeric` is implemented for f32, f64, i32 and u32. `reverse` checks device support for T (`UnsupportedPrecision`); `forward` moves u32 words and works for every `ScatterNumeric` type on every device (ADR-0028). `IndexMap::send_lists` and `recv_lists` are hidden, read-only test accessors and not part of the stable API (ADR-0028). The reverse segments are built once, when the scatterer is created, so every reverse exchange is a gather followed by a segmented reduce in a fixed order. `Scatterer` exchanges through the communicator its `Neighbourhood` holds, and every device step is a gridcl-device primitive: `forward` is `pack`, `to_host`, the neighbourhood exchange, `write_host` and `unpack`; `reverse` packs and exchanges the ghost values, gathers [owner values by `rev_targets` | received values] by `rev_order`, reduces over `rev_segments` and scatters the result to the targets (ADR-0026).
 
 ### Transports
 
@@ -1486,7 +1486,7 @@ Locality ordering happens before any numbering, so global numbers are assigned o
 | 3 Partition | host | `Partitioner` trait; vertex weights from the cost model by cell type and degree. | destination rank per cell |
 | 4 Migrate | MPI all-to-all-v | Send cells with origin ids and tags to their destination. | owned cells per rank |
 | 5 Ghost cells | host + MPI | Cells sharing a vertex or facet with another rank's cells, per GhostMode. | ghost cells with owner ranks |
-| 6 Fetch nodes | MPI | Fetch the coordinates of all nodes of owned and ghost cells, by origin node id, from the rendezvous directory `owner_hash(id) mod P` (ADR-0026). | node coordinates by origin id |
+| 6 Fetch nodes | MPI | Fetch the coordinates of all nodes of owned and ghost cells, by origin node id, from the rendezvous directory `owner_hash(id) mod P` (ADR-0026). A cell node id that no rank posted is `IndexOutOfRange { index: id, len: global node count }` (`usize::MAX` for a negative id; ADR-0028). | node coordinates by origin id |
 | 7 Order cells | host | Owned cells in `CellOrdering`: input order (default), Hilbert curve of their centroids, or reverse Cuthill–McKee; ghost cells after, ordered by (owner rank, origin id) (ADR-0026). | local cell order |
 | 8 Number | host + MPI | Sharer sets; owners chosen by hash of origin id among owned-cell sharers. Local numbering is owned-first, with vertices and nodes in order of first touching cell; ghosts by (owner rank, global index) (ADR-0026). Global numbering by exclusive scan; ghost numbers come from owners. | cell, vertex and node IndexMaps; local cell-to-vertex arrays and dofmaps |
 | 9 Upload | device | Upload cells, dofmaps, nodes (relative to the global origin) and origin ids; compute permutation info. | device-resident mesh |
@@ -1705,10 +1705,10 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, ptscotch-sys, parmetis-sys (all optional) |
 | gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional); dev: mshio, serde_json |
-| gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log |
+| gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi |
-| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features |
+| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
 | gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
@@ -2083,10 +2083,12 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   at mesh creation, and of quadrature points and tabulations when a rule is created or a
   tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
   and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
-  checks of gather and scatter, the host-staged halo exchange, the boundary-entity ownership
-  exchange of entity creation (the candidate count and keys to the host; owners and global
-  numbers back), the upload of an IndexMap's send and receive index lists when its scatterer
-  is first created, and the vertex shared flags at mesh creation (ADR-0026).
+  checks of gather and scatter, the host-staged halo exchange, the boundary-entity
+  ownership exchange of entity creation (the candidate count, keys and the local indices of
+  owned candidates to the host; owners, global numbers and ghost placements back), the
+  upload of an IndexMap's send and receive index lists when its first scatterer is created,
+  and of a scatterer's reverse lists when it is created, and the vertex shared flags at
+  mesh creation (ADR-0026, ADR-0028).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
