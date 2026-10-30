@@ -24,6 +24,8 @@ after the user approves it.
   to create it from an up-to-date main, and stop.
 - If `docs/plans/<milestone>.md` already exists, read it and ask whether to revise it or start
   over.
+- If `.venv/bin/python` or `scripts/hpc/targets.env` is missing (a new worktree), run
+  `scripts/setup-worktree.sh` outside the sandbox (pip needs PyPI) before any test run.
 
 ## 2. Read
 

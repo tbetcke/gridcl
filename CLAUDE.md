@@ -71,6 +71,8 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
 - Use the test-runner subagent for full-suite, multi-backend and MPI runs, so logs stay out of
   the main context. Use the design-reviewer subagent before a plan is approved and before a
   milestone PR.
+- A new worktree lacks the git-ignored `.venv` (pinned Python oracles) and
+  `scripts/hpc/targets.env`: run `scripts/setup-worktree.sh` outside the sandbox before testing.
 - Every roadmap milestone has a GitHub issue titled `<milestone> <name>` (label `enhancement`),
   named in its plan's **Issue** line. Keep it in step with the plan: tick a task in the issue
   after its commit; when an accepted ADR changes a milestone's scope or acceptance, update the

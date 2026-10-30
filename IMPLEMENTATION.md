@@ -155,8 +155,11 @@ M1a and M2 can run side by side after M0, M4, M5 and M6 after M3, and M7 and M9 
 ```sh
 git worktree add ../gridcl-m4 -b m4-gmsh-io main
 git worktree add ../gridcl-m5 -b m5-vtk-output main
-cd ../gridcl-m4 && claude --permission-mode plan     # then /plan-milestone M4
+cd ../gridcl-m4 && scripts/setup-worktree.sh         # .venv and scripts/hpc/targets.env
+claude --permission-mode plan                        # then /plan-milestone M4
 ```
+
+`scripts/setup-worktree.sh` creates the git-ignored `.venv` with the pinned Python packages and copies `scripts/hpc/targets.env` from the main checkout. It keeps what exists, so rerunning it is safe.
 
 Merge them into main one at a time, in dependency order. If a branch falls behind main, merge main into it yourself; Claude is not allowed to rebase.
 

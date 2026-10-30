@@ -78,7 +78,7 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
     scripts/check-local-tools.sh    # checks the three pins
     ```
 
-    pip needs pypi.org and files.pythonhosted.org. Inside Claude Code's sandbox the filtering proxy breaks pip's certificate check, so the install runs outside it. Every git worktree needs its own `.venv`, or `GRIDCL_PYTHON`.
+    pip needs pypi.org and files.pythonhosted.org. Inside Claude Code's sandbox the filtering proxy breaks pip's certificate check, so the install runs outside it. Every git worktree needs its own `.venv`, or `GRIDCL_PYTHON`. `scripts/setup-worktree.sh` does all of this in a new worktree, with the pins of `scripts/check-local-tools.sh`, and also copies the git-ignored `scripts/hpc/targets.env` from the main checkout; it keeps existing files.
 
     The M5 tests run `scripts/oracles/vtk_oracle.py` with `GRIDCL_PYTHON`, else `<repo>/.venv/bin/python`. A missing interpreter, or one without the pinned versions, fails the test with the install command; `GRIDCL_SKIP_PYTHON=1` skips the oracle checks instead and says so (ADR-0024, item 11). Remote CUDA runs set `GRIDCL_SKIP_PYTHON=1`: the targets have no VTK, and the oracles check host-side files. meshio reads only the inline-base64 VTU files of these tests (ADR-0025).
 

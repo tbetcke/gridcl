@@ -17,6 +17,8 @@ If the milestone is empty, ask the user which milestone to implement.
 - Read `docs/plans/<milestone>.md`. Its status must be `approved` (or `implemented` if you are
   asked to continue). If it is `draft`, or any row in "Open questions and ADR candidates" is
   still open, stop and list what must be resolved first.
+- If `.venv/bin/python` or `scripts/hpc/targets.env` is missing (a new worktree), run
+  `scripts/setup-worktree.sh` outside the sandbox (pip needs PyPI) before any test run.
 - `git branch --show-current` must be the plan's branch, and `git status` must be clean
   (apart from untracked build output). If not, stop and say what is wrong.
 - Read CLAUDE.md, the design sections the plan lists, and the accepted ADRs it names.

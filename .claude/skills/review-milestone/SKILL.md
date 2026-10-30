@@ -15,6 +15,8 @@ If the milestone is empty, ask the user which milestone to review.
 - `docs/plans/<milestone>.md` must have `Status: implemented` and every task ticked.
   If not, stop and list what is missing.
 - Be on the plan's branch with a clean working tree.
+- If `.venv/bin/python` or `scripts/hpc/targets.env` is missing (a new worktree), run
+  `scripts/setup-worktree.sh` outside the sandbox (pip needs PyPI) before any test run.
 
 ## 2. Gather evidence (in parallel)
 
