@@ -8,7 +8,7 @@ use gridcl_device::{GridError, Real, Result, check_precision};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, NodeFamily};
 use gridcl_parallel::{Comm, Serial};
-use gridcl_partition::{Block, Partitioner};
+use gridcl_partition::{Block, DistGraph, Partitioner};
 use gridcl_refcell::RefCellError;
 
 use crate::Mesh;
@@ -323,6 +323,19 @@ where
     /// ```
     pub fn build_on<C: Comm>(self, comm: C) -> Result<Mesh<F, TD, GD, C>> {
         Ok(self.build_with_comm(comm)?.0)
+    }
+
+    /// The dual graph that [`build_on`](MeshBuilder::build_on) gives the partitioner (stages
+    /// 1–2, host only): a test accessor outside the stable API (ADR-0029, item 15). Collective.
+    /// Unlike `build_on`, it builds the graph on one rank too.
+    ///
+    /// # Errors
+    ///
+    /// The input errors of `build_on`, agreed over the ranks, and errors of the exchanges.
+    #[doc(hidden)]
+    pub fn dual_graph_on<C: Comm>(self, comm: C) -> Result<DistGraph> {
+        let _ = comm;
+        todo!("MeshBuilder::dual_graph_on (M7 T1)")
     }
 
     /// Checks, numbers and uploads the mesh: [`build_on`](MeshBuilder::build_on) with the

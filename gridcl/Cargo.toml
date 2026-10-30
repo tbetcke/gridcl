@@ -10,8 +10,9 @@ license.workspace = true
 # Library features, forwarded to the crates concerned (docs/design.md, "Cargo features").
 # `dep:mpi` names `mpi::ffi::MPI_Comm` in the test communicator's `CommDyn::raw`.
 mpi = ["gridcl-parallel/mpi", "dep:mpi"]
-ptscotch = ["gridcl-partition/ptscotch"]
-parmetis = ["gridcl-partition/parmetis"]
+# The distributed partitioners need MPI (ADR-0029, item 4).
+ptscotch = ["mpi", "gridcl-partition/ptscotch"]
+parmetis = ["mpi", "gridcl-partition/parmetis"]
 metis = ["gridcl-partition/metis"]
 scotch = ["gridcl-partition/scotch"]
 hdf5 = ["gridcl-io/hdf5"]

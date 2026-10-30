@@ -40,6 +40,18 @@ mshio = "=0.4.2"
 log = "0.4"
 # zlib for VTU output, pure Rust (ADR-0024, item 10).
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Partitioners (ADR-0029): METIS vendored by the metis crate; Scotch from the system library,
+# with scotch-sys for the calls the scotch crate does not wrap.
+metis = "=0.2.2"
+scotch = "=0.2.1"
+scotch-sys = "=0.2.1"
+# scotch-sys's bindgen, with `runtime`: mpi-sys's bindgen turns on clang-sys's `runtime`, and
+# scotch-sys's bindgen (default features off) then never loads libclang (docs/plans/M7.md,
+# Deviations log, T0).
+scotch-sys-bindgen = { package = "bindgen", version = "=0.65.1", default-features = false, features = ["runtime"] }
+# Build dependencies of ptscotch-sys and parmetis-sys (feature `mpi`), the versions mpi-sys uses.
+bindgen = "=0.72.1"
+build-probe-mpi = "=0.1.6"
 
 # buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
 # some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback

@@ -133,6 +133,13 @@ pub enum GridError {
     /// A collective operation failed on another rank; `rank` is the lowest failing rank
     /// (ADR-0026).
     RemoteFailure { rank: usize },
+    /// A partitioner library returned the status `code`; gridcl's own conditions use negative
+    /// codes: −1 for ParMETIS with an empty rank, −2 for a self-loop, −3 for an asymmetric
+    /// graph (ADR-0029, item 6).
+    PartitionerFailed { name: &'static str, code: i32 },
+    /// A distributed partitioner was called on more than one rank of a communicator without an
+    /// MPI handle (`CommDyn::raw` is `None`; ADR-0029, item 6).
+    NeedsMpiCommunicator(&'static str),
 }
 
 impl fmt::Display for GridError {
@@ -214,6 +221,13 @@ impl fmt::Display for GridError {
             GridError::RemoteFailure { rank } => {
                 write!(f, "the operation failed on rank {rank}")
             }
+            GridError::PartitionerFailed { name, code } => {
+                write!(f, "the {name} partitioner failed with status {code}")
+            }
+            GridError::NeedsMpiCommunicator(name) => write!(
+                f,
+                "the {name} partitioner needs an MPI communicator on more than one rank"
+            ),
         }
     }
 }
@@ -236,6 +250,23 @@ impl From<ServerError> for GridError {
 #[cfg(test)]
 mod tests {
     use super::GridError;
+
+    /// The `Display` lines of the M7 variants (ADR-0029).
+    #[test]
+    fn m7_variants_display() {
+        assert_eq!(
+            GridError::PartitionerFailed {
+                name: "parmetis",
+                code: -1
+            }
+            .to_string(),
+            "the parmetis partitioner failed with status -1"
+        );
+        assert_eq!(
+            GridError::NeedsMpiCommunicator("ptscotch").to_string(),
+            "the ptscotch partitioner needs an MPI communicator on more than one rank"
+        );
+    }
 
     /// The `Display` lines of the M6 variants (ADR-0026).
     #[test]

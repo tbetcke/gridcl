@@ -51,5 +51,13 @@ pub use gridcl_parallel::{
     Comm, CommDyn, CommExt, CommScalar, DType, IndexMap, Neighbourhood, ReverseOp, ScatterNumeric,
     Scatterer, Serial, Transport,
 };
+#[cfg(feature = "metis")]
+pub use gridcl_partition::Metis;
+#[cfg(feature = "parmetis")]
+pub use gridcl_partition::ParMetis;
+#[cfg(feature = "ptscotch")]
+pub use gridcl_partition::PtScotch;
+#[cfg(feature = "scotch")]
+pub use gridcl_partition::Scotch;
 pub use gridcl_partition::{Block, DistGraph, Partitioner};
 pub use gridcl_topology::{CellBlock, Connectivity, EntityBlock};

@@ -2,10 +2,26 @@
 //! behind features.
 //!
 //! M6 adds the graph, the trait and [`Block`] (Listing S3; ADR-0026); milestone M7 adds the
-//! external partitioners.
+//! external partitioners (ADR-0029).
 
 mod block;
 mod graph;
+#[cfg(feature = "metis")]
+mod metis;
+#[cfg(feature = "parmetis")]
+mod parmetis;
+#[cfg(feature = "ptscotch")]
+mod ptscotch;
+#[cfg(feature = "scotch")]
+mod scotch;
 
 pub use block::Block;
 pub use graph::{DistGraph, Partitioner};
+#[cfg(feature = "metis")]
+pub use metis::Metis;
+#[cfg(feature = "parmetis")]
+pub use parmetis::ParMetis;
+#[cfg(feature = "ptscotch")]
+pub use ptscotch::PtScotch;
+#[cfg(feature = "scotch")]
+pub use scotch::Scotch;
