@@ -458,9 +458,13 @@ where
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and the connectivity
     /// (tdim, dim).
     ///
+    /// Collective: on more than one rank, every rank calls it with the same `dim`, and the
+    /// owners of the entities on process boundaries are agreed by an exchange.
+    ///
     /// # Errors
     ///
-    /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation and device errors.
+    /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation, device and communication errors;
+    /// `RemoteFailure` if another rank failed.
     ///
     /// # Example
     ///
@@ -482,7 +486,8 @@ where
         self.topology.create_entities(&self.comm, dim)
     }
 
-    /// Creates the connectivity `from` → `to` and the entities it needs.
+    /// Creates the connectivity `from` → `to` and the entities it needs. Collective, as
+    /// [`create_entities`](Mesh::create_entities).
     ///
     /// # Errors
     ///

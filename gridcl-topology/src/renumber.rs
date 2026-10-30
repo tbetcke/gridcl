@@ -1,5 +1,5 @@
-//! Entity creation, step 7 (serial): owned entities ordered by the smallest flat cell index
-//! that touches them, applied to entity → vertex and cell → entity.
+//! Entity creation, step 7: entities ordered by the smallest flat cell index that touches
+//! them, owned cells first, applied to entity → vertex and cell → entity.
 
 use cubecl::prelude::*;
 use gridcl_device::{
@@ -45,8 +45,8 @@ pub(crate) fn iota(client: &Client, len: usize) -> Result<DeviceBuffer<u32>> {
 }
 
 /// The flat cell index of the occurrence at each sorted position whose emission index lies in
-/// one block's range [start, end) and belongs to a real cell (c < cells); other positions are
-/// left untouched.
+/// one block's range [start, end) and belongs to a real cell (c < cells), with the bit
+/// `GHOST_CELL` (crate::ownership) set for a ghost cell (c ≥ owned); other positions are left untouched.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn occurrence_cells_kernel(
@@ -57,6 +57,7 @@ fn occurrence_cells_kernel(
     end: u32,
     padded: u32,
     cells: u32,
+    owned: u32,
     cell_offset: u32,
     items_per_unit: u32,
 ) {
@@ -68,7 +69,7 @@ fn occurrence_cells_kernel(
             if e >= start && e < end {
                 let c = (e - start) % padded;
                 if c < cells {
-                    values[p] = cell_offset + c;
+                    values[p] = (cell_offset + c) | (u32::cast_from(c >= owned) << 31);
                 }
             }
         }
@@ -117,18 +118,19 @@ fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
-/// Step 7 (serial, every entity owned): the renumbering `old2new` of the `runs` provisional
-/// entities of one type, from the sorted keys and payloads of `plan`. Entities are ordered by
-/// the smallest flat cell index that touches them (a segmented minimum over the sorted runs),
-/// ties in provisional order (a stable sort). The sentinel group touches no cell and comes
-/// last. `cell_offsets[b]` is the first flat cell index of cell block b.
-pub(crate) fn renumber(
+/// The smallest touching-cell value of each of the `runs` provisional entities of one type,
+/// from the sorted keys and payloads of `plan`: a segmented minimum over the sorted runs of the
+/// flat cell index of each occurrence, with the bit `GHOST_CELL` set for a ghost cell, so an
+/// entity lies in an owned cell exactly if its value is below `GHOST_CELL`. The sentinel group
+/// touches no cell and gets u32::MAX. `cell_offsets[b]` is the first flat cell index of cell
+/// block b and `owned[b]` its owned cell count; the flat cell count must be below `GHOST_CELL`.
+pub(crate) fn touching_cells(
     client: &Client,
     sorted: &SortKeys,
     payload: &DeviceBuffer<u32>,
     plan: &EmissionPlan,
     cell_offsets: &[usize],
-    runs: usize,
+    owned: &[usize],
 ) -> Result<DeviceBuffer<u32>> {
     let len = payload.len();
     let mut values = DeviceBuffer::<u32>::uninit(client, len)?;
@@ -150,14 +152,28 @@ pub(crate) fn renumber(
                 fit(range.end())?,
                 fit(range.padded)?,
                 fit(range.cells)?,
+                fit(owned[range.block])?,
                 fit(cell_offsets[range.block])?,
                 launch.items_per_unit,
             );
         }
     }
     let offsets = run_length(sorted)?.offsets; // the count read of run-length
-    let mins = segmented_reduce(&values, &offsets, ReduceOp::Min)?;
-    let keys = one_word_keys(&mins)?;
+    segmented_reduce(&values, &offsets, ReduceOp::Min)
+}
+
+/// Step 7 (every entity owned until T14): the renumbering `old2new` of the `runs` provisional
+/// entities of one type, by their smallest touching-cell value `mins` ([`touching_cells`]):
+/// entities in an owned cell first, by their smallest owned cell, then those only in ghost
+/// cells, by their smallest cell; ties in provisional order (a stable sort). On one rank every
+/// cell is owned, so entities are ordered by the smallest flat cell index that touches them,
+/// and the sentinel group comes last.
+pub(crate) fn renumber(
+    client: &Client,
+    mins: &DeviceBuffer<u32>,
+    runs: usize,
+) -> Result<DeviceBuffer<u32>> {
+    let keys = one_word_keys(mins)?;
     let ids = iota(client, runs)?;
     let (_, new2old) = radix_sort(&keys, &ids)?;
     let mut old2new = DeviceBuffer::<u32>::uninit(client, runs)?;

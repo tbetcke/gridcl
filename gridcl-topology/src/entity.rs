@@ -1,9 +1,9 @@
-//! Entity creation, steps 3–5: sort, unique and canonical vertex lists; `EntityBlock` and
-//! `Connectivity` (Listing T1).
+//! Entity creation, steps 3–7: sort, unique, ownership (`crate::ownership`), renumbering and
+//! canonical vertex lists; `EntityBlock` and `Connectivity` (Listing T1).
 
 use cubecl::prelude::*;
 use gridcl_device::{
-    DeviceBuffer, DeviceCsr, DeviceStrided, GridError, KernelKind, LaunchPlan, Result,
+    DeviceBuffer, DeviceCsr, DeviceStrided, GridError, KernelKind, LaunchPlan, Result, Unique,
     debug_assert_bindings, gather, radix_sort, scatter, unique_by_key,
 };
 use gridcl_dims::CellType;
@@ -11,6 +11,7 @@ use gridcl_parallel::{CommDyn, IndexMap};
 
 use crate::emission::{EmissionPlan, emission_plans, sub_entity_vertices};
 use crate::keys::emit_keys;
+use crate::ownership::{Candidates, GHOST_CELL, Ownership, Sharing, agree};
 
 /// The entities of one type and dimension (Listing T1).
 ///
@@ -330,6 +331,10 @@ struct DimContext<'a> {
     client: &'a Client,
     comm: &'a dyn CommDyn,
     cells: &'a [(CellType, &'a DeviceStrided<u32>)],
+    /// The owned cell count of each cell block.
+    owned: &'a [usize],
+    /// The vertex sharing; `None` on one rank or without sharers.
+    sharing: Option<Sharing<'a>>,
     ids: &'a DeviceBuffer<u32>,
     fast: bool,
     dim: usize,
@@ -342,8 +347,69 @@ struct DimContext<'a> {
     cell_offsets: &'a [usize],
 }
 
-/// Steps 2–5 and 7 for one entity type of `plan`, with the block offset `offset`.
-fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Result<TypeEntities> {
+/// One entity type after steps 2–5 on the device, before ownership.
+struct Provisional {
+    payload: DeviceBuffer<u32>,
+    unique: Unique,
+    runs: usize,
+    /// The entity count: the runs without the sentinel group.
+    count: usize,
+    /// The smallest touching-cell value of each run (`touching_cells`).
+    mins: DeviceBuffer<u32>,
+}
+
+/// Steps 2–5 for one entity type of `plan`, and its sharing candidates; `None` without
+/// emission. The keys hold vertex indices clamped to last_vertex < u32::MAX, so no real key
+/// equals the all-ones sentinel, and the sentinel group, if any, is the last run.
+fn provisional(
+    cx: &DimContext<'_>,
+    plan: &EmissionPlan,
+) -> Result<(Option<Provisional>, Candidates)> {
+    let words = gridcl_refcell::vertices(plan.entity).len();
+    if plan.total == 0 {
+        return Ok((None, Candidates::none(words)));
+    }
+    let (keys, payload) = emit_keys(cx.client, cx.cells, cx.dim, plan, cx.last_vertex)?;
+    let (sorted, payload) = radix_sort(&keys, &payload)?;
+    let unique = unique_by_key(&sorted, &payload)?; // the count read
+    let runs = unique.keys.len();
+    let count = runs - usize::from(plan.has_sentinels());
+    let mins = crate::renumber::touching_cells(
+        cx.client,
+        &sorted,
+        &payload,
+        plan,
+        cx.cell_offsets,
+        cx.owned,
+    )?;
+    let candidates = match cx.sharing {
+        Some(s) => crate::ownership::candidates(
+            &unique.keys,
+            &mins,
+            count,
+            cx.ids,
+            s.flags,
+            cx.last_vertex,
+        )?,
+        None => Candidates::none(words),
+    };
+    let p = Provisional {
+        payload,
+        unique,
+        runs,
+        count,
+        mins,
+    };
+    Ok((Some(p), candidates))
+}
+
+/// Step 7 and the arrays of one entity type of `plan`, with the block offset `offset`.
+fn finish_type(
+    cx: &DimContext<'_>,
+    plan: &EmissionPlan,
+    p: Option<Provisional>,
+    offset: usize,
+) -> Result<TypeEntities> {
     let DimContext {
         client,
         comm,
@@ -354,11 +420,11 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
         ..
     } = *cx;
     let words = gridcl_refcell::vertices(plan.entity).len();
-    let empty = |count: usize| -> Result<TypeEntities> {
-        Ok(TypeEntities {
+    let Some(p) = p else {
+        return Ok(TypeEntities {
             block: EntityBlock {
                 cell: plan.entity,
-                index_map: IndexMap::new(comm, count)?,
+                index_map: IndexMap::new(comm, 0)?,
                 vertices: DeviceStrided {
                     data: DeviceBuffer::uninit(client, 0)?,
                     stride: fit(words)?,
@@ -366,18 +432,16 @@ fn create_type(cx: &DimContext<'_>, plan: &EmissionPlan, offset: usize) -> Resul
                 offset: fit(offset)?,
             },
             flat: DeviceBuffer::uninit(client, plan.total)?,
-        })
+        });
     };
-    if plan.total == 0 {
-        return empty(0);
-    }
-    let (keys, payload) = emit_keys(client, cells, dim, plan, cx.last_vertex)?;
-    let (sorted, payload) = radix_sort(&keys, &payload)?;
-    let unique = unique_by_key(&sorted, &payload)?; // the count read
-    let runs = unique.keys.len();
-    let count = runs - usize::from(plan.has_sentinels());
-    let old2new =
-        crate::renumber::renumber(client, &sorted, &payload, plan, cx.cell_offsets, runs)?;
+    let Provisional {
+        payload,
+        unique,
+        runs,
+        count,
+        mins,
+    } = p;
+    let old2new = crate::renumber::renumber(client, &mins, runs)?;
 
     // Entity → vertex in canonical orientation, one launch per block.
     let vertices_len = count.checked_mul(words).ok_or(GridError::TooLarge)?;
@@ -456,19 +520,42 @@ pub(crate) fn last_vertex(ids: &DeviceBuffer<u32>) -> Result<u32> {
     Ok(fit(ids.len() / 2)?.saturating_sub(1))
 }
 
-/// The entity blocks of dimension `dim` ≥ 1 and the downward connectivity (tdim, dim) of the
-/// cell blocks `cells` (cell type and vertex rows), over vertices with origin ids `ids`.
+/// The cells of a topology that entity creation reads.
+pub(crate) struct Cells<'a> {
+    /// The cell type and vertex rows of each cell block.
+    pub(crate) rows: Vec<(CellType, &'a DeviceStrided<u32>)>,
+    /// The owned cell count of each cell block.
+    pub(crate) owned: Vec<usize>,
+    /// The interleaved vertex origin ids.
+    pub(crate) ids: &'a DeviceBuffer<u32>,
+    /// Whether every vertex origin id fits u32 (the kernels' fast path).
+    pub(crate) fast: bool,
+    /// The vertex sharing; `None` without sharers.
+    pub(crate) sharing: Option<Sharing<'a>>,
+}
+
+/// The entities of one dimension and the owners entity creation found for them.
+pub(crate) struct Dimension {
+    /// One entity block per entity type.
+    pub(crate) blocks: Vec<EntityBlock>,
+    /// The downward connectivity (tdim, dim), one strided array per cell block.
+    pub(crate) downward: Vec<DeviceStrided<u32>>,
+    /// The owners of the sharing candidates of each entity type; empty on one rank.
+    #[cfg_attr(not(test), expect(dead_code, reason = "T14 numbers the ghosts from it"))]
+    pub(crate) ownership: Vec<Ownership>,
+}
+
+/// The entity blocks of dimension `dim` ≥ 1 and the downward connectivity (tdim, dim) of
+/// `cells`, and the owners of the sharing candidates of each entity type (step 6). Collective
+/// on more than one rank, with an agreed status (ADR-0026, item 15).
 pub(crate) fn create_dimension(
     client: &Client,
     comm: &dyn CommDyn,
-    cells: &[(CellType, &DeviceStrided<u32>)],
-    ids: &DeviceBuffer<u32>,
-    fast: bool,
+    cells: &Cells<'_>,
     dim: usize,
-) -> Result<(Vec<EntityBlock>, Vec<DeviceStrided<u32>>)> {
-    let counts = cell_counts(cells);
-    let plans = emission_plans(&counts, dim)?;
-    let mut types = Vec::with_capacity(plans.len());
+) -> Result<Dimension> {
+    let parallel = comm.size() > 1;
+    let counts = cell_counts(&cells.rows);
     let cell_offsets: Vec<usize> = counts
         .iter()
         .scan(0usize, |acc, &(_, n)| {
@@ -477,25 +564,58 @@ pub(crate) fn create_dimension(
             Some(first)
         })
         .collect();
+    let total_cells: usize = counts.iter().map(|&(_, n)| n).sum();
+    let plans = agree(
+        comm,
+        if total_cells >= GHOST_CELL as usize {
+            Err(GridError::TooLarge)
+        } else {
+            emission_plans(&counts, dim)
+        },
+    )?;
     let cx = DimContext {
         client,
         comm,
-        cells,
-        ids,
-        fast,
+        cells: &cells.rows,
+        owned: &cells.owned,
+        sharing: if parallel { cells.sharing } else { None },
+        ids: cells.ids,
+        fast: cells.fast,
         dim,
-        last_vertex: last_vertex(ids)?,
+        last_vertex: last_vertex(cells.ids)?,
         cell_offsets: &cell_offsets,
     };
+
+    // Steps 2–5 and the candidates of every type, then their owners (step 6).
+    let prepared = agree(
+        comm,
+        plans
+            .iter()
+            .map(|plan| provisional(&cx, plan))
+            .collect::<Result<Vec<_>>>(),
+    )?;
+    let (provisionals, candidates): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
+    let ownership = if parallel {
+        crate::ownership::owners(comm, cx.sharing, candidates)?
+    } else {
+        Vec::new()
+    };
+
+    let mut types = Vec::with_capacity(plans.len());
     let mut offset = 0usize;
-    for plan in &plans {
-        let t = create_type(&cx, plan, offset)?;
-        offset = offset
-            .checked_add(t.block.index_map.num_local())
-            .ok_or(GridError::TooLarge)?;
-        types.push(t);
-    }
-    fit(offset)?;
+    let finished = (|| -> Result<()> {
+        for (plan, p) in plans.iter().zip(provisionals) {
+            let t = finish_type(&cx, plan, p, offset)?;
+            offset = offset
+                .checked_add(t.block.index_map.num_local())
+                .ok_or(GridError::TooLarge)?;
+            types.push(t);
+        }
+        fit(offset)?;
+        Ok(())
+    })();
+    agree(comm, finished)?;
+    let cells = &cells.rows;
 
     // cell → entity of each block, with flat indices.
     let mut downward = Vec::with_capacity(cells.len());
@@ -576,5 +696,9 @@ pub(crate) fn create_dimension(
             stride: fit(k)?,
         });
     }
-    Ok((types.into_iter().map(|t| t.block).collect(), downward))
+    Ok(Dimension {
+        blocks: types.into_iter().map(|t| t.block).collect(),
+        downward,
+        ownership,
+    })
 }

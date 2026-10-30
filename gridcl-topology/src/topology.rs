@@ -8,6 +8,8 @@ use gridcl_device::{ConnKey, DeviceBuffer, DeviceStrided, GridError, Result};
 use gridcl_dims::{CellType, TopoDim};
 use gridcl_parallel::{CommDyn, IndexMap};
 
+use crate::entity::Cells;
+use crate::ownership::Sharing;
 use crate::{
     CellBlock, Connectivity, EntityBlock, VertexSharers, encode_origin_ids, origin_ids_fit_u32,
 };
@@ -205,6 +207,25 @@ impl<TD: TopoDim> Topology<TD> {
             .collect()
     }
 
+    /// What entity creation reads: the cell rows, owned counts, origin ids and sharing.
+    pub(crate) fn entity_cells(&self) -> Cells<'_> {
+        Cells {
+            rows: self.cell_rows(),
+            owned: self
+                .cell_blocks
+                .iter()
+                .map(|b| b.index_map.num_owned())
+                .collect(),
+            ids: &self.vertex_origin_ids,
+            fast: self.ids_fit_u32,
+            sharing: self.vertex_shared.as_ref().map(|flags| Sharing {
+                flags,
+                sharers: &self.vertex_sharers,
+                ranks: &self.sharing_ranks,
+            }),
+        }
+    }
+
     /// Whether gridcl stores the connectivity `key`.
     fn supported(key: ConnKey) -> bool {
         let (from, to, tdim) = (usize::from(key.from), usize::from(key.to), TD::N);
@@ -268,10 +289,21 @@ impl<TD: TopoDim> Topology<TD> {
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
     /// connectivity (tdim, dim). Does nothing if they exist.
     ///
+    /// Collective on more than one rank: every rank of `comm` calls it with the same `dim`.
+    /// Entities whose vertices are all shared ([`set_vertex_sharers`](Topology::set_vertex_sharers))
+    /// get their owners by an exchange over the sharing neighbourhood (docs/design.md,
+    /// "Ownership of vertices and entities"), and errors are agreed (ADR-0026, item 15).
+    ///
     /// # Errors
     ///
     /// `EntitiesNotCreated(dim)` for dim ≥ tdim; `TooLarge` if the padded emission exceeds
-    /// 2^32 keys; device errors.
+    /// 2^32 keys or the cell blocks hold 2^31 cells or more; device and communication errors;
+    /// `RemoteFailure` if another rank failed.
+    ///
+    /// # Panics
+    ///
+    /// If an entity whose vertices are all shared has no holder in an owned cell, which
+    /// happens only if the vertex sharers are not consistent across ranks.
     pub fn create_entities(&mut self, comm: &dyn CommDyn, dim: usize) -> Result<()> {
         if dim >= TD::N {
             return Err(GridError::EntitiesNotCreated(dim));
@@ -294,15 +326,9 @@ impl<TD: TopoDim> Topology<TD> {
             self.entities[0] = Some(vec![block]);
             return Ok(());
         }
-        let cells = self.cell_rows();
-        let (blocks, downward) = crate::entity::create_dimension(
-            &self.client,
-            comm,
-            &cells,
-            &self.vertex_origin_ids,
-            self.ids_fit_u32,
-            dim,
-        )?;
+        let crate::entity::Dimension {
+            blocks, downward, ..
+        } = crate::entity::create_dimension(&self.client, comm, &self.entity_cells(), dim)?;
         self.entities[dim] = Some(blocks);
         self.connectivity.insert(
             ConnKey {
@@ -315,7 +341,8 @@ impl<TD: TopoDim> Topology<TD> {
     }
 
     /// Creates the connectivity `from` → `to`, creating the entities it needs. Does nothing if
-    /// it exists.
+    /// it exists. Collective on more than one rank, as
+    /// [`create_entities`](Topology::create_entities).
     ///
     /// # Errors
     ///
