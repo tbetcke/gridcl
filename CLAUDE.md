@@ -65,6 +65,10 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
 - docs/design.md is the source of truth and is not edited during implementation. A change to a
   public API, crate boundary, convention or acceptance test needs an ADR (skill: draft-adr);
   the design is updated only after the maintainer accepts the ADR.
+- CubeCL or CubeK bugs, surprising behaviour, missing settings and documentation gaps go into
+  docs/cubecl-upstream.md as a `C<n>` entry (version, observation with source location,
+  evidence, gridcl workaround, suggestion, status), in the same commit as the work that found
+  them. Check claims against the crate source first; update the status when reported or fixed.
 - Delegated work (subagents): include the task text, the design sections it depends on and
   this rule: "If the design is ambiguous or an API must change, stop and return an ADR draft
   instead of deviating." Subagents cannot ask the user questions.
