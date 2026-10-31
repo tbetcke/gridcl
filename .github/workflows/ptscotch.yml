@@ -1,5 +1,6 @@
-# Partitioner tests with PT-Scotch (docs/design.md, "CI matrix"), on Ubuntu's PT-Scotch and
-# Open MPI. Nightly, on changes to gridcl-partition/ or ptscotch-sys/, and by hand.
+# Partitioner tests with PT-Scotch (docs/design.md, "CI matrix"), on Ubuntu's PT-Scotch, ParMETIS
+# and Open MPI. Nightly, on changes to gridcl-partition/, ptscotch-sys/ or parmetis-sys/, and by
+# hand.
 name: ptscotch
 
 on:
@@ -9,6 +10,7 @@ on:
     paths:
       - "gridcl-partition/**"
       - "ptscotch-sys/**"
+      - "parmetis-sys/**"
       - ".github/workflows/ptscotch.yml"
   workflow_dispatch:
 
@@ -24,10 +26,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: PT-Scotch, Open MPI and libclang (bindgen)
+      - name: PT-Scotch, ParMETIS, Open MPI and libclang (bindgen)
         uses: ./.github/actions/apt-install
         with:
-          packages: libscotch-dev libptscotch-dev openmpi-bin libopenmpi-dev libclang-dev
+          packages: libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libclang-dev
       - run: mpirun --version
       - name: Rust toolchain from rust-toolchain.toml
         run: |
@@ -39,6 +41,7 @@ jobs:
           key: ptscotch
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test -p ptscotch-sys --features mpi
+      - run: cargo test -p parmetis-sys --features mpi
       # ADR-0029, item 13: Ubuntu's PT-Scotch under MPI's Threading::Single on 2 ranks.
       - name: Threading probe, 2 ranks
         run: |
