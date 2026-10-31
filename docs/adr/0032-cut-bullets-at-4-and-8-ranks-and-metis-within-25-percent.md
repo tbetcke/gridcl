@@ -1,6 +1,6 @@
 # ADR-0032: The cut bullets apply at 4 and 8 ranks, and METIS within 25% of Scotch
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-31
 - **Raised in:** M7 T6
 - **Design sections affected:** "Implementation roadmap / M7" (the **Acceptance** paragraph and its
@@ -130,4 +130,4 @@ Option 4.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-31, as proposed (option 4), without conditions. Applied in `adr: 0032 apply`.

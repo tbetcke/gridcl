@@ -116,7 +116,7 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 10. **Balance targets.** 3% for every backend: METIS `ufactor` 30, Scotch and PT-Scotch `SCOTCH_STRATQUALITY` strategies built with 0.03, ParMETIS `ubvec` 1.03. No edge weights.
 11. **Reading of the M7 acceptance.**
     - "Weighted imbalance" is max_k W_k · nparts / W − 1, with W_k the summed `vwgt` of part k, for every external partitioner (PtScotch, Metis, Scotch, and ParMetis when built); not `Block`.
-    - The edge cut counts each undirected dual-graph edge whose ends lie in different parts once. "Within 10%" is one-sided: cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.10 · cut(Scotch).
+    - The edge cut counts each undirected dual-graph edge whose ends lie in different parts once. "Within 10%" is one-sided: cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.25 · cut(Scotch) (ADR-0032; the design first said 10% for METIS too), asserted at 4 and 8 ranks.
     - nparts equals the number of ranks, and every partitioner works on the graph that stage 2 gives for even input chunks.
     - Reproducibility: per partitioner, the same seed twice in one run, with a different seed in between, gives identical parts on every rank, and the hash of the parts agrees between two `mpirun` runs.
     - The one-sided reading cannot detect a poor reference: a misconfigured Scotch wrapper would let PT-Scotch and METIS pass easily. Two checks outside the acceptance bullets cover this:
@@ -161,3 +161,5 @@ Accepted by the maintainer on 2026-10-30, as proposed (option 2, items 1–15, w
 Amended by ADR-0030 (factor 2 on the slab bound), accepted 2026-10-31.
 
 Amended by ADR-0031 (Scotch and PT-Scotch seeds in a deterministic context; item 8), accepted 2026-10-31. ptscotch-sys's bindings (item 5) gain `SCOTCH_context*` and the `SCOTCH_OPTIONNUM*` constants.
+
+Amended by ADR-0032 (cut bullets at 4 and 8 ranks; METIS within 25%), accepted 2026-10-31.

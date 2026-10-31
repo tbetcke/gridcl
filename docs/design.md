@@ -1971,10 +1971,10 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Scope:** vertex weights on M6's distributed dual graph (ADR-0026), ptscotch-sys and its wrapper, parmetis-sys and its wrapper (feature-gated), METIS on rank 0 (vendored) and Scotch on rank 0.
 
-**Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Kathleen node through `scripts/hpc`; ADR-0016), read as in ADR-0029 (imbalance for every external partitioner; cut ≤ 1.10 · Scotch's; reproducibility per partitioner and rank count):
+**Acceptance** on a 10^6-cell tetrahedral box and a 2 · 10^5-cell mixed hexahedron/prism/pyramid mesh, at 4 and 8 ranks (8-rank runs on one Kathleen node through `scripts/hpc`; ADR-0016), read as in ADR-0029 (imbalance for every external partitioner; cut(PT-Scotch) ≤ 1.10 · Scotch's and cut(METIS) ≤ 1.25 · Scotch's; reproducibility per partitioner and rank count; ADR-0029, ADR-0032):
 
 - weighted imbalance ≤ 5%;
-- PT-Scotch's edge cut is within 10% of sequential Scotch on the same graph, and METIS's within 10% of Scotch;
+- PT-Scotch's edge cut is within 10% of sequential Scotch on the same graph, and METIS's within 25% of Scotch;
 - a fixed seed reproduces the partition for a fixed rank count.
 
 ### M8 Parallel I/O
