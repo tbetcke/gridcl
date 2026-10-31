@@ -1,6 +1,6 @@
 # ADR-0031: Scotch and PT-Scotch run in a deterministic context
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-31
 - **Raised in:** M7 T4
 - **Design sections affected:** "Partitioning" (the **Reproducibility** bullet); ADR-0029, item 8
@@ -119,4 +119,4 @@ Ubuntu 24.04 (7.0.x; the T5 probe step confirms it in CI) and the 7.0.x that T7 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-31, as proposed (option 3), without conditions. Applied in `adr: 0031 apply`.
