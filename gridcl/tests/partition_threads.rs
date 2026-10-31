@@ -146,6 +146,58 @@ fn weights() {
     }
 }
 
+/// `dual_graph_on` returns the graph that `build_on` gives the partitioner, on 2–4 ranks.
+#[test]
+fn dual_graph_on_equals_the_partitioner_input() {
+    use std::sync::{Arc, Mutex};
+
+    /// `Block`, keeping the graph it receives.
+    struct Recording(Arc<Mutex<Option<DistGraph>>>);
+    impl Partitioner for Recording {
+        fn name(&self) -> &str {
+            "recording"
+        }
+        fn partition(
+            &self,
+            comm: &dyn CommDyn,
+            g: &DistGraph,
+            nparts: usize,
+        ) -> gridcl::Result<Vec<i32>> {
+            *self.0.lock().unwrap() = Some(g.clone());
+            Block.partition(comm, g, nparts)
+        }
+    }
+
+    let hosts = [
+        ("mixed", gridcl_testing::mixed_box(2, 1)),
+        (
+            "hex/prism/pyramid p=2",
+            gridcl_testing::hex_prism_pyramid_box(2, 2),
+        ),
+    ];
+    for (name, h) in &hosts {
+        for size in 2..=4 {
+            ThreadComm::run(size, |comm| {
+                let client = gridcl_testing::test_client();
+                let seen = Arc::new(Mutex::new(None));
+                let chunk = h.chunk(comm.rank(), size);
+                chunk
+                    .builder::<f32, D3, D3>(&client)
+                    .unwrap()
+                    .partitioner(Recording(seen.clone()))
+                    .build_on(comm.clone())
+                    .expect("mesh");
+                let want = pipeline_graph(comm, h);
+                assert_eq!(
+                    seen.lock().unwrap().as_ref(),
+                    Some(&want),
+                    "{name} on {size} ranks"
+                );
+            });
+        }
+    }
+}
+
 /// `vtxdist` of `n` cells in even chunks over `size` ranks (`HostMesh::chunk`).
 fn chunk_vtxdist(n: usize, size: usize) -> Vec<i64> {
     (0..=size).map(|r| (r * n / size) as i64).collect()

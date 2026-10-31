@@ -334,8 +334,8 @@ where
     /// The input errors of `build_on`, agreed over the ranks, and errors of the exchanges.
     #[doc(hidden)]
     pub fn dual_graph_on<C: Comm>(self, comm: C) -> Result<DistGraph> {
-        let _ = comm;
-        todo!("MeshBuilder::dual_graph_on (M7 T1)")
+        let read = input::read(&comm, &self.input())?;
+        dual_graph(&comm, &read.blocks, &read.cells)
     }
 
     /// Checks, numbers and uploads the mesh: [`build_on`](MeshBuilder::build_on) with the
@@ -358,13 +358,9 @@ where
         self.build_on(Serial)
     }
 
-    /// [`build_on`](MeshBuilder::build_on), also returning the local vertex index of each node
-    /// of this rank's input chunk (`u32::MAX` for nodes that are no local cell's vertex); the
-    /// Gmsh reader matches tags through it (ADR-0022, item 5).
-    pub(crate) fn build_with_comm<C: Comm>(self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
-        let client = &self.client;
-        agree(&comm, check_precision::<F>(client))?;
-        let input = Input {
+    /// The input of stage 1.
+    fn input(&self) -> Input<'_> {
+        Input {
             tdim: TD::N,
             gdim: GD::N,
             coords: &self.coords,
@@ -383,14 +379,22 @@ where
                 })
                 .collect(),
             tags: &self.tags,
-        };
+        }
+    }
+
+    /// [`build_on`](MeshBuilder::build_on), also returning the local vertex index of each node
+    /// of this rank's input chunk (`u32::MAX` for nodes that are no local cell's vertex); the
+    /// Gmsh reader matches tags through it (ADR-0022, item 5).
+    pub(crate) fn build_with_comm<C: Comm>(self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
+        let client = &self.client;
+        agree(&comm, check_precision::<F>(client))?;
         // Stages 1–8.
         let Read {
             blocks,
             nodes: chunk,
             cells,
             lower_tags,
-        } = input::read(&comm, &input)?;
+        } = input::read(&comm, &self.input())?;
         let owned = if comm.size() == 1 {
             cells
         } else {

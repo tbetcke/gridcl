@@ -13,7 +13,8 @@ use super::{BlockSpec, Cells, agree, facet_keys};
 /// Stage 2: the dual graph of `cells`, whose vertices are the cells in rank order and whose
 /// edges join cells that share a facet. Facet keys (sorted vertex origin ids) meet at their
 /// rendezvous rank, which sends every pair of cells with the same key to the first cell's
-/// rank. `vwgt` is `None` (M7 adds weights). Collective.
+/// rank. The weight of a vertex is the Lagrange node count of its cell's type and degree, the
+/// cost model of ADR-0029, item 2. Collective.
 ///
 /// # Errors
 ///
@@ -67,11 +68,16 @@ pub(crate) fn dual_graph(
         adjncy.extend_from_slice(&row);
         xadj.push(adjncy.len() as i64);
     }
+    let vwgt = cells
+        .block
+        .iter()
+        .map(|&b| blocks[b as usize].num_nodes() as i64)
+        .collect();
     Ok(DistGraph {
         vtxdist,
         xadj,
         adjncy,
-        vwgt: None,
+        vwgt: Some(vwgt),
     })
 }
 
@@ -112,15 +118,21 @@ pub(crate) fn partition(
 mod tests {
     use super::*;
     use crate::pipeline::input::read;
-    use crate::pipeline::testing::{OwnedInput, host_adjacency, host_facets, meshes};
+    use crate::pipeline::testing::{OwnedInput, host_adjacency, host_cells, host_facets, meshes};
     use gridcl_partition::Block;
     use gridcl_testing::ThreadComm;
+    use std::collections::BTreeMap;
 
-    /// The graph equals the serial facet graph of the whole mesh, in cell origin ids.
+    /// The graph equals the serial facet graph of the whole mesh, in cell origin ids, and the
+    /// weight of every cell is its node count (ADR-0029, item 2).
     #[test]
     fn graph_equals_the_facet_graph() {
         for (name, h) in meshes() {
-            let want = host_adjacency(&host_facets(&h));
+            let nodes = host_cells(&h);
+            let want: BTreeMap<i64, (Vec<i64>, i64)> = host_adjacency(&host_facets(&h))
+                .into_iter()
+                .map(|(id, adj)| (id, (adj, nodes[&id].1.len() as i64)))
+                .collect();
             for size in 1..=4 {
                 let parts = ThreadComm::run(size, |comm| {
                     let input = OwnedInput::of_chunk(&h.chunk(comm.rank(), size));
@@ -132,13 +144,15 @@ mod tests {
                 });
                 // Graph vertex → cell origin id.
                 let ids: Vec<i64> = parts.iter().flat_map(|(ids, _)| ids.clone()).collect();
-                let mut got = std::collections::BTreeMap::new();
+                let mut got = BTreeMap::new();
                 for (cells, g) in &parts {
+                    let vwgt = g.vwgt.as_ref().expect("weights");
+                    assert_eq!(vwgt.len(), cells.len());
                     for (i, &id) in cells.iter().enumerate() {
                         let row = &g.adjncy[g.xadj[i] as usize..g.xadj[i + 1] as usize];
                         let mut adj: Vec<i64> = row.iter().map(|&x| ids[x as usize]).collect();
                         adj.sort_unstable();
-                        got.insert(id, adj);
+                        got.insert(id, (adj, vwgt[i]));
                     }
                 }
                 assert_eq!(got, want, "{name} on {size} ranks");
