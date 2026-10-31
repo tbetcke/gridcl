@@ -27,10 +27,22 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # As ci.yml: workspace crates at opt-level 1, checks on.
+  CARGO_PROFILE_DEV_OPT_LEVEL: 1
 
 jobs:
+  # One job per feature set of ADR-0033 (METIS and ParMETIS exclude each other).
   ptscotch:
+    name: ptscotch-${{ matrix.set }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - set: metis
+            features: metis,scotch,ptscotch
+          - set: parmetis
+            features: scotch,ptscotch,parmetis
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: PT-Scotch, ParMETIS, Open MPI and libclang (bindgen)
@@ -45,7 +57,7 @@ jobs:
           rustc --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: ptscotch
+          key: ptscotch-${{ matrix.set }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test -p ptscotch-sys --features mpi
       - run: cargo test -p parmetis-sys --features mpi
@@ -54,33 +66,24 @@ jobs:
         run: |
           cargo build -p ptscotch-sys --features mpi --example threading_probe
           timeout 300 mpirun --oversubscribe -n 2 target/debug/examples/threading_probe
-      # gridcl's ptscotch and parmetis imply mpi, so ThreadComm needs gridcl-testing/mpi. The VTK
-      # oracles (Python) run in ci.yml's cpu job, not here.
-      - name: Partitioner crates with METIS, Scotch and PT-Scotch
-        run: >-
-          cargo test -p gridcl-partition -p gridcl
-          --features gridcl/metis,gridcl/scotch,gridcl/ptscotch,gridcl-testing/mpi
+      # gridcl's ptscotch and parmetis imply mpi, so ThreadComm needs gridcl-testing/mpi. Only
+      # what the features change; ci.yml's cpu job runs the rest of gridcl's suite and the VTK
+      # oracles (Python).
+      - name: Partitioner tests
+        run: |
+          cargo test -p gridcl-partition --features "$FEATURES"
+          cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --test partition_threads
+          cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --doc -- partitioner
         env:
+          FEATURES: ${{ matrix.features }}
           GRIDCL_SKIP_PYTHON: 1
-      - name: Partitioner crates with Scotch, PT-Scotch and ParMETIS
-        run: >-
-          cargo test -p gridcl-partition -p gridcl
-          --features gridcl/scotch,gridcl/ptscotch,gridcl/parmetis,gridcl-testing/mpi
+      # The M7 MPI targets at 2 and 4 ranks: one rank runs in the ThreadComm tests, and the
+      # acceptance runs at 4 and 8 ranks on Kathleen. One hardware thread per rank, as in
+      # ci.yml's mpi jobs.
+      - name: M7 MPI targets, 2 and 4 ranks
+        run: scripts/mpi-test.sh 2 4
         env:
-          GRIDCL_SKIP_PYTHON: 1
-      # The M7 MPI targets in the two builds of ADR-0033: METIS (the acceptance run) and ParMETIS.
-      # One hardware thread per rank, as in ci.yml's mpi jobs.
-      - name: M7 MPI targets with METIS, 1-4 ranks
-        run: scripts/mpi-test.sh 1 2 3 4
-        env:
-          GRIDCL_MPI_FEATURES: partitioners,metis
-          GRIDCL_MPI_TESTS: partition_quality,partition_seed,partition_build
-          UCX_TLS: self,sm,tcp
-          GRIDCL_MPIRUN_FLAGS: --use-hwthread-cpus --bind-to hwthread
-      - name: M7 MPI targets with ParMETIS, 1-4 ranks
-        run: scripts/mpi-test.sh 1 2 3 4
-        env:
-          GRIDCL_MPI_FEATURES: partitioners,parmetis
+          GRIDCL_MPI_FEATURES: partitioners,${{ matrix.set }}
           GRIDCL_MPI_TESTS: partition_quality,partition_seed,partition_build
           UCX_TLS: self,sm,tcp
           GRIDCL_MPIRUN_FLAGS: --use-hwthread-cpus --bind-to hwthread

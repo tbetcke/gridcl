@@ -24,6 +24,9 @@ env:
   # No debug info in test builds: it made up most of the cached target directory and of the
   # link time. Backtraces keep function names.
   CARGO_PROFILE_DEV_DEBUG: 0
+  # Workspace crates at opt-level 1 (dependencies are at 2, Cargo.toml): their host code
+  # dominated the debug test times. Debug assertions and overflow checks stay on.
+  CARGO_PROFILE_DEV_OPT_LEVEL: 1
   # The CPU runtime's build script downloads its LLVM bundle to $XDG_DATA_HOME/tracel.
   XDG_DATA_HOME: /home/runner/.local/share
 
@@ -39,19 +42,21 @@ jobs:
           rustc --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: cpu
+          # Shared with cpu-gridcl, which builds a subset and saves nothing.
+          shared-key: cpu
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
-          .venv/bin/python scripts/oracles/vtk_oracle.py versions
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
-      # Partition-quality tests with vendored METIS, the design's CI default (M7 T3).
-      - run: cargo test -p gridcl-partition -p gridcl --features gridcl/metis
+      # `cargo test --workspace` in two jobs: gridcl's suite runs in cpu-gridcl.
+      - run: cargo test --workspace --exclude gridcl
+      # Partition-quality tests with vendored METIS, the design's CI default (M7 T3): only what
+      # the feature changes; the rest of gridcl's suite ran above.
+      - name: Partitioner tests with METIS
+        run: |
+          cargo test -p gridcl-partition --features metis
+          cargo test -p gridcl --features metis --test partition_threads
+          cargo test -p gridcl --features metis --doc -- partitioner
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -Dwarnings
@@ -61,6 +66,28 @@ jobs:
           rc=0
           scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
+
+  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's).
+  cpu-gridcl:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal
+          rustc --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: cpu
+          cache-directories: ~/.local/share/tracel
+          save-if: false
+      - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
+          .venv/bin/python scripts/oracles/vtk_oracle.py versions
+      - run: cargo test -p gridcl
 
   mpi:
     name: mpi-${{ matrix.mpi }}
