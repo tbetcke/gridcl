@@ -163,3 +163,5 @@ Amended by ADR-0030 (factor 2 on the slab bound), accepted 2026-10-31.
 Amended by ADR-0031 (Scotch and PT-Scotch seeds in a deterministic context; item 8), accepted 2026-10-31. ptscotch-sys's bindings (item 5) gain `SCOTCH_context*` and the `SCOTCH_OPTIONNUM*` constants.
 
 Amended by ADR-0032 (cut bullets at 4 and 8 ranks; METIS within 25%), accepted 2026-10-31.
+
+Item 14 superseded by ADR-0033 (`metis` and `parmetis` mutually exclusive), accepted 2026-10-31.

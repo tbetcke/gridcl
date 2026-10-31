@@ -1532,10 +1532,10 @@ impl Partitioner for PtScotch { /* ... */ }              // name(): "ptscotch", 
 | Backend | Integration | Feature | Role |
 | --- | --- | --- | --- |
 | Block | built in | – | CI default for pipeline tests. Also honours partition data stored in Gmsh files. |
-| METIS on rank 0 | `metis` crate with its `vendored` feature, which builds METIS from source | `metis` | CI default for partition-quality tests; small and medium meshes |
+| METIS on rank 0 | `metis` crate with its `vendored` feature, which builds METIS from source | `metis` | CI default for partition-quality tests; small and medium meshes; not together with `parmetis` (ADR-0033) |
 | PT-Scotch | Scotch 7.x (context API); own `ptscotch-sys` (bindgen of `ptscotch.h`, `SCOTCH_Num` width probed at build time) plus a safe wrapper; the existing `scotch-sys` binds only `scotch.h`; feature `mpi` of ptscotch-sys; libraries from `SCOTCH_DIR` or the system paths | `ptscotch` | production default; tested in its own CI job on an image with a known PT-Scotch build |
 | Scotch on rank 0 | `scotch` crate, plus `scotch-sys` for the seed and strategy | `scotch` | rank-0 alternative; the reference edge cut in M7 |
-| ParMETIS | own `parmetis-sys` (no crate exists; `idx_t` and `real_t` widths probed at build time); feature `mpi` of parmetis-sys; libraries from `PARMETIS_DIR`, `METIS_DIR` or the system paths | `parmetis` | optional; check the licence terms before redistributing binaries |
+| ParMETIS | own `parmetis-sys` (no crate exists; `idx_t` and `real_t` widths probed at build time); feature `mpi` of parmetis-sys; libraries from `PARMETIS_DIR`, `METIS_DIR` or the system paths | `parmetis` | optional; check the licence terms before redistributing binaries; not together with `metis` (ADR-0033) |
 
 - **Rank-0 partitioners** gather the graph on rank 0, partition it and scatter the destinations, through `all_to_all_v`. Rank 0 then needs memory for the whole graph, which limits them to meshes of about 10^7 cells.
 - **Default choice** for distributed reads: PT-Scotch when the `ptscotch` feature is enabled, otherwise METIS on rank 0 when `metis` is enabled, otherwise Block with a warning. Serial meshes need no partitioner.
@@ -1737,7 +1737,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 
 ### Cargo features
 
-- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029).
+- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029).
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
 - **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it.
 - **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on.

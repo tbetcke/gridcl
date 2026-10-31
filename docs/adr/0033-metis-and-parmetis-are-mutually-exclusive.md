@@ -1,6 +1,6 @@
 # ADR-0033: The features `metis` and `parmetis` are mutually exclusive
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-31
 - **Raised in:** M7 T9
 - **Design sections affected:** "Partitioning" (the backend table); "Workspace layout", "Cargo
@@ -100,3 +100,7 @@ out to be needed.
     `gridcl-testing/mpi`) follow; question 17 closes with this ADR.
 - Later milestones affected: M8 (`GmshOptions::partitioner`, the default choice): none beyond
   the documented exclusion.
+
+## Decision record
+
+Accepted by the maintainer on 2026-10-31, as proposed (option 3), without conditions. Applied in `adr: 0033 apply`.
