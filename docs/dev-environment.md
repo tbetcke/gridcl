@@ -199,7 +199,7 @@ GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push (a pull request shows its head commit's checks); manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools`; cpu and vulkan also install the pinned Python oracles, `vtk==9.7.1 meshio==5.3.5`, with pip into `.venv` (the runner's `python3`) |
 | `.github/workflows/conformance.yml` | conformance | nightly; pushes touching `conformance/` or `gridcl-refcell/`; manual | `libopenblas-dev` |
-| `.github/workflows/ptscotch.yml` | ptscotch | nightly; pushes touching `gridcl-partition/`, `ptscotch-sys/`, `parmetis-sys/` or `gridcl/src/pipeline/dual_graph.rs`; manual | `libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libclang-dev` |
+| `.github/workflows/ptscotch.yml` | ptscotch | nightly; pushes touching `gridcl-partition/`, `ptscotch-sys/`, `parmetis-sys/`, `gridcl/src/pipeline/dual_graph.rs`, `gridcl/src/builder.rs`, `gridcl-mpi-tests/`, `gridcl-testing/src/partition.rs`, `gridcl-testing/src/meshes/boxes.rs` or `scripts/mpi-test.sh`; manual | `libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libclang-dev` |
 
 ## Test commands
 

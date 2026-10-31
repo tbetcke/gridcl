@@ -1,6 +1,7 @@
 # Partitioner tests (docs/design.md, "CI matrix"; M7), on Ubuntu's Scotch, PT-Scotch, ParMETIS and
 # Open MPI, in the two feature sets of ADR-0033. Nightly, on changes to gridcl-partition/,
-# ptscotch-sys/, parmetis-sys/ or the pipeline's dual graph, and by hand.
+# ptscotch-sys/, parmetis-sys/, the pipeline's dual graph, the M7 MPI targets or their test
+# infrastructure, and by hand.
 name: ptscotch
 
 on:
@@ -12,6 +13,11 @@ on:
       - "ptscotch-sys/**"
       - "parmetis-sys/**"
       - "gridcl/src/pipeline/dual_graph.rs"
+      - "gridcl/src/builder.rs"
+      - "gridcl-mpi-tests/**"
+      - "gridcl-testing/src/partition.rs"
+      - "gridcl-testing/src/meshes/boxes.rs"
+      - "scripts/mpi-test.sh"
       - ".github/workflows/ptscotch.yml"
   workflow_dispatch:
 

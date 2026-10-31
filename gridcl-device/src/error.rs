@@ -135,10 +135,11 @@ pub enum GridError {
     RemoteFailure { rank: usize },
     /// A partitioner library returned the status `code`; gridcl's own conditions use negative
     /// codes: −1 for ParMETIS with an empty rank, −2 for a self-loop, −3 for an asymmetric
-    /// graph (ADR-0029, item 6).
+    /// graph (ADR-0029, item 6). With `name` `"metis"`, a code after validation is METIS's own
+    /// status (`rstatus_et`: −2 input error, −3 out of memory, −4 other error).
     PartitionerFailed { name: &'static str, code: i32 },
-    /// A distributed partitioner was called on more than one rank of a communicator without an
-    /// MPI handle (`CommDyn::raw` is `None`; ADR-0029, item 6).
+    /// A distributed partitioner was asked for more than one part on a communicator without an
+    /// MPI handle (`CommDyn::raw` is `None`), on any number of ranks (ADR-0029, item 6).
     NeedsMpiCommunicator(&'static str),
 }
 
@@ -226,7 +227,7 @@ impl fmt::Display for GridError {
             }
             GridError::NeedsMpiCommunicator(name) => write!(
                 f,
-                "the {name} partitioner needs an MPI communicator on more than one rank"
+                "the {name} partitioner needs an MPI communicator for more than one part"
             ),
         }
     }
@@ -264,7 +265,7 @@ mod tests {
         );
         assert_eq!(
             GridError::NeedsMpiCommunicator("ptscotch").to_string(),
-            "the ptscotch partitioner needs an MPI communicator on more than one rank"
+            "the ptscotch partitioner needs an MPI communicator for more than one part"
         );
     }
 

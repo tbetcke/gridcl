@@ -158,8 +158,10 @@ pub(crate) fn local_weights(g: &DistGraph, weighted: bool) -> Option<Cow<'_, [i6
 ///
 /// # Errors
 ///
-/// As above, plus the errors of `CommExt::all_to_all_v`. Ranks without a local error return
-/// `RemoteFailure { rank }` with the lowest failing rank.
+/// As above; `MessageTooLarge` if a rank would send or receive more values in the symmetry
+/// exchange than an MPI count holds (no rank then enters it); the errors of
+/// `CommExt::all_to_all_v`. Ranks without a local error return `RemoteFailure { rank }` with
+/// the lowest failing rank.
 #[allow(dead_code)] // Until the external partitioners (M7 T3–T9) use it.
 pub(crate) fn validate(
     comm: &dyn CommDyn,
@@ -176,11 +178,38 @@ pub(crate) fn validate(
         Ok(()) => reverse_queries(&g.vtxdist, begin, g),
         Err(_) => (Vec::new(), vec![0; comm.size()]),
     };
-    let answers = comm.all_to_all_v(&queries, &counts);
-    let local = local
-        .and(answers)
+    // `Mpi` rejects an oversized count on the offending rank only; agree first, so that no
+    // rank waits in the exchange for one that left it.
+    let fits = exchange_fits(comm, &counts);
+    agree(comm, local.and(fits))?;
+    let local = comm
+        .all_to_all_v(&queries, &counts)
         .and_then(|(pairs, _)| confirm_reverse(g, begin, &pairs, name));
     agree(comm, local.map(|()| checked))
+}
+
+/// `MessageTooLarge` if `count` elements exceed an MPI count (`i32::MAX`).
+pub(crate) fn fits_message(count: i64) -> Result<()> {
+    if i32::try_from(count).is_err() {
+        return Err(GridError::MessageTooLarge {
+            count: usize::try_from(count).unwrap_or(usize::MAX),
+        });
+    }
+    Ok(())
+}
+
+/// `MessageTooLarge` unless this rank's totals in an `all_to_all_v` with `counts` fit an MPI
+/// count, both sent and received; every count and displacement is at most its total.
+/// Collective (one `all_to_all_v` of the counts), not agreed.
+fn exchange_fits(comm: &dyn CommDyn, counts: &[usize]) -> Result<()> {
+    let send: Vec<u64> = counts.iter().map(|&c| c as u64).collect();
+    let (received, _) = comm.all_to_all_v(&send, &vec![1; counts.len()])?;
+    let total = |values: &[u64]| {
+        let sum = values.iter().map(|&c| u128::from(c)).sum::<u128>();
+        i64::try_from(sum).unwrap_or(i64::MAX)
+    };
+    fits_message(total(&send))?;
+    fits_message(total(&received))
 }
 
 /// Step 2 of [`validate`]: `vtxdist` against the vertex counts of the ranks, and the global
@@ -492,6 +521,22 @@ pub(crate) mod tests {
         assert!(matches!(
             check(&huge, 1, i64::MAX).unwrap_err(),
             GridError::TooLarge
+        ));
+    }
+
+    #[test]
+    fn exchange_counts_must_fit_an_mpi_count() {
+        let max = i32::MAX as usize;
+        assert!(exchange_fits(&Serial, &[0]).is_ok());
+        assert!(exchange_fits(&Serial, &[max]).is_ok());
+        assert!(matches!(
+            exchange_fits(&Serial, &[max + 1]).unwrap_err(),
+            GridError::MessageTooLarge { count } if count == max + 1
+        ));
+        assert!(fits_message(i64::from(i32::MAX)).is_ok());
+        assert!(matches!(
+            fits_message(i64::from(i32::MAX) + 1).unwrap_err(),
+            GridError::MessageTooLarge { count } if count == max + 1
         ));
     }
 

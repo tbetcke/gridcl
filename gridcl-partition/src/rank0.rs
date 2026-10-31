@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use gridcl_parallel::{CommDyn, CommExt, GridError, Result};
 
-use crate::graph::{Checked, DistGraph, agree, local_weights};
+use crate::graph::{Checked, DistGraph, agree, fits_message, local_weights};
 
 /// Held around every library call that uses process-global random state (GKlib's, Scotch's),
 /// so that seeding and partitioning are not interleaved when test threads or `ThreadComm` ranks
@@ -30,16 +30,6 @@ fn to_root(comm: &dyn CommDyn, len: usize) -> Vec<usize> {
     let mut counts = vec![0; comm.size()];
     counts[0] = len;
     counts
-}
-
-/// `MessageTooLarge` if `count` elements exceed an MPI count (`i32::MAX`).
-fn fits_message(count: i64) -> Result<()> {
-    if i32::try_from(count).is_err() {
-        return Err(GridError::MessageTooLarge {
-            count: usize::try_from(count).unwrap_or(usize::MAX),
-        });
-    }
-    Ok(())
 }
 
 /// The graph `g`, which passed [`validate`](crate::graph::validate) as `checked`, gathered on
