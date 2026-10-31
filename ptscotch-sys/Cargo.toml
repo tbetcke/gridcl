@@ -17,3 +17,8 @@ mpi = { workspace = true, optional = true }
 [build-dependencies]
 bindgen = { workspace = true, optional = true }
 build-probe-mpi = { workspace = true, optional = true }
+
+# The threading probe of ADR-0029, item 13 (run it with mpirun; src/lib.rs).
+[[example]]
+name = "threading_probe"
+required-features = ["mpi"]
