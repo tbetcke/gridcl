@@ -1,7 +1,7 @@
 //! The rank-0 path of `Metis` and `Scotch` (ADR-0029, item 7): the graph gathered on rank 0 by
 //! `all_to_all_v` with counts to rank 0 only, the destinations scattered back the same way, and
 //! the checked narrowing to a library's index type.
-#![allow(dead_code)] // Until `Metis` and `Scotch` (M7 T3, T4) use it.
+#![cfg_attr(not(any(feature = "metis", feature = "scotch")), allow(dead_code))]
 
 use std::sync::Mutex;
 

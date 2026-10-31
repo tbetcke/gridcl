@@ -69,6 +69,7 @@ Myriad also has U and V nodes with 4 × A100 80 GB. The runner uses L nodes unle
     | Gmsh, one pinned version: the PyPI wheel `gmsh==4.15.2` | `.venv/bin/pip install gmsh==4.15.2` (`scripts/check-local-tools.sh` checks the pin) | the M4 fixture corpus (`scripts/fixtures/gmsh/generate.py`) |
     | The M5 Python oracles, pinned: `vtk==9.7.1` and `meshio==5.3.5` (ADR-0024) | in `.venv`, see below (`scripts/check-local-tools.sh` checks the pins) | `scripts/oracles/vtk_oracle.py` (the M5 VTK tests) and `scripts/fixtures/vtk/generate.py` (the VTK-written reference cells) |
     | HDF5 built with MPI | Homebrew (`hdf5-mpi`) | M8 VTKHDF output |
+    | Scotch with PT-Scotch (7.0.14) and METIS (5.1.0) | Homebrew (`scotch`, `metis`) | M7's `scotch` and `ptscotch` features; the `metis` feature builds its own METIS |
 
     **Python environment.** One virtual environment at the repository root, `.venv` (git-ignored), holds every pinned Python package:
 
@@ -184,6 +185,8 @@ Re-run env-check on a target after its maintenance window or a module change, an
 - `scripts/check-local-tools.sh` checks and prints the local tool versions.
 - env-check at 10^7 elements, release build, launch and read-back: CPU f32 add 38 ms at vector size 1 and 11 ms at 16, f64 add 34 ms at 1 and 15 ms at 8, u32 atomic histogram 170 ms; Metal f32 add 64 ms at 1 and 26 ms at 4, histogram 19 ms. Every check matches the host result bitwise.
 - On Metal (wgpu MSL), `identity.fingerprint` is `spirv_0_0`: CubeCL 0.11 names every wgpu fingerprint `spirv_{vendor}_{device}`, whatever the shader language.
+- Builds with the `scotch` feature need Homebrew's paths, `CPATH=/opt/homebrew/include LIBRARY_PATH=/opt/homebrew/lib`: scotch-sys's build script adds only `/usr/include/scotch` and links `scotch` and `scotcherr` from the linker's default paths (for example `CPATH=/opt/homebrew/include LIBRARY_PATH=/opt/homebrew/lib cargo test -p gridcl --features scotch --test partition_threads`).
+- Homebrew's Scotch is threaded (`SCOTCH_PTHREAD`) and by default may use non-deterministic threaded algorithms, so a fixed seed alone does not reproduce a partition. `Scotch` runs in a context with `SCOTCH_OPTIONNUMDETERMINISTIC` set (M7 T4).
 - Claude Code's Bash sandbox blocks Metal and `sysctl`: inside it, env-check finds no Metal device and records the CPU model and SIMD flags as unknown. Metal runs and the env-check host record need a command run outside the sandbox (`/sandbox` manages this).
 
 ## Hosted CI
@@ -245,3 +248,4 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | 2026-10-27 | M5 T1: pinned Python oracles `vtk==9.7.1` and `meshio==5.3.5` in `.venv` (ADR-0024, ADR-0025): setup, `GRIDCL_PYTHON` and `GRIDCL_SKIP_PYTHON`; hosted CI installs them in the cpu and vulkan jobs. |
 | 2026-10-30 | M6 T16: MPI and multi-rank tests: `GRIDCL_MPI_TESTS`, the abort hook, `ThreadComm`, and local MPI runs on the M3 Max (CPU runtime on 1 rank, Metal on 1–4). |
 | 2026-10-30 | M6 final run: multi-rank CPU MPI runs bind their ranks: one hardware thread per rank in hosted CI, `--map-by node:PE=… --bind-to core` on Kathleen. |
+| 2026-10-31 | Homebrew Scotch and METIS on the M3 Max; `CPATH` and `LIBRARY_PATH` for the `scotch` feature (M7 T4). |
