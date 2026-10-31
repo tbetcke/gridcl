@@ -12,8 +12,9 @@
 #   GRIDCL_MPI_TESTS         comma-separated target names to run (default: every target); an
 #                            unknown name is an error
 #   GRIDCL_MPI_FEATURES      comma-separated cargo features of gridcl-mpi-tests added to the
-#                            build (default none): `partitioners` builds the M7 targets,
-#                            `parmetis` adds ParMETIS to them
+#                            build (default none): `partitioners` builds the M7 targets
+#                            with Scotch and PT-Scotch; add `metis` (the acceptance run) or
+#                            `parmetis`, not both (ADR-0033)
 #   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default);
 #                            a backend other than cpu also builds with gridcl-testing/<backend>
 #                            (scripts/hpc jobs set cuda)

@@ -14,7 +14,8 @@ use crate::{DistGraph, Partitioner};
 /// and the destinations scattered back (ADR-0029).
 ///
 /// Seeded (default 0); a fixed seed reproduces the partition for a fixed rank count. The
-/// balance target is 3% (`ufactor` 30); vertex weights are used, edge weights are not.
+/// balance target is 3% (`ufactor` 30); vertex weights are used, edge weights are not. The
+/// feature `metis` excludes `parmetis` (ADR-0033).
 ///
 /// # Errors
 ///

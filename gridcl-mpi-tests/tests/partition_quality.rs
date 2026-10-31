@@ -3,8 +3,9 @@
 //! graph:
 //!
 //! - every external partitioner's weighted imbalance is at most 5%;
-//! - cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.25 · cut(Scotch), at 4 and 8 ranks
-//!   (the design's rank counts; ADR-0032); at other rank counts the ratios are only printed;
+//! - cut(PtScotch) ≤ 1.10 · cut(Scotch) and, with the feature `metis`, cut(Metis) ≤ 1.25 ·
+//!   cut(Scotch), at 4 and 8 ranks (the design's rank counts; ADR-0032); at other rank counts,
+//!   and for ParMETIS (feature `parmetis`, ADR-0033), the ratios are only printed;
 //! - every cut, Scotch's included, is at most twice the slab bound (ADR-0030); rank 0 prints
 //!   every cut, its ratio to the slab bound and the ratios to Scotch's.
 

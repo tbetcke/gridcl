@@ -48,3 +48,19 @@ jobs:
           cargo build -p ptscotch-sys --features mpi --example threading_probe
           timeout 300 mpirun --oversubscribe -n 2 target/debug/examples/threading_probe
       - run: cargo test -p gridcl-partition --features ptscotch
+      # The M7 MPI targets in the two builds of ADR-0033: METIS (the acceptance run) and ParMETIS.
+      # One hardware thread per rank, as in ci.yml's mpi jobs.
+      - name: M7 MPI targets with METIS, 1-4 ranks
+        run: scripts/mpi-test.sh 1 2 3 4
+        env:
+          GRIDCL_MPI_FEATURES: partitioners,metis
+          GRIDCL_MPI_TESTS: partition_quality,partition_seed,partition_build
+          UCX_TLS: self,sm,tcp
+          GRIDCL_MPIRUN_FLAGS: --use-hwthread-cpus --bind-to hwthread
+      - name: M7 MPI targets with ParMETIS, 1-4 ranks
+        run: scripts/mpi-test.sh 1 2 3 4
+        env:
+          GRIDCL_MPI_FEATURES: partitioners,parmetis
+          GRIDCL_MPI_TESTS: partition_quality,partition_seed,partition_build
+          UCX_TLS: self,sm,tcp
+          GRIDCL_MPIRUN_FLAGS: --use-hwthread-cpus --bind-to hwthread

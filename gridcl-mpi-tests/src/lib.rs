@@ -46,17 +46,19 @@ pub fn install_abort_hook() {
 pub type MakePartitioner = fn(u32) -> Box<dyn gridcl::Partitioner>;
 
 /// The external partitioners of the M7 targets, Scotch (the reference) first: Scotch,
-/// PT-Scotch, METIS, and ParMETIS with the feature `parmetis` (ADR-0029, item 11).
+/// PT-Scotch, and METIS with the feature `metis` or ParMETIS with `parmetis` (ADR-0029, item 11;
+/// ADR-0033).
 #[cfg(feature = "partitioners")]
 pub fn partitioners() -> Vec<(&'static str, MakePartitioner)> {
-    #[cfg_attr(not(feature = "parmetis"), allow(unused_mut))]
+    #[cfg_attr(not(any(feature = "metis", feature = "parmetis")), allow(unused_mut))]
     let mut out: Vec<(&'static str, MakePartitioner)> = vec![
         ("scotch", |s| Box::new(gridcl::Scotch::default().seed(s))),
         ("ptscotch", |s| {
             Box::new(gridcl::PtScotch::default().seed(s))
         }),
-        ("metis", |s| Box::new(gridcl::Metis::default().seed(s))),
     ];
+    #[cfg(feature = "metis")]
+    out.push(("metis", |s| Box::new(gridcl::Metis::default().seed(s))));
     #[cfg(feature = "parmetis")]
     out.push(("parmetis", |s| {
         Box::new(gridcl::ParMetis::default().seed(s))
