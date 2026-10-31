@@ -50,6 +50,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # Partition-quality tests with vendored METIS, the design's CI default (M7 T3).
+      - run: cargo test -p gridcl-partition -p gridcl --features gridcl/metis
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -Dwarnings

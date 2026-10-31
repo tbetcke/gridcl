@@ -3,9 +3,16 @@
 //! the checked narrowing to a library's index type.
 #![allow(dead_code)] // Until `Metis` and `Scotch` (M7 T3, T4) use it.
 
+use std::sync::Mutex;
+
 use gridcl_parallel::{CommDyn, CommExt, GridError, Result};
 
 use crate::graph::{Checked, DistGraph, agree, local_weights};
+
+/// Held around every library call that uses process-global random state (GKlib's, Scotch's),
+/// so that seeding and partitioning are not interleaved when test threads or `ThreadComm` ranks
+/// partition concurrently (ADR-0029, item 8).
+pub(crate) static RANDOM_STATE: Mutex<()> = Mutex::new(());
 
 /// The whole graph in CSR form, on rank 0.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
