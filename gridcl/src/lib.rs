@@ -12,6 +12,8 @@
 //! the feature `mpi`), which partitions the cells ([`Partitioner`], default [`Block`]), adds
 //! ghost cells ([`GhostMode`]) and orders them ([`CellOrdering`]). Their index maps exchange
 //! values between ranks through a [`Scatterer`] (docs/design.md, "Distributed mesh model").
+//! The external partitioners `Metis`, `Scotch`, `PtScotch` and `ParMetis` are behind the
+//! features of the same names in lower case ([`MeshBuilder::partitioner`]).
 
 mod any;
 mod builder;

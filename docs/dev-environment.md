@@ -199,7 +199,7 @@ GitHub Actions runs on the repository's GitHub copy (M0). Every job uses `ubuntu
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | cpu, mpi-mpich, mpi-openmpi, vulkan | every push (a pull request shows its head commit's checks); manual | MPI jobs: `mpich libmpich-dev` or `openmpi-bin libopenmpi-dev`, and `libclang-dev`; vulkan: `mesa-vulkan-drivers vulkan-tools`; cpu and vulkan also install the pinned Python oracles, `vtk==9.7.1 meshio==5.3.5`, with pip into `.venv` (the runner's `python3`) |
 | `.github/workflows/conformance.yml` | conformance | nightly; pushes touching `conformance/` or `gridcl-refcell/`; manual | `libopenblas-dev` |
-| `.github/workflows/ptscotch.yml` | ptscotch (skeleton until M7) | nightly; pushes touching `gridcl-partition/` or `ptscotch-sys/`; manual | `libptscotch-dev` |
+| `.github/workflows/ptscotch.yml` | ptscotch | nightly; pushes touching `gridcl-partition/`, `ptscotch-sys/`, `parmetis-sys/` or `gridcl/src/pipeline/dual_graph.rs`; manual | `libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libclang-dev` |
 
 ## Test commands
 
@@ -227,11 +227,27 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 
 ### MPI and multi-rank tests (M6)
 
-- **Selecting targets.** `GRIDCL_MPI_TESTS` takes comma-separated target names of `gridcl-mpi-tests` (`allreduce_smoke`, `comm`, `parallel_invariance`, `scatter`, `determinism`, `locality`) and runs only those, for example `GRIDCL_MPI_TESTS=comm,scatter scripts/mpi-test.sh 1 2`. An unknown name is an error.
+- **Selecting targets.** `GRIDCL_MPI_TESTS` takes comma-separated target names of `gridcl-mpi-tests` (`allreduce_smoke`, `comm`, `parallel_invariance`, `scatter`, `determinism`, `locality`; M7's `partition_quality`, `partition_seed`, `partition_build`, built only with `GRIDCL_MPI_FEATURES`) and runs only those, for example `GRIDCL_MPI_TESTS=comm,scatter scripts/mpi-test.sh 1 2`. An unknown name is an error.
 - **Abort hook.** Every target runs through `gridcl_mpi_tests::run`, which installs a panic hook that prints the panic and calls `MPI_Abort` (rsmpi's safe `Communicator::abort`). A failed check or a `todo!()` on one rank therefore ends the whole job with a non-zero status, instead of leaving the other ranks waiting in their next collective until the time limit.
 - **`ThreadComm`.** `gridcl_testing::ThreadComm` is an in-process communicator with one thread per rank: `ThreadComm::run(n, |comm| …)` runs the closure on `n` ranks and returns the results in rank order. It runs multi-rank code in `cargo test --workspace` without MPI (`gridcl/tests/{parallel_threads,build_on_threads,index_map_threads,scatter_threads,partition_threads,tags_threads}.rs`); the acceptance checks themselves are in `gridcl_testing::parallel`, shared by the ThreadComm tests and the MPI targets. Each rank thread opens its own `test_client()`. A panic on one rank stops the others at their next communication, and `run` resumes the first panic, so a failed rank never hangs the test. The `gridcl_device::testing::with_*` overrides are thread-local and do not reach the rank threads: set them inside the closure, or use `GRIDCL_VECTOR_SIZE`.
 - **Local MPI runs on the M3 Max** use the CPU runtime on 1 rank and Metal on 1–4 ranks: `scripts/mpi-test.sh 1` and `GRIDCL_TEST_DEVICE=metal scripts/mpi-test.sh 1 2 3 4` (unsandboxed, for Metal). Each rank's CubeCL CPU runtime starts one worker thread per core, and macOS has no affinity mask to limit it, so 2–4 CPU ranks oversubscribe the 16 cores (load average about 105) and exceed the time limit (M6 T14). Multi-rank CPU MPI runs belong to hosted CI (`mpi-mpich`, `mpi-openmpi`) and Kathleen, where Linux binding limits each rank's threads.
 - **Binding ranks.** Each rank's CPU runtime starts one thread per CPU it may use, and without explicit binding a rank may use every core of its socket or node. Multi-rank CPU runs therefore bind each rank to its share of the cores. In hosted CI the MPI jobs bind one hardware thread per rank (`-bind-to hwthread` under MPICH, `--use-hwthread-cpus --bind-to hwthread` under Open MPI, through `GRIDCL_MPIRUN_FLAGS`); unbound, `parallel_invariance` took 454 s on 3 ranks against 14 s on 2 and exceeded the limit on 4. On Kathleen, bind each rank to its share of a node's 40 cores with `GRIDCL_MPIRUN_FLAGS="--map-by node:PE=<40 / ranks per node> --bind-to core"`, set in the command so that it replaces the runner's `--map-by node`: `PE=5` for 16 ranks on two nodes. Unbound, the M6 review run exceeded the 600 s limit at 8 and 16 ranks (job 614434); bound, it passed in 217 s (job 614468).
+
+### Partitioners (M7)
+
+- **Features.** gridcl's `metis` (METIS on rank 0; the `metis` crate builds its own METIS, no system library), `scotch` (Scotch on rank 0, system `libscotch` through scotch-sys), `ptscotch` (PT-Scotch through ptscotch-sys) and `parmetis` (ParMETIS through parmetis-sys) forward to gridcl-partition (ADR-0029). `ptscotch` and `parmetis` imply `mpi`; with them, the ThreadComm tests need `gridcl-testing/mpi` as well (`CommDyn::raw`). `metis` and `parmetis` exclude each other (`compile_error!`, ADR-0033), so the partitioner tests run in two sets: `metis,scotch,ptscotch` and `scotch,ptscotch,parmetis`. The sys crates' own feature `mpi` is off by default, so `cargo test --workspace` needs none of the libraries.
+- **Finding the libraries.** ptscotch-sys looks in `SCOTCH_DIR` (`include/`, `lib/`), else `/usr/include/scotch`, `/usr/include`, `/usr/local` and `/opt/homebrew`; parmetis-sys in `PARMETIS_DIR`, and for `metis.h` in `METIS_DIR`, else beside `parmetis.h`, else the system paths. scotch-sys (the `scotch` feature) adds only `/usr/include/scotch`, so on the M3 Max it needs `CPATH=/opt/homebrew/include LIBRARY_PATH=/opt/homebrew/lib`.
+- **Libraries.** M3 Max: Homebrew's `scotch` (with PT-Scotch) and `metis`; ParMETIS from `scripts/hpc/build-partition-libs.sh <prefix>` (Notes on the M3 Max), with `PARMETIS_DIR` = `METIS_DIR` = `<prefix>/parmetis-4.0.3`. Kathleen: the same script in a job (Kathleen reference), with the exports in `KATHLEEN_MODULES`. Hosted CI: Ubuntu's packages (the ptscotch workflow).
+- **Test commands** (M3 Max; for `parmetis` add the two variables above):
+
+  | Purpose | Command |
+  | --- | --- |
+  | partitioner crates, METIS set | `CPATH=/opt/homebrew/include LIBRARY_PATH=/opt/homebrew/lib cargo test -p gridcl-partition -p gridcl --features gridcl/metis,gridcl/scotch,gridcl/ptscotch,gridcl-testing/mpi` |
+  | partitioner crates, ParMETIS set | `… cargo test -p gridcl-partition -p gridcl --features gridcl/scotch,gridcl/ptscotch,gridcl/parmetis,gridcl-testing/mpi` |
+  | M7 MPI targets (Metal, unsandboxed) | `GRIDCL_TEST_DEVICE=metal GRIDCL_MPI_FEATURES=partitioners,metis GRIDCL_MPI_TESTS=partition_quality,partition_seed,partition_build scripts/mpi-test.sh 1 2 3 4`, and with `partitioners,parmetis` |
+  | M7 MPI targets on one Kathleen node | `scripts/hpc/remote-test.sh kathleen --ranks 8 --time 01:00:00 -- 'GRIDCL_MPI_FEATURES=partitioners,metis GRIDCL_MPI_TESTS=partition_quality,partition_seed,partition_build GRIDCL_MPIRUN_FLAGS="--map-by node:PE=5 --bind-to core" scripts/mpi-test.sh 4 8'` |
+
+  `GRIDCL_MPI_FEATURES` adds features of gridcl-mpi-tests to the build: `partitioners` (Scotch and PT-Scotch) with `metis` (the acceptance run) or `parmetis`.
 
 ## Change history
 
@@ -252,3 +268,4 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | 2026-10-30 | M6 final run: multi-rank CPU MPI runs bind their ranks: one hardware thread per rank in hosted CI, `--map-by node:PE=… --bind-to core` on Kathleen. |
 | 2026-10-31 | Homebrew Scotch and METIS on the M3 Max; `CPATH` and `LIBRARY_PATH` for the `scotch` feature (M7 T4). |
 | 2026-10-31 | M7 T7: `scripts/hpc/build-partition-libs.sh` builds Scotch/PT-Scotch and ParMETIS (with its METIS) on Kathleen and the M3 Max; Kathleen's settings export their paths. |
+| 2026-10-31 | M7 T10: partitioner features, library lookup and test commands; the ptscotch workflow runs both feature sets of ADR-0033. |
