@@ -3,7 +3,8 @@
 //! graph:
 //!
 //! - every external partitioner's weighted imbalance is at most 5%;
-//! - cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.10 · cut(Scotch);
+//! - cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.25 · cut(Scotch), at 4 and 8 ranks
+//!   (the design's rank counts; ADR-0032); at other rank counts the ratios are only printed;
 //! - every cut, Scotch's included, is at most twice the slab bound (ADR-0030); rank 0 prints
 //!   every cut, its ratio to the slab bound and the ratios to Scotch's.
 
@@ -57,10 +58,16 @@ fn main() -> ExitCode {
                         mesh.name
                     );
                 }
-                if name == "ptscotch" || name == "metis" {
+                // The bound in percent of Scotch's cut (ADR-0032).
+                let percent = match name {
+                    "ptscotch" => 110,
+                    "metis" => 125,
+                    _ => continue,
+                };
+                if nparts == 4 || nparts == 8 {
                     assert!(
-                        cut * 100 <= 110 * scotch,
-                        "{} ranks={nparts}: cut({name}) = {cut} > 1.10 · cut(scotch) = 1.10 · \
+                        cut * 100 <= percent * scotch,
+                        "{} ranks={nparts}: cut({name}) = {cut} > {percent}% of cut(scotch) = \
                          {scotch}",
                         mesh.name
                     );

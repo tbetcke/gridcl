@@ -108,7 +108,7 @@ mod bind {
             // Only the SCOTCH_ items, not what they reach: MPI_Comm, MPI_Datatype and FILE
             // come from src/lib.rs (mpi::ffi's types; FILE opaque).
             .allowlist_recursively(false)
-            .allowlist_function("SCOTCH_(dgraph|strat|random|version).*")
+            .allowlist_function("SCOTCH_(dgraph|strat|random|context|version).*")
             .allowlist_type("SCOTCH_.*")
             .allowlist_var("SCOTCH_.*")
             .default_macro_constant_type(bindgen::MacroTypeVariation::Signed)

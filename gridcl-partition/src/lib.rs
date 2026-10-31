@@ -8,6 +8,8 @@ mod block;
 mod graph;
 #[cfg(feature = "metis")]
 mod metis;
+#[cfg(any(feature = "scotch", feature = "ptscotch"))]
+mod owned;
 #[cfg(feature = "parmetis")]
 mod parmetis;
 #[cfg(feature = "ptscotch")]

@@ -5,7 +5,8 @@
 //!
 //! With `mpi`, the build script runs bindgen on `ptscotch.h`, found through `SCOTCH_DIR`
 //! (`include/`, `lib/`) or the system paths, and links `ptscotch`, `scotch` and `ptscotcherr`.
-//! The bindings cover the `SCOTCH_dgraph*`, `SCOTCH_strat*` and `SCOTCH_random*` functions,
+//! The bindings cover the `SCOTCH_dgraph*`, `SCOTCH_strat*`, `SCOTCH_random*` and
+//! `SCOTCH_context*` functions (the last for deterministic, seeded calls; ADR-0031),
 //! `SCOTCH_version`, the types they use and the `SCOTCH_*` constants. The strategy flags
 //! `SCOTCH_STRAT*` have type `SCOTCH_Num`; the other integer constants are C `int`.
 //!
@@ -76,8 +77,15 @@ mod tests {
     #[test]
     fn opaque_structs_hold_the_library_objects() {
         // SAFETY: the Sizeof functions take no arguments and only return a constant.
-        let (dgraph, strat) = unsafe { (SCOTCH_dgraphSizeof(), SCOTCH_stratSizeof()) };
+        let (dgraph, strat, context) = unsafe {
+            (
+                SCOTCH_dgraphSizeof(),
+                SCOTCH_stratSizeof(),
+                SCOTCH_contextSizeof(),
+            )
+        };
         assert!(usize::try_from(dgraph).unwrap() <= size_of::<SCOTCH_Dgraph>());
         assert!(usize::try_from(strat).unwrap() <= size_of::<SCOTCH_Strat>());
+        assert!(usize::try_from(context).unwrap() <= size_of::<SCOTCH_Context>());
     }
 }

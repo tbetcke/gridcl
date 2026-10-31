@@ -4,7 +4,6 @@
 //! builder, so the graph, architecture, strategy and context are `scotch_sys` objects owned by
 //! [`Owned`] (ADR-0029, item 1).
 
-use std::mem::MaybeUninit;
 use std::os::raw::c_int;
 use std::ptr;
 use std::sync::PoisonError;
@@ -14,6 +13,7 @@ use scotch::Num;
 use scotch_sys as s;
 
 use crate::graph::validate;
+use crate::owned::{self, Owned};
 use crate::rank0::{Csr, RANDOM_STATE, gather_to_root, narrow, scatter_parts};
 use crate::{DistGraph, Partitioner};
 
@@ -77,7 +77,8 @@ impl Scotch {
 
         // SAFETY: `SCOTCH_graphInit` initialises the graph it is given; `SCOTCH_graphExit`
         // releases it.
-        let mut graph = unsafe { Owned::new(|p| s::SCOTCH_graphInit(p), s::SCOTCH_graphExit)? };
+        let mut graph =
+            unsafe { Owned::new("scotch", |p| s::SCOTCH_graphInit(p), s::SCOTCH_graphExit)? };
         // SAFETY: graph is initialised; verttab holds vertnbr + 1 offsets into edgetab's
         // edgenbr entries, velotab (if any) vertnbr loads, all validated (symmetric, in range,
         // no self-loops, non-negative loads) and declared before graph, so they outlive it;
@@ -97,11 +98,13 @@ impl Scotch {
             )
         })?;
         // SAFETY: as for the graph, with the architecture's functions.
-        let mut arch = unsafe { Owned::new(|p| s::SCOTCH_archInit(p), s::SCOTCH_archExit)? };
+        let mut arch =
+            unsafe { Owned::new("scotch", |p| s::SCOTCH_archInit(p), s::SCOTCH_archExit)? };
         // SAFETY: arch is initialised; partnbr ≥ 2.
         status(unsafe { s::SCOTCH_archCmplt(arch.as_mut_ptr(), partnbr) })?;
         // SAFETY: as for the graph, with the strategy's functions.
-        let mut strat = unsafe { Owned::new(|p| s::SCOTCH_stratInit(p), s::SCOTCH_stratExit)? };
+        let mut strat =
+            unsafe { Owned::new("scotch", |p| s::SCOTCH_stratInit(p), s::SCOTCH_stratExit)? };
         // SAFETY: strat is initialised and empty.
         status(unsafe {
             s::SCOTCH_stratGraphMapBuild(
@@ -114,8 +117,13 @@ impl Scotch {
         // A threaded Scotch uses non-deterministic algorithms unless told otherwise, so the
         // same seed alone does not give the same parts; the context makes them deterministic.
         // SAFETY: as for the graph, with the context's functions.
-        let mut context =
-            unsafe { Owned::new(|p| s::SCOTCH_contextInit(p), s::SCOTCH_contextExit)? };
+        let mut context = unsafe {
+            Owned::new(
+                "scotch",
+                |p| s::SCOTCH_contextInit(p),
+                s::SCOTCH_contextExit,
+            )?
+        };
         // SAFETY: context is initialised; the option number is one of the header's.
         status(unsafe {
             s::SCOTCH_contextOptionSetNum(
@@ -129,6 +137,7 @@ impl Scotch {
         // released first; `SCOTCH_graphExit` releases a container.
         let mut bound = unsafe {
             Owned::new(
+                "scotch",
                 |p| s::SCOTCH_contextBindGraph(context.as_mut_ptr(), graph.as_mut_ptr(), p),
                 s::SCOTCH_graphExit,
             )?
@@ -168,53 +177,9 @@ impl Scotch {
     }
 }
 
-/// `PartitionerFailed` with a Scotch status other than 0.
+/// `PartitionerFailed { name: "scotch", code }` with a Scotch status other than 0.
 fn status(code: c_int) -> Result<()> {
-    if code == 0 {
-        Ok(())
-    } else {
-        Err(GridError::PartitionerFailed {
-            name: "scotch",
-            code,
-        })
-    }
-}
-
-/// A Scotch object initialised in place on the heap, so that it never moves, and released by
-/// its exit function on drop.
-struct Owned<T> {
-    inner: Box<MaybeUninit<T>>,
-    exit: unsafe extern "C" fn(*mut T),
-}
-
-impl<T> Owned<T> {
-    /// The object initialised by `init`, released by `exit`.
-    ///
-    /// # Safety
-    ///
-    /// `init` initialises the `T` at the pointer it is given when it returns 0, and `exit`
-    /// releases such an object.
-    unsafe fn new(
-        init: impl FnOnce(*mut T) -> c_int,
-        exit: unsafe extern "C" fn(*mut T),
-    ) -> Result<Self> {
-        // The storage has the size and alignment of T, the header's opaque struct.
-        let mut inner = Box::new(MaybeUninit::uninit());
-        status(init(inner.as_mut_ptr()))?;
-        Ok(Owned { inner, exit })
-    }
-
-    fn as_mut_ptr(&mut self) -> *mut T {
-        self.inner.as_mut_ptr()
-    }
-}
-
-impl<T> Drop for Owned<T> {
-    fn drop(&mut self) {
-        // SAFETY: the object was initialised in `new`, exit is its matching `*Exit` function,
-        // and the object is not used afterwards.
-        unsafe { (self.exit)(self.inner.as_mut_ptr()) }
-    }
+    owned::status("scotch", code)
 }
 
 impl Partitioner for Scotch {
