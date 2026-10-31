@@ -12,6 +12,7 @@ mod metis;
 mod parmetis;
 #[cfg(feature = "ptscotch")]
 mod ptscotch;
+mod rank0;
 #[cfg(feature = "scotch")]
 mod scotch;
 
