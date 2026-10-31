@@ -157,3 +157,5 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 ## Decision record
 
 Accepted by the maintainer on 2026-10-30, as proposed (option 2, items 1–15, with item 11's logged cuts and slab bound), without conditions. Applied to docs/design.md and CLAUDE.md in `adr: 0029 apply`.
+
+Amended by ADR-0030 (factor 2 on the slab bound), accepted 2026-10-31.

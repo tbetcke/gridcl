@@ -226,8 +226,9 @@ fn split(g: &DistGraph, counts: &[usize], rank: usize) -> DistGraph {
 }
 
 /// The rank-0 partitioners on ThreadComm: destinations in range, weighted imbalance ≤ 5%, the
-/// cut within the slab bound (ADR-0029, item 11), and the same seed giving the same parts with
-/// another seed's call in between, for even, uneven and empty-rank layouts on 1–4 ranks.
+/// cut within twice the slab bound (ADR-0029, item 11; ADR-0030), and the same seed giving the
+/// same parts with another seed's call in between, for even, uneven and empty-rank layouts on
+/// 1–4 ranks.
 #[cfg(any(feature = "metis", feature = "scotch"))]
 mod rank0 {
     use super::*;
@@ -274,7 +275,10 @@ mod rank0 {
                     assert!(imbalance <= 0.05, "{at}: weighted imbalance {imbalance}");
                     let cut = edge_cut(&comm, &local, &dest).unwrap();
                     let bound = slab_cut_bound(&mesh, size);
-                    assert!(cut <= bound, "{at}: cut {cut} above the slab bound {bound}");
+                    assert!(
+                        cut <= 2 * bound,
+                        "{at}: cut {cut} above twice the slab bound {bound}"
+                    );
                     let other = make(8).partition(&comm, &local, size).expect(&at);
                     assert_eq!(other.len(), counts[r], "{at}");
                     let again = make(7).partition(&comm, &local, size).expect(&at);

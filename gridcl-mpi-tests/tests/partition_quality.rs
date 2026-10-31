@@ -4,8 +4,8 @@
 //!
 //! - every external partitioner's weighted imbalance is at most 5%;
 //! - cut(PtScotch) ≤ 1.10 · cut(Scotch) and cut(Metis) ≤ 1.10 · cut(Scotch);
-//! - every cut, Scotch's included, is at most the slab bound; rank 0 prints every cut and the
-//!   ratios to Scotch's.
+//! - every cut, Scotch's included, is at most twice the slab bound (ADR-0030); rank 0 prints
+//!   every cut, its ratio to the slab bound and the ratios to Scotch's.
 
 use std::process::ExitCode;
 use std::time::Instant;
@@ -32,15 +32,19 @@ fn main() -> ExitCode {
                 let cut = edge_cut(comm, &g, &part).expect("edge cut");
                 if rank == 0 {
                     println!(
-                        "partition_quality {at}: cut {cut} (slab bound {bound}), weighted \
-                         imbalance {imbalance:.4}, {seconds:.2} s"
+                        "partition_quality {at}: cut {cut} (slab bound {bound}, ratio {:.3}), \
+                         weighted imbalance {imbalance:.4}, {seconds:.2} s",
+                        cut as f64 / bound.max(1) as f64
                     );
                 }
                 assert!(
                     imbalance <= 0.05,
                     "{at}: weighted imbalance {imbalance} > 0.05"
                 );
-                assert!(cut <= bound, "{at}: cut {cut} above the slab bound {bound}");
+                assert!(
+                    cut <= 2 * bound,
+                    "{at}: cut {cut} above twice the slab bound {bound} (ADR-0030)"
+                );
                 cuts.push((name, cut));
             }
             let scotch = cuts[0].1;

@@ -1,6 +1,6 @@
 # ADR-0030: The slab bound cannot be met for few parts
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-31
 - **Raised in:** M7 T3
 - **Design sections affected:** none in docs/design.md; ADR-0029, item 11 ("Slab bound"), and the
@@ -98,4 +98,4 @@ meaning: the exact cut of the slab partition, as tested. The tests compare again
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-10-31, as proposed (option 3), without conditions. Applied in `adr: 0030 apply`.
