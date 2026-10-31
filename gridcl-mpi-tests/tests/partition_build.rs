@@ -1,6 +1,7 @@
 //! `build_on` with every external partitioner (docs/plans/M7.md, T6, T9), in f32 and f64 (where
 //! the device supports it): each rank owns the cells the partitioner sends it on the pipeline's
-//! graph, and the volume is 1.
+//! graph, and the volume is 1. With `parmetis`, also `ParMetis`'s refusal of a graph with an empty
+//! rank (ADR-0029, item 12).
 
 use std::process::ExitCode;
 
@@ -61,10 +62,45 @@ impl gridcl::Partitioner for BoxPartitioner {
     }
 }
 
+/// ParMETIS 4 fails when a rank holds no vertices, so `ParMetis` refuses such a graph on every
+/// rank (ADR-0029, item 12): here a ring of four vertices, all on the last rank.
+#[cfg(feature = "parmetis")]
+fn parmetis_rejects_empty_ranks(comm: &gridcl::Mpi) {
+    use gridcl::{GridError, Partitioner};
+
+    let (rank, size) = (comm.rank(), comm.size());
+    let last = rank + 1 == size;
+    let g = gridcl::DistGraph {
+        vtxdist: (0..=size).map(|r| if r == size { 4 } else { 0 }).collect(),
+        xadj: if last { vec![0, 2, 4, 6, 8] } else { vec![0] },
+        adjncy: if last {
+            vec![1, 3, 0, 2, 1, 3, 2, 0]
+        } else {
+            Vec::new()
+        },
+        vwgt: None,
+    };
+    let r = gridcl::ParMetis::default().partition(comm, &g, size);
+    assert!(
+        matches!(
+            r,
+            Err(GridError::PartitionerFailed {
+                name: "parmetis",
+                code: -1
+            })
+        ),
+        "ranks={size}, rank {rank}: {r:?}"
+    );
+}
+
 fn main() -> ExitCode {
     gridcl_mpi_tests::run("partition_build", |comm| {
         let rank = comm.rank();
         let size = comm.size();
+        #[cfg(feature = "parmetis")]
+        if size > 1 {
+            parmetis_rejects_empty_ranks(comm);
+        }
         let meshes = [
             (
                 "hex/prism/pyramid n=6",

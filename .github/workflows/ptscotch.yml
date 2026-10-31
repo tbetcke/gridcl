@@ -48,3 +48,14 @@ jobs:
           cargo build -p ptscotch-sys --features mpi --example threading_probe
           timeout 300 mpirun --oversubscribe -n 2 target/debug/examples/threading_probe
       - run: cargo test -p gridcl-partition --features ptscotch
+      # Throwaway probe (M7 question 17): vendored METIS and Ubuntu's ParMETIS in one binary.
+      - name: q17 probe
+        run: |
+          cargo test -p gridcl-mpi-tests --features mpi,partitioners,parmetis --no-run
+          f=$(ls -t target/debug/deps/partition_quality-* | grep -v '\.d$' | head -1)
+          nm -D --defined-only "$f" | awk '{print $3}' | sort > exe.txt
+          nm -D --defined-only "$(ldconfig -p | awk '/libmetis.so.5 /{print $NF; exit}')" | awk '{print $3}' | sort > lib.txt
+          echo "exported by the executable and libmetis.so.5: $(comm -12 exe.txt lib.txt | wc -l)"
+          nm -D --undefined-only "$(ldconfig -p | awk '/libparmetis.so.4 /{print $NF; exit}')" | grep -cE ' (METIS_|libmetis__|gk_)' || true
+          GRIDCL_MPIRUN_FLAGS=--oversubscribe GRIDCL_MPI_FEATURES=partitioners,parmetis GRIDCL_MPI_TESTS=partition_quality,partition_seed scripts/mpi-test.sh 2
+          grep -h "cut(parmetis)" target/mpi-test/partition_quality-*.log
