@@ -77,11 +77,12 @@ jobs:
         env:
           FEATURES: ${{ matrix.features }}
           GRIDCL_SKIP_PYTHON: 1
-      # The M7 MPI targets at 2 and 4 ranks: one rank runs in the ThreadComm tests, and the
-      # acceptance runs at 4 and 8 ranks on Kathleen. One hardware thread per rank, as in
-      # ci.yml's mpi jobs.
-      - name: M7 MPI targets, 2 and 4 ranks
-        run: scripts/mpi-test.sh 2 4
+      # The M7 MPI targets at 3 ranks (uneven chunks of the hexahedron/prism/pyramid box, an odd
+      # part count) and 4 (the cut-ratio assertions, ADR-0032); one rank runs in the ThreadComm
+      # tests, and the acceptance runs at 4 and 8 ranks on Kathleen. One hardware thread per
+      # rank, as in ci.yml's mpi jobs.
+      - name: M7 MPI targets, 3 and 4 ranks
+        run: scripts/mpi-test.sh 3 4
         env:
           GRIDCL_MPI_FEATURES: partitioners,${{ matrix.set }}
           GRIDCL_MPI_TESTS: partition_quality,partition_seed,partition_build
