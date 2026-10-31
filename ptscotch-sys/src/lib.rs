@@ -76,16 +76,11 @@ mod tests {
 
     #[test]
     fn opaque_structs_hold_the_library_objects() {
+        // Scotch 7.0.4 and older (Ubuntu 24.04; Debian 12's 7.0.3) has no SCOTCH_contextSizeof
+        // (7.0.7 has it).
         // SAFETY: the Sizeof functions take no arguments and only return a constant.
-        let (dgraph, strat, context) = unsafe {
-            (
-                SCOTCH_dgraphSizeof(),
-                SCOTCH_stratSizeof(),
-                SCOTCH_contextSizeof(),
-            )
-        };
+        let (dgraph, strat) = unsafe { (SCOTCH_dgraphSizeof(), SCOTCH_stratSizeof()) };
         assert!(usize::try_from(dgraph).unwrap() <= size_of::<SCOTCH_Dgraph>());
         assert!(usize::try_from(strat).unwrap() <= size_of::<SCOTCH_Strat>());
-        assert!(usize::try_from(context).unwrap() <= size_of::<SCOTCH_Context>());
     }
 }
