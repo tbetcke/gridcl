@@ -7,13 +7,24 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-ptscotch = ["dep:ptscotch-sys"]
-parmetis = ["dep:parmetis-sys"]
-# Declared without dependencies until M7 (docs/plans/M0.md, question 4).
-metis = []
-scotch = []
+# The distributed partitioners call the libraries on `CommDyn::raw`, which needs MPI (ADR-0029,
+# item 4).
+ptscotch = ["dep:ptscotch-sys", "ptscotch-sys/mpi", "gridcl-parallel/mpi"]
+parmetis = ["dep:parmetis-sys", "parmetis-sys/mpi", "gridcl-parallel/mpi"]
+metis = ["dep:metis"]
+scotch = ["dep:scotch", "dep:scotch-sys", "dep:scotch-sys-bindgen"]
 
 [dependencies]
 gridcl-parallel = { path = "../gridcl-parallel" }
+metis = { workspace = true, optional = true }
 parmetis-sys = { path = "../parmetis-sys", optional = true }
 ptscotch-sys = { path = "../ptscotch-sys", optional = true }
+scotch = { workspace = true, optional = true }
+scotch-sys = { workspace = true, optional = true }
+
+[build-dependencies]
+# Only for its `runtime` feature (root Cargo.toml).
+scotch-sys-bindgen = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true

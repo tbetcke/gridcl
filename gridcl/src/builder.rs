@@ -8,7 +8,7 @@ use gridcl_device::{GridError, Real, Result, check_precision};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, NodeFamily};
 use gridcl_parallel::{Comm, Serial};
-use gridcl_partition::{Block, Partitioner};
+use gridcl_partition::{Block, DistGraph, Partitioner};
 use gridcl_refcell::RefCellError;
 
 use crate::Mesh;
@@ -226,6 +226,72 @@ where
     }
 
     /// The partitioner of pipeline stage 3; default [`Block`].
+    ///
+    /// The external partitioners are behind features (docs/design.md, "Partitioning";
+    /// ADR-0029): `Metis` and `Scotch` partition on rank 0, `PtScotch` and `ParMetis` on the
+    /// communicator's MPI handle (their features imply `mpi`). `metis` and `parmetis` exclude
+    /// each other (ADR-0033).
+    ///
+    /// # Examples
+    ///
+    /// METIS on rank 0, with the feature `metis`:
+    ///
+    /// ```
+    /// # #[cfg(feature = "metis")]
+    /// # fn main() {
+    /// use gridcl::prelude::*;
+    /// use gridcl_testing::ThreadComm;
+    ///
+    /// // Two ranks; rank 0 passes the four intervals of [0, 4], rank 1 none.
+    /// let lengths = ThreadComm::run(2, |comm| {
+    ///     let client = gridcl_testing::test_client();
+    ///     let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    ///     let (coords, ids, cells): (&[f64], &[i64], &[i64]) = if comm.rank() == 0 {
+    ///         (&[0.0, 1.0, 2.0, 3.0, 4.0], &[0, 1, 2, 3, 4], &[0, 1, 1, 2, 2, 3, 3, 4])
+    ///     } else {
+    ///         (&[], &[], &[])
+    ///     };
+    ///     let mesh: Mesh<f32, D1, D1, ThreadComm> = MeshBuilder::new(&client)
+    ///         .nodes(coords, Some(ids))
+    ///         .cell_block_by_ids(element, cells, None)
+    ///         .partitioner(Metis::default().seed(7))
+    ///         .build_on(comm)?;
+    ///     mesh.measure(1)
+    /// });
+    /// assert_eq!(lengths[0].as_ref().ok(), Some(&4.0));
+    /// assert_eq!(lengths[1].as_ref().ok(), Some(&4.0));
+    /// # }
+    /// # #[cfg(not(feature = "metis"))]
+    /// # fn main() {}
+    /// ```
+    ///
+    /// PT-Scotch on MPI, with the feature `ptscotch`, launched by `mpirun`:
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "ptscotch")]
+    /// # fn main() -> gridcl::Result<()> {
+    /// use gridcl::prelude::*;
+    ///
+    /// let universe = mpi::initialize().expect("MPI is not initialised yet");
+    /// let comm = Mpi::world(&universe);
+    /// let client = gridcl_testing::test_client();
+    /// // Rank r passes the intervals [2r, 2r + 1] and [2r + 1, 2r + 2], and their nodes from
+    /// // 2r on (the last rank also the final node).
+    /// let (r, n) = (comm.rank() as i64, comm.size() as i64);
+    /// let ids: Vec<i64> = (2 * r..if r == n - 1 { 2 * n + 1 } else { 2 * r + 2 }).collect();
+    /// let coords: Vec<f64> = ids.iter().map(|&i| i as f64).collect();
+    /// let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh: Mesh<f64, D1, D1, Mpi> = MeshBuilder::new(&client)
+    ///     .nodes(&coords, Some(&ids))
+    ///     .cell_block_by_ids(element, &[2 * r, 2 * r + 1, 2 * r + 1, 2 * r + 2], None)
+    ///     .partitioner(PtScotch::default().seed(7))
+    ///     .build_on(comm)?;
+    /// assert_eq!(mesh.measure(1)?, 2.0 * n as f64);
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "ptscotch"))]
+    /// # fn main() {}
+    /// ```
     pub fn partitioner(mut self, p: impl Partitioner + 'static) -> Self {
         self.partitioner = Box::new(p);
         self
@@ -325,6 +391,19 @@ where
         Ok(self.build_with_comm(comm)?.0)
     }
 
+    /// The dual graph that [`build_on`](MeshBuilder::build_on) gives the partitioner (stages
+    /// 1–2, host only): a test accessor outside the stable API (ADR-0029, item 15). Collective.
+    /// Unlike `build_on`, it builds the graph on one rank too.
+    ///
+    /// # Errors
+    ///
+    /// The input errors of `build_on`, agreed over the ranks, and errors of the exchanges.
+    #[doc(hidden)]
+    pub fn dual_graph_on<C: Comm>(self, comm: C) -> Result<DistGraph> {
+        let read = input::read(&comm, &self.input())?;
+        dual_graph(&comm, &read.blocks, &read.cells)
+    }
+
     /// Checks, numbers and uploads the mesh: [`build_on`](MeshBuilder::build_on) with the
     /// one-rank [`Serial`] communicator.
     ///
@@ -345,13 +424,9 @@ where
         self.build_on(Serial)
     }
 
-    /// [`build_on`](MeshBuilder::build_on), also returning the local vertex index of each node
-    /// of this rank's input chunk (`u32::MAX` for nodes that are no local cell's vertex); the
-    /// Gmsh reader matches tags through it (ADR-0022, item 5).
-    pub(crate) fn build_with_comm<C: Comm>(self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
-        let client = &self.client;
-        agree(&comm, check_precision::<F>(client))?;
-        let input = Input {
+    /// The input of stage 1.
+    fn input(&self) -> Input<'_> {
+        Input {
             tdim: TD::N,
             gdim: GD::N,
             coords: &self.coords,
@@ -370,14 +445,22 @@ where
                 })
                 .collect(),
             tags: &self.tags,
-        };
+        }
+    }
+
+    /// [`build_on`](MeshBuilder::build_on), also returning the local vertex index of each node
+    /// of this rank's input chunk (`u32::MAX` for nodes that are no local cell's vertex); the
+    /// Gmsh reader matches tags through it (ADR-0022, item 5).
+    pub(crate) fn build_with_comm<C: Comm>(self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
+        let client = &self.client;
+        agree(&comm, check_precision::<F>(client))?;
         // Stages 1–8.
         let Read {
             blocks,
             nodes: chunk,
             cells,
             lower_tags,
-        } = input::read(&comm, &input)?;
+        } = input::read(&comm, &self.input())?;
         let owned = if comm.size() == 1 {
             cells
         } else {

@@ -10,6 +10,11 @@ publish = false
 [features]
 # The direct mpi dependency initialises MPI (`mpi::initialize`) and aborts the job on a panic.
 mpi = ["gridcl/mpi", "gridcl-testing/mpi", "dep:mpi"]
+# The M7 partitioner targets (scripts/mpi-test.sh: GRIDCL_MPI_FEATURES), with Scotch and PT-Scotch;
+# add METIS (the acceptance run) or ParMETIS, never both (ADR-0033).
+partitioners = ["gridcl/ptscotch", "gridcl/scotch"]
+metis = ["gridcl/metis"]
+parmetis = ["gridcl/parmetis"]
 
 [dependencies]
 gridcl = { path = "../gridcl" }
@@ -45,3 +50,18 @@ required-features = ["mpi"]
 name = "locality"
 harness = false
 required-features = ["mpi"]
+
+[[test]]
+name = "partition_quality"
+harness = false
+required-features = ["mpi", "partitioners"]
+
+[[test]]
+name = "partition_seed"
+harness = false
+required-features = ["mpi", "partitioners"]
+
+[[test]]
+name = "partition_build"
+harness = false
+required-features = ["mpi", "partitioners"]

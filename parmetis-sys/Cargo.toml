@@ -6,4 +6,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Bindings and linking; without it the crate is empty, so the workspace build needs neither MPI
+# nor ParMETIS (ADR-0029, item 4).
+mpi = ["dep:mpi", "dep:bindgen", "dep:build-probe-mpi"]
+
 [dependencies]
+mpi = { workspace = true, optional = true }
+
+[build-dependencies]
+bindgen = { workspace = true, optional = true }
+build-probe-mpi = { workspace = true, optional = true }

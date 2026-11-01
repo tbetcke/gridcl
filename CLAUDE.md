@@ -45,8 +45,9 @@
   upload of an IndexMap's send and receive index lists when its first scatterer is created,
   and of a scatterer's reverse lists when it is created, and the vertex shared flags at
   mesh creation (ADR-0026, ADR-0028).
-- FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI) and
-  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017), behind safe wrappers. Every unsafe block needs a SAFETY comment.
+- FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
+  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
+  (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers. Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.

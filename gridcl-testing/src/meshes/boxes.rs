@@ -1,5 +1,5 @@
-//! Structured boxes of every cell type, the mixed tetrahedron/pyramid/hexahedron box and the
-//! P1 triangle strip.
+//! Structured boxes of every cell type, the mixed tetrahedron/pyramid/hexahedron box, the
+//! hexahedron/prism/pyramid box and the P1 triangle strip.
 //!
 //! Every box lives on the integer lattice of resolution 2·n·p: subcell corners are multiples of
 //! 2p, so the centres of hexahedral subcells (the pyramid apices) and every equispaced Lagrange
@@ -243,6 +243,63 @@ pub fn mixed_box(n: usize, p: u32) -> HostMesh {
     mesh.finish()
 }
 
+/// A conforming hexahedron/prism/pyramid box on the unit cube with n³ hexahedral subcells of
+/// degree `p`, the M7 acceptance mesh (docs/plans/M7.md, question 14): the subcells of the
+/// columns i < ⌊n/3⌋ are split into two prisms each, extruded in z like `cube_box`'s prisms,
+/// so triangles lie only between prisms and on z = 0, 1; of the other subcells, those with an
+/// even index sum are split into six pyramids around their centre and the rest stay
+/// hexahedra. Neighbouring subcells of different kinds meet in whole quadrilaterals.
+///
+/// # Panics
+///
+/// If `n` or `p` is 0.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_dims::CellType;
+///
+/// // n = 3: one column of prism subcells (18 prisms); of the other 18 subcells, 9 have an even
+/// // index sum.
+/// let h = gridcl_testing::hex_prism_pyramid_box(3, 1);
+/// let blocks: Vec<_> = h.blocks.iter().map(|b| (b.cell, b.num_cells())).collect();
+/// assert_eq!(
+///     blocks,
+///     [
+///         (CellType::Hexahedron, 9),
+///         (CellType::Prism, 18),
+///         (CellType::Pyramid, 54),
+///     ]
+/// );
+/// ```
+pub fn hex_prism_pyramid_box(n: usize, p: u32) -> HostMesh {
+    check_args(n, p);
+    let prism_columns = n / 3;
+    let mut mesh = Assembler::new(3, resolution(n, p));
+    for k in 0..n {
+        for j in 0..n {
+            for i in 0..n {
+                let (c, centre) = subcell(i, j, k, p);
+                if i < prism_columns {
+                    for [a, b, d] in [[0, 1, 3], [0, 3, 2]] {
+                        let mut prism = [c[a], c[b], c[d], c[a + 4], c[b + 4], c[d + 4]];
+                        orient(CellType::Prism, &mut prism);
+                        mesh.cell(CellType::Prism, p, &prism);
+                    }
+                } else if (i + j + k) % 2 == 0 {
+                    for face in hex_faces() {
+                        let pyr = pyramid(&c, face, centre);
+                        mesh.cell(CellType::Pyramid, p, &pyr);
+                    }
+                } else {
+                    mesh.cell(CellType::Hexahedron, p, &c);
+                }
+            }
+        }
+    }
+    mesh.finish()
+}
+
 /// `num_cells` P1 triangles in a strip along the x axis, [0, ⌈num_cells/2⌉] × [0, 1] (gdim 2).
 ///
 /// Square i holds triangles 2i and 2i + 1; with an odd count the last square holds one.
@@ -299,7 +356,9 @@ mod tests {
 
     use super::super::HostMesh;
     use super::super::lattice::{PointGrid, SplitMix64};
-    use super::{cube_box, interval_box, mixed_box, square_box, triangle_strip};
+    use super::{
+        cube_box, hex_prism_pyramid_box, interval_box, mixed_box, square_box, triangle_strip,
+    };
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Kind {
@@ -311,9 +370,10 @@ mod tests {
         Prism,
         Pyramid,
         Mixed,
+        HexPrismPyramid,
     }
 
-    const ALL: [Kind; 8] = [
+    const ALL: [Kind; 9] = [
         Kind::Interval,
         Kind::Triangle,
         Kind::Quadrilateral,
@@ -322,6 +382,7 @@ mod tests {
         Kind::Prism,
         Kind::Pyramid,
         Kind::Mixed,
+        Kind::HexPrismPyramid,
     ];
 
     fn host(kind: Kind, n: usize, p: u32) -> HostMesh {
@@ -334,6 +395,7 @@ mod tests {
             Kind::Prism => cube_box(Cell3::Prism, n, p),
             Kind::Pyramid => cube_box(Cell3::Pyramid, n, p),
             Kind::Mixed => mixed_box(n, p),
+            Kind::HexPrismPyramid => hex_prism_pyramid_box(n, p),
         }
     }
 
@@ -409,6 +471,27 @@ mod tests {
                 let tri = 12 * split + 3 * at_x0;
                 let quad = hex_f - at_x0;
                 let cells = n3 + 5 * split + at_x0;
+                (
+                    vec![hex_v + split, e, tri + quad, cells],
+                    vec![
+                        (1, Interval, e),
+                        (2, Triangle, tri),
+                        (2, Quadrilateral, quad),
+                    ],
+                )
+            }
+            Kind::HexPrismPyramid => {
+                // m prism columns; `split` subcells with an even index sum outside them.
+                let m = n / 3;
+                let split = (m..n)
+                    .flat_map(|i| (0..n * n).map(move |jk| i + jk / n + jk % n))
+                    .filter(|s| s % 2 == 0)
+                    .count();
+                let z_diagonals = m * n * v1;
+                let e = hex_e + z_diagonals + 8 * split;
+                let tri = 2 * z_diagonals + 12 * split;
+                let quad = hex_f - z_diagonals + m * n * n;
+                let cells = 2 * m * n * n + 6 * split + (n - m) * n * n - split;
                 (
                     vec![hex_v + split, e, tri + quad, cells],
                     vec![
@@ -906,6 +989,38 @@ mod tests {
         let h = triangle_strip(num);
         assert_eq!(h.num_cells(), num);
         assert_eq!(h.num_nodes(), 2 * (num.div_ceil(2) + 1));
+    }
+
+    #[test]
+    fn the_hex_prism_pyramid_box_has_the_closed_form_cell_types() {
+        for n in 1..=7 {
+            let m = n / 3;
+            let split = (m..n)
+                .flat_map(|i| (0..n * n).map(move |jk| i + jk / n + jk % n))
+                .filter(|s| s % 2 == 0)
+                .count();
+            let want: Vec<(CellType, usize)> = [
+                (CellType::Hexahedron, (n - m) * n * n - split),
+                (CellType::Prism, 2 * m * n * n),
+                (CellType::Pyramid, 6 * split),
+            ]
+            .into_iter()
+            .filter(|&(_, count)| count > 0)
+            .collect();
+            let h = hex_prism_pyramid_box(n, 2);
+            let found: Vec<_> = h.blocks.iter().map(|b| (b.cell, b.num_cells())).collect();
+            assert_eq!(found, want, "n = {n}");
+            // Every prism lies in the columns x ≤ m / n.
+            if let Some(b) = h.blocks.iter().position(|b| b.cell == CellType::Prism) {
+                let bound = m as f64 / n as f64;
+                for &node in &h.blocks[b].cells {
+                    assert!(
+                        x(&h, node)[0] <= bound,
+                        "n = {n}: a prism node beyond x = {bound}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

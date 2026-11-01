@@ -6,4 +6,19 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Bindings and linking; without it the crate is empty, so the workspace build needs neither MPI
+# nor PT-Scotch (ADR-0029, item 4).
+mpi = ["dep:mpi", "dep:bindgen", "dep:build-probe-mpi"]
+
 [dependencies]
+mpi = { workspace = true, optional = true }
+
+[build-dependencies]
+bindgen = { workspace = true, optional = true }
+build-probe-mpi = { workspace = true, optional = true }
+
+# The threading probe of ADR-0029, item 13 (run it with mpirun; src/lib.rs).
+[[example]]
+name = "threading_probe"
+required-features = ["mpi"]

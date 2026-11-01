@@ -1,7 +1,8 @@
 //! The built-in block partitioner (ADR-0026, item 2).
 
-use gridcl_parallel::{CommDyn, CommExt, GridError, Result};
+use gridcl_parallel::{CommDyn, Result};
 
+use crate::graph::{agree, check_shape};
 use crate::{DistGraph, Partitioner};
 
 /// Built-in block partitioner: global graph vertex i goes to rank ⌊i · nparts / N⌋, with
@@ -40,21 +41,7 @@ impl Partitioner for Block {
     /// decreasing and ending at `adjncy.len()`, or if `vwgt` does not have one entry per
     /// vertex; `TooLarge` if `nparts` exceeds `i32::MAX`. Other ranks return `RemoteFailure`.
     fn partition(&self, comm: &dyn CommDyn, g: &DistGraph, nparts: usize) -> Result<Vec<i32>> {
-        let local = check(comm, g, nparts);
-        let failing = comm.min(if local.is_err() {
-            comm.rank() as u64
-        } else {
-            u64::MAX
-        });
-        let (begin, end) = match local {
-            Err(e) => return Err(e),
-            Ok(_) if failing != u64::MAX => {
-                return Err(GridError::RemoteFailure {
-                    rank: failing as usize,
-                });
-            }
-            Ok(range) => range,
-        };
+        let (begin, end) = agree(comm, check_shape(comm, g, nparts))?;
         let total = g.vtxdist[comm.size()] as u128;
         // Exact in u128: i < 2^63 and nparts < 2^31.
         Ok((begin..end)
@@ -63,63 +50,10 @@ impl Partitioner for Block {
     }
 }
 
-/// The local checks of [`Block::partition`]; returns this rank's global vertex range.
-fn check(comm: &dyn CommDyn, g: &DistGraph, nparts: usize) -> Result<(i64, i64)> {
-    if nparts == 0 {
-        return Err(GridError::LengthMismatch {
-            expected: 1,
-            found: 0,
-        });
-    }
-    if i32::try_from(nparts).is_err() {
-        return Err(GridError::TooLarge);
-    }
-    let p = comm.size();
-    if g.vtxdist.len() != p + 1 {
-        return Err(GridError::LengthMismatch {
-            expected: p + 1,
-            found: g.vtxdist.len(),
-        });
-    }
-    if g.vtxdist[0] != 0 || g.vtxdist.windows(2).any(|w| w[1] < w[0]) {
-        return Err(GridError::LengthMismatch {
-            expected: 0,
-            found: g.vtxdist[0].unsigned_abs() as usize,
-        });
-    }
-    let (begin, end) = (g.vtxdist[comm.rank()], g.vtxdist[comm.rank() + 1]);
-    let n = usize::try_from(end - begin).map_err(|_| GridError::TooLarge)?;
-    if g.xadj.len() != n + 1 {
-        return Err(GridError::LengthMismatch {
-            expected: n + 1,
-            found: g.xadj.len(),
-        });
-    }
-    let last = g.xadj[n];
-    if g.xadj[0] != 0
-        || g.xadj.windows(2).any(|w| w[1] < w[0])
-        || usize::try_from(last).ok() != Some(g.adjncy.len())
-    {
-        return Err(GridError::LengthMismatch {
-            expected: g.adjncy.len(),
-            found: last.unsigned_abs() as usize,
-        });
-    }
-    if let Some(w) = &g.vwgt
-        && w.len() != n
-    {
-        return Err(GridError::LengthMismatch {
-            expected: n,
-            found: w.len(),
-        });
-    }
-    Ok((begin, end))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gridcl_parallel::Serial;
+    use gridcl_parallel::{GridError, Serial};
 
     fn graph(n: i64) -> DistGraph {
         DistGraph {

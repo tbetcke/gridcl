@@ -1,7 +1,15 @@
 //! The names most programs need: `use gridcl::prelude::*;`.
 
+#[cfg(feature = "metis")]
+pub use crate::Metis;
 #[cfg(feature = "mpi")]
 pub use crate::Mpi;
+#[cfg(feature = "parmetis")]
+pub use crate::ParMetis;
+#[cfg(feature = "ptscotch")]
+pub use crate::PtScotch;
+#[cfg(feature = "scotch")]
+pub use crate::Scotch;
 pub use crate::{
     AnyMesh, AnyMeshRef, Block, BlockFields, Cell1, Cell2, Cell3, CellBlock, CellOrdering,
     CellType, Codim, Codim0, Codim1, Comm, CommDyn, CommExt, CommScalar, ConnKey, Connectivity,

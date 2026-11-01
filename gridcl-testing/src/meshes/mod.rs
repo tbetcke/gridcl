@@ -1,5 +1,5 @@
 //! Test meshes with origin ids at any degree p (docs/design.md, "Testing and validation"):
-//! structured boxes of every cell type and the mixed box, curved sphere surfaces, a mixed
+//! structured boxes of every cell type, the mixed box and the hexahedron/prism/pyramid box, curved sphere surfaces, a mixed
 //! triangle–quadrilateral surface and curved balls.
 //!
 //! Generators return a [`HostMesh`] of host arrays; [`HostMesh::build`] turns it into a
@@ -13,7 +13,9 @@ mod sphere;
 mod surface;
 
 pub use ball::ball;
-pub use boxes::{cube_box, interval_box, mixed_box, square_box, triangle_strip};
+pub use boxes::{
+    cube_box, hex_prism_pyramid_box, interval_box, mixed_box, square_box, triangle_strip,
+};
 pub use chunk::{HostChunk, HostChunkBlock, HostTags};
 pub use sphere::sphere;
 pub use surface::mixed_surface;

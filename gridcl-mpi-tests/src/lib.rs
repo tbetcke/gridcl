@@ -40,3 +40,46 @@ pub fn install_abort_hook() {
         mpi::topology::SimpleCommunicator::world().abort(1);
     }));
 }
+
+/// A partitioner of the M7 targets with its seed.
+#[cfg(feature = "partitioners")]
+pub type MakePartitioner = fn(u32) -> Box<dyn gridcl::Partitioner>;
+
+/// The external partitioners of the M7 targets, Scotch (the reference) first: Scotch,
+/// PT-Scotch, and METIS with the feature `metis` or ParMETIS with `parmetis` (ADR-0029, item 11;
+/// ADR-0033).
+#[cfg(feature = "partitioners")]
+pub fn partitioners() -> Vec<(&'static str, MakePartitioner)> {
+    #[cfg_attr(not(any(feature = "metis", feature = "parmetis")), allow(unused_mut))]
+    let mut out: Vec<(&'static str, MakePartitioner)> = vec![
+        ("scotch", |s| Box::new(gridcl::Scotch::default().seed(s))),
+        ("ptscotch", |s| {
+            Box::new(gridcl::PtScotch::default().seed(s))
+        }),
+    ];
+    #[cfg(feature = "metis")]
+    out.push(("metis", |s| Box::new(gridcl::Metis::default().seed(s))));
+    #[cfg(feature = "parmetis")]
+    out.push(("parmetis", |s| {
+        Box::new(gridcl::ParMetis::default().seed(s))
+    }));
+    out
+}
+
+/// The pipeline's dual graph of the 3D mesh `h` in even chunks on `comm`, as `build_on` would
+/// give it to the partitioner (`MeshBuilder::dual_graph_on`, ADR-0029, item 15), on the test
+/// device.
+///
+/// # Panics
+///
+/// On an error, with its message.
+#[cfg(feature = "partitioners")]
+pub fn pipeline_graph(comm: &gridcl::Mpi, h: &gridcl_testing::HostMesh) -> gridcl::DistGraph {
+    use gridcl::CommDyn;
+
+    let client = gridcl_testing::test_client();
+    h.chunk(comm.rank(), comm.size())
+        .builder::<f32, gridcl::D3, gridcl::D3>(&client)
+        .and_then(|b| b.dual_graph_on(comm.clone()))
+        .unwrap_or_else(|e| panic!("dual graph, rank {}: {e}", comm.rank()))
+}
