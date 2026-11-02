@@ -13,7 +13,7 @@ Usage:
     vtk_oracle.py remove-ghosts [--ghost-level N] FILE...
                                         vtkRemoveGhosts on VTK's reader: cell counts and the
                                         OriginId cell array of the cells that remain
-    vtk_oracle.py compare [--pieces N] A B
+    vtk_oracle.py compare [--pieces N | --by-origin-id] A B
                                         whether two files read alike, array by array, bitwise
     vtk_oracle.py integrate FILE...     vtkIntegrateAttributes: length, area, volume
     vtk_oracle.py evaluate REQUEST.json vtkCell::EvaluateLocation at given parametric points
@@ -45,6 +45,11 @@ compare: {"a", "b", "pieces", "equal", "differences": [str], "counts": [{"cells"
   and its counts compared. N is --pieces, else the piece count of whichever file is a PVTU,
   else 1. "differences" names every mismatch; "equal" is true when it is empty and neither
   reader reported an error.
+  With --by-origin-id the files are compared after sorting by origin id instead: the cells are
+  matched by their OriginId cell data (each id must appear once in each file), and each matched
+  pair must have the same cell type, the same point coordinates in connectivity order (bits),
+  the same point data at those points and the same cell data; the number of points must agree.
+  No piece counts are compared ("pieces" is 0 and "counts" empty).
 
 integrate: {"file", "length", "area", "volume", "errors", "warnings"}: the sums
   vtkIntegrateAttributes puts in its output cell data ("Length", "Area", "Volume"; 0.0 when
@@ -335,7 +340,66 @@ def counts(grid):
             "connectivity_ids": grid.GetCells().GetNumberOfConnectivityIds()}
 
 
+def by_origin_id(grid, diffs, which):
+    """{origin id: (type, point bytes, point data bytes, cell data bytes)} of `grid`."""
+    import numpy as np
+
+    ids = grid.GetCellData().GetArray("OriginId")
+    if ids is None:
+        diffs.append(f"{which}: no OriginId cell array")
+        return {}
+    ids = numpy_of(ids).astype(np.int64)
+    points = numpy_of(grid.GetPoints().GetData()) if grid.GetNumberOfPoints() else None
+    offsets = numpy_of(grid.GetCells().GetOffsetsArray()).astype(np.int64)
+    conn = numpy_of(grid.GetCells().GetConnectivityArray()).astype(np.int64)
+    types = numpy_of(grid.GetCellTypes())
+    pd, cd = grid.GetPointData(), grid.GetCellData()
+    point_arrays = sorted((pd.GetAbstractArray(i).GetName(), numpy_of(pd.GetAbstractArray(i)))
+                          for i in range(pd.GetNumberOfArrays()))
+    cell_arrays = sorted((cd.GetAbstractArray(i).GetName(), numpy_of(cd.GetAbstractArray(i)))
+                         for i in range(cd.GetNumberOfArrays()))
+    out = {}
+    for c, key in enumerate(ids.tolist()):
+        p = conn[offsets[c]:offsets[c + 1]]
+        value = (int(types[c]),
+                 points[p].tobytes() if points is not None else b"",
+                 tuple((n, a.dtype.name, a[p].tobytes()) for n, a in point_arrays),
+                 tuple((n, a.dtype.name, a[c].tobytes()) for n, a in cell_arrays))
+        if key in out:
+            diffs.append(f"{which}: origin id {key} appears more than once")
+        out[key] = value
+    return out
+
+
 def cmd_compare(args):
+    if args[:1] == ["--by-origin-id"]:
+        if len(args) != 3:
+            die("compare --by-origin-id takes two files")
+        a, b = args[1:]
+        messages = Messages()
+        ga, gb = output(read_grid(a, messages)), output(read_grid(b, messages))
+        diffs = []
+        if ga is None or gb is None:
+            diffs.append("no unstructured grid output")
+        else:
+            if ga.GetNumberOfPoints() != gb.GetNumberOfPoints():
+                diffs.append(f"number of points: {ga.GetNumberOfPoints()} != "
+                             f"{gb.GetNumberOfPoints()}")
+            ca, cb = by_origin_id(ga, diffs, "a"), by_origin_id(gb, diffs, "b")
+            if sorted(ca) != sorted(cb):
+                diffs.append(f"origin ids differ: {len(ca)} vs {len(cb)} cells, "
+                             f"{len(set(ca) ^ set(cb))} not in both")
+            for key in sorted(set(ca) & set(cb)):
+                if ca[key] != cb[key]:
+                    what = ["type", "points", "point data", "cell data"]
+                    bad = [w for w, x, y in zip(what, ca[key], cb[key]) if x != y]
+                    diffs.append(f"cell {key}: {', '.join(bad)} differ")
+                    if len(diffs) > 20:
+                        diffs.append("...")
+                        break
+        errors, warnings = messages.take()
+        return {"a": a, "b": b, "pieces": 0, "equal": not diffs and not errors,
+                "differences": diffs, "counts": [], "errors": errors, "warnings": warnings}
     pieces = None
     if args[:1] == ["--pieces"]:
         if len(args) < 2 or not args[1].isdigit() or int(args[1]) < 1:

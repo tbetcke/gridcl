@@ -7,6 +7,7 @@
 
 mod comm;
 pub mod comm_checks;
+pub mod io_parallel;
 mod meshes;
 pub mod oracle;
 pub mod parallel;

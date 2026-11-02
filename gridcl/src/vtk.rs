@@ -321,6 +321,21 @@ impl<'a> VtkWriter<'a> {
         VtkWriter { base64, ..self }
     }
 
+    /// A writer of the VTKHDF file `<stem>.vtkhdf`: the pieces of [`pvtu`](VtkWriter::pvtu)
+    /// in one file (feature `hdf5`; ADR-0035, rule 8).
+    #[cfg(feature = "hdf5")]
+    pub fn vtkhdf(path: impl AsRef<Path>) -> Self {
+        let _ = path.as_ref();
+        todo!("VtkWriter::vtkhdf (M8 T10)")
+    }
+
+    /// Adds the cell data array `OriginId` (Int64), the origin id of every cell (default off;
+    /// ADR-0035).
+    pub fn origin_ids(self, yes: bool) -> Self {
+        let _ = (self, yes);
+        todo!("VtkWriter::origin_ids (M8 T8)")
+    }
+
     /// zlib compression of every data array (default off).
     ///
     /// # Example
@@ -479,7 +494,7 @@ impl<'a> VtkWriter<'a> {
         if let Some((_, source)) = piece {
             let mut header = self.path.as_os_str().to_owned();
             header.push(".pvtu");
-            write_file(Path::new(&header), |w| write_pvtu(w, &[source], &file))?;
+            write_file(Path::new(&header), |w| write_pvtu(w, &[source], &file, 0))?;
         }
         Ok(())
     }
@@ -545,7 +560,6 @@ mod tests {
     use gridcl_geometry::{NodeFamily, equispaced_nodes};
 
     use super::*;
-    use crate::test_comm::TwoRanks;
     use crate::{Cell2, CoordinateElement, D2, MeshBuilder, PlanarMesh};
 
     /// `.vtu` is appended only to a path without an extension.
@@ -716,33 +730,5 @@ mod tests {
             assert_eq!(source, name, "{given}");
         }
         assert!(VtkWriter::vtu("out/mesh").piece(0).unwrap().is_none());
-    }
-
-    /// More than one rank is refused before anything is written (until M8).
-    #[test]
-    fn vtk_write_needs_one_rank() {
-        let mesh = gll_mesh::<f32>().unwrap().with_comm(TwoRanks);
-        let path =
-            std::env::temp_dir().join(format!("gridcl-m5-two-ranks-{}.vtu", std::process::id()));
-        let r = VtkWriter::vtu(&path).write(&mesh);
-        assert!(
-            matches!(
-                r,
-                Err(GridError::NotYetImplemented("parallel VTU write (M8)"))
-            ),
-            "{r:?}"
-        );
-        assert!(!path.exists(), "nothing is written");
-
-        let stem = std::env::temp_dir().join(format!("gridcl-m5-two-ranks-{}", std::process::id()));
-        let r = VtkWriter::pvtu(&stem).write(&mesh);
-        assert!(
-            matches!(
-                r,
-                Err(GridError::NotYetImplemented("parallel PVTU write (M8)"))
-            ),
-            "{r:?}"
-        );
-        assert!(!stem.with_extension("pvtu").exists(), "nothing is written");
     }
 }

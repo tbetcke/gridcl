@@ -7,8 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-# VTKHDF output; declared without hdf5-metno until it is needed (docs/plans/M0.md, question 4).
+# VTKHDF output; hdf5-metno is added in M8 T9 (ADR-0035, rule 9).
 hdf5 = []
+# Collective VTKHDF writes through MPI-IO when `hdf5` is on too (ADR-0035, rule 9).
+mpi = ["gridcl-parallel/mpi"]
 
 [dependencies]
 flate2.workspace = true

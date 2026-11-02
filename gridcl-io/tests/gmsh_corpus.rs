@@ -213,8 +213,19 @@ fn agree_with_mshio(
     }
 }
 
+/// `bytes` without the section `$<name>` (its header through `$End<name>` and line break).
+fn without_section(bytes: &[u8], name: &str) -> Vec<u8> {
+    let (start, end) = (format!("${name}\n"), format!("$End{name}\n"));
+    let find = |m: &[u8]| bytes.windows(m.len()).position(|w| w == m);
+    match (find(start.as_bytes()), find(end.as_bytes())) {
+        (Some(a), Some(b)) => [&bytes[..a], &bytes[b + end.len()..]].concat(),
+        _ => bytes.to_vec(),
+    }
+}
+
 /// Every binary fixture, re-encoded in both byte orders and with 4- and 8-byte `size_t`, parses
-/// to the same model; re-encoded as Gmsh wrote it (little-endian, 8 bytes) it has Gmsh's bytes.
+/// to the same model; re-encoded as Gmsh wrote it (little-endian, 8 bytes) it has Gmsh's bytes,
+/// apart from `$GhostElements`, which the model skips (M8 fixtures).
 #[test]
 fn binary_byte_orders_and_size_t_widths() {
     let manifest = manifest();
@@ -224,7 +235,7 @@ fn binary_byte_orders_and_size_t_widths() {
         let model = read(f);
         assert_eq!(
             encode::encode_binary(&model, false, 8),
-            bytes,
+            without_section(&bytes, "GhostElements"),
             "{}: re-encoded bytes",
             f.file
         );

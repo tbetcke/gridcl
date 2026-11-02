@@ -49,6 +49,26 @@ impl GmshOptions {
     pub fn gdim(self, gdim: usize) -> Self {
         GmshOptions { gdim: Some(gdim) }
     }
+
+    /// The partitioner of a read on more than one rank; by default PT-Scotch with feature
+    /// `ptscotch` and an MPI communicator, else METIS with `metis`, else `Block` (ADR-0035,
+    /// rule 6).
+    pub fn partitioner(self, p: impl crate::Partitioner + 'static) -> Self {
+        let _ = (self, p);
+        todo!("GmshOptions::partitioner (M8 T4a)")
+    }
+
+    /// The ghost cells of each rank; default [`GhostMode::None`](crate::GhostMode::None).
+    pub fn ghosts(self, mode: crate::GhostMode) -> Self {
+        let _ = (self, mode);
+        todo!("GmshOptions::ghosts (M8 T4a)")
+    }
+
+    /// The order of the owned cells; default [`CellOrdering::Input`](crate::CellOrdering::Input).
+    pub fn ordering(self, o: crate::CellOrdering) -> Self {
+        let _ = (self, o);
+        todo!("GmshOptions::ordering (M8 T4a)")
+    }
 }
 
 /// (flat entity index, value) entries of one dimension, sorted and without repeats.
@@ -450,6 +470,14 @@ impl GmshWriter {
         GmshWriter { binary, ..self }
     }
 
+    /// On more than one rank, one file `<stem>_<r+1>.msh` per rank r with its owned cells and
+    /// `$PartitionedEntities`, instead of one file gathered on rank 0 (the default; ADR-0035,
+    /// rule 7).
+    pub fn partitioned(self, yes: bool) -> Self {
+        let _ = (self, yes);
+        todo!("GmshWriter::partitioned (M8 T7)")
+    }
+
     /// Writes `mesh`, copying it to the host.
     ///
     /// # Errors
@@ -531,7 +559,6 @@ mod tests {
     use gridcl_parallel::Serial;
 
     use super::*;
-    use crate::test_comm::TwoRanks;
     use crate::{Codim, D2, PlanarMesh};
 
     fn fixture(name: &str) -> PathBuf {
@@ -614,21 +641,6 @@ mod tests {
                 Err(GridError::UnsupportedPrecision { scalar: "f64", .. })
             ));
         });
-    }
-
-    #[test]
-    fn gmsh_read_needs_one_rank() {
-        let client = gridcl_testing::test_client();
-        let r = read::<f32, _>(
-            &client,
-            TwoRanks,
-            fixture("triangle_p1.msh"),
-            GmshOptions::default(),
-        );
-        assert!(matches!(
-            r,
-            Err(GridError::NotYetImplemented("parallel Gmsh read (M8)"))
-        ));
     }
 
     /// A tag element whose corners are vertices but not an edge of the mesh (the other diagonal

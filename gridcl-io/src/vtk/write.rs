@@ -438,7 +438,7 @@ impl VtuFile {
 /// data arrays declared as in `like`.
 ///
 /// The file is `type="PUnstructuredGrid" version="2.2" byte_order="LittleEndian"
-/// header_type="UInt64"` with `GhostLevel="0"`: `PPointData` and `PCellData` with a
+/// header_type="UInt64"` with `GhostLevel` = `ghost_level` (ADR-0035): `PPointData` and `PCellData` with a
 /// `PDataArray` (`type`, `Name`, `NumberOfComponents`) for each array of `like`, `PPoints`,
 /// then one `<Piece Source="…"/>` per entry of `pieces`, a path relative to the PVTU file.
 /// Names and paths are escaped as XML.
@@ -461,14 +461,19 @@ impl VtuFile {
 ///     cell_data: vec![DataArray { name: "rank".into(), components: 1, values: DataValues::I32(vec![]) }],
 /// };
 /// let mut bytes = Vec::new();
-/// write_pvtu(&mut bytes, &["out_0.vtu".to_string()], &like)?;
+/// write_pvtu(&mut bytes, &["out_0.vtu".to_string()], &like, 0)?;
 /// let text = String::from_utf8(bytes).unwrap();
 /// assert!(text.contains("<PDataArray type=\"Int32\" Name=\"rank\" NumberOfComponents=\"1\"/>"));
 /// assert!(text.contains("<PDataArray type=\"Float64\" Name=\"Points\" NumberOfComponents=\"3\"/>"));
 /// assert!(text.contains("<Piece Source=\"out_0.vtu\"/>"));
 /// # Ok::<(), gridcl_device::GridError>(())
 /// ```
-pub fn write_pvtu(w: &mut dyn Write, pieces: &[String], like: &VtuFile) -> Result<()> {
+pub fn write_pvtu(
+    w: &mut dyn Write,
+    pieces: &[String],
+    like: &VtuFile,
+    ghost_level: u32,
+) -> Result<()> {
     let mut o = Out {
         xml: String::new(),
         appended: Vec::new(),
@@ -492,7 +497,10 @@ pub fn write_pvtu(w: &mut dyn Write, pieces: &[String], like: &VtuFile) -> Resul
         "<VTKFile type=\"PUnstructuredGrid\" version=\"2.2\" byte_order=\"LittleEndian\" \
          header_type=\"UInt64\">",
     );
-    o.line(1, "<PUnstructuredGrid GhostLevel=\"0\">");
+    o.line(
+        1,
+        &format!("<PUnstructuredGrid GhostLevel=\"{ghost_level}\">"),
+    );
     o.line(2, "<PPointData>");
     for a in &like.point_data {
         declare(&mut o, a);
@@ -810,7 +818,7 @@ mod tests {
             assert!(String::from_utf8_lossy(&bytes).contains(escaped));
         }
         let mut bytes = Vec::new();
-        write_pvtu(&mut bytes, &["a&b\"<>.vtu".to_string()], &file).unwrap();
+        write_pvtu(&mut bytes, &["a&b\"<>.vtu".to_string()], &file, 0).unwrap();
         let text = String::from_utf8(bytes).unwrap();
         assert!(text.contains(escaped));
         assert!(text.contains("<Piece Source=\"a&amp;b&quot;&lt;&gt;.vtu\"/>"));
@@ -885,7 +893,7 @@ mod tests {
             matches!(e, GridError::Io(ref m) if m.contains("disk full")),
             "{e:?}"
         );
-        let e = write_pvtu(&mut Failing, &[], &square()).unwrap_err();
+        let e = write_pvtu(&mut Failing, &[], &square(), 0).unwrap_err();
         assert!(matches!(e, GridError::Io(_)), "{e:?}");
     }
 
@@ -893,7 +901,7 @@ mod tests {
     fn write_pvtu_golden() {
         let mut bytes = Vec::new();
         let pieces = ["out_0.vtu".to_string(), "out_1.vtu".to_string()];
-        write_pvtu(&mut bytes, &pieces, &square()).unwrap();
+        write_pvtu(&mut bytes, &pieces, &square(), 0).unwrap();
         assert_eq!(
             String::from_utf8(bytes).unwrap(),
             "<?xml version=\"1.0\"?>\n\

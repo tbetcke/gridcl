@@ -58,6 +58,10 @@ pub struct Fixture {
     /// For a serendipity file, the file of the same mesh written as complete P2.
     pub twin: Option<String>,
     pub partitioned: bool,
+    /// The number of partitions; 0 for an unpartitioned file.
+    pub num_partitions: usize,
+    /// The sorted D_TOP element tags of each partition.
+    pub partition_elements: Vec<Vec<i64>>,
     pub periodic: bool,
     pub expect: Expect,
 }
@@ -156,6 +160,19 @@ fn fixture(v: &Value) -> Fixture {
             .collect(),
         twin: v["twin"].as_str().map(str::to_owned),
         partitioned: v["partitioned"].as_bool().unwrap_or(false),
+        num_partitions: usize_of(&v["num_partitions"], "num_partitions"),
+        partition_elements: v["partition_elements"]
+            .as_array()
+            .expect("manifest: partition_elements")
+            .iter()
+            .map(|p| {
+                p.as_array()
+                    .expect("manifest: partition element tags")
+                    .iter()
+                    .map(|t| i64_of(t, "element tag"))
+                    .collect()
+            })
+            .collect(),
         periodic: v["periodic"].as_bool().unwrap_or(false),
         expect,
         file,

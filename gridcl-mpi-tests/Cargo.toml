@@ -15,11 +15,16 @@ mpi = ["gridcl/mpi", "gridcl-testing/mpi", "dep:mpi"]
 partitioners = ["gridcl/ptscotch", "gridcl/scotch"]
 metis = ["gridcl/metis"]
 parmetis = ["gridcl/parmetis"]
+# The VTKHDF targets (M8): needs a parallel HDF5 with `mpi` (HDF5_DIR; ADR-0035, rule 9).
+hdf5 = ["gridcl/hdf5"]
 
 [dependencies]
 gridcl = { path = "../gridcl" }
 gridcl-testing = { path = "../gridcl-testing" }
 mpi = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [[test]]
 name = "allreduce_smoke"
@@ -65,3 +70,23 @@ required-features = ["mpi", "partitioners"]
 name = "partition_build"
 harness = false
 required-features = ["mpi", "partitioners"]
+
+[[test]]
+name = "gmsh_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "vtk_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "vtkhdf_parallel"
+harness = false
+required-features = ["mpi", "hdf5"]
+
+[[test]]
+name = "read_memory"
+harness = false
+required-features = ["mpi"]

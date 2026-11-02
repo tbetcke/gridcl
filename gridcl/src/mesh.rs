@@ -159,18 +159,6 @@ where
         }
     }
 
-    /// The same mesh on `comm`, for tests of the rank checks (no collective runs).
-    #[cfg(test)]
-    pub(crate) fn with_comm<C2: Comm>(self, comm: C2) -> Mesh<F, TD, GD, C2> {
-        Mesh {
-            client: self.client,
-            comm,
-            topology: self.topology,
-            geometry: self.geometry,
-            tags: self.tags,
-        }
-    }
-
     /// The geometry nodes `[node][GD]` as the writers write them: converted to equispaced
     /// nodes on the device if a block is GLL (`equispaced_nodes`), downloaded, and with the
     /// origin added in f64 (ADR-0024, item 7).
@@ -539,6 +527,14 @@ where
     /// ```
     pub fn create_connectivity(&mut self, from: usize, to: usize) -> Result<()> {
         self.topology.create_connectivity(&self.comm, from, to)
+    }
+
+    /// The bytes this rank holds for the mesh: every device buffer (topology, entities,
+    /// connectivity, geometry, tags) plus the host vectors of its index maps. The "final mesh
+    /// size" of the M8 memory acceptance test (ADR-0035, rule 10).
+    #[doc(hidden)]
+    pub fn footprint_bytes(&self) -> usize {
+        todo!("Mesh::footprint_bytes (M8 T5a)")
     }
 }
 

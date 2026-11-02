@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Generates the Gmsh fixture corpus of M4 (docs/plans/M4.md, T1; ADR-0022).
+"""Generates the Gmsh fixture corpus of M4 (docs/plans/M4.md, T1; ADR-0022) and the partitioned
+files of M8 (docs/plans/M8.md, T0b).
 
 Writes gridcl-io/tests/fixtures/gmsh/*.msh and manifest.json with the pinned Gmsh Python wheel
 (PyPI gmsh==4.15.2, installed in .venv). The manifest records Gmsh's own view of every file, as
 Gmsh reads it back: the node count, the distinct nodes of the D_TOP elements, the element counts
 per type, the expected (D_TOP, D_GEO), and per physical group its size and the sorted
-corner-node tags of every element.
+corner-node tags of every element, the number of partitions (0 for an unpartitioned file) and the
+sorted D_TOP element tags of each partition.
 
 Usage:
     .venv/bin/python scripts/fixtures/gmsh/generate.py          # (re)write the corpus
@@ -17,6 +19,7 @@ import argparse
 import filecmp
 import json
 import re
+import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -251,17 +254,18 @@ def periodic():
 
 
 # --------------------------------------------------------------------------------------------
-# Fixtures: (file stem, model, (D_TOP, D_GEO), order, serendipity, binary copy, partitions).
+# Fixtures: (file stem, model, (D_TOP, D_GEO), order, serendipity, binary copy, partitions,
+# ghost cells of the partitions).
 
 
 def fixtures():
     out = []
 
     def add(stem, model, dims, order=1, serendipity=False, binary=False, partitions=0,
-            twin=None):
+            twin=None, ghosts=False):
         out.append(dict(stem=stem, model=model, dims=dims, order=order,
                         serendipity=serendipity, binary=binary, partitions=partitions,
-                        twin=twin))
+                        twin=twin, ghosts=ghosts))
 
     straight_1d = lambda: line([(0, 0, 0), (1, 0, 0), (2, 0, 0)])
     for p in range(1, 5):
@@ -283,7 +287,8 @@ def fixtures():
     add("square_z1_p1", lambda: rectangle(z=1.0), (2, 3), 1)
     add("box_surface_p2", box_surface, (2, 3), 2, binary=True)
     add("two_regions_p1", two_regions, (2, 2), 1, binary=True)
-    add("partitioned_p1", two_regions, (2, 2), 1, partitions=2)
+    add("partitioned_p1", two_regions, (2, 2), 1, binary=True, partitions=2)
+    add("partitioned_ghosts_p1", tetrahedra, (3, 3), 1, binary=True, partitions=3, ghosts=True)
     add("periodic_p1", periodic, (2, 2), 1)
     return out
 
@@ -300,10 +305,41 @@ def write(spec, path, binary):
     if spec["order"] > 1:
         gmsh.model.mesh.setOrder(spec["order"])
     if spec["partitions"]:
+        if spec["ghosts"]:
+            gmsh.option.setNumber("Mesh.PartitionCreateGhostCells", 1)
         gmsh.model.mesh.partition(spec["partitions"])
     gmsh.option.setNumber("Mesh.Binary", 1 if binary else 0)
     gmsh.write(str(path))
     finish()
+    if spec["ghosts"]:
+        sort_ghost_elements(path, binary)
+
+
+def sort_ghost_elements(path, binary):
+    """Sorts the records of $GhostElements by (element tag, partition): Gmsh writes them in
+    hash order, which changes from run to run."""
+    raw = path.read_bytes()
+    start = raw.index(b"$GhostElements\n") + len(b"$GhostElements\n")
+    end = raw.index(b"$EndGhostElements")
+    body = raw[start:end]
+    if binary:
+        # size_t count; per record: size_t tag, int partition, size_t n, n ints (8-byte
+        # size_t, little-endian, as written by Gmsh on this machine).
+        (count,) = struct.unpack_from("<Q", body, 0)
+        offset, records = 8, []
+        for _ in range(count):
+            tag, part, n = struct.unpack_from("<QiQ", body, offset)
+            size = 20 + 4 * n
+            records.append(((tag, part), body[offset:offset + size]))
+            offset += size
+        assert body[offset:] == b"\n", f"{path.name}: trailing bytes in $GhostElements"
+        body = body[:8] + b"".join(r for _, r in sorted(records)) + b"\n"
+    else:
+        lines = body.decode().split("\n")
+        assert lines[-1] == "", f"{path.name}: $GhostElements does not end in a newline"
+        records = sorted(lines[1:-1], key=lambda l: tuple(int(x) for x in l.split()[:2]))
+        body = "\n".join([lines[0]] + records + [""]).encode()
+    path.write_bytes(raw[:start] + body + raw[end:])
 
 
 def describe(path, dims):
@@ -315,15 +351,33 @@ def describe(path, dims):
     counts = {}
     mesh_nodes = set()
     tdim = 0
-    types, _, nodes = mesh.getElements()
-    for ty, tags in zip(types, nodes):
+    # Gmsh copies the elements of $GhostElements into ghost entities; count the file's elements.
+    blocks = []
+    for dim, tag in gmsh.model.getEntities():
+        if not gmsh.model.getType(dim, tag).startswith("Ghost"):
+            types, _, nodes = mesh.getElements(dim, tag)
+            blocks.extend(zip(types, nodes))
+    for ty, tags in blocks:
         dim, _, num = TYPES[int(ty)]
         counts[str(int(ty))] = counts.get(str(int(ty)), 0) + len(tags) // num
         tdim = max(tdim, dim)
-    for ty, tags in zip(types, nodes):
+    for ty, tags in blocks:
         if TYPES[int(ty)][0] == tdim:
             mesh_nodes.update(int(t) for t in tags)
     assert tdim == dims[0], f"{path.name}: D_TOP {tdim}, expected {dims[0]}"
+    num_partitions = gmsh.model.getNumberOfPartitions()
+    partition_elements = [[] for _ in range(num_partitions)]
+    for dim, tag in gmsh.model.getEntities(tdim):
+        if gmsh.model.getType(dim, tag).startswith("Ghost"):
+            continue
+        parts = gmsh.model.getPartitions(dim, tag)
+        if len(parts) == 0:
+            continue
+        assert len(parts) == 1, f"{path.name}: entity ({dim}, {tag}) in partitions {parts}"
+        _, etags, _ = mesh.getElements(dim, tag)
+        partition_elements[int(parts[0]) - 1].extend(int(t) for ts in etags for t in ts)
+    for p in partition_elements:
+        p.sort()
     groups = []
     for dim, tag in gmsh.model.getPhysicalGroups():
         elements = []
@@ -348,6 +402,8 @@ def describe(path, dims):
         physical_groups=groups,
         twin=None,
         partitioned=gmsh.model.getNumberOfPartitions() > 0,
+        num_partitions=num_partitions,
+        partition_elements=partition_elements,
         periodic=False,
     )
     finish()

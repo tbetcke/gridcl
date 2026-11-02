@@ -670,7 +670,7 @@ fn ghost_pvtu(dir: &TempDir, stem: &str, shift: f64) -> PathBuf {
         names.push(name);
     }
     let mut bytes = Vec::new();
-    write_pvtu(&mut bytes, &names, &pieces[0]).expect("write header");
+    write_pvtu(&mut bytes, &names, &pieces[0], 1).expect("write header");
     let path = dir.join(&format!("{stem}.pvtu"));
     std::fs::write(&path, bytes).expect("write header file");
     path
