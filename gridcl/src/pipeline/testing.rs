@@ -53,11 +53,7 @@ impl OwnedInput {
             tags: c
                 .tags
                 .iter()
-                .map(|t| TagInput {
-                    entity: t.entity,
-                    corners: t.corners.clone(),
-                    values: t.values.clone(),
-                })
+                .map(|t| TagInput::physical(t.entity, t.corners.clone(), t.values.clone()))
                 .collect(),
         }
     }
@@ -89,9 +85,12 @@ impl OwnedInput {
                     spec: *spec,
                     nodes,
                     origin_ids: ids.as_deref(),
+                    physical: &[],
+                    elementary: None,
                 })
                 .collect(),
             tags: &self.tags,
+            element_ids: &[],
         }
     }
 }

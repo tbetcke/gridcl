@@ -115,7 +115,7 @@ impl BlockSpec {
 
 /// Cells on one rank as host arrays: per cell its block (an index into the agreed block list),
 /// origin id, global input position (source rank, then position on it), node origin ids in
-/// A.5 order and physical tag values (ascending, distinct).
+/// A.5 order, physical tag values (ascending, distinct) and elementary tag value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Cells {
     pub(crate) block: Vec<u32>,
@@ -127,6 +127,9 @@ pub(crate) struct Cells {
     /// Row offsets of `tags`, `len() + 1` entries from 0.
     pub(crate) tag_offsets: Vec<usize>,
     pub(crate) tags: Vec<i32>,
+    /// The elementary tag of every cell, or empty when no cell has one (the Gmsh reader gives
+    /// every cell one, `MeshBuilder` none; ADR-0035, item 8).
+    pub(crate) elementary: Vec<i32>,
 }
 
 impl Cells {
@@ -140,6 +143,7 @@ impl Cells {
             nodes: Vec::new(),
             tag_offsets: vec![0],
             tags: Vec::new(),
+            elementary: Vec::new(),
         }
     }
 
@@ -163,8 +167,32 @@ impl Cells {
         &self.tags[self.tag_offsets[i]..self.tag_offsets[i + 1]]
     }
 
-    /// Appends a cell.
-    pub(crate) fn push(&mut self, block: u32, id: i64, input: i64, nodes: &[i64], tags: &[i32]) {
+    /// The elementary tag of cell `i`, if the cells have them.
+    pub(crate) fn elementary_of(&self, i: usize) -> Option<i32> {
+        self.elementary.get(i).copied()
+    }
+
+    /// Appends a cell. Either every cell has an elementary tag or none has.
+    pub(crate) fn push(
+        &mut self,
+        block: u32,
+        id: i64,
+        input: i64,
+        nodes: &[i64],
+        tags: &[i32],
+        elementary: Option<i32>,
+    ) {
+        match elementary {
+            Some(e) => {
+                debug_assert_eq!(
+                    self.elementary.len(),
+                    self.len(),
+                    "elementary tags on all cells"
+                );
+                self.elementary.push(e);
+            }
+            None => debug_assert!(self.elementary.is_empty(), "elementary tags on all cells"),
+        }
         self.block.push(block);
         self.ids.push(id);
         self.input.push(input);
@@ -174,16 +202,20 @@ impl Cells {
         self.tag_offsets.push(self.tags.len());
     }
 
-    /// Cell `i` as one wire record: [block, id, input, node count, nodes…, tags…].
+    /// Cell `i` as one wire record: [block, id, input, node count, elementary count (0 or 1),
+    /// nodes…, elementary…, tags…].
     pub(crate) fn record(&self, i: usize) -> Vec<i64> {
         let nodes = self.nodes_of(i);
+        let elementary = self.elementary_of(i);
         let mut r = vec![
             i64::from(self.block[i]),
             self.ids[i],
             self.input[i],
             nodes.len() as i64,
+            i64::from(elementary.is_some()),
         ];
         r.extend_from_slice(nodes);
+        r.extend(elementary.map(i64::from));
         r.extend(self.tags_of(i).iter().map(|&t| i64::from(t)));
         r
     }
@@ -191,8 +223,10 @@ impl Cells {
     /// Appends the cell of a wire record from [`record`](Cells::record).
     pub(crate) fn push_record(&mut self, r: &[i64]) {
         let n = r[3] as usize;
-        let tags: Vec<i32> = r[4 + n..].iter().map(|&t| t as i32).collect();
-        self.push(r[0] as u32, r[1], r[2], &r[4..4 + n], &tags);
+        let e = r[4] as usize;
+        let elementary = r[5 + n..5 + n + e].first().map(|&v| v as i32);
+        let tags: Vec<i32> = r[5 + n + e..].iter().map(|&t| t as i32).collect();
+        self.push(r[0] as u32, r[1], r[2], &r[5..5 + n], &tags, elementary);
     }
 
     /// The cells at `order`, in that order.
@@ -205,6 +239,7 @@ impl Cells {
                 self.input[i],
                 self.nodes_of(i),
                 self.tags_of(i),
+                self.elementary_of(i),
             );
         }
         out
@@ -219,6 +254,7 @@ impl Cells {
                 other.input[i],
                 other.nodes_of(i),
                 other.tags_of(i),
+                other.elementary_of(i),
             );
         }
     }
@@ -281,12 +317,24 @@ mod tests {
             }
         }
         let mut cells = Cells::new();
-        cells.push(1, -5, 7, &[3, 4, 5], &[2, 9]);
-        cells.push(0, 8, 2, &[1, 2], &[]);
+        cells.push(1, -5, 7, &[3, 4, 5], &[2, 9], None);
+        cells.push(0, 8, 2, &[1, 2], &[], None);
         let mut back = Cells::new();
         back.push_record(&cells.record(1));
         back.push_record(&cells.record(0));
         assert_eq!(back, cells.select(&[1, 0]));
         assert_eq!(back.tags_of(1), [2, 9]);
+        assert_eq!(back.elementary_of(1), None);
+
+        // With elementary tags.
+        let mut cells = Cells::new();
+        cells.push(1, -5, 7, &[3, 4, 5], &[2, 9], Some(-3));
+        cells.push(0, 8, 2, &[1, 2], &[], Some(4));
+        let mut back = Cells::new();
+        back.push_record(&cells.record(1));
+        back.push_record(&cells.record(0));
+        assert_eq!(back, cells.select(&[1, 0]));
+        assert_eq!(back.tags_of(1), [2, 9]);
+        assert_eq!(back.elementary, [4, -3]);
     }
 }

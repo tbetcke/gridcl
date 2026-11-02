@@ -95,23 +95,29 @@ pub(crate) fn partition(
 ) -> Result<Vec<i32>> {
     let p = comm.size();
     let n = graph.xadj.len() - 1;
-    let local = partitioner.partition(comm, graph, p).and_then(|dest| {
-        if dest.len() != n {
-            return Err(GridError::LengthMismatch {
-                expected: n,
-                found: dest.len(),
-            });
-        }
-        let in_range = |d: i32| usize::try_from(d).is_ok_and(|d| d < p);
-        if let Some(&bad) = dest.iter().find(|&&d| !in_range(d)) {
-            return Err(GridError::IndexOutOfRange {
-                index: usize::try_from(bad).unwrap_or(usize::MAX),
-                len: p,
-            });
-        }
-        Ok(dest)
-    });
+    let local = partitioner
+        .partition(comm, graph, p)
+        .and_then(|dest| check_destinations(&dest, n, p).map(|()| dest));
     agree(comm, local)
+}
+
+/// `LengthMismatch` unless `dest` has `n` entries, `IndexOutOfRange` for an entry outside
+/// `0..p`.
+pub(crate) fn check_destinations(dest: &[i32], n: usize, p: usize) -> Result<()> {
+    if dest.len() != n {
+        return Err(GridError::LengthMismatch {
+            expected: n,
+            found: dest.len(),
+        });
+    }
+    let in_range = |d: i32| usize::try_from(d).is_ok_and(|d| d < p);
+    if let Some(&bad) = dest.iter().find(|&&d| !in_range(d)) {
+        return Err(GridError::IndexOutOfRange {
+            index: usize::try_from(bad).unwrap_or(usize::MAX),
+            len: p,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
