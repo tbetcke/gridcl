@@ -1,6 +1,6 @@
 # ADR-0035: M8 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-02
 - **Raised in:** M8 planning (docs/plans/M8.md, "Planned public API and rules" and questions 1–16)
 - **Design sections affected:**
@@ -218,4 +218,4 @@ Option 2, item by item.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-02, as proposed (option 2, items 1–16), without conditions. Applied to docs/design.md in `adr: 0035 apply`.
