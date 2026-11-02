@@ -235,7 +235,6 @@ where
     /// keyed rendezvous. Either every block of every rank has elementary tags or none has.
     ///
     /// [`cell_block_by_ids`]: MeshBuilder::cell_block_by_ids
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Gmsh reader's (M8 T4a)"))]
     pub(crate) fn tagged_cell_block(
         mut self,
         element: CoordinateElement<TD>,
@@ -257,7 +256,6 @@ where
     /// Tags of the Gmsh reader of dimension below the cells' (ADR-0035, items 8 and 9): as
     /// [`physical_tags`](MeshBuilder::physical_tags), of `kind`, and with `error_ids` (one per
     /// entry, the Gmsh element tags) as the `tag` of `UnmatchedTagElement`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Gmsh reader's (M8 T4a)"))]
     pub(crate) fn tag_entries(
         mut self,
         kind: TagKind,
@@ -278,7 +276,6 @@ where
 
     /// Ids that share the cell ids' space (the Gmsh reader's tag-element tags; ADR-0035,
     /// item 9): an id given twice, or also as a cell id, is `DuplicateOriginId`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Gmsh reader's (M8 T4a)"))]
     pub(crate) fn element_ids(mut self, ids: Vec<i64>) -> Self {
         self.element_ids.extend(ids);
         self
@@ -287,7 +284,7 @@ where
     /// The destination rank of every input cell, blocks in call order (the partition data of a
     /// Gmsh file; ADR-0035, item 10): stages 2 and 3 are skipped. If any rank gives them,
     /// every rank must, one per cell.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Gmsh reader's (M8 T4a)"))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "the Gmsh reader's (M8 T4c)"))]
     pub(crate) fn destinations(mut self, dest: Vec<i32>) -> Self {
         self.destinations = Some(dest);
         self
@@ -749,7 +746,7 @@ mod tests {
         GD: Dim,
         C: Comm,
     {
-        let ids = decode_origin_ids(&mesh.topology().vertex_origin_ids().to_host().unwrap());
+        let ids = decode_origin_ids(&mesh.vertex_origin_ids().to_host().unwrap());
         let mut keys: BTreeMap<(usize, u32), Vec<i64>> = BTreeMap::new();
         let mut first = 0;
         for b in mesh.cell_blocks() {

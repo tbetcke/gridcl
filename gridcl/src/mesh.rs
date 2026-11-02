@@ -267,11 +267,6 @@ where
         self.tags = tags;
     }
 
-    /// The topology (the Gmsh reader matches tag keys against it).
-    pub(crate) fn topology(&self) -> &Topology<TD> {
-        &self.topology
-    }
-
     /// A deep copy of every device array, tags included.
     ///
     /// # Errors

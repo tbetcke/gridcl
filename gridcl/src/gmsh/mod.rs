@@ -6,269 +6,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use cubecl::prelude::Client;
-use gridcl_device::{DeviceBuffer, GridError, Real, Result, SortKeys, check_precision};
-use gridcl_dims::{CellType, D1, D2, D3, Dim, EmbeddedIn, TopoDim};
-use gridcl_geometry::{CoordinateElement, DeviceGrid, NodeFamily};
+use gridcl_device::{GridError, Real, Result};
+use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
+use gridcl_geometry::DeviceGrid;
 use gridcl_io::gmsh::{Encoding, GmshCellBlock, GmshMesh, GmshTagGroup, PhysicalName};
 use gridcl_parallel::Comm;
 use gridcl_topology::decode_origin_ids;
 
-use crate::{AnyMesh, AnyMeshRef, Mesh, MeshBuilder, MeshTags, TagRegistry};
+use crate::{AnyMeshRef, Mesh, MeshTags};
 
-/// Options of [`read`]. `Default` infers D_GEO.
-///
-/// # Example
-///
-/// ```
-/// use gridcl::prelude::*;
-///
-/// // Read a planar mesh into three dimensions.
-/// let options = GmshOptions::default().gdim(3);
-/// # let _ = options;
-/// ```
-#[derive(Clone, Debug, Default)]
-pub struct GmshOptions {
-    gdim: Option<usize>,
-}
+mod options;
+mod read;
 
-impl GmshOptions {
-    /// Fixes D_GEO: 1–3, at least D_TOP and at least the inferred D_GEO.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use gridcl::prelude::*;
-    ///
-    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../gridcl-io/tests/fixtures/gmsh/triangle_p1.msh");
-    /// let client = gridcl_testing::test_client();
-    /// let any = gmsh::read::<f32, _>(&client, Serial, path, GmshOptions::default().gdim(3))?;
-    /// assert_eq!((any.tdim(), any.gdim()), (2, 3));
-    /// # Ok::<(), GridError>(())
-    /// ```
-    pub fn gdim(self, gdim: usize) -> Self {
-        GmshOptions { gdim: Some(gdim) }
-    }
-
-    /// The partitioner of a read on more than one rank; by default PT-Scotch with feature
-    /// `ptscotch` and an MPI communicator, else METIS with `metis`, else `Block` (ADR-0035,
-    /// rule 6).
-    pub fn partitioner(self, p: impl crate::Partitioner + 'static) -> Self {
-        let _ = (self, p);
-        todo!("GmshOptions::partitioner (M8 T4a)")
-    }
-
-    /// The ghost cells of each rank; default [`GhostMode::None`](crate::GhostMode::None).
-    pub fn ghosts(self, mode: crate::GhostMode) -> Self {
-        let _ = (self, mode);
-        todo!("GmshOptions::ghosts (M8 T4a)")
-    }
-
-    /// The order of the owned cells; default [`CellOrdering::Input`](crate::CellOrdering::Input).
-    pub fn ordering(self, o: crate::CellOrdering) -> Self {
-        let _ = (self, o);
-        todo!("GmshOptions::ordering (M8 T4a)")
-    }
-}
-
-/// (flat entity index, value) entries of one dimension, sorted and without repeats.
-type Entries = Vec<(u32, i32)>;
-
-/// The physical and elementary entries of each dimension.
-#[derive(Default)]
-struct HostTags {
-    physical: BTreeMap<usize, Entries>,
-    elementary: BTreeMap<usize, Entries>,
-}
-
-/// The mesh of `host` on `client` and `comm`, with its tags.
-fn build<F, TD, GD, C>(client: &Client, comm: C, host: &GmshMesh) -> Result<Mesh<F, TD, GD, C>>
-where
-    F: Real,
-    TD: TopoDim + EmbeddedIn<GD>,
-    TD::Cell: TryFrom<CellType>,
-    GD: Dim,
-    C: Comm,
-{
-    let mut builder =
-        MeshBuilder::<F, TD, GD>::new(client).nodes(&host.nodes, Some(&host.node_tags));
-    for b in &host.blocks {
-        let Ok(cell) = TD::Cell::try_from(b.cell) else {
-            unreachable!("cell blocks have dimension D_TOP");
-        };
-        let element = CoordinateElement::<TD> {
-            cell,
-            degree: b.degree,
-            family: NodeFamily::Equispaced,
-        };
-        builder = builder.cell_block(element, &b.nodes, Some(&b.tags));
-    }
-    let (mut mesh, vertex_of_node) = builder.build_with_comm(comm)?;
-    let tdim = host.tdim;
-    let mut tags = HostTags::default();
-
-    // Cells: flat numbering over the blocks in block order.
-    let mut first = 0u32;
-    for b in &host.blocks {
-        let physical = tags.physical.entry(tdim).or_default();
-        physical.extend(b.physical.iter().map(|&(c, p)| (first + c, p)));
-        let elementary = tags.elementary.entry(tdim).or_default();
-        elementary.extend(
-            b.elementary
-                .iter()
-                .enumerate()
-                .map(|(c, &e)| (first + c as u32, e)),
-        );
-        first += u32::try_from(b.tags.len()).map_err(|_| GridError::TooLarge)?;
-    }
-
-    // Tag elements: corner tags -> local vertex indices on the host, then device matching.
-    let index_of: std::collections::HashMap<i64, usize> = host
-        .node_tags
-        .iter()
-        .enumerate()
-        .map(|(i, &t)| (t, i))
-        .collect();
-    for g in &host.tag_groups {
-        mesh.create_entities(g.dim)?;
-        let nv = gridcl_refcell::vertices(g.cell).len();
-        let mut keys = Vec::with_capacity(g.corners.len());
-        for (e, corners) in g.corners.chunks_exact(nv).enumerate() {
-            let mut key = Vec::with_capacity(nv);
-            for t in corners {
-                let v = index_of
-                    .get(t)
-                    .map(|&i| vertex_of_node[i])
-                    .filter(|&v| v != u32::MAX)
-                    .ok_or(GridError::UnmatchedTagElement {
-                        dim: g.dim,
-                        tag: g.tags[e],
-                    })?;
-                key.push(v);
-            }
-            key.sort_unstable();
-            keys.extend(key);
-        }
-        let keys = SortKeys::from_host(client, &keys, nv)?;
-        // An I/O copy (ADR-0022, item 15): it names the first unmatched element.
-        let found = mesh.topology().match_entities(g.dim, &keys)?.to_host()?;
-        if let Some(e) = found.iter().position(|&f| f == u32::MAX) {
-            return Err(GridError::UnmatchedTagElement {
-                dim: g.dim,
-                tag: g.tags[e],
-            });
-        }
-        let physical = tags.physical.entry(g.dim).or_default();
-        physical.extend(g.physical.iter().map(|&(e, p)| (found[e as usize], p)));
-        let elementary = tags.elementary.entry(g.dim).or_default();
-        elementary.extend(g.elementary.iter().zip(&found).map(|(&v, &f)| (f, v)));
-    }
-
-    let names = host
-        .names
-        .iter()
-        .map(|n| (n.name.clone(), n.dim, n.tag))
-        .collect();
-    let mut registry = TagRegistry::new(client, tdim, names);
-    let upload = |dim: usize, entries: &mut Entries| -> Result<MeshTags> {
-        entries.sort_unstable();
-        entries.dedup();
-        let (indices, values): (Vec<u32>, Vec<i32>) = entries.iter().copied().unzip();
-        Ok(MeshTags {
-            dim,
-            indices: DeviceBuffer::from_host(client, &indices)?,
-            values: DeviceBuffer::from_host(client, &values)?,
-        })
-    };
-    for (dim, mut entries) in tags.physical {
-        if entries.is_empty() {
-            continue;
-        }
-        let t = upload(dim, &mut entries)?;
-        let mut sizes: BTreeMap<i32, usize> = BTreeMap::new();
-        for &(_, v) in &entries {
-            *sizes.entry(v).or_default() += 1;
-        }
-        registry.set_physical(t, sizes);
-    }
-    for (dim, mut entries) in tags.elementary {
-        if entries.is_empty() {
-            continue;
-        }
-        registry.set_elementary(upload(dim, &mut entries)?);
-    }
-    mesh.set_tags(registry);
-    Ok(mesh)
-}
-
-/// Reads the Gmsh MSH 4.1 file at `path` into a mesh whose dimensions the file decides
-/// (docs/design.md, "Gmsh MSH 4.1"; ADR-0022).
-///
-/// - D_TOP is the highest element dimension; its elements form the cell blocks, in `CellType`
-///   order with cells in file order. D_GEO is inferred from the nodes, or fixed by
-///   [`GmshOptions::gdim`].
-/// - Node tags are the vertex origin ids and element tags the cell origin ids; serendipity
-///   cells are upgraded to complete P2.
-/// - Physical groups and elementary tags become the mesh's [`TagRegistry`]: lower-dimensional
-///   elements are matched against the mesh's entities (created for each tagged dimension) on
-///   the device, cells are tagged directly.
-/// - Reading into an f32 mesh narrows the coordinates and logs one warning per file.
-///
-/// # Errors
-///
-/// - `NotYetImplemented` for more than one rank (until M8);
-/// - `UnsupportedPrecision` if the device lacks `F`;
-/// - `Io`, `Parse`, `UnsupportedElementType`, `DuplicateOriginId`, `DuplicateCellBlock`,
-///   `DimensionMismatch` as in `gridcl_io::gmsh::to_gmsh_mesh`;
-/// - `UnmatchedTagElement` for a lower-dimensional element that is not an entity of the mesh;
-/// - errors of [`MeshBuilder::build`]; allocation and device errors.
-///
-/// # Example
-///
-/// ```
-/// use gridcl::prelude::*;
-///
-/// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../gridcl-io/tests/fixtures/gmsh/two_regions_p1.msh");
-/// let client = gridcl_testing::test_client();
-/// let any: AnyMesh<f32> = gmsh::read(&client, Serial, path, GmshOptions::default())?;
-/// let mesh = PlanarMesh::<f32>::try_from(any)?;
-/// assert!((mesh.measure(2)? - 2.0).abs() < 1e-5);
-/// // The interface between the two regions, by name.
-/// let interface = mesh.tags().named(Codim::Bnd, "interface")?;
-/// assert_eq!(interface.indices.len(), 3);
-/// # Ok::<(), GridError>(())
-/// ```
-pub fn read<F: Real, C: Comm>(
-    client: &Client,
-    comm: C,
-    path: impl AsRef<Path>,
-    options: GmshOptions,
-) -> Result<AnyMesh<F, C>> {
-    if comm.size() > 1 {
-        return Err(GridError::NotYetImplemented("parallel Gmsh read (M8)"));
-    }
-    check_precision::<F>(client)?;
-    let path = path.as_ref();
-    let file = gridcl_io::gmsh::read_file(path)?;
-    let host = gridcl_io::gmsh::to_gmsh_mesh(&file, &comm, options.gdim)?;
-    if size_of::<F>() < size_of::<f64>() {
-        log::warn!(
-            "{}: reading into an f32 mesh narrows the coordinates to single precision",
-            path.display()
-        );
-    }
-    Ok(match (host.tdim, host.gdim) {
-        (1, 1) => AnyMesh::Curve1(build::<F, D1, D1, C>(client, comm, &host)?),
-        (1, 2) => AnyMesh::Curve2(build::<F, D1, D2, C>(client, comm, &host)?),
-        (1, 3) => AnyMesh::Curve3(build::<F, D1, D3, C>(client, comm, &host)?),
-        (2, 2) => AnyMesh::Planar(build::<F, D2, D2, C>(client, comm, &host)?),
-        (2, 3) => AnyMesh::Surface(build::<F, D2, D3, C>(client, comm, &host)?),
-        (3, 3) => AnyMesh::Volume(build::<F, D3, D3, C>(client, comm, &host)?),
-        (tdim, gdim) => {
-            unreachable!("to_gmsh_mesh gives 1 <= tdim <= gdim <= 3, not ({tdim}, {gdim})")
-        }
-    })
-}
+pub use options::GmshOptions;
+pub use read::read;
 
 /// Writes meshes as Gmsh MSH 4.1 files, ASCII by default (ADR-0022, item 10).
 ///
@@ -559,7 +310,7 @@ mod tests {
     use gridcl_parallel::Serial;
 
     use super::*;
-    use crate::{Codim, D2, PlanarMesh};
+    use crate::{Codim, CoordinateElement, D2, GmshOptions, MeshBuilder, NodeFamily, PlanarMesh};
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -621,6 +372,32 @@ mod tests {
         )
         .unwrap();
         assert_eq!(my_warnings().len(), 2);
+    }
+
+    /// On two threads only rank 0 logs: the f32 warning and, without `metis` (threads have no
+    /// MPI handle for PT-Scotch), the `Block` fallback; an explicit partitioner has none.
+    #[test]
+    fn gmsh_read_warns_once_on_rank_0() {
+        let _ = log::set_logger(&LOGGER);
+        log::set_max_level(log::LevelFilter::Warn);
+        let path = fixture("triangle_p2.msh");
+        let fallback = usize::from(!cfg!(feature = "metis"));
+        let got = gridcl_testing::ThreadComm::run(2, |comm| {
+            let client = gridcl_testing::test_client();
+            read::<f32, _>(&client, comm.clone(), &path, GmshOptions::default()).unwrap();
+            let first = my_warnings();
+            let options = GmshOptions::default().partitioner(crate::Block);
+            read::<f32, _>(&client, comm, &path, options).unwrap();
+            (first, my_warnings())
+        });
+        let (first, second) = &got[0];
+        assert_eq!(first.len(), 1 + fallback, "{first:?}");
+        assert!(
+            first.iter().all(|w| w.contains("triangle_p2.msh")),
+            "{first:?}"
+        );
+        assert_eq!(second.len(), 2 + fallback, "{second:?}");
+        assert_eq!(got[1], (vec![], vec![]));
     }
 
     /// A device without f64 gives `UnsupportedPrecision` before the file is read.

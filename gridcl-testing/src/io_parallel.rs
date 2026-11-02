@@ -230,11 +230,18 @@ fn materialise(comm: &dyn CommDyn, client: &Client, source: &Source, dir: &Path)
         Source::MixedBox => {
             let path = dir.join("mixed_box.msh");
             if comm.rank() == 0 && !path.exists() {
-                let mesh: VolumeMesh<f64> = ok(crate::mixed_box(2, 1).build(client), &"mixed box");
-                ok(
-                    gmsh::GmshWriter::new(&path).binary(true).write(&mesh),
-                    &"write the mixed box",
-                );
+                // f32 where the device lacks f64 (Metal); the box's coordinates are exact in both.
+                let writer = gmsh::GmshWriter::new(&path).binary(true);
+                let written = if supports::<f64>(client) {
+                    let mesh: VolumeMesh<f64> =
+                        ok(crate::mixed_box(2, 1).build(client), &"mixed box");
+                    writer.write(&mesh)
+                } else {
+                    let mesh: VolumeMesh<f32> =
+                        ok(crate::mixed_box(2, 1).build(client), &"mixed box");
+                    writer.write(&mesh)
+                };
+                ok(written, &"write the mixed box");
             }
             comm.barrier();
             path
