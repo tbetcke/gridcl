@@ -4,9 +4,13 @@
 //! The file is `GRIDCL_M8_BOX` (the 10^7-cell box written by `gen-gmsh-box 119` before the
 //! measured run), else a small box that rank 0 writes first (the smoke test). Peak memory is
 //! `getrusage(RUSAGE_SELF).ru_maxrss`: KiB on Linux, bytes on macOS.
+//!
+//! Every rank prints the device pools gridcl logs after each stage of the read (target
+//! `gridcl::memory`) with the peak resident memory so far: the memory profile of T5a.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::OnceLock;
 
 use gridcl::CommDyn;
 use gridcl_testing::io_parallel::{self as io, remove_shared_dir, shared_dir};
@@ -26,8 +30,40 @@ fn peak_rss() -> u64 {
     }
 }
 
+/// Prints gridcl's memory log and warnings with this rank's peak resident memory.
+struct Profile {
+    rank: OnceLock<usize>,
+}
+
+impl log::Log for Profile {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+            || (metadata.target() == "gridcl::memory" && metadata.level() <= log::Level::Debug)
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            let rank = self.rank.get().copied().unwrap_or(usize::MAX);
+            println!(
+                "read_memory: rank {rank}: {}, peak RSS {} MiB",
+                record.args(),
+                peak_rss() >> 20
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static PROFILE: Profile = Profile {
+    rank: OnceLock::new(),
+};
+
 fn main() -> ExitCode {
     gridcl_mpi_tests::run("read_memory", |comm| {
+        let _ = PROFILE.rank.set(comm.rank());
+        log::set_logger(&PROFILE).expect("the only logger");
+        log::set_max_level(log::LevelFilter::Debug);
         let client = gridcl_testing::test_client();
         match std::env::var_os("GRIDCL_M8_BOX").filter(|v| !v.is_empty()) {
             Some(path) => io::read_memory(comm, &client, &PathBuf::from(path), &peak_rss),

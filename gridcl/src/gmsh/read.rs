@@ -26,8 +26,8 @@ use gridcl_io::gmsh::{
 use gridcl_parallel::{Comm, CommDyn, CommExt};
 
 use super::options::{GmshOptions, Shared};
-use crate::pipeline::agree;
 use crate::pipeline::input::TagKind;
+use crate::pipeline::{agree, log_memory};
 use crate::{AnyMesh, Mesh, MeshBuilder};
 
 /// One rank's part of a file, converted: what stage 1 needs.
@@ -557,6 +557,7 @@ pub fn read<F: Real, C: Comm>(
     agree(&comm, check_precision::<F>(client))?;
     let path = path.as_ref();
     let (chunk, names, gdim) = local(&comm, path, options.gdim)?;
+    log_memory(client, "read (chunk)");
     let tdim = chunk.tdim;
     let (partitioner, fallback) = options.partitioner_on(&comm);
     if comm.rank() == 0 {

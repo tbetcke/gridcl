@@ -21,7 +21,7 @@ use crate::pipeline::number::number;
 use crate::pipeline::order::order_cells;
 use crate::pipeline::tags::{TagInputs, cell_elementary, cell_tags, registry};
 use crate::pipeline::upload::upload;
-use crate::pipeline::{BlockSpec, agree};
+use crate::pipeline::{BlockSpec, agree, log_memory};
 
 /// The name of a cell type in errors.
 pub(crate) fn cell_name(cell: CellType) -> &'static str {
@@ -534,6 +534,7 @@ where
             cells,
             lower_tags,
         } = input::read(&comm, &self.input())?;
+        log_memory(client, "stage 1 (input)");
         // Fixed destinations replace stages 2–3; a rank without them has none.
         let fixed = (&comm as &dyn CommDyn).max(u32::from(self.destinations.is_some())) == 1;
         let owned = if fixed {
@@ -551,10 +552,14 @@ where
             let dest = partition(&comm, self.partitioner.as_ref(), &graph)?;
             migrate(&comm, &cells, &dest)?
         };
+        log_memory(client, "stages 2-4 (partition, migrate)");
         let local = ghost_cells(&comm, &blocks, owned, self.ghosts)?;
+        log_memory(client, "stage 5 (ghosts)");
         let nodes = fetch_nodes(&comm, &blocks, GD::N, &chunk, &local)?;
+        log_memory(client, "stage 6 (nodes)");
         let local = order_cells(&blocks, local, &nodes, self.ordering);
         let mut numbered = number(&comm, &blocks, &local, &nodes)?;
+        log_memory(client, "stages 7-8 (order, number)");
 
         let vertex_local: HashMap<i64, u32> = numbered
             .vertex_ids
@@ -572,6 +577,7 @@ where
         let directory = std::mem::take(&mut numbered.directory);
         // Stage 9, then the tags.
         let (mut topology, geometry) = upload(client, &comm, &blocks, &nodes, numbered)?;
+        log_memory(client, "stage 9 (upload)");
         let tags = TagInputs {
             cells,
             cell_elementary,
@@ -581,6 +587,7 @@ where
             vertex_local: &vertex_local,
         };
         let tags = registry(client, &comm, &mut topology, tags)?;
+        log_memory(client, "stage 10 (tags)");
         let mut mesh = Mesh::from_parts(client.clone(), comm, topology, geometry);
         mesh.set_tags(tags);
         Ok((mesh, vertex_of_node))

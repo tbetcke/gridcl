@@ -398,6 +398,57 @@ impl<TD: TopoDim> Topology<TD> {
         Ok(())
     }
 
+    /// The allocated bytes of every device array (cell blocks, vertex origin ids, permutation
+    /// info, entities, connectivity, vertex shared flags) plus the
+    /// [`footprint_bytes`](IndexMap::footprint_bytes) of every index map. The host sharer sets
+    /// are not counted. For memory accounting in tests (`Mesh::footprint_bytes`, ADR-0035);
+    /// not part of the stable API.
+    #[doc(hidden)]
+    pub fn footprint_bytes(&self) -> usize {
+        let cells: usize = self
+            .cell_blocks
+            .iter()
+            .map(|b| {
+                b.index_map.footprint_bytes()
+                    + b.vertices.data.footprint_bytes()
+                    + b.origin_ids.footprint_bytes()
+                    + b.flags.footprint_bytes()
+            })
+            .sum();
+        let entities: usize = self
+            .entities
+            .iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.index_map.footprint_bytes() + e.vertices.data.footprint_bytes())
+            .sum();
+        let connectivity: usize = self
+            .connectivity
+            .values()
+            .map(|c| match c {
+                Connectivity::Downward(blocks) => {
+                    blocks.iter().map(|s| s.data.footprint_bytes()).sum()
+                }
+                Connectivity::Upward(csr) => {
+                    csr.offsets.footprint_bytes() + csr.indices.footprint_bytes()
+                }
+            })
+            .sum();
+        let buffers = self
+            .permutation_info
+            .iter()
+            .chain([&self.vertex_shared])
+            .flatten()
+            .map(DeviceBuffer::footprint_bytes)
+            .sum::<usize>();
+        cells
+            + entities
+            + connectivity
+            + buffers
+            + self.vertex_index_map.footprint_bytes()
+            + self.vertex_origin_ids.footprint_bytes()
+    }
+
     /// A deep copy of every device array. Index maps, ghosts included, are cloned and share
     /// their neighbourhoods with the original, so the copy is not collective and `comm` is
     /// unused (it stays in the signature, ADR-0012).

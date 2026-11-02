@@ -33,6 +33,8 @@ pub(crate) mod rendezvous;
 pub(crate) mod tags;
 pub(crate) mod upload;
 
+use cubecl::MemoryScope;
+use cubecl::prelude::Client;
 use gridcl_device::{GridError, Result};
 use gridcl_dims::CellType;
 use gridcl_geometry::NodeFamily;
@@ -51,6 +53,24 @@ pub(crate) fn agree<T>(comm: &dyn CommDyn, local: Result<T>) -> Result<T> {
             rank: lowest as usize,
         }),
         other => other,
+    }
+}
+
+/// The log target of [`log_memory`].
+pub(crate) const MEMORY_LOG: &str = "gridcl::memory";
+
+/// Logs the device memory pools after `stage` at debug level, target [`MEMORY_LOG`] (the M8
+/// memory profile, docs/plans/M8.md T5a). The pools, a blocking device query, are read only
+/// when that target is enabled.
+pub(crate) fn log_memory(client: &Client, stage: &str) {
+    if log::log_enabled!(target: MEMORY_LOG, log::Level::Debug) {
+        let usage = client.memory_report(MemoryScope::Device).usage();
+        log::debug!(
+            target: MEMORY_LOG,
+            "{stage}: pools in use {} B, reserved {} B",
+            usage.bytes_in_use,
+            usage.bytes_reserved
+        );
     }
 }
 

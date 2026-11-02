@@ -15,6 +15,8 @@
 #                            build (default none): `partitioners` builds the M7 targets
 #                            with Scotch and PT-Scotch; add `metis` (the acceptance run) or
 #                            `parmetis`, not both (ADR-0033)
+#   GRIDCL_MPI_PROFILE       build profile of the test executables: debug (default) or release
+#                            (the M8 memory test, ADR-0035 rule 10)
 #   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default);
 #                            a backend other than cpu also builds with gridcl-testing/<backend>
 #                            (scripts/hpc jobs set cuda)
@@ -119,13 +121,21 @@ if [[ -n "${GRIDCL_MPI_FEATURES:-}" ]]; then
     features+=",$GRIDCL_MPI_FEATURES"
 fi
 
+profile_flags=()
+case ${GRIDCL_MPI_PROFILE:-debug} in
+    debug) ;;
+    release) profile_flags=(--release) ;;
+    *) die "GRIDCL_MPI_PROFILE '$GRIDCL_MPI_PROFILE' is not debug or release" ;;
+esac
+
 # One build; the [[test]] executables come from cargo's JSON messages. Each message is one
 # compact object per line, and a target object holds no nested object, so sed suffices (jq is
 # not installed on the Myriad compute nodes).
 logs=target/mpi-test
 mkdir -p "$logs"
 build_json=$logs/build.json
-if ! cargo test -p gridcl-mpi-tests --features "$features" --no-run --message-format=json >"$build_json"; then
+if ! cargo test -p gridcl-mpi-tests --features "$features" ${profile_flags[@]+"${profile_flags[@]}"} \
+    --no-run --message-format=json >"$build_json"; then
     die "build failed"
 fi
 tests=()
@@ -154,7 +164,7 @@ if [[ -n "${GRIDCL_MPI_TESTS:-}" ]]; then
     tests=("${selected[@]}")
 fi
 
-echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), features $features, time limit ${time_limit} s"
+echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), features $features, profile ${GRIDCL_MPI_PROFILE:-debug}, time limit ${time_limit} s"
 [[ -z $hwloc_workaround ]] || echo "mpi-test.sh: HWLOC_COMPONENTS=-darwin (hwloc issue 852)"
 failed=0
 for n in "${ranks[@]}"; do

@@ -147,6 +147,32 @@ where
         Ok(cache.get_or_init(|| xe))
     }
 
+    /// The allocated bytes of every device array (dofmaps, nodes, the uploaded origin and the
+    /// E-vectors built so far) plus the [`footprint_bytes`](IndexMap::footprint_bytes) of the
+    /// node index map. For memory accounting in tests (`Mesh::footprint_bytes`, ADR-0035);
+    /// not part of the stable API.
+    #[doc(hidden)]
+    pub fn footprint_bytes(&self) -> usize {
+        let dofmaps: usize = self
+            .blocks
+            .iter()
+            .map(|b| b.dofmap.data.footprint_bytes())
+            .sum();
+        // An E-vector's origin is a share of `origin_device`.
+        let evectors: usize = self
+            .evectors
+            .iter()
+            .filter_map(OnceCell::get)
+            .flat_map(EVector::chunks)
+            .map(|c| c.data.footprint_bytes())
+            .sum();
+        dofmaps
+            + evectors
+            + self.nodes.footprint_bytes()
+            + self.origin_device.footprint_bytes()
+            + self.node_index_map.footprint_bytes()
+    }
+
     /// A deep copy of every device array; the E-vector cache starts empty. The node index
     /// map, ghosts included, is cloned and shares its neighbourhoods with the original, so the
     /// copy is not collective and `comm` is unused.

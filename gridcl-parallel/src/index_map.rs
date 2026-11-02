@@ -278,6 +278,35 @@ impl IndexMap {
         let e = &self.exchange;
         (e.forward.sources(), &e.recv_counts, &e.recv_idx)
     }
+    /// The bytes of the host vectors (ghosts, owners, neighbour ranks, counts and index lists)
+    /// plus the cached device index lists, if a scatterer created them. For memory accounting
+    /// in tests (`Mesh::footprint_bytes`, ADR-0035); not part of the stable API. Clones share
+    /// the exchange lists, and each clone counts them.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let map = IndexMap::new(&Serial, 3).unwrap();
+    /// assert_eq!(map.footprint_bytes(), 0);
+    /// ```
+    #[doc(hidden)]
+    pub fn footprint_bytes(&self) -> usize {
+        let e = &self.exchange;
+        let ranks = e.forward.sources().len()
+            + e.forward.destinations().len()
+            + e.reverse.sources().len()
+            + e.reverse.destinations().len();
+        size_of_val(self.ghosts.as_slice())
+            + size_of_val(self.ghost_owners.as_slice())
+            + ranks * size_of::<usize>()
+            + size_of_val(e.send_counts.as_slice())
+            + size_of_val(e.recv_counts.as_slice())
+            + size_of_val(e.send_idx.as_slice())
+            + size_of_val(e.recv_idx.as_slice())
+            + self.device.get().map_or(0, SharedIndices::footprint_bytes)
+    }
     /// The communication pattern, for the scatterer.
     pub(crate) fn exchange_rc(&self) -> Rc<Exchange> {
         Rc::clone(&self.exchange)

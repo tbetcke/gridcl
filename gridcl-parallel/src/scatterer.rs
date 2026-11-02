@@ -37,6 +37,13 @@ impl SharedIndices {
             target_slots: DeviceBuffer::from_host(client, &slots)?,
         })
     }
+    /// The allocated bytes of the four lists.
+    pub(crate) fn footprint_bytes(&self) -> usize {
+        self.send_idx.footprint_bytes()
+            + self.recv_idx.footprint_bytes()
+            + self.targets.footprint_bytes()
+            + self.target_slots.footprint_bytes()
+    }
     /// Shares of the device buffers.
     fn share(&self) -> Self {
         SharedIndices {

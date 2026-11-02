@@ -525,11 +525,13 @@ where
     }
 
     /// The bytes this rank holds for the mesh: every device buffer (topology, entities,
-    /// connectivity, geometry, tags) plus the host vectors of its index maps. The "final mesh
-    /// size" of the M8 memory acceptance test (ADR-0035, rule 10).
+    /// connectivity, geometry, tags), padding included, plus the host vectors of its index
+    /// maps. The "final mesh size" of the M8 memory acceptance test (ADR-0035, rule 10).
     #[doc(hidden)]
     pub fn footprint_bytes(&self) -> usize {
-        todo!("Mesh::footprint_bytes (M8 T5a)")
+        self.topology.footprint_bytes()
+            + self.geometry.footprint_bytes()
+            + self.tags.footprint_bytes()
     }
 }
 
@@ -709,5 +711,63 @@ where
     }
     fn permutation_info(&self, b: usize) -> Option<&DeviceBuffer<u32>> {
         self.topology.permutation_info(b)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+    use cubecl::prelude::Client;
+    use gridcl_device::VECTOR_PAD;
+
+    /// Two tagged triangles; every array has at most `VECTOR_PAD` entries, so each takes one
+    /// padded block.
+    fn two_triangles<F: Real>(client: &Client) -> Mesh<F, D2, D2> {
+        let coords = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let tri = CoordinateElement::<D2> {
+            cell: Cell2::Triangle,
+            degree: 1,
+            family: NodeFamily::Equispaced,
+        };
+        MeshBuilder::new(client)
+            .nodes(&coords, Some(&[10, 11, 12, 13]))
+            .cell_block(tri, &[0, 1, 2, 3, 2, 1], None)
+            .physical_tags(CellType::Triangle, &[13, 12, 11], &[5])
+            .physical_tags(CellType::Interval, &[10, 11, 13, 11], &[1, 1])
+            .build()
+            .expect("two triangles")
+    }
+
+    fn footprint_counts_every_buffer<F: Real>(client: &Client) {
+        let block = |bytes: usize| VECTOR_PAD * bytes;
+        let mut mesh = two_triangles::<F>(client);
+        // Serial index maps hold no host vectors.
+        let topology = 3 * block(4) // cell vertices, cell origin ids, flags
+            + block(4) // vertex origin ids
+            + block(4) // permutation info
+            + block(4) // vertex shared flags
+            + 2 * block(4); // edges (the tagged edges create them): vertices, cell -> edge
+        let geometry = block(4) + 2 * block(size_of::<F>()); // dofmap; nodes, origin
+        let tags = 4 * block(4); // indices and values of dimensions 2 and 1
+        assert_eq!(mesh.footprint_bytes(), topology + geometry + tags);
+        // Edge -> cell: 5 + 1 offsets and 6 indices.
+        mesh.create_connectivity(1, 2).expect("edge -> cell");
+        assert_eq!(
+            mesh.footprint_bytes(),
+            topology + geometry + tags + 2 * block(4)
+        );
+    }
+
+    #[test]
+    fn footprint_counts_every_buffer_f32() {
+        footprint_counts_every_buffer::<f32>(&gridcl_testing::test_client());
+    }
+
+    #[test]
+    fn footprint_counts_every_buffer_f64() {
+        let client = gridcl_testing::test_client();
+        if gridcl_testing::supports::<f64>(&client) {
+            footprint_counts_every_buffer::<f64>(&client);
+        }
     }
 }
