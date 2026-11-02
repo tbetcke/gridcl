@@ -2,10 +2,13 @@
 //!
 //! Every rank ends up with a [`Chunk`]: its even share of the nodes, of the D_TOP elements and
 //! of the lower-dimensional elements of each dimension, converted by the shared steps of
-//! `gridcl_io::gmsh` (`Layout`). Rank 0 reads the file, upgrades serendipity cells, converts
-//! every rank's chunk and scatters them. The chunks feed stage 1 of the pipeline through the
-//! reader's builder hooks; the builder finds duplicate tags, missing nodes and unmatched tag
-//! elements (rule 3).
+//! `gridcl_io::gmsh` (`Layout`). Every rank scans the file; if it is binary without serendipity
+//! elements, each rank reads and converts its own chunk through the scan's [`MshIndex`]
+//! (rule 1). Otherwise rank 0 reads the file, upgrades serendipity cells, converts every
+//! rank's chunk and scatters them (rule 2); a file whose scan fails takes this path too, so
+//! its error is the serial one. The chunks feed stage 1 of the pipeline through the reader's
+//! builder hooks; the builder finds duplicate tags, missing nodes and unmatched tag elements
+//! (rule 3).
 
 use std::ops::Range;
 use std::path::Path;
@@ -15,8 +18,9 @@ use gridcl_device::{GridError, Real, Result, check_precision};
 use gridcl_dims::{CellType, D1, D2, D3, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, NodeFamily};
 use gridcl_io::gmsh::{
-    BlockHeader, CellChunk, GmshTagGroup, Layout, MshFile, NodeChunk, PhysicalName, complete,
-    element_range, element_type, geometric_dim, lagrange_element_type, node_range,
+    BlockHeader, CellChunk, ElementChunk, GmshTagGroup, Layout, MshFile, MshIndex, NodeChunk,
+    PhysicalName, complete, element_range, element_type, geometric_dim, lagrange_element_type,
+    node_range,
 };
 use gridcl_parallel::{Comm, CommDyn, CommExt};
 
@@ -50,31 +54,69 @@ fn share(r: usize, p: usize, n: usize) -> Result<Range<usize>> {
     Ok(at(r)?..at(r + 1)?)
 }
 
-/// The number of elements of dimension `dim` in `file`.
-fn num_elements(file: &MshFile, dim: usize) -> usize {
-    file.element_blocks
-        .iter()
-        .filter(|b| b.dim == dim)
-        .map(|b| b.tags.len())
-        .sum()
+/// Where chunks come from: a file in memory (rank 0, rule 2) or a binary file on disk, read
+/// in byte ranges through its index (rule 1). Both give the same chunks.
+#[derive(Clone, Copy)]
+enum Source<'a> {
+    Memory(&'a MshFile),
+    Disk(&'a MshIndex),
 }
 
-/// The chunk of rank `r` of `p` of `file`, whose layout is `layout`.
-fn chunk_of(file: &MshFile, layout: &Layout, r: usize, p: usize) -> Result<Chunk> {
-    let num_nodes = file.node_blocks.iter().map(|b| b.tags.len()).sum();
+impl Source<'_> {
+    fn num_nodes(self) -> usize {
+        match self {
+            Source::Memory(file) => file.node_blocks.iter().map(|b| b.tags.len()).sum(),
+            Source::Disk(index) => index.num_nodes(),
+        }
+    }
+
+    fn num_elements(self, dim: usize) -> usize {
+        match self {
+            Source::Memory(file) => file
+                .element_blocks
+                .iter()
+                .filter(|b| b.dim == dim)
+                .map(|b| b.tags.len())
+                .sum(),
+            Source::Disk(index) => index.num_elements(dim),
+        }
+    }
+
+    fn nodes(self, range: Range<usize>) -> Result<NodeChunk> {
+        match self {
+            Source::Memory(file) => node_range(file, range),
+            Source::Disk(index) => index.read_nodes(range),
+        }
+    }
+
+    fn elements(self, dim: usize, range: Range<usize>) -> Result<ElementChunk> {
+        match self {
+            Source::Memory(file) => element_range(file, dim, range),
+            Source::Disk(index) => index.read_elements(dim, range),
+        }
+    }
+}
+
+/// The chunk of rank `r` of `p` of the file `source`, whose layout is `layout`. The D_TOP
+/// elements are converted before the rest is read.
+fn chunk_of(source: Source<'_>, layout: &Layout, r: usize, p: usize) -> Result<Chunk> {
     let tdim = layout.tdim;
-    let top = element_range(file, tdim, share(r, p, num_elements(file, tdim))?)?;
+    let top = source.elements(tdim, share(r, p, source.num_elements(tdim))?)?;
+    let cells = layout.cells(&top.blocks)?;
+    drop(top);
     let mut lower = Vec::new();
     for dim in 0..tdim {
-        let range = share(r, p, num_elements(file, dim))?;
-        lower.extend(element_range(file, dim, range)?.blocks);
+        let range = share(r, p, source.num_elements(dim))?;
+        lower.extend(source.elements(dim, range)?.blocks);
     }
+    let groups = layout.tag_groups(&lower)?;
+    drop(lower);
     Ok(Chunk {
         tdim,
         num_partitions: layout.num_partitions,
-        nodes: node_range(file, share(r, p, num_nodes)?)?,
-        cells: layout.cells(&top.blocks)?,
-        groups: layout.tag_groups(&lower)?,
+        nodes: source.nodes(share(r, p, source.num_nodes())?)?,
+        cells,
+        groups,
     })
 }
 
@@ -99,7 +141,7 @@ fn prepare(path: &Path, p: usize) -> Result<Prepared> {
     let completed = complete(&file, &layout)?;
     let whole = completed.as_ref().unwrap_or(&file);
     let chunks = (0..p)
-        .map(|r| chunk_of(whole, &layout, r, p))
+        .map(|r| chunk_of(Source::Memory(whole), &layout, r, p))
         .collect::<Result<_>>()?;
     Ok(Prepared {
         chunks,
@@ -280,6 +322,41 @@ fn scatter(
     Ok((chunk, rest.0, rest.1))
 }
 
+/// The index and layout of the file at `path` if it can be read in chunks: binary, without
+/// serendipity elements, and scanned without error.
+fn scan(path: &Path) -> Option<(MshIndex, Layout)> {
+    let index = MshIndex::scan(path).ok().filter(MshIndex::is_binary)?;
+    let layout = Layout::new(index.sections(), &index.block_headers()).ok()?;
+    (!layout.serendipity).then_some((index, layout))
+}
+
+/// This rank's chunk, the physical names (on the rank-0 path, empty except on rank 0) and
+/// D_GEO, `gdim` if given, of the file at `path`. Collective.
+fn local(
+    comm: &dyn CommDyn,
+    path: &Path,
+    gdim: Option<usize>,
+) -> Result<(Chunk, Vec<PhysicalName>, usize)> {
+    let (r, p) = (comm.rank(), comm.size());
+    let scanned = scan(path);
+    if comm.min(u64::from(scanned.is_some())) == 1 {
+        let (index, layout) = scanned.expect("every rank scanned the file");
+        let chunk = agree(comm, chunk_of(Source::Disk(&index), &layout, r, p))?;
+        let gdim = geometric_dim(layout.tdim, &chunk.nodes.coords, comm, gdim)?;
+        return Ok((chunk, index.sections().physical_names.clone(), gdim));
+    }
+    drop(scanned);
+    let prepared = if r == 0 {
+        prepare(path, p).map(Some)
+    } else {
+        Ok(None)
+    };
+    let prepared = agree(comm, prepared)?;
+    let (chunk, names, file_coords) = scatter(comm, prepared)?;
+    let gdim = geometric_dim(chunk.tdim, &file_coords, comm, gdim)?;
+    Ok((chunk, names, gdim))
+}
+
 /// `Parse` for stage 6's `IndexOutOfRange`: a node of a D_TOP element that `$Nodes` lacks
 /// (rule 3).
 fn missing_node(e: GridError) -> GridError {
@@ -387,9 +464,11 @@ where
 /// - Physical groups and elementary tags become the mesh's [`TagRegistry`](crate::TagRegistry):
 ///   cells carry theirs, lower-dimensional elements are matched against the mesh's entities
 ///   (created for each tagged dimension).
-/// - On more than one rank, rank 0 reads the file and scatters even chunks of the nodes and
-///   elements to the ranks, which build the mesh through the parallel creation pipeline with
-///   the partitioner, ghost mode and cell order of `options` (ADR-0035, rules 1, 2 and 6).
+/// - Each rank takes an even chunk of the nodes and of the elements of each dimension and
+///   builds the mesh with the others through the parallel creation pipeline, with the
+///   partitioner, ghost mode and cell order of `options`. A binary file without serendipity
+///   elements is read in chunks by every rank; any other file is read by rank 0, which
+///   scatters the chunks (ADR-0035, rules 1, 2 and 6).
 /// - Reading into an f32 mesh narrows the coordinates; rank 0 logs one warning per file, and
 ///   one if the default partitioner falls back to `Block`.
 ///
@@ -449,19 +528,10 @@ pub fn read<F: Real, C: Comm>(
 ) -> Result<AnyMesh<F, C>> {
     agree(&comm, check_precision::<F>(client))?;
     let path = path.as_ref();
-    let root = comm.rank() == 0;
-    let prepared = if root {
-        prepare(path, comm.size()).map(Some)
-    } else {
-        Ok(None)
-    };
-    let prepared = agree(&comm, prepared)?;
-    let (chunk, names, file_coords) = scatter(&comm, prepared)?;
+    let (chunk, names, gdim) = local(&comm, path, options.gdim)?;
     let tdim = chunk.tdim;
-    let gdim = geometric_dim(tdim, &file_coords, &comm, options.gdim)?;
-    drop(file_coords);
     let (partitioner, fallback) = options.partitioner_on(&comm);
-    if root {
+    if comm.rank() == 0 {
         if size_of::<F>() < size_of::<f64>() {
             log::warn!(
                 "{}: reading into an f32 mesh narrows the coordinates to single precision",
@@ -513,6 +583,56 @@ mod tests {
                     assert_eq!(w[0].end, w[1].start);
                 }
             }
+        }
+    }
+
+    /// On the chunk path, every rank of 1–8 reads only its share of the node and element data
+    /// (Gmsh writes 8-byte `size_t`: 8 + 3 × 8 bytes per node, 8 per tag of an element record),
+    /// and its chunk equals the one rank 0 converts in memory.
+    #[test]
+    fn ranks_read_only_their_ranges() {
+        for name in [
+            "two_regions_p1-binary.msh",
+            "hybrid_p2-binary.msh",
+            "interval_p2-binary.msh",
+            "partitioned_ghosts_p1-binary.msh",
+        ] {
+            let path = fixture(name);
+            let file = gridcl_io::gmsh::read_file(&path).unwrap();
+            let memory = Source::Memory(&file);
+            for p in 1..=8 {
+                for r in 0..p {
+                    let (index, layout) = scan(&path).expect("a binary file");
+                    let chunk = chunk_of(Source::Disk(&index), &layout, r, p).unwrap();
+                    assert_eq!(chunk, chunk_of(memory, &layout, r, p).unwrap(), "{name}");
+                    let nodes = share(r, p, memory.num_nodes()).unwrap().len();
+                    let mut bytes = nodes * (8 + 3 * 8);
+                    for dim in 0..=layout.tdim {
+                        let range = share(r, p, memory.num_elements(dim)).unwrap();
+                        let chunk = memory.elements(dim, range).unwrap();
+                        bytes += chunk
+                            .blocks
+                            .iter()
+                            .map(|b| 8 * (b.tags.len() + b.nodes.len()))
+                            .sum::<usize>();
+                    }
+                    assert_eq!(index.bytes_read(), bytes as u64, "{name}, rank {r} of {p}");
+                }
+            }
+        }
+    }
+
+    /// ASCII files, files with serendipity elements and files that do not scan take the
+    /// rank-0 path.
+    #[test]
+    fn chunk_path_needs_binary_without_serendipity() {
+        for name in [
+            "two_regions_p1.msh",
+            "hybrid_s2-binary.msh",
+            "quadrilateral_s2-binary.msh",
+            "missing.msh",
+        ] {
+            assert!(scan(&fixture(name)).is_none(), "{name}");
         }
     }
 
