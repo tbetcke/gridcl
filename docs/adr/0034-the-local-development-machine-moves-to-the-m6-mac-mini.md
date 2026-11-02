@@ -166,12 +166,24 @@ What does not need a change:
    - The design's PT-Scotch row says "Scotch 7.0.x; verified with 7.0.4 (hosted CI, Ubuntu
      24.04) and 7.0.14 (local and Kathleen, `scripts/hpc/build-partition-libs.sh`); 7.0.18 is
      not deterministic (ADR-0034)".
-   - On the local Mac, Homebrew's `scotch` formula is uninstalled; no installed formula
-     depends on it. gridcl builds against `<prefix>/scotch-7.0.14`, through `SCOTCH_DIR`,
-     `CPATH` and `LIBRARY_PATH`. Kathleen already does this.
-     - The 7.0.14 dylibs carry absolute install names, so no `DYLD_LIBRARY_PATH` is needed.
-     - Until `/opt/homebrew` (owned by the old account) can be changed, the per-command
-       `DYLD_LIBRARY_PATH` workaround stays.
+   - On the local Mac, Homebrew's `scotch` (7.0.18) stays installed, and every Scotch build and
+     run uses the 7.0.14 from `<prefix>/scotch-7.0.14`. Kathleen already uses that build.
+     - The build sets `SCOTCH_DIR=<prefix>/scotch-7.0.14`,
+       `CPATH=<prefix>/scotch-7.0.14/include:/opt/homebrew/include` and
+       `LIBRARY_PATH=<prefix>/scotch-7.0.14/lib:/opt/homebrew/lib`. The link still records
+       Homebrew's `libscotch.7.0.dylib`, because cubecl-llvm's `-L /opt/homebrew/lib` comes
+       first.
+     - Runs set `DYLD_LIBRARY_PATH=<prefix>/scotch-7.0.14/lib`, so dyld loads 7.0.14 by its
+       leaf name (same 7.0 ABI; that directory holds only Scotch's libraries). MPI runs add
+       `-x DYLD_LIBRARY_PATH=…` to `GRIDCL_MPIRUN_FLAGS`, because SIP strips `DYLD_*` when a
+       script starts through `/usr/bin/env bash`.
+     - A command without these settings runs 7.0.18. `partition_threads`, `partition_seed` and
+       `partition_build` then fail, so the mistake shows, not silently.
+     - `DYLD_PRINT_LIBRARIES=1 <test binary> --list` shows which Scotch loads.
+     - Verified in part D: 188 and 186 partitioner tests, and 24 + 24 M7 MPI runs on Metal,
+       pass this way.
+     - Uninstalling or unlinking Homebrew's `scotch` (no installed formula depends on it)
+       would make the `DYLD_LIBRARY_PATH` step unnecessary. It stays an option for later.
    - The 7.0.18 behaviour is reported to Scotch's issue tracker. The pin is lifted when a later
      version passes `partition_threads` and the M7 MPI targets.
 
@@ -241,8 +253,12 @@ What does not need a change:
     the M6 Mac mini; the M3 Max's lines stay as dated history;
   - the "Recorded by E0" host table gains a Mac mini column with part D's results, and keeps
     the M3 Max column;
-  - the Partitioners section's libraries and test commands use `SCOTCH_DIR=<prefix>/scotch-7.0.14`
-    with `CPATH`/`LIBRARY_PATH` instead of Homebrew's Scotch;
+  - the Partitioners section:
+    - "Libraries" names Scotch 7.0.14 from `scripts/hpc/build-partition-libs.sh` for the local
+      Mac, with Homebrew's 7.0.18 installed but not used;
+    - the local test commands carry `SCOTCH_DIR`, `CPATH`, `LIBRARY_PATH` and
+      `DYLD_LIBRARY_PATH` as in option C3, and the MPI ones add `-x DYLD_LIBRARY_PATH=…`;
+    - a note says how to check which Scotch loads, and why the link alone does not choose it;
   - a hwloc note citing issue 852, the flags and "remove when Homebrew ships a fixed hwloc";
   - a change-history row.
 - **Agent and skill files:** `.claude/agents/test-runner.md` and
@@ -287,8 +303,11 @@ What does not need a change:
   - the Kathleen CPU smoke job from the Mac mini has not run yet: job 617653 waited 3 h in the
     queue and was deleted at `--max-wait`; the Locust CUDA smoke passed (job
     20261101231105-33368, idle before and after);
-  - `/opt/homebrew` is owned by the old account, so `brew` cannot install or remove formulae
-    as `agentt` until the maintainer changes the owner.
+  - `/opt/homebrew` is owned by the old account, so `brew` cannot install, upgrade or remove
+    formulae as `agentt` until the maintainer changes the owner. Option C3 does not depend on
+    it.
+  - A Homebrew upgrade of `scotch` to 7.1 would break the leaf-name match. Binaries would then
+    fail to load, not run 7.1; the setup would be revisited then.
 
 ## Decision record
 
