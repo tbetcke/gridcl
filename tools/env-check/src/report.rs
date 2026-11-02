@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 /// Version of the report layout; bump it when a field changes meaning.
-pub const SCHEMA_VERSION: u32 = 1;
+/// Version 2 (ADR-0034): the core counts follow every performance level, and `perf_levels`
+/// lists them.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The outcome of one check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,14 +61,28 @@ pub struct HostInfo {
     pub arch: String,
     pub cpu_model: String,
     pub hardware_threads: usize,
-    /// Performance cores (macOS `hw.perflevel0.physicalcpu`).
+    /// Performance cores: on macOS the physical cores of every `hw.perflevel` but the last
+    /// (ADR-0034).
     pub performance_cores: Option<u32>,
-    /// Efficiency cores (macOS `hw.perflevel1.physicalcpu`).
+    /// Efficiency cores: on macOS the physical cores of the last `hw.perflevel`.
     pub efficiency_cores: Option<u32>,
+    /// The performance levels, fastest first (macOS `hw.nperflevels`); empty elsewhere and in
+    /// reports of schema version 1.
+    #[serde(default)]
+    pub perf_levels: Vec<PerfLevel>,
     /// SIMD extensions: `hw.optional` flags set to 1 on macOS, `/proc/cpuinfo` flags on Linux.
     pub simd_flags: Vec<String>,
     /// Output of `rustc --version`.
     pub rustc_version: String,
+}
+
+/// One performance level of the CPU: macOS `hw.perflevel<i>.{name,physicalcpu,logicalcpu}`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PerfLevel {
+    /// `Super`, `Performance` or `Efficiency` on Apple silicon.
+    pub name: String,
+    pub physical_cores: u32,
+    pub logical_cores: u32,
 }
 
 /// Properties and checks of one device.
@@ -271,6 +287,18 @@ mod tests {
                 hardware_threads: 16,
                 performance_cores: Some(12),
                 efficiency_cores: Some(4),
+                perf_levels: vec![
+                    PerfLevel {
+                        name: "Performance".to_string(),
+                        physical_cores: 12,
+                        logical_cores: 12,
+                    },
+                    PerfLevel {
+                        name: "Efficiency".to_string(),
+                        physical_cores: 4,
+                        logical_cores: 4,
+                    },
+                ],
                 simd_flags: vec!["neon".to_string()],
                 rustc_version: "rustc 1.95.0".to_string(),
             },
@@ -409,5 +437,20 @@ mod tests {
             "\"yes\""
         );
         assert!(Report::from_json("{\"schema_version\": 1}").is_err());
+    }
+
+    /// A schema version 1 report has no `perf_levels`; it still parses, with none.
+    #[test]
+    fn version_1_reports_parse_without_levels() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(&report(Vec::new()).to_json()).expect("JSON");
+        value["schema_version"] = 1.into();
+        value["host"]
+            .as_object_mut()
+            .expect("host object")
+            .remove("perf_levels");
+        let old = Report::from_json(&value.to_string()).expect("parses");
+        assert!(old.host.perf_levels.is_empty());
+        assert_eq!(old.host.performance_cores, Some(12));
     }
 }

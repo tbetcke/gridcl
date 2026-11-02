@@ -44,13 +44,24 @@ pub enum CubeDimMode {
     PerformanceCores,
 }
 
-/// Core counts of the machine: performance and efficiency cores where the OS reports them
-/// (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`), and hardware threads.
+/// Core counts of the machine, and hardware threads. Where the OS reports performance levels
+/// (macOS `hw.nperflevels`), `levels` lists them fastest first; `performance` is every level but
+/// the last and `efficiency` the last (ADR-0034). Records written before ADR-0034 have no
+/// `levels`, and their counts came from `hw.perflevel0` and `hw.perflevel1`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cores {
     pub performance: Option<u32>,
     pub efficiency: Option<u32>,
     pub threads: u32,
+    pub levels: Vec<PerfLevel>,
+}
+
+/// One performance level: `hw.perflevel<i>.{name,physicalcpu,logicalcpu}` on macOS.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PerfLevel {
+    pub name: String,
+    pub physical: u32,
+    pub logical: u32,
 }
 
 /// The runner's node-load snapshots before and after a run on Locust (ADR-0002, ADR-0005):
@@ -306,15 +317,45 @@ impl Cores {
             "performance": self.performance,
             "efficiency": self.efficiency,
             "threads": self.threads,
+            "levels": self.levels.iter().map(PerfLevel::to_json).collect::<Vec<_>>(),
         })
     }
 
     fn from_json(v: &Value) -> Result<Cores, String> {
         let o = Fields::new(v, "cores")?;
+        let levels = match o.opt("levels") {
+            None => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .ok_or("field levels is not an array")?
+                .iter()
+                .map(PerfLevel::from_json)
+                .collect::<Result<_, _>>()?,
+        };
         Ok(Cores {
             performance: o.opt_u32("performance")?,
             efficiency: o.opt_u32("efficiency")?,
             threads: o.u32("threads")?,
+            levels,
+        })
+    }
+}
+
+impl PerfLevel {
+    fn to_json(&self) -> Value {
+        json!({
+            "name": self.name,
+            "physical": self.physical,
+            "logical": self.logical,
+        })
+    }
+
+    fn from_json(v: &Value) -> Result<PerfLevel, String> {
+        let o = Fields::new(v, "a performance level")?;
+        Ok(PerfLevel {
+            name: o.string("name")?,
+            physical: o.u32("physical")?,
+            logical: o.u32("logical")?,
         })
     }
 }
@@ -583,8 +624,20 @@ mod tests {
     fn cores() -> Cores {
         Cores {
             performance: Some(12),
-            efficiency: None,
+            efficiency: Some(4),
             threads: 16,
+            levels: vec![
+                PerfLevel {
+                    name: "Performance".to_owned(),
+                    physical: 12,
+                    logical: 12,
+                },
+                PerfLevel {
+                    name: "Efficiency".to_owned(),
+                    physical: 4,
+                    logical: 4,
+                },
+            ],
         }
     }
 
@@ -662,6 +715,19 @@ mod tests {
         assert_eq!(SweepRecord::from_json(&r.to_json()).unwrap(), r);
         let t = throughput();
         assert_eq!(ThroughputRecord::from_json(&t.to_json()).unwrap(), t);
+    }
+
+    /// Records written before ADR-0034 have no `levels`; they still load, with none.
+    #[test]
+    fn records_without_levels_load() {
+        let mut v = sweep().to_json();
+        v["cores"].as_object_mut().unwrap().remove("levels");
+        let r = SweepRecord::from_json(&v).unwrap();
+        assert!(r.cores.levels.is_empty());
+        assert_eq!(r.cores.performance, Some(12));
+        let mut v = sweep().to_json();
+        v["cores"]["levels"] = json!([{"name": "Super", "physical": 2}]);
+        assert_eq!(SweepRecord::from_json(&v).unwrap_err(), "no field logical");
     }
 
     #[test]
