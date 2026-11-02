@@ -122,6 +122,11 @@ jobs:
           key: mpi-${{ matrix.mpi }}
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Pinned Python oracles of the VTK tests (ADR-0024, ADR-0035)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
+          .venv/bin/python scripts/oracles/vtk_oracle.py versions
       - run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
       - run: scripts/mpi-test.sh 1 2 3 4
         env:

@@ -1,5 +1,6 @@
-//! The Python oracles of the M5 tests (ADR-0024, item 11): interpreter discovery,
-//! `GRIDCL_SKIP_PYTHON`, and runs of `scripts/oracles/vtk_oracle.py` with JSON on stdout.
+//! The Python oracles of the VTK tests (ADR-0024, item 11; ADR-0035): interpreter discovery,
+//! `GRIDCL_SKIP_PYTHON`, and runs of `scripts/oracles/vtk_oracle.py` with JSON on stdout. The
+//! script's docstring describes its commands and their output.
 //!
 //! The interpreter is `GRIDCL_PYTHON`, else `<repo>/.venv/bin/python`. A missing interpreter, or
 //! one without the pinned packages, fails the test with the install command, unless
@@ -23,14 +24,33 @@ pub const INSTALL: &str = "python3 -m venv .venv && .venv/bin/pip install vtk==9
      GRIDCL_SKIP_PYTHON=1 skips the oracle checks)";
 
 /// The repository root.
+///
+/// # Example
+///
+/// ```
+/// let script = gridcl_testing::oracle::repo().join("scripts/oracles/vtk_oracle.py");
+/// assert!(script.exists());
+/// ```
 pub fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("gridcl/ has a parent")
+        .expect("gridcl-testing/ has a parent")
         .to_path_buf()
 }
 
 /// The oracle script and the interpreter that runs it.
+///
+/// # Example
+///
+/// ```no_run
+/// use gridcl_testing::oracle::Oracle;
+///
+/// // `None` when GRIDCL_SKIP_PYTHON=1.
+/// if let Some(oracle) = Oracle::find("example") {
+///     let versions = oracle.run("versions", &[]);
+///     assert_eq!(versions["vtk"], "9.7.1");
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Oracle {
     python: PathBuf,

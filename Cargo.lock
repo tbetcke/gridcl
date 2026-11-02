@@ -2110,6 +2110,7 @@ dependencies = [
  "gridcl-refcell",
  "mpi",
  "proptest",
+ "serde_json",
 ]
 
 [[package]]
