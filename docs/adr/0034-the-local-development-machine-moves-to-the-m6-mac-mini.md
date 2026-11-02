@@ -282,7 +282,7 @@ What does not need a change:
     `python3`, and says so. Homebrew's default `python3` is 3.15, for which vtk 9.7.1 has no
     wheel.
   - `scripts/hpc` login-node fetch step: `CARGO_BUILD_JOBS=8`.
-    - With the default parallelism (80 on Kathleen's login22), `rust-lld` died with SIGBUS 3 of
+    - With the default parallelism (80 on Kathleen's login node), `rust-lld` died with SIGBUS 3 of
       3 times while linking build scripts into `target/kathleen-login` on Lustre.
     - Not quota or space: 3% of quota used, OSTs at 7%, cgroup peak 2 GB of 30 GiB, no OOM.
     - `-j 8` passes in 68 s.
