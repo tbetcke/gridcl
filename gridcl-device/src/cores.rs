@@ -13,6 +13,7 @@ pub(crate) fn performance_cores() -> Option<u32> {
 /// The performance-core count from the physical cores of each performance level, fastest level
 /// first: the sum over every level but the last (ADR-0034). `None` with fewer than two levels or
 /// a zero sum.
+#[cfg(any(target_os = "macos", test))]
 fn count(levels: &[u32]) -> Option<u32> {
     let (_, faster) = levels.split_last()?;
     if faster.is_empty() {
