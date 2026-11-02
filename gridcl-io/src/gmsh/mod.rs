@@ -9,6 +9,7 @@
 //! - [`MshIndex`]: the layout of a binary file, for reading ranges of nodes and elements
 //!   ([`NodeChunk`], [`ElementChunk`]) on every rank (ADR-0035).
 
+mod chunk;
 mod convert;
 mod element_type;
 mod index;
@@ -16,6 +17,10 @@ mod model;
 mod parse;
 mod write;
 
+#[doc(hidden)]
+pub use chunk::{
+    BlockHeader, CellChunk, Layout, complete, element_range, geometric_dim, node_range,
+};
 pub use convert::{GmshCellBlock, GmshMesh, GmshTagGroup, from_gmsh_mesh, to_gmsh_mesh};
 pub use element_type::{ElementType, element_type, lagrange_element_type};
 pub use index::{ElementChunk, MshIndex, NodeChunk};

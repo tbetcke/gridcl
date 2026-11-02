@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gridcl_device::{GridError, Result};
 
 use super::parse::{Binary, format_of, small_section};
-use super::{ElementBlock, FORMAT, MshFile, element_type};
+use super::{BlockHeader, ElementBlock, FORMAT, MshFile, element_type};
 
 /// The bytes one read of a scan asks for.
 const STEP: usize = 1 << 16;
@@ -723,6 +723,21 @@ impl MshIndex {
     #[doc(hidden)]
     pub fn sections(&self) -> &MshFile {
         &self.sections
+    }
+
+    /// The headers of the element blocks in file order, for the chunk conversion's
+    /// [`Layout`](super::Layout) (ADR-0035).
+    #[doc(hidden)]
+    pub fn block_headers(&self) -> Vec<BlockHeader> {
+        self.element_blocks
+            .iter()
+            .map(|b| BlockHeader {
+                dim: b.dim,
+                entity_tag: b.entity_tag,
+                element_type: b.element_type,
+                count: b.count,
+            })
+            .collect()
     }
 
     /// The bytes the chunk reads have read so far: a test accessor (ADR-0035, T4b).

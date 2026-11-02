@@ -4,9 +4,9 @@ use std::collections::{HashMap, HashSet};
 
 use gridcl_device::{GridError, Result};
 use gridcl_dims::CellType;
-use gridcl_parallel::{CommDyn, CommExt};
+use gridcl_parallel::CommDyn;
 
-use super::element_type::cell_name;
+use super::chunk::{BlockHeader, Layout, complete, geometric_dim, missing_node};
 use super::{ElementBlock, FORMAT, MshFile, PhysicalName, element_type, lagrange_element_type};
 
 /// The cells of one cell type and degree.
@@ -121,7 +121,7 @@ pub struct GmshMesh {
 }
 
 /// `Parse` for a file whose content, not its syntax, is wrong; there is no byte offset.
-fn content_error(message: impl Into<String>) -> GridError {
+pub(super) fn content_error(message: impl Into<String>) -> GridError {
     GridError::Parse {
         format: FORMAT,
         offset: 0,
@@ -130,12 +130,12 @@ fn content_error(message: impl Into<String>) -> GridError {
 }
 
 /// u32 of `i`, or `TooLarge`.
-fn index_u32(i: usize) -> Result<u32> {
+pub(super) fn index_u32(i: usize) -> Result<u32> {
     u32::try_from(i).map_err(|_| GridError::TooLarge)
 }
 
 /// Fails with `LengthMismatch` unless `found` is `count · per`; `TooLarge` if that overflows.
-fn check_len(found: usize, count: usize, per: usize) -> Result<()> {
+pub(super) fn check_len(found: usize, count: usize, per: usize) -> Result<()> {
     let expected = count.checked_mul(per).ok_or(GridError::TooLarge)?;
     if found == expected {
         Ok(())
@@ -153,220 +153,6 @@ fn check_unique(tags: impl IntoIterator<Item = i64>) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// What the elements of one entity carry: the elementary tag, the physical tags, and whether
-/// they belong to the serial mesh.
-struct EntityInfo {
-    elementary: i32,
-    physical: Vec<i32>,
-    keep: bool,
-}
-
-/// The entities of `file` by (dimension, tag). A partitioned entity reports its parent's tag
-/// as the elementary tag; one whose parent has a higher dimension lies on a partition
-/// interface, and its elements are not part of the serial mesh.
-fn entity_info(file: &MshFile) -> HashMap<(usize, i32), EntityInfo> {
-    let mut info = HashMap::new();
-    if let Some(e) = &file.entities {
-        for (dim, list) in [&e.points, &e.curves, &e.surfaces, &e.volumes]
-            .into_iter()
-            .enumerate()
-        {
-            for x in list {
-                info.insert(
-                    (dim, x.tag),
-                    EntityInfo {
-                        elementary: x.tag,
-                        physical: x.physical_tags.clone(),
-                        keep: true,
-                    },
-                );
-            }
-        }
-    }
-    if let Some(p) = &file.partitioned_entities {
-        for (dim, list) in [&p.points, &p.curves, &p.surfaces, &p.volumes]
-            .into_iter()
-            .enumerate()
-        {
-            for x in list {
-                info.insert(
-                    (dim, x.entity.tag),
-                    EntityInfo {
-                        elementary: x.parent_tag,
-                        physical: x.entity.physical_tags.clone(),
-                        keep: x.parent_dim == dim,
-                    },
-                );
-            }
-        }
-    }
-    info
-}
-
-/// The elementary tag and sorted, distinct physical tags of the elements of `block`, and
-/// whether they belong to the serial mesh. Entities missing from `$Entities` have their own
-/// tag and no physical tags.
-fn block_tags(
-    info: &HashMap<(usize, i32), EntityInfo>,
-    block: &ElementBlock,
-) -> (i32, Vec<i32>, bool) {
-    match info.get(&(block.dim, block.entity_tag)) {
-        Some(e) => {
-            let mut physical = e.physical.clone();
-            physical.sort_unstable();
-            physical.dedup();
-            (e.elementary, physical, e.keep)
-        }
-        None => (block.entity_tag, Vec::new(), true),
-    }
-}
-
-/// D_GEO of the nodes over `comm`: 3 if any |z| > 10^−12 L, else 2 if any |y| > 10^−12 L,
-/// else 1, with L the diameter of the bounding box (docs/design.md, "Geometric dimension").
-fn infer_gdim(coords: &[[f64; 3]], comm: &dyn CommDyn) -> usize {
-    let mut lo = [f64::INFINITY; 3];
-    let mut hi = [f64::NEG_INFINITY; 3];
-    let mut abs = [0.0f64; 3];
-    for x in coords {
-        for g in 0..3 {
-            lo[g] = lo[g].min(x[g]);
-            hi[g] = hi[g].max(x[g]);
-            abs[g] = abs[g].max(x[g].abs());
-        }
-    }
-    let mut diameter2 = 0.0;
-    for g in 0..3 {
-        let (l, h) = (-comm.max(-lo[g]), comm.max(hi[g]));
-        if h >= l {
-            diameter2 += (h - l) * (h - l);
-        }
-        abs[g] = comm.max(abs[g]);
-    }
-    let threshold = 1e-12 * diameter2.sqrt();
-    if abs[2] > threshold {
-        3
-    } else if abs[1] > threshold {
-        2
-    } else {
-        1
-    }
-}
-
-/// The internal order of `file` (one element in Gmsh order): `out[map[k]] = file[k]`.
-fn to_internal<T: Copy + Default>(map: &[usize], file: &[T]) -> Vec<T> {
-    let mut out = vec![T::default(); file.len()];
-    for (k, &i) in map.iter().enumerate() {
-        out[i] = file[k];
-    }
-    out
-}
-
-/// The sorted corner tags of quadrilateral face `f` of a cell whose internal-order node tags
-/// are `tags`.
-fn face_key(cell: CellType, f: usize, tags: &[i64]) -> Vec<i64> {
-    let mut key: Vec<i64> = gridcl_refcell::sub_entities(cell, 2)[f]
-        .iter()
-        .map(|&v| tags[v])
-        .collect();
-    key.sort_unstable();
-    key
-}
-
-/// The sub-entity (dimension, index) whose interior holds internal node `node` of a P2 `cell`.
-fn entity_of_node(cell: CellType, node: usize) -> (usize, usize) {
-    for dim in 0..=gridcl_refcell::tdim(cell) {
-        for index in 0..gridcl_refcell::num_sub_entities(cell, dim) {
-            if gridcl_refcell::lagrange_entity_nodes(cell, 2, dim, index).contains(&node) {
-                return (dim, index);
-            }
-        }
-    }
-    unreachable!("every node of {cell:?} lies in a sub-entity")
-}
-
-/// The nodes of the mesh being built: the file's, then those the serendipity upgrade adds.
-struct Nodes {
-    coords: Vec<[f64; 3]>,
-    tags: Vec<i64>,
-    index: HashMap<i64, u32>,
-    /// The tag of the next added node.
-    next_tag: i64,
-}
-
-impl Nodes {
-    /// The index of node tag `t`, or `Parse` for element `element`.
-    fn get(&self, t: i64, element: i64) -> Result<u32> {
-        self.index
-            .get(&t)
-            .copied()
-            .ok_or_else(|| content_error(format!("element {element}: node {t} is not in $Nodes")))
-    }
-
-    /// Adds a node at `x` with a fresh tag; returns its tag.
-    fn add(&mut self, x: [f64; 3]) -> Result<i64> {
-        let t = self.next_tag;
-        self.next_tag = t.checked_add(1).ok_or(GridError::TooLarge)?;
-        self.index.insert(t, index_u32(self.coords.len())?);
-        self.coords.push(x);
-        self.tags.push(t);
-        Ok(t)
-    }
-}
-
-/// One D_TOP element: its block in the file and its index in the block.
-#[derive(Clone, Copy)]
-struct CellRef<'a> {
-    block: &'a ElementBlock,
-    i: usize,
-    elementary: i32,
-    physical: &'a [i32],
-}
-
-/// The complete-P2 node tags of a serendipity cell in internal order. Missing face-centre
-/// nodes are shared through `faces` (sorted face corner tags → node tag), which complete-P2
-/// neighbours filled first; other missing nodes are added.
-fn upgrade(
-    cell: CellType,
-    file_tags: &[i64],
-    element: i64,
-    nodes: &mut Nodes,
-    faces: &mut HashMap<Vec<i64>, i64>,
-) -> Result<Vec<i64>> {
-    let up = gridcl_refcell::serendipity_upgrade(cell).expect("a serendipity cell");
-    let map = gridcl_refcell::gmsh_to_internal(cell, 2).expect("P2 exists");
-    let nf = up.num_file_nodes;
-    let mut internal = vec![0i64; up.num_nodes];
-    for (k, &t) in file_tags.iter().enumerate() {
-        internal[map[k]] = t;
-    }
-    let coords: Vec<[f64; 3]> = file_tags
-        .iter()
-        .map(|&t| Ok(nodes.coords[nodes.get(t, element)? as usize]))
-        .collect::<Result<_>>()?;
-    for (m, weights) in up.weights.chunks_exact(nf).enumerate() {
-        let node = map[nf + m];
-        let (dim, index) = entity_of_node(cell, node);
-        let key =
-            (dim == 2 && gridcl_refcell::tdim(cell) == 3).then(|| face_key(cell, index, &internal));
-        if let Some(&t) = key.as_ref().and_then(|k| faces.get(k)) {
-            internal[node] = t;
-            continue;
-        }
-        let mut x = [0.0; 3];
-        for (w, c) in weights.iter().zip(&coords) {
-            for g in 0..3 {
-                x[g] += w * c[g];
-            }
-        }
-        let t = nodes.add(x)?;
-        internal[node] = t;
-        if let Some(k) = key {
-            faces.insert(k, t);
-        }
-    }
-    Ok(internal)
 }
 
 /// The mesh `file` describes. `gdim` fixes D_GEO; otherwise it is inferred over all nodes of
@@ -438,165 +224,80 @@ pub fn to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> 
     for b in &file.node_blocks {
         check_len(b.coords.len(), b.tags.len(), 1)?;
     }
-    let info = entity_info(file);
-    let kept: Vec<(&ElementBlock, i32, Vec<i32>)> = file
-        .element_blocks
+    let headers: Vec<BlockHeader> = file.element_blocks.iter().map(BlockHeader::of).collect();
+    let layout = Layout::new(file, &headers)?;
+    let tdim = layout.tdim;
+
+    // D_GEO from the file's nodes, then the nodes the serendipity upgrade adds.
+    let file_coords: Vec<[f64; 3]> = file
+        .node_blocks
         .iter()
-        .filter_map(|b| {
-            let (elementary, physical, keep) = block_tags(&info, b);
-            keep.then_some((b, elementary, physical))
-        })
+        .flat_map(|b| b.coords.iter().copied())
         .collect();
-    let tdim = kept
-        .iter()
-        .filter(|(b, _, _)| !b.tags.is_empty())
-        .map(|(b, _, _)| b.dim)
-        .max()
-        .unwrap_or(0);
-    if tdim == 0 {
-        return Err(content_error("no elements of dimension 1 or more"));
-    }
-
-    // Nodes and D_GEO.
+    let gdim = geometric_dim(tdim, &file_coords, comm, gdim)?;
+    drop(file_coords);
+    let completed = complete(file, &layout)?;
+    let file = completed.as_ref().unwrap_or(file);
     let num_nodes: usize = file.node_blocks.iter().map(|b| b.tags.len()).sum();
-    let mut nodes = Nodes {
-        coords: Vec::with_capacity(num_nodes),
-        tags: Vec::with_capacity(num_nodes),
-        index: HashMap::with_capacity(num_nodes),
-        next_tag: 1,
-    };
+    let mut node_tags = Vec::with_capacity(num_nodes);
+    let mut coords = Vec::with_capacity(num_nodes * gdim);
+    let mut index: HashMap<i64, u32> = HashMap::with_capacity(num_nodes);
     for b in &file.node_blocks {
-        for (&t, &x) in b.tags.iter().zip(&b.coords) {
-            nodes.index.insert(t, index_u32(nodes.coords.len())?);
-            nodes.coords.push(x);
-            nodes.tags.push(t);
-            nodes.next_tag = nodes
-                .next_tag
-                .max(t.checked_add(1).ok_or(GridError::TooLarge)?);
+        for (&t, x) in b.tags.iter().zip(&b.coords) {
+            index.insert(t, index_u32(node_tags.len())?);
+            node_tags.push(t);
+            coords.extend_from_slice(&x[..gdim]);
         }
     }
-    let inferred = infer_gdim(&nodes.coords, comm).max(tdim);
-    let gdim = match gdim {
-        None => inferred,
-        Some(g) if (1..=3).contains(&g) && g >= inferred => g,
-        Some(g) => {
-            return Err(GridError::DimensionMismatch {
-                expected: (tdim, inferred),
-                found: (tdim, g),
-            });
-        }
+    let get = |t: i64, element: i64| {
+        index
+            .get(&t)
+            .copied()
+            .ok_or_else(|| missing_node(t, element))
     };
-
-    // The D_TOP elements by cell type, with one degree per type.
-    let mut cells: HashMap<CellType, (u32, Vec<CellRef<'_>>)> = HashMap::new();
-    for (b, elementary, physical) in kept.iter().filter(|(b, _, _)| b.dim == tdim) {
-        let ty = element_type(b.element_type)?;
-        let entry = cells.entry(ty.cell).or_insert((ty.degree, Vec::new()));
-        if entry.0 != ty.degree {
-            return Err(GridError::DuplicateCellBlock(cell_name(ty.cell)));
-        }
-        entry.1.extend((0..b.tags.len()).map(|i| CellRef {
-            block: b,
-            i,
-            elementary: *elementary,
-            physical,
-        }));
-    }
-    let mut types: Vec<CellType> = cells.keys().copied().collect();
-    types.sort_unstable();
-
-    // Face-centre nodes of complete-P2 cells, which serendipity neighbours reuse.
-    let mut faces: HashMap<Vec<i64>, i64> = HashMap::new();
-    for &cell in &types {
-        let (degree, refs) = &cells[&cell];
-        if *degree != 2 || gridcl_refcell::tdim(cell) != 3 {
-            continue;
-        }
-        let map = gridcl_refcell::gmsh_to_internal(cell, 2).expect("P2 exists");
-        for r in refs {
-            let k = element_type(r.block.element_type)?.num_nodes;
-            if k != map.len() {
-                continue; // serendipity
-            }
-            let tags = to_internal(&map, &r.block.nodes[r.i * k..(r.i + 1) * k]);
-            for f in 0..gridcl_refcell::num_sub_entities(cell, 2) {
-                let interior = gridcl_refcell::lagrange_entity_nodes(cell, 2, 2, f);
-                if !interior.is_empty() {
-                    faces
-                        .entry(face_key(cell, f, &tags))
-                        .or_insert(tags[interior.start]);
-                }
-            }
-        }
-    }
 
     // Cell blocks.
-    let mut blocks = Vec::with_capacity(types.len());
     let mut vertices: HashSet<i64> = HashSet::new();
-    for &cell in &types {
-        let (degree, refs) = &cells[&cell];
-        let complete = lagrange_element_type(cell, *degree)?;
-        let map = gridcl_refcell::gmsh_to_internal(cell, *degree).expect("Gmsh order exists");
-        let nv = gridcl_refcell::vertices(cell).len();
-        let mut block = GmshCellBlock {
-            cell,
-            degree: *degree,
-            nodes: Vec::with_capacity(refs.len() * complete.num_nodes),
-            tags: Vec::with_capacity(refs.len()),
-            elementary: Vec::with_capacity(refs.len()),
-            physical: Vec::new(),
-        };
-        for (c, r) in refs.iter().enumerate() {
-            let ty = element_type(r.block.element_type)?;
-            let k = ty.num_nodes;
-            let file_tags = &r.block.nodes[r.i * k..(r.i + 1) * k];
-            let element = r.block.tags[r.i];
-            let tags = if ty.serendipity {
-                upgrade(cell, file_tags, element, &mut nodes, &mut faces)?
-            } else {
-                to_internal(&map, file_tags)
-            };
-            vertices.extend(&tags[..nv]);
-            for &t in &tags {
-                block.nodes.push(nodes.get(t, element)?);
+    let mut blocks = Vec::with_capacity(layout.blocks.len());
+    for c in layout.cells(&file.element_blocks)? {
+        let k = gridcl_refcell::num_lagrange_nodes(c.cell, c.degree);
+        let nv = gridcl_refcell::vertices(c.cell).len();
+        let mut nodes = Vec::with_capacity(c.nodes.len());
+        for (row, &element) in c.nodes.chunks_exact(k).zip(&c.tags) {
+            vertices.extend(&row[..nv]);
+            for &t in row {
+                nodes.push(get(t, element)?);
             }
-            block.tags.push(element);
-            block.elementary.push(r.elementary);
-            let c = index_u32(c)?;
-            block.physical.extend(r.physical.iter().map(|&p| (c, p)));
         }
-        blocks.push(block);
+        blocks.push(GmshCellBlock {
+            cell: c.cell,
+            degree: c.degree,
+            nodes,
+            tags: c.tags,
+            elementary: c.elementary,
+            physical: c.physical,
+        });
     }
 
-    // Tag groups: the lower-dimensional elements by cell type.
-    let mut groups: Vec<GmshTagGroup> = Vec::new();
-    for (b, elementary, physical) in kept.iter().filter(|(b, _, _)| b.dim < tdim) {
+    // Tag groups: every corner is a node and a cell vertex, checked in file order.
+    for b in file
+        .element_blocks
+        .iter()
+        .filter(|b| b.dim < tdim && layout.keeps(b))
+    {
         let ty = element_type(b.element_type)?;
         let nv = gridcl_refcell::vertices(ty.cell).len();
         let vertex_map = match ty.cell {
             CellType::Point => vec![0],
             cell => gridcl_refcell::gmsh_to_internal(cell, 1).expect("Gmsh order exists"),
         };
-        let g = match groups.iter().position(|g| g.cell == ty.cell) {
-            Some(g) => g,
-            None => {
-                groups.push(GmshTagGroup {
-                    dim: b.dim,
-                    cell: ty.cell,
-                    corners: Vec::new(),
-                    tags: Vec::new(),
-                    elementary: Vec::new(),
-                    physical: Vec::new(),
-                });
-                groups.len() - 1
+        for (row, &element) in b.nodes.chunks_exact(ty.num_nodes).zip(&b.tags) {
+            let mut corners = vec![0i64; nv];
+            for (k, &i) in vertex_map.iter().enumerate() {
+                corners[i] = row[k];
             }
-        };
-        let group = &mut groups[g];
-        let k = ty.num_nodes;
-        for (i, &element) in b.tags.iter().enumerate() {
-            let corners = to_internal(&vertex_map, &b.nodes[i * k..i * k + nv]);
-            for &t in &corners {
-                nodes.get(t, element)?;
+            for t in corners {
+                get(t, element)?;
                 if !vertices.contains(&t) {
                     return Err(GridError::UnmatchedTagElement {
                         dim: b.dim,
@@ -604,29 +305,17 @@ pub fn to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> 
                     });
                 }
             }
-            let e = index_u32(group.tags.len())?;
-            group.corners.extend(corners);
-            group.tags.push(element);
-            group.elementary.push(*elementary);
-            group.physical.extend(physical.iter().map(|&p| (e, p)));
         }
     }
-    groups.sort_by_key(|g| g.cell);
-    for g in &mut groups {
-        g.physical.sort_unstable();
-    }
+    let tag_groups = layout.tag_groups(&file.element_blocks)?;
 
-    let mut coords = Vec::with_capacity(nodes.coords.len() * gdim);
-    for x in &nodes.coords {
-        coords.extend_from_slice(&x[..gdim]);
-    }
     Ok(GmshMesh {
         tdim,
         gdim,
         nodes: coords,
-        node_tags: nodes.tags,
+        node_tags,
         blocks,
-        tag_groups: groups,
+        tag_groups,
         names: file.physical_names.clone(),
     })
 }
