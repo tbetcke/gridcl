@@ -17,7 +17,7 @@ Run exactly the commands the delegating prompt asks for. When it only names a sc
 | crate X | `cargo test -p X` |
 | workspace | `cargo test --workspace` |
 | backend metal (local) | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` |
-| backend vulkan | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` (hosted CI; usually unavailable on the M3 Max) |
+| backend vulkan | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` (hosted CI; usually unavailable on the local Mac) |
 | CUDA on target T | `scripts/hpc/remote-test.sh T -- cargo test --release --workspace --features gridcl-testing/cuda` |
 | CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |

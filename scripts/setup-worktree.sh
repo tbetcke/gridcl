@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Set up the git-ignored local files a new git worktree lacks (docs/dev-environment.md):
 # - .venv with the pinned Python packages of scripts/check-local-tools.sh (the M5 oracles and
-#   the M4 fixture corpus), created with python3 if missing;
+#   the M4 fixture corpus), created with python3.14 (else python3) if missing;
 # - scripts/hpc/targets.env, copied from the main checkout if missing there and present here.
 # Then runs scripts/check-local-tools.sh. Safe to rerun: existing files are kept.
 #
@@ -20,8 +20,13 @@ if [ -z "$pins" ]; then
 fi
 
 if [ ! -x "$repo/.venv/bin/python" ]; then
-    echo "setup-worktree.sh: creating .venv"
-    python3 -m venv "$repo/.venv"
+    # vtk 9.7.1 has wheels up to Python 3.14; Homebrew's python3 is already 3.15 (ADR-0034).
+    python=python3
+    if command -v python3.14 >/dev/null 2>&1; then
+        python=python3.14
+    fi
+    echo "setup-worktree.sh: creating .venv with $python ($("$python" --version 2>&1))"
+    "$python" -m venv "$repo/.venv"
 fi
 # shellcheck disable=SC2086 # pins is a space-separated list of requirements
 "$repo/.venv/bin/pip" install --quiet --disable-pip-version-check $pins

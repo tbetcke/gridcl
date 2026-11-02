@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check and print the local tool versions of the M3 Max (docs/design.md, E0 acceptance):
+# Check and print the local tool versions of the local Mac (docs/design.md, E0 acceptance):
 # the pinned Python packages in ${GRIDCL_PYTHON:-.venv/bin/python} (vtk 9.7.1 and meshio 5.3.5,
 # the M5 oracles, ADR-0024; gmsh 4.15.2, the M4 fixture corpus), gmsh, claude >= 2.1.286,
 # rsync >= 3 and mpirun. Prints one line per tool; exits 1 if any check fails.

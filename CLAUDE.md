@@ -93,8 +93,9 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
 Targets and site details are in docs/dev-environment.md; the policy is in docs/design.md,
 "Development environment and test targets".
 
-- This machine is the M3 Max. Run tests here on the CubeCL CPU runtime (the default) and on
-  Metal (`GRIDCL_TEST_DEVICE=metal`) on every change.
+- This machine is the local Mac (currently the M6 Mac mini, docs/dev-environment.md; ADR-0034).
+  Run tests here on the CubeCL CPU runtime (the default) and on Metal
+  (`GRIDCL_TEST_DEVICE=metal`) on every change.
 - CUDA runs go through `scripts/hpc/remote-test.sh` only (skill: hpc-test). Never run GPU work
   on a login node, and never submit jobs with hand-written `qsub` or `ssh` commands. The
   exception is milestone E0, while the runner is being built: then each such command needs the

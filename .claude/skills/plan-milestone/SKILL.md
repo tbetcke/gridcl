@@ -51,7 +51,7 @@ Follow docs/plans/TEMPLATE.md exactly.
 - **Parallel with:** mark a task only if it shares no files and no unmerged API with the other
   task. Do not mark parallel tasks unless the gain is clear.
 - **Acceptance coverage:** every acceptance bullet appears exactly once, with test names and
-  tasks. Include the targets and backends from "Testing and validation": the M3 Max (CPU
+  tasks. Include the targets and backends from "Testing and validation": the local Mac (CPU
   runtime, Metal), hosted CI (Vulkan, MPI flavours), Locust for CUDA, and Myriad (V100 or A100
   for multi-GPU tests, a CPU-only D node for AVX-512 CPU benchmarks) where "Development
   environment and test targets" requires them for this milestone (ADR-0014).

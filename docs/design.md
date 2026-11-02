@@ -34,7 +34,7 @@ The requirements are unchanged from the draft, apart from the development target
 - **Device residency:** all large mesh arrays live on the compute device. The host keeps only metadata and communication bookkeeping.
 - **Backends:** CUDA, HIP, Vulkan and Metal (through wgpu), and the CubeCL CPU runtime. f64 is used where the device supports it; f32 must work everywhere.
 - **CPU performance:** on the CubeCL CPU runtime, kernels use the host's SIMD units through CubeCL vectors where benchmarks show a gain. The same kernel source serves CPUs and GPUs.
-- **Development and test targets:** a local Apple M3 Max (Claude Code runs here; CubeCL CPU runtime and Metal), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Kathleen (Slurm, Xeon Gold 6248 Cascade Lake with AVX-512) for CPU-only runs and CPU benchmarks (CpuSimd512) and for MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback, and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback when Locust is unavailable (ADR-0014, ADR-0016). See "Development environment and test targets".
+- **Development and test targets:** a local Apple-silicon Mac (Claude Code runs here; CubeCL CPU runtime and Metal; ADR-0034), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Kathleen (Slurm, Xeon Gold 6248 Cascade Lake with AVX-512) for CPU-only runs and CPU benchmarks (CpuSimd512) and for MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback, and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback when Locust is unavailable (ADR-0014, ADR-0016). See "Development environment and test targets".
 - **Distribution:** MPI-distributed meshes with ownership, ghost layers and parallel partitioning. PT-Scotch is the production default; other partitioners are pluggable.
 - **High order:** geometry of arbitrary polynomial degree, with sub-entity orientation information for later high-order FEM and BEM.
 - **I/O:** Gmsh MSH 4.1 import and export, and VTK export (VTU/PVTU, VTKHDF) including VTK Lagrange cells.
@@ -51,7 +51,7 @@ The requirements are unchanged from the draft, apart from the development target
 7. Canonical orientation is keyed on origin vertex ids (decided in review, Q1).
 8. wgpu and Metal are real targets (Q2).
 9. The CI default partitioner is the built-in block partitioner plus vendored METIS on rank 0; PT-Scotch runs in its own CI job (Q3).
-10. Development targets: the M3 Max runs Claude Code and the CPU-runtime and Metal tests; Locust (GH200) is the CUDA platform for routine runs, milestone reviews and benchmarks; Kathleen runs CPU-only runs, the x86-64 AVX-512 CPU benchmarks and MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback; Myriad V100 and A100 run multi-GPU tests and architecture comparisons, and are the fallback when Locust is unavailable (ADR-0014, ADR-0016).
+10. Development targets: the local Mac runs Claude Code and the CPU-runtime and Metal tests (ADR-0034); Locust (GH200) is the CUDA platform for routine runs, milestone reviews and benchmarks; Kathleen runs CPU-only runs, the x86-64 AVX-512 CPU benchmarks and MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback; Myriad V100 and A100 run multi-GPU tests and architecture comparisons, and are the fallback when Locust is unavailable (ADR-0014, ADR-0016).
 11. SIMD is written in CubeCL kernels with `Vector<F, N>`, never with intrinsics or `std::simd` on the host. Vector sizes per kernel family and device class come from benchmarks (M3s); until then every kernel runs at vector size 1.
 
 ### Out of scope
@@ -856,11 +856,11 @@ The backend is chosen at run time through `cubecl::Device`, and no gridcl type c
 
 | Backend | cubecl feature | Device | f64 | u64 arithmetic | Float atomic add | GPU-aware MPI | Tested on |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| CPU runtime | `cpu` | `Device::cpu()` | yes | yes | f32, f64 | no | M3 Max on every change; hosted Linux CI |
+| CPU runtime | `cpu` | `Device::cpu()` | yes | yes | f32, f64 | no | the local Mac on every change; hosted Linux CI |
 | CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | yes (`gpu-aware-cuda`) | Locust; Myriad V100/A100 for multi-GPU, comparisons and fallback |
 | HIP/ROCm | `hip` | `Device::rocm(i)` | yes | yes | f32 | planned (`gpu-aware-hip`) | manual |
 | Vulkan via wgpu (SPIR-V) | `vulkan` | `Device::vulkan(kind)` | if the adapter has shaderFloat64 | if the adapter has shaderInt64 | f32 if supported | no | hosted Linux CI (software Vulkan) |
-| Metal via wgpu (MSL) | `metal` | `Device::metal_msl(kind)` | no | yes | f32 only | no | M3 Max on every change |
+| Metal via wgpu (MSL) | `metal` | `Device::metal_msl(kind)` | no | yes | f32 only | no | the local Mac on every change |
 | Metal native | `metal-native` | `Device::metal(kind)` | no | yes | f32 only | no | not gated |
 | wgpu WGSL (DX12, WebGPU) | `wgpu` | `Device::wgpu(kind)` | with SHADER_F64 | with SHADER_INT64 | f32 with SHADER_FLOAT32_ATOMIC | no | best effort |
 
@@ -1012,7 +1012,7 @@ The development targets report these widths:
 
 | Device | Register width | Registers | Lanes per register, f32 / f64 | Widest IO-optimized size, f32 / f64 |
 | --- | --- | --- | --- | --- |
-| M3 Max and Locust's Grace CPU (aarch64, NEON) | 128 bits; LLVM keeps fixed 128-bit vectors even where SVE exists | 32 | 4 / 2 | 16 / 8 |
+| Apple silicon (local Mac) and Locust's Grace CPU (aarch64, NEON) | 128 bits; LLVM keeps fixed 128-bit vectors even where SVE exists | 32 | 4 / 2 | 16 / 8 |
 | Kathleen's and Myriad's Xeon Gold CPUs (x86-64, AVX-512) | 512 bits | 32 | 16 / 8 | 16 / 8 |
 | x86-64 with AVX2 only (some hosted CI runners) | 256 bits | 16 | 8 / 4 | 16 / 8 |
 | GPUs: CUDA, HIP, Metal, wgpu | 128-bit loads | no register budget | – | 4 / 2 |
@@ -1132,7 +1132,7 @@ pub mod testing {
 
 - **Vector size:** the largest power of two not above the policy's size, `max_vector`, the device's `hardware.max_vector_size` (ADR-0011), and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
 - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
-- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), or the performance-core count where `VectorPolicy::cpu_units` says `Performance` and the device reports a smaller count (macOS); one unit per thread (ADR-0017). The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
+- **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), or the performance-core count (macOS: every `hw.perflevel` except the last, ADR-0034) where `VectorPolicy::cpu_units` says `Performance` and the device reports a smaller count; one unit per thread (ADR-0017). The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 
 ### Padding and tiles
@@ -1173,8 +1173,8 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 
 - **What it runs:** every candidate family at every vector size the device offers, at QuadField tile widths 1, 4 and 16 for geometry kernels, and on CPUs at block sizes of 4, 16 and 64 KiB. Sizes are 10^5, 10^6 and 10^7 items, in f32, f64 and u32 as the family requires.
 - **What it reports:** the median of ten timed runs, each repeating the call until it has lasted at least 20 ms and giving the time per call (ADR-0018), after a warm-up launch that absorbs JIT compilation, the effective bandwidth relative to a copy kernel on the same device, and the compile time per vector size. Results are written as JSON.
-- **Where:** the M3 Max (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus one socket of a whole Kathleen node (20 cores of a Xeon Gold 6248 with AVX-512, bound with its memory; ADR-0020) for the CPU runtime as CpuSimd512, which Locust cannot provide; a whole CPU-only Myriad D node (36-core Xeon Gold 6240, `-ac allow=D`) only as the fallback (ADR-0016). Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
-- **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the M3 Max they run on mains power with other applications closed, and the report records the performance- and efficiency-core counts (`sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`). With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy chooses between the two per kind and element size (ADR-0017). On a node with several sockets, CPU benchmarks bind to one socket and its memory, one thread per physical core, because the CPU runtime's unpinned threads across sockets make a configuration's time depend on their placement (up to 4×; ADR-0020).
+- **Where:** the local Mac (CPU runtime as CpuSimd128, and Metal) and Locust (Grace CPU with 72 cores as CpuSimd128, and H100), plus one socket of a whole Kathleen node (20 cores of a Xeon Gold 6248 with AVX-512, bound with its memory; ADR-0020) for the CPU runtime as CpuSimd512, which Locust cannot provide; a whole CPU-only Myriad D node (36-core Xeon Gold 6240, `-ac allow=D`) only as the fallback (ADR-0016). Myriad's V100 and A100 nodes run the GPU benchmarks only as the fallback when Locust stays busy or is unavailable (ADR-0014). CpuSimd256 uses the CpuSimd512 table unless a hosted runner with AVX2 only is measured.
+- **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the local Mac they run on mains power with other applications closed, and the report records every performance level by name with its core counts (`hw.nperflevels`, `hw.perflevel<i>.{name,physicalcpu}`; ADR-0034). With static blocks, the cores of the last (efficiency) level can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy chooses between the two per kind and element size (ADR-0017). On a node with several sockets, CPU benchmarks bind to one socket and its memory, one thread per physical core, because the CPU runtime's unpinned threads across sockets make a configuration's time depend on their placement (up to 4×; ADR-0020).
 - **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width, CPU block size and CPU units follow the same rule; ties in units go to all hardware threads (ADR-0017). With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015), and for such an entry the 3% rule measures each type against the fastest configuration at a size both admit (ADR-0019). If no admitted configuration is within 3% of the fastest at both sizes, the one with the smallest worst-case ratio is chosen if that ratio is at most 1.10, or at most 1.25 for a 4-byte entry shared by types that admit different sizes or prefer different configurations (ADR-0021), and the report marks it (ADR-0018).
 - **Record:** the choices — vector sizes, QuadField tiles per element size, CPU block sizes per kind and element size in units of 4 KiB, and CPU units per kind and element size — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
 
@@ -1533,13 +1533,13 @@ impl Partitioner for PtScotch { /* ... */ }              // name(): "ptscotch", 
 | --- | --- | --- | --- |
 | Block | built in | – | CI default for pipeline tests. Also honours partition data stored in Gmsh files. |
 | METIS on rank 0 | `metis` crate with its `vendored` feature, which builds METIS from source | `metis` | CI default for partition-quality tests; small and medium meshes; not together with `parmetis` (ADR-0033) |
-| PT-Scotch | Scotch 7.x (context API); own `ptscotch-sys` (bindgen of `ptscotch.h`, `SCOTCH_Num` width probed at build time) plus a safe wrapper; the existing `scotch-sys` binds only `scotch.h`; feature `mpi` of ptscotch-sys; libraries from `SCOTCH_DIR` or the system paths | `ptscotch` | production default; tested in its own CI job on an image with a known PT-Scotch build |
+| PT-Scotch | Scotch 7.0.x (context API; verified 7.0.4 and 7.0.14; 7.0.18 is not deterministic, ADR-0034); own `ptscotch-sys` (bindgen of `ptscotch.h`, `SCOTCH_Num` width probed at build time) plus a safe wrapper; the existing `scotch-sys` binds only `scotch.h`; feature `mpi` of ptscotch-sys; libraries from `SCOTCH_DIR` or the system paths | `ptscotch` | production default; tested in its own CI job on an image with a known PT-Scotch build |
 | Scotch on rank 0 | `scotch` crate, plus `scotch-sys` for the seed and strategy | `scotch` | rank-0 alternative; the reference edge cut in M7 |
 | ParMETIS | own `parmetis-sys` (no crate exists; `idx_t` and `real_t` widths probed at build time); feature `mpi` of parmetis-sys; libraries from `PARMETIS_DIR`, `METIS_DIR` or the system paths | `parmetis` | optional; check the licence terms before redistributing binaries; not together with `metis` (ADR-0033) |
 
 - **Rank-0 partitioners** gather the graph on rank 0, partition it and scatter the destinations, through `all_to_all_v`. Rank 0 then needs memory for the whole graph, which limits them to meshes of about 10^7 cells.
 - **Default choice** for distributed reads: PT-Scotch when the `ptscotch` feature is enabled, otherwise METIS on rank 0 when `metis` is enabled, otherwise Block with a warning. Serial meshes need no partitioner.
-- **Reproducibility:** PT-Scotch and Scotch on rank 0 run each call in a `SCOTCH_Context` with `SCOTCH_OPTIONNUMDETERMINISTIC` set and a private random generator seeded with the fixed seed (`SCOTCH_contextRandomSeed`, then `SCOTCH_contextRandomReset`), under a process-wide mutex; threaded Scotch builds are otherwise not deterministic (ADR-0031). METIS uses `METIS_OPTION_SEED` under the same mutex; ParMETIS takes the seed in `options`. Results are reproducible for a fixed number of ranks only.
+- **Reproducibility:** PT-Scotch and Scotch on rank 0 run each call in a `SCOTCH_Context` with `SCOTCH_OPTIONNUMDETERMINISTIC` set and a private random generator seeded with the fixed seed (`SCOTCH_contextRandomSeed`, then `SCOTCH_contextRandomReset`), under a process-wide mutex; threaded Scotch builds are otherwise not deterministic (ADR-0031). Scotch 7.0.18's threaded build is not deterministic even in this context; the verified versions are listed in the backend table (ADR-0034). METIS uses `METIS_OPTION_SEED` under the same mutex; ParMETIS takes the seed in `options`. Results are reproducible for a fixed number of ranks only.
 - **Checks and balance:** every external partitioner validates the graph (ranges, self-loops, symmetry, non-negative weights, totals within the library's index type) before calling the library, returns zeros for one part, and targets 3% imbalance. PT-Scotch builds with `SCOTCH_PTHREAD_MPI` are not supported (MPI runs at `Threading::Single`). ParMETIS needs every rank to hold a vertex (ADR-0029).
 
 ## Import and export
@@ -1616,7 +1616,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 
 | Target | Backends and precisions | When |
 | --- | --- | --- |
-| M3 Max, local (macOS, arm64) | CubeCL CPU runtime in f32 and f64; Metal via wgpu in f32; MPI | every change |
+| Local Mac (macOS, arm64) | CubeCL CPU runtime in f32 and f64; Metal via wgpu in f32; MPI | every change |
 | Hosted CI, Linux x86-64 | CPU runtime in f32 and f64; Vulkan (software driver) in f32, plus f64 if supported; MPI under MPICH and Open MPI | every push |
 | Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU and GPU-aware tests; architecture comparisons; fallback when Locust is unavailable (ADR-0014) |
 | Myriad A100 (sm_80) | CUDA in f32 and f64 | when required (see "Development environment and test targets") |
@@ -1655,11 +1655,11 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 
 ## Development environment and test targets
 
-Claude Code runs on the M3 Max and tests there on every change. CUDA work runs on UCL's clusters through a small remote-test runner. Milestone E0 sets this up and records the details in `docs/dev-environment.md`.
+Claude Code runs on the local Apple-silicon Mac and tests there on every change; `docs/dev-environment.md` names the current machine (ADR-0034). CUDA work runs on UCL's clusters through a small remote-test runner. Milestone E0 sets this up and records the details in `docs/dev-environment.md`.
 
 | Target | Hardware | Access | Role |
 | --- | --- | --- | --- |
-| M3 Max (local) | Apple M3 Max, macOS, arm64 | local | Claude Code; CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
+| Local Mac | Apple silicon, macOS, arm64 (current machine: `docs/dev-environment.md`) | local | Claude Code; CPU runtime (f32, f64) and Metal (f32) on every change; MPI up to 4 ranks |
 | Myriad V100 | E and F nodes: 36 cores (Xeon Gold 6140 or 6240, AVX-512) and 2 × V100 (sm_70) each | SGE batch jobs: `-l gpu=N` with `-ac allow=EF` | multi-GPU tests, architecture comparisons and fallback; oldest supported architecture |
 | Myriad A100 | L nodes: 36 cores and 4 × A100 40 GB (sm_80) each | SGE batch jobs: `-l gpu=N` with `-ac allow=L` | second CUDA architecture and CUDA 13; comparisons and fallback |
 | Myriad CPU | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB, no GPU | SGE batch jobs with `-ac allow=D` | fallback for CPU-only runs (ADR-0014, ADR-0016) |
@@ -1675,11 +1675,11 @@ Claude Code runs on the M3 Max and tests there on every change. CUDA work runs o
 - when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device or the GPU-aware transport;
 - when the user asks.
 
-CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), which Locust cannot provide, use one whole Kathleen node; benchmarks bind to one socket (ADR-0020). A Myriad D node (`-ac allow=D`, never a GPU node) runs them only as the fallback: when Kathleen is unreachable, a job is still queued after `--max-wait`, or the user asks; the run report says why (ADR-0016). MPI runs beyond the M3 Max's 4 ranks use Kathleen, at most two nodes per job; from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes.
+CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), which Locust cannot provide, use one whole Kathleen node; benchmarks bind to one socket (ADR-0020). A Myriad D node (`-ac allow=D`, never a GPU node) runs them only as the fallback: when Kathleen is unreachable, a job is still queued after `--max-wait`, or the user asks; the run report says why (ADR-0016). MPI runs beyond the local Mac's 4 ranks use Kathleen, at most two nodes per job; from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes.
 
 Locust is an experimental system, so its runs are kept short, build with at most half of the node's cores, and never block a milestone when it is unavailable. It is an open multi-user node without a scheduler, so other users' work can share its CPU and GPU at any time.
 
-**Remote-test runner.** Claude and developers run remote tests with one command from the M3 Max:
+**Remote-test runner.** Claude and developers run remote tests with one command from the local Mac:
 
 ```text
 scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--nodes N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
@@ -1746,18 +1746,18 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 
 | Job | Runner | Runs | Trigger |
 | --- | --- | --- | --- |
-| local | M3 Max (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `GRIDCL_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
+| local | the local Mac (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `GRIDCL_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
 | cpu | hosted Linux | `cargo test --workspace` on the CPU runtime in f32 and f64; clippy; rustdoc | every push |
 | mpi-mpich, mpi-openmpi | hosted Linux | gridcl-mpi-tests on 1–4 ranks (`--oversubscribe` for Open MPI) | every push |
 | vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `GRIDCL_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
 | ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to gridcl-partition; nightly |
-| conformance | hosted Linux with OpenBLAS, or the M3 Max with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
+| conformance | hosted Linux with OpenBLAS, or the local Mac with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
 | cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | multi-GPU; fallback |
 | cuda-a100 | Myriad L node through `scripts/hpc` | as cuda-v100, with the newest toolkit the driver supports | when required |
 | gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review |
 | gpu-aware | Myriad node with a CUDA-aware MPI, through `scripts/hpc` | host-staged vs GPU-aware halo exchange | from M10, at every milestone review |
 
-The hosted CI provider is not fixed. Without one, the M3 Max covers the cpu, MPI and conformance jobs, and Vulkan runs are skipped.
+The hosted CI provider is not fixed. Without one, the local Mac covers the cpu, MPI and conformance jobs, and Vulkan runs are skipped.
 
 ## Implementation roadmap
 
@@ -2012,7 +2012,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Acceptance:**
 
 - on a Myriad node with a CUDA-aware MPI, the GPU-aware halo exchange is bitwise identical to the host-staged one on 2 ranks (V100 node) and 4 ranks (A100 node);
-- benchmarks (entities created per second, geometric factors per second) are recorded on the M3 Max (CPU runtime, Metal), Locust and one socket of a whole Kathleen node (AVX-512; ADR-0020), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
+- benchmarks (entities created per second, geometric factors per second) are recorded on the local Mac (CPU runtime, Metal), Locust and one socket of a whole Kathleen node (AVX-512; ADR-0020), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
 - the M3s study covers every candidate `KernelKind`, including Pack and PullBack; `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
 - every example runs on the CPU runtime and on at least one GPU backend;
 - rustdoc builds without warnings, and every public item is documented.
@@ -2449,7 +2449,7 @@ All 44 findings of the consolidated design review are addressed. The table gives
 **Revision 2 (17 October 2026): development environment.**
 
 - New milestone E0 (development environment), before M0.
-- Development and test targets: the M3 Max (CPU runtime and Metal on every change), Locust (CUDA for routine runs, reviews and benchmarks), Kathleen (CPU-only runs, AVX-512 CPU benchmarks, two-node MPI), Myriad D nodes (CPU fallback), Myriad V100 and A100 (multi-GPU, comparisons, fallback), and hosted CI for Linux CPU, Vulkan and MPI.
+- Development and test targets: the local Mac (CPU runtime and Metal on every change; ADR-0034), Locust (CUDA for routine runs, reviews and benchmarks), Kathleen (CPU-only runs, AVX-512 CPU benchmarks, two-node MPI), Myriad D nodes (CPU fallback), Myriad V100 and A100 (multi-GPU, comparisons, fallback), and hosted CI for Linux CPU, Vulkan and MPI.
 - CUDA toolkit and driver rules for V100 and for the driver's PTX JIT.
 - The remote-test runner `scripts/hpc/remote-test.sh` and the probe `tools/env-check/`.
 - Updated: requirements, fixed decisions, supported backends, testing targets, workspace layout, CI matrix, the M0, M7, M8 and M10 acceptance tests, and the risks.

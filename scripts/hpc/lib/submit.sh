@@ -259,7 +259,10 @@ r_fetch_steps() { # r_fetch_steps <tree> <target> <login modules> <features> [ma
     cd "$tree" || return 1
     unset CARGO_NET_OFFLINE
     CARGO_TARGET_DIR=$tree/target/$target-login
-    export CARGO_TARGET_DIR
+    # At cargo's default parallelism (80 jobs on Kathleen's login nodes), rust-lld died with
+    # SIGBUS linking build scripts into this directory on Lustre; 8 jobs pass (ADR-0034).
+    CARGO_BUILD_JOBS=8
+    export CARGO_TARGET_DIR CARGO_BUILD_JOBS
     if [ -f rust-toolchain.toml ] || [ -f rust-toolchain ]; then
         if ! command -v rustup >/dev/null 2>&1; then
             echo "rustup not found on the login node; install it in the remote home"
