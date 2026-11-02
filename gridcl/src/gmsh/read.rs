@@ -1,4 +1,4 @@
-//! [`read`] on any number of ranks (ADR-0022; ADR-0035, rules 1–4 and 6).
+//! [`read`] on any number of ranks (ADR-0022; ADR-0035, rules 1–6).
 //!
 //! Every rank ends up with a [`Chunk`]: its even share of the nodes, of the D_TOP elements and
 //! of the lower-dimensional elements of each dimension, converted by the shared steps of
@@ -8,7 +8,8 @@
 //! rank's chunk and scatters them (rule 2); a file whose scan fails takes this path too, so
 //! its error is the serial one. The chunks feed stage 1 of the pipeline through the reader's
 //! builder hooks; the builder finds duplicate tags, missing nodes and unmatched tag elements
-//! (rule 3).
+//! (rule 3). With `Block`, a partitioned file whose partition count is the rank count fixes
+//! the destination of every cell (rule 5).
 
 use std::ops::Range;
 use std::path::Path;
@@ -373,9 +374,29 @@ fn missing_node(e: GridError) -> GridError {
     }
 }
 
+/// The destination rank of each of this rank's cells, `partition − 1` in block order, if the
+/// partitioner is `Block` (recognised by its name), the file has `comm.size()` partitions and
+/// every cell lies in one of them (rule 5); `None` on every rank otherwise. Collective.
+fn file_destinations(comm: &dyn CommDyn, chunk: &Chunk, partitioner: &Shared) -> Option<Vec<i32>> {
+    let honour = partitioner.0.name() == "block" && chunk.num_partitions == comm.size();
+    let dest: Option<Vec<i32>> = honour
+        .then(|| {
+            chunk
+                .cells
+                .iter()
+                .flat_map(|c| &c.partitions)
+                .map(|&q| q - 1)
+                .collect()
+        })
+        .filter(|d: &Vec<i32>| d.iter().all(|&d| d >= 0));
+    // `honour` is the same on every rank; the partitions of every rank's cells are not.
+    (comm.min(u64::from(dest.is_some())) == 1).then_some(dest?)
+}
+
 /// The mesh of `chunk` on `comm`: nodes by tag, cells with their tag values, the
 /// lower-dimensional elements as physical and elementary tag inputs whose error ids and
-/// element ids are their element tags, and the names `names`. Collective.
+/// element ids are their element tags, and the names `names`; cells go to the ranks of their
+/// file partitions under rule 5. Collective.
 fn build<F, TD, GD, C>(
     client: &Client,
     comm: C,
@@ -392,6 +413,7 @@ where
     C: Comm,
 {
     let gd = GD::N;
+    let destinations = file_destinations(&comm, &chunk, &partitioner);
     let Chunk {
         nodes,
         cells,
@@ -443,6 +465,9 @@ where
         .iter()
         .map(|n| (n.name.as_str(), n.dim, n.tag))
         .collect();
+    if let Some(dest) = destinations {
+        builder = builder.destinations(dest);
+    }
     builder
         .element_ids(element_ids)
         .tag_names(&names)
@@ -469,6 +494,9 @@ where
 ///   partitioner, ghost mode and cell order of `options`. A binary file without serendipity
 ///   elements is read in chunks by every rank; any other file is read by rank 0, which
 ///   scatters the chunks (ADR-0035, rules 1, 2 and 6).
+/// - With [`Block`](crate::Block), a partitioned file whose partition count equals the rank
+///   count keeps its partitions: each cell goes to rank `partition − 1` (rule 5). Ghost
+///   entities of the file are ignored.
 /// - Reading into an f32 mesh narrows the coordinates; rank 0 logs one warning per file, and
 ///   one if the default partitioner falls back to `Block`.
 ///

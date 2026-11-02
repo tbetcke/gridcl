@@ -284,7 +284,6 @@ where
     /// The destination rank of every input cell, blocks in call order (the partition data of a
     /// Gmsh file; ADR-0035, item 10): stages 2 and 3 are skipped. If any rank gives them,
     /// every rank must, one per cell.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Gmsh reader's (M8 T4c)"))]
     pub(crate) fn destinations(mut self, dest: Vec<i32>) -> Self {
         self.destinations = Some(dest);
         self

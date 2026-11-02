@@ -9,7 +9,7 @@
 //! - [`global_mesh_identical`] (bullet 1, rule 11): the mesh read on the communicator, gathered
 //!   to rank 0 by cell origin id, equals the one-rank read.
 //! - [`block_honours_partitions`] (rule 5): `Block` keeps the partitions of a partitioned file
-//!   when the rank count matches, and the even chunks otherwise.
+//!   when the rank count matches, and its own partition of the file order otherwise.
 //! - [`partitioned_round_trip`] (rule 7): `.partitioned(true)` parts read serially add up to the
 //!   mesh; the gathered file equals the one-rank file after sorting by origin id.
 //! - [`ghosts_once`] (bullet 4, rule 8): after VTK removes the ghost cells of a PVTU or VTKHDF
@@ -530,8 +530,9 @@ fn owned_ids<F: Real, C: Comm>(any: &AnyMesh<F, C>) -> Result<BTreeSet<i64>> {
 
 /// Rule 5: every partitioned fixture read with `Block` on `comm`. With as many ranks as
 /// partitions, rank r owns the D_TOP elements of partition r + 1 (Gmsh's own view, from the
-/// manifest); otherwise the partition data is ignored and rank r owns the r-th even chunk
-/// [rN/P, (r+1)N/P) of the D_TOP elements. Both ghost modes; ghost entities are ignored.
+/// manifest); otherwise the partition data is ignored and rank r owns `Block`'s share of the N
+/// D_TOP elements in file order, the i with ⌊iP/N⌋ = r. Both ghost modes; ghost entities are
+/// ignored.
 pub fn block_honours_partitions<C: Comm>(comm: &C, client: &Client) {
     let (rank, size) = (comm.rank(), comm.size());
     for f in fixtures::manifest()
@@ -551,8 +552,9 @@ pub fn block_honours_partitions<C: Comm>(comm: &C, client: &Client) {
                 let want: BTreeSet<i64> = f.partition_elements[rank].iter().copied().collect();
                 assert_eq!(owned, want, "{at}: the cells of partition {}", rank + 1);
             } else {
-                let want = (rank + 1) * total / size - rank * total / size;
-                assert_eq!(owned.len(), want, "{at}: an even chunk of {total} cells");
+                // ⌈(r + 1)N/P⌉ − ⌈rN/P⌉.
+                let want = ((rank + 1) * total).div_ceil(size) - (rank * total).div_ceil(size);
+                assert_eq!(owned.len(), want, "{at}: Block's share of {total} cells");
             }
             assert_eq!(
                 comm.sum(owned.len() as u64),
