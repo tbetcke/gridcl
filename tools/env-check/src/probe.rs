@@ -8,7 +8,7 @@ use cubecl::ir::Type;
 use cubecl::ir::features::AtomicUsage;
 use cubecl::prelude::{Client, CubeElement};
 
-use crate::report::{DeviceReport, HostInfo};
+use crate::report::{DeviceReport, HostInfo, PerfLevel};
 
 /// A runtime env-check can be built with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -156,6 +156,7 @@ pub fn host_info() -> HostInfo {
         hardware_threads,
         performance_cores: None,
         efficiency_cores: None,
+        perf_levels: Vec::new(),
         simd_flags: Vec::new(),
         rustc_version,
     };
@@ -169,8 +170,22 @@ pub fn host_info() -> HostInfo {
             _ => unknown(),
         };
         host.cpu_model = sysctl("machdep.cpu.brand_string").unwrap_or_else(unknown);
-        host.performance_cores = sysctl("hw.perflevel0.physicalcpu").and_then(|v| v.parse().ok());
-        host.efficiency_cores = sysctl("hw.perflevel1.physicalcpu").and_then(|v| v.parse().ok());
+        let number = |name: &str| sysctl(name).and_then(|v| v.parse::<u32>().ok());
+        host.perf_levels = number("hw.nperflevels")
+            .filter(|&n| n <= 16)
+            .and_then(|n| {
+                (0..n)
+                    .map(|i| {
+                        Some(PerfLevel {
+                            name: sysctl(&format!("hw.perflevel{i}.name"))?,
+                            physical_cores: number(&format!("hw.perflevel{i}.physicalcpu"))?,
+                            logical_cores: number(&format!("hw.perflevel{i}.logicalcpu"))?,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (host.performance_cores, host.efficiency_cores) = core_counts(&host.perf_levels);
         host.simd_flags = command_output("sysctl", &["hw.optional"])
             .map(|out| parse_macos_simd_flags(&out))
             .unwrap_or_default();
@@ -206,6 +221,22 @@ fn command_output(program: &str, args: &[&str]) -> Option<String> {
     }
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
     (!text.is_empty()).then_some(text)
+}
+
+/// Performance and efficiency cores from the performance levels, fastest first (ADR-0034):
+/// every level but the last, and the last. Both `None` with fewer than two levels; the
+/// performance count also when its sum is zero or overflows.
+pub fn core_counts(levels: &[PerfLevel]) -> (Option<u32>, Option<u32>) {
+    match levels.split_last() {
+        Some((last, faster)) if !faster.is_empty() => (
+            faster
+                .iter()
+                .try_fold(0u32, |sum, l| sum.checked_add(l.physical_cores))
+                .filter(|&n| n > 0),
+            Some(last.physical_cores),
+        ),
+        _ => (None, None),
+    }
 }
 
 /// SIMD flags from the output of `sysctl hw.optional` (macOS): the names set to 1.
@@ -272,6 +303,28 @@ fn parse_lscpu_model(output: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn levels(levels: &[(&str, u32)]) -> Vec<PerfLevel> {
+        levels
+            .iter()
+            .map(|&(name, n)| PerfLevel {
+                name: name.to_string(),
+                physical_cores: n,
+                logical_cores: n,
+            })
+            .collect()
+    }
+
+    /// Every level but the last is performance cores (ADR-0034): M3 Max 12 + 4, M6 (2 + 4) + 6.
+    #[test]
+    fn core_counts_follow_every_level() {
+        let m3 = levels(&[("Performance", 12), ("Efficiency", 4)]);
+        assert_eq!(core_counts(&m3), (Some(12), Some(4)));
+        let m6 = levels(&[("Super", 2), ("Performance", 4), ("Efficiency", 6)]);
+        assert_eq!(core_counts(&m6), (Some(6), Some(6)));
+        assert_eq!(core_counts(&levels(&[("Performance", 8)])), (None, None));
+        assert_eq!(core_counts(&[]), (None, None));
+    }
 
     #[test]
     fn runtime_names_round_trip() {

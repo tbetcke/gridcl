@@ -21,7 +21,7 @@ use gridcl_device::testing::{
 };
 use gridcl_device::{CpuUnits, DeviceClass, KernelKind, VectorSizeOverride};
 
-use crate::record::{Cores, CubeDimMode};
+use crate::record::{Cores, CubeDimMode, PerfLevel};
 
 /// Timed runs per configuration.
 pub const RUNS: usize = 10;
@@ -109,8 +109,9 @@ pub fn profile() -> &'static str {
     }
 }
 
-/// The machine's core counts. Performance and efficiency cores come from
-/// `sysctl -n hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu` where it answers (macOS).
+/// The machine's core counts. On macOS the performance levels come from `sysctl -n
+/// hw.nperflevels` and `hw.perflevel<i>.{name,physicalcpu,logicalcpu}` where the tool answers
+/// (not inside Claude Code's sandbox); the counts follow [`cores_from_levels`].
 pub fn cores() -> Cores {
     let sysctl = |name: &str| {
         Command::new("sysctl")
@@ -118,13 +119,48 @@ pub fn cores() -> Cores {
             .output()
             .ok()
             .filter(|out| out.status.success())
-            .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse().ok())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    };
+    let number = |name: &str| sysctl(name).and_then(|v| v.parse::<u32>().ok());
+    let levels = number("hw.nperflevels")
+        .filter(|&n| n <= 16)
+        .and_then(|n| {
+            (0..n)
+                .map(|i| {
+                    Some(PerfLevel {
+                        name: sysctl(&format!("hw.perflevel{i}.name"))?,
+                        physical: number(&format!("hw.perflevel{i}.physicalcpu"))?,
+                        logical: number(&format!("hw.perflevel{i}.logicalcpu"))?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .unwrap_or_default();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| u32::try_from(n.get()).unwrap_or(u32::MAX));
+    cores_from_levels(levels, threads)
+}
+
+/// The core counts from the performance levels, fastest first (ADR-0034), the rule of
+/// gridcl-device's performance-core count: `performance` is the physical cores of every level
+/// but the last, `efficiency` those of the last. Both are `None` with fewer than two levels, and
+/// `performance` also when its sum is zero or overflows.
+pub fn cores_from_levels(levels: Vec<PerfLevel>, threads: u32) -> Cores {
+    let (performance, efficiency) = match levels.split_last() {
+        Some((last, faster)) if !faster.is_empty() => (
+            faster
+                .iter()
+                .try_fold(0u32, |sum, l| sum.checked_add(l.physical))
+                .filter(|&n| n > 0),
+            Some(last.physical),
+        ),
+        _ => (None, None),
     };
     Cores {
-        performance: sysctl("hw.perflevel0.physicalcpu"),
-        efficiency: sysctl("hw.perflevel1.physicalcpu"),
-        threads: std::thread::available_parallelism()
-            .map_or(1, |n| u32::try_from(n.get()).unwrap_or(u32::MAX)),
+        performance,
+        efficiency,
+        threads,
+        levels,
     }
 }
 
@@ -345,6 +381,43 @@ mod tests {
     #[should_panic(expected = "median of no times")]
     fn median_of_nothing_panics() {
         median(&[]);
+    }
+
+    fn levels(levels: &[(&str, u32)]) -> Vec<PerfLevel> {
+        levels
+            .iter()
+            .map(|&(name, n)| PerfLevel {
+                name: name.to_owned(),
+                physical: n,
+                logical: n,
+            })
+            .collect()
+    }
+
+    /// Every level but the last counts as performance cores (ADR-0034): the M3 Max keeps
+    /// 12 + 4, the M6 records 2 + 4 performance and 6 efficiency cores.
+    #[test]
+    fn cores_count_every_level_but_the_last() {
+        let m3 = cores_from_levels(levels(&[("Performance", 12), ("Efficiency", 4)]), 16);
+        assert_eq!((m3.performance, m3.efficiency), (Some(12), Some(4)));
+        let m6 = levels(&[("Super", 2), ("Performance", 4), ("Efficiency", 6)]);
+        let c = cores_from_levels(m6.clone(), 12);
+        assert_eq!(
+            (c.performance, c.efficiency, c.threads),
+            (Some(6), Some(6), 12)
+        );
+        assert_eq!(c.levels, m6);
+    }
+
+    /// Without two levels (Linux, the sandbox, one kind of core) there are no counts.
+    #[test]
+    fn cores_need_two_levels() {
+        for l in [levels(&[]), levels(&[("Performance", 8)])] {
+            let c = cores_from_levels(l, 8);
+            assert_eq!((c.performance, c.efficiency), (None, None));
+        }
+        let c = cores_from_levels(levels(&[("Performance", 0), ("Efficiency", 4)]), 4);
+        assert_eq!((c.performance, c.efficiency), (None, Some(4)));
     }
 
     #[test]

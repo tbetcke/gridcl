@@ -752,6 +752,7 @@ mod tests {
                 performance: None,
                 efficiency: None,
                 threads: 1,
+                levels: Vec::new(),
             },
             fallback_reason: None,
             node_load: None,
@@ -1287,6 +1288,7 @@ mod tests {
                     performance: Some(12),
                     efficiency: Some(4),
                     threads: 16,
+                    levels: Vec::new(),
                 },
                 ..r
             })
