@@ -60,6 +60,20 @@ else
     echo "mpi-test.sh: no timeout command; runs have no time limit" >&2
 fi
 
+# hwloc 2.15's darwin backend never finishes on Apple chips with three or more performance
+# levels (M6; https://github.com/open-mpi/hwloc/issues/852), so every MPI_Init hangs. Without
+# that backend hwloc reports no cores, and Open MPI's by-core mapping needs --map-by slot.
+# sysctl fails inside Claude Code's sandbox; the workaround then applies as well. Remove once
+# Homebrew ships a fixed hwloc (ADR-0034).
+hwloc_workaround=
+if [[ $(uname -s) == Darwin ]]; then
+    levels=$(sysctl -n hw.nperflevels 2>/dev/null || echo 3)
+    if [[ ! "$levels" =~ ^[0-9]+$ ]] || ((levels >= 3)); then
+        export HWLOC_COMPONENTS=-darwin
+        hwloc_workaround=1
+    fi
+fi
+
 # The MPI flavour decides the launcher flags.
 version=$(mpirun --version 2>&1 || true)
 mpirun_flags=()
@@ -69,6 +83,10 @@ case $version in
         mpirun_flags+=(--oversubscribe)
         if [[ -n "${GRIDCL_TEST_DEVICE+set}" ]]; then
             mpirun_flags+=(-x GRIDCL_TEST_DEVICE)
+        fi
+        if [[ -n $hwloc_workaround ]]; then
+            mpirun_flags+=(-x HWLOC_COMPONENTS)
+            [[ ${GRIDCL_MPIRUN_FLAGS:-} == *--map-by* ]] || mpirun_flags+=(--map-by slot)
         fi
         ;;
     *HYDRA* | *MPICH*)
@@ -137,6 +155,7 @@ if [[ -n "${GRIDCL_MPI_TESTS:-}" ]]; then
 fi
 
 echo "mpi-test.sh: $flavour, ranks ${ranks[*]}, ${#tests[@]} target(s), features $features, time limit ${time_limit} s"
+[[ -z $hwloc_workaround ]] || echo "mpi-test.sh: HWLOC_COMPONENTS=-darwin (hwloc issue 852)"
 failed=0
 for n in "${ranks[@]}"; do
     for entry in "${tests[@]}"; do
