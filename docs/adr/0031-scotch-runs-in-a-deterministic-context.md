@@ -120,3 +120,5 @@ Ubuntu 24.04 (7.0.x; the T5 probe step confirms it in CI) and the 7.0.x that T7 
 ## Decision record
 
 Accepted by the maintainer on 2026-10-31, as proposed (option 3), without conditions. Applied in `adr: 0031 apply`.
+
+Amended by ADR-0034 (Scotch 7.0.18 is not deterministic in the context; verified versions 7.0.4 and 7.0.14), accepted 2026-11-02.

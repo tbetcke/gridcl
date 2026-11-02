@@ -1,6 +1,6 @@
 # ADR-0034: The local development machine moves to the M6 Mac mini
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-02
 - **Raised in:** the move between M7 and M8 (M7 done in d015c2e; M8 not yet planned)
 - **Design sections affected:**
@@ -304,11 +304,15 @@ What does not need a change:
     queue and was deleted at `--max-wait`; the Locust CUDA smoke passed (job
     20261101231105-33368, idle before and after);
   - `/opt/homebrew` is owned by the old account, so `brew` cannot install, upgrade or remove
-    formulae as `agentt` until the maintainer changes the owner. Option C3 does not depend on
+    formulae as the account Claude runs as until the maintainer changes the owner. Option C3 does not depend on
     it.
   - A Homebrew upgrade of `scotch` to 7.1 would break the leaf-name match. Binaries would then
     fail to load, not run 7.1; the setup would be revisited then.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-02, as proposed (A3, B3, C3 with Homebrew's Scotch left
+installed, D2), including `scripts/mpi-test.sh` setting the hwloc workaround itself. Applied in
+`adr: 0034 apply`. When applying, the sentence "MPI runs beyond the M3 Max's 4 ranks" in
+"Development environment and test targets" also became "the local Mac's 4 ranks". The code change
+(rule B3 and the host records) is a separate task after the apply.

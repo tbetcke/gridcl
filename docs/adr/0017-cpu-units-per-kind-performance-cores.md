@@ -74,3 +74,5 @@ Option 3. The design already says that the policy may choose the performance-cor
 ## Decision record
 
 Accepted by the maintainer on 2026-10-25, as proposed (option 3), after a discussion of per-system compromise rules, which the maintainer decided against in favour of ADR-0015's per-kind scheme. Applied to docs/design.md and CLAUDE.md in `adr: 0017 apply`; the gridcl-device row of the crate table (the `libc` dependency) was added to the affected sections when applying. Implemented by M3s T20.
+
+Amended by ADR-0034 (the performance-core count on three or more perflevels: every level except the last), accepted 2026-11-02.
