@@ -4,17 +4,17 @@
 
 /// The encoding of a binary file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Binary {
+pub(crate) struct Binary {
     /// Big-endian values.
-    pub big_endian: bool,
+    pub(crate) big_endian: bool,
     /// The width of `size_t`: 4 or 8.
-    pub size_t: usize,
+    pub(crate) size_t: usize,
 }
 
 impl Binary {
     /// The encoding whose marker is `one` (the four bytes of the `int` 1) and whose `size_t`
     /// has `size_t` bytes; `None` if the marker is neither byte order of 1.
-    pub fn from_marker(one: [u8; 4], size_t: usize) -> Option<Self> {
+    pub(crate) fn from_marker(one: [u8; 4], size_t: usize) -> Option<Self> {
         let big_endian = match one {
             [1, 0, 0, 0] => false,
             [0, 0, 0, 1] => true,
@@ -24,7 +24,7 @@ impl Binary {
     }
 
     /// An `int` from its four bytes.
-    pub fn int(self, b: [u8; 4]) -> i32 {
+    pub(crate) fn int(self, b: [u8; 4]) -> i32 {
         if self.big_endian {
             i32::from_be_bytes(b)
         } else {
@@ -33,7 +33,7 @@ impl Binary {
     }
 
     /// A `size_t` from its `size_t` bytes.
-    pub fn size(self, b: &[u8]) -> u64 {
+    pub(crate) fn size(self, b: &[u8]) -> u64 {
         debug_assert_eq!(b.len(), self.size_t);
         let mut word = [0u8; 8];
         if self.big_endian {
@@ -46,7 +46,7 @@ impl Binary {
     }
 
     /// A `double` from its eight bytes.
-    pub fn float(self, b: [u8; 8]) -> f64 {
+    pub(crate) fn float(self, b: [u8; 8]) -> f64 {
         if self.big_endian {
             f64::from_be_bytes(b)
         } else {

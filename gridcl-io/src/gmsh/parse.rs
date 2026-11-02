@@ -9,7 +9,7 @@ mod binary;
 
 use std::path::Path;
 
-use binary::Binary;
+pub(super) use binary::Binary;
 
 use gridcl_device::{GridError, Result};
 
@@ -24,6 +24,8 @@ struct Cursor<'a> {
     pos: usize,
     /// The encoding of the values of a binary file, set by `$MeshFormat`; `None` for text.
     binary: Option<Binary>,
+    /// The file offset of `bytes[0]`, for error offsets.
+    base: u64,
 }
 
 /// The smallest number of bytes one ASCII token takes: a digit and a separator.
@@ -35,6 +37,7 @@ impl<'a> Cursor<'a> {
             bytes,
             pos: 0,
             binary: None,
+            base: 0,
         }
     }
 
@@ -42,7 +45,7 @@ impl<'a> Cursor<'a> {
     fn error_at(&self, offset: usize, message: impl Into<String>) -> GridError {
         GridError::Parse {
             format: FORMAT,
-            offset: offset as u64,
+            offset: self.base + offset as u64,
             message: message.into(),
         }
     }
@@ -494,6 +497,44 @@ fn elements(c: &mut Cursor<'_>) -> Result<Vec<ElementBlock>> {
     }
     c.end("Elements")?;
     Ok(blocks)
+}
+
+/// The encoding of the file that starts with `bytes` (through `$EndMeshFormat`): `None` for
+/// ASCII (for `MshIndex::scan`).
+pub(super) fn format_of(bytes: &[u8]) -> Result<Option<Binary>> {
+    let mut c = Cursor::new(bytes);
+    let (at, first) = c.token()?;
+    if first != "$MeshFormat" {
+        return Err(c.error_at(at, "not a Gmsh file: no $MeshFormat"));
+    }
+    mesh_format(&mut c)?;
+    Ok(c.binary)
+}
+
+/// Parses `body`, the data of the binary small section `section` (`PhysicalNames`,
+/// `Entities`, `PartitionedEntities` or `Periodic`) through its `$End` line, which starts at
+/// file offset `base`, into `file` (for `MshIndex::scan`).
+pub(super) fn small_section(
+    section: &str,
+    body: &[u8],
+    base: u64,
+    binary: Binary,
+    file: &mut MshFile,
+) -> Result<()> {
+    let mut c = Cursor {
+        bytes: body,
+        pos: 0,
+        binary: Some(binary),
+        base,
+    };
+    match section {
+        "PhysicalNames" => file.physical_names.extend(physical_names(&mut c)?),
+        "Entities" => file.entities = Some(entities(&mut c)?),
+        "PartitionedEntities" => file.partitioned_entities = Some(partitioned_entities(&mut c)?),
+        "Periodic" => file.periodic.extend(periodic(&mut c)?),
+        _ => unreachable!("{section} is not a small section"),
+    }
+    Ok(())
 }
 
 /// Parses an MSH 4.1 file.
