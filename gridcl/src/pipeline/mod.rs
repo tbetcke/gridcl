@@ -74,6 +74,16 @@ pub(crate) fn log_memory(client: &Client, stage: &str) {
     }
 }
 
+/// Gives the empty pages of the device pools back after `stage` (`Client::memory_cleanup`), so
+/// the scratch of one step does not stay reserved beside the next (the M8 memory bound), and
+/// logs the pools ([`log_memory`]). Best effort: CubeCL refuses only while a stream records a
+/// graph, which mesh creation never does, and a refusal changes no result, so it is not an
+/// error that one rank could see and the others not.
+pub(crate) fn release_pools(client: &Client, stage: &str) {
+    let _ = client.memory_cleanup();
+    log_memory(client, stage);
+}
+
 /// The cell types in the order of their wire code.
 const CELL_TYPES: [CellType; 8] = [
     CellType::Point,
@@ -164,6 +174,42 @@ impl Cells {
             tag_offsets: vec![0],
             tags: Vec::new(),
             elementary: Vec::new(),
+        }
+    }
+
+    /// No cells, with room for `cells` cells of `nodes` node ids and `tags` tag values in all,
+    /// with elementary tags if `elementary`.
+    pub(crate) fn with_capacity(
+        cells: usize,
+        nodes: usize,
+        tags: usize,
+        elementary: bool,
+    ) -> Cells {
+        let mut out = Cells::new();
+        out.block.reserve_exact(cells);
+        out.ids.reserve_exact(cells);
+        out.input.reserve_exact(cells);
+        out.node_offsets.reserve_exact(cells);
+        out.nodes.reserve_exact(nodes);
+        out.tag_offsets.reserve_exact(cells);
+        out.tags.reserve_exact(tags);
+        if elementary {
+            out.elementary.reserve_exact(cells);
+        }
+        out
+    }
+
+    /// Room for `cells` more cells of `nodes` node ids and `tags` tag values in all.
+    pub(crate) fn reserve(&mut self, cells: usize, nodes: usize, tags: usize) {
+        self.block.reserve_exact(cells);
+        self.ids.reserve_exact(cells);
+        self.input.reserve_exact(cells);
+        self.node_offsets.reserve_exact(cells);
+        self.nodes.reserve_exact(nodes);
+        self.tag_offsets.reserve_exact(cells);
+        self.tags.reserve_exact(tags);
+        if !self.elementary.is_empty() {
+            self.elementary.reserve_exact(cells);
         }
     }
 
@@ -265,6 +311,42 @@ impl Cells {
         out
     }
 
+    /// Keeps the cells `i` with `keep[i]`, in order, in place.
+    pub(crate) fn retain(&mut self, keep: &[bool]) {
+        debug_assert_eq!(keep.len(), self.len());
+        let has_elementary = !self.elementary.is_empty();
+        let (mut n, mut node_start, mut tag_start) = (0, 0, 0);
+        for (i, &k) in keep.iter().enumerate() {
+            let (node_end, tag_end) = (self.node_offsets[i + 1], self.tag_offsets[i + 1]);
+            if k {
+                let at = self.node_offsets[n];
+                self.nodes.copy_within(node_start..node_end, at);
+                self.node_offsets[n + 1] = at + node_end - node_start;
+                let at = self.tag_offsets[n];
+                self.tags.copy_within(tag_start..tag_end, at);
+                self.tag_offsets[n + 1] = at + tag_end - tag_start;
+                self.block[n] = self.block[i];
+                self.ids[n] = self.ids[i];
+                self.input[n] = self.input[i];
+                if has_elementary {
+                    self.elementary[n] = self.elementary[i];
+                }
+                n += 1;
+            }
+            (node_start, tag_start) = (node_end, tag_end);
+        }
+        self.block.truncate(n);
+        self.ids.truncate(n);
+        self.input.truncate(n);
+        self.nodes.truncate(self.node_offsets[n]);
+        self.node_offsets.truncate(n + 1);
+        self.tags.truncate(self.tag_offsets[n]);
+        self.tag_offsets.truncate(n + 1);
+        if has_elementary {
+            self.elementary.truncate(n);
+        }
+    }
+
     /// Appends every cell of `other`.
     pub(crate) fn append(&mut self, other: &Cells) {
         for i in 0..other.len() {
@@ -356,5 +438,35 @@ mod tests {
         assert_eq!(back, cells.select(&[1, 0]));
         assert_eq!(back.tags_of(1), [2, 9]);
         assert_eq!(back.elementary, [4, -3]);
+    }
+
+    #[test]
+    fn retain_equals_select() {
+        for elementary in [false, true] {
+            let mut cells = Cells::new();
+            for i in 0..7_i64 {
+                let nodes: Vec<i64> = (0..(i % 3 + 1)).map(|k| 10 * i + k).collect();
+                let tags: Vec<i32> = (0..(i % 2) as i32).collect();
+                cells.push(
+                    i as u32,
+                    -i,
+                    2 * i,
+                    &nodes,
+                    &tags,
+                    elementary.then_some(i as i32),
+                );
+            }
+            for keep in [
+                vec![true; 7],
+                vec![false; 7],
+                vec![false, true, true, false, false, true, false],
+                vec![true, false, false, true, true, false, true],
+            ] {
+                let order: Vec<usize> = (0..7).filter(|&i| keep[i]).collect();
+                let mut kept = cells.clone();
+                kept.retain(&keep);
+                assert_eq!(kept, cells.select(&order), "{keep:?}");
+            }
+        }
     }
 }

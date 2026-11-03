@@ -126,3 +126,12 @@ Never put user ids, host names or project codes in an entry (CLAUDE.md).
 - **gridcl workaround:** the toolchain is pinned in `rust-toolchain.toml`.
 - **Suggestion:** set `rust-version` in each published manifest.
 - **Status:** open.
+
+### C13 Pools keep empty pages until an explicit cleanup
+
+- **Version:** cubecl-server 0.11.0 (CPU runtime, `Adaptive` dynamic memory).
+- **Observation:** the arena's current pool returns a page that has emptied only on `Client::memory_cleanup` (`Cleanup::Explicit`) or after its own deallocation period, which `MemoryManagement::reserve` checks on each reservation (`src/memory_management/dynamic/arena.rs`, `cleanup` and `drain`; `memory_manage.rs`, `reserve`). Its pages follow the largest allocation served so far (`dynamic/adaptive.rs`). A pipeline whose steps allocate buffers of different sizes therefore holds the empty pages of earlier steps beside the pages of the current one. On the CPU runtime the pages are host memory, so they count toward the process's resident memory.
+- **Evidence:** M8 T5b, `read_memory` on Kathleen (10^7-cell box, 8 ranks). During face creation the pools reserved about 340 MB while about 230 MB was in use. Kathleen jobs 628342, 628348 and 628349: without cleanup, a peak of 510–520 MiB per rank; with cleanup after each entity dimension, 495–514 MiB; with cleanup also after the sort and unique steps of entity creation, 470–485 MiB.
+- **gridcl workaround:** best-effort `Client::memory_cleanup` after the sort and unique steps of entity creation (gridcl-topology, `entity.rs`) and after each step of stage 10 of mesh creation (`gridcl/src/pipeline/tags.rs`).
+- **Suggestion:** a pool setting that returns an emptied page of the current pool after a threshold (bytes or allocations), or document that long pipelines should call `memory_cleanup` between phases.
+- **Status:** open.

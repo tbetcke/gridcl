@@ -12,7 +12,7 @@ use gridcl_partition::{Block, DistGraph, Partitioner};
 use gridcl_refcell::RefCellError;
 
 use crate::Mesh;
-use crate::pipeline::dual_graph::{check_destinations, dual_graph, partition};
+use crate::pipeline::dual_graph::{check_destinations, dual_graph, partition, vertices_only};
 use crate::pipeline::ghosts::ghost_cells;
 use crate::pipeline::input::{self, Input, NodeRefs, Read, TagInput, TagKind};
 use crate::pipeline::migrate::migrate;
@@ -521,36 +521,54 @@ where
         }
     }
 
+    /// Frees the input arrays, which stage 1 has copied.
+    fn release_input(&mut self) {
+        self.coords = Vec::new();
+        self.node_ids = None;
+        self.blocks = Vec::new();
+        self.tags = Vec::new();
+        self.element_ids = Vec::new();
+    }
+
     /// [`build_on`](MeshBuilder::build_on), also returning the local vertex index of each node
     /// of this rank's input chunk (`u32::MAX` for nodes that are no local cell's vertex); the
     /// Gmsh reader matches tags through it (ADR-0022, item 5).
-    pub(crate) fn build_with_comm<C: Comm>(self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
-        let client = &self.client;
+    pub(crate) fn build_with_comm<C: Comm>(mut self, comm: C) -> Result<BuiltMesh<F, TD, GD, C>> {
+        let client = self.client.clone();
+        let client = &client;
         agree(&comm, check_precision::<F>(client))?;
-        // Stages 1–8.
+        // Stages 1–8. Every intermediate is dropped once its last stage has run (the M8
+        // memory bound, docs/plans/M8.md T5b).
         let Read {
             blocks,
             nodes: chunk,
             cells,
             lower_tags,
         } = input::read(&comm, &self.input())?;
+        self.release_input();
         log_memory(client, "stage 1 (input)");
         // Fixed destinations replace stages 2–3; a rank without them has none.
         let fixed = (&comm as &dyn CommDyn).max(u32::from(self.destinations.is_some())) == 1;
         let owned = if fixed {
-            let dest = self.destinations.as_deref().unwrap_or_default();
-            agree(&comm, check_destinations(dest, cells.len(), comm.size()))?;
+            let dest = self.destinations.take().unwrap_or_default();
+            agree(&comm, check_destinations(&dest, cells.len(), comm.size()))?;
             if comm.size() == 1 {
                 cells
             } else {
-                migrate(&comm, &cells, dest)?
+                migrate(&comm, cells, &dest)?
             }
         } else if comm.size() == 1 {
             cells
         } else {
-            let graph = dual_graph(&comm, &blocks, &cells)?;
+            // `Block` reads only the vertex distribution, so its graph has no edges.
+            let graph = if self.partitioner.name() == Block.name() {
+                vertices_only(&comm, cells.len())
+            } else {
+                dual_graph(&comm, &blocks, &cells)?
+            };
             let dest = partition(&comm, self.partitioner.as_ref(), &graph)?;
-            migrate(&comm, &cells, &dest)?
+            drop(graph);
+            migrate(&comm, cells, &dest)?
         };
         log_memory(client, "stages 2-4 (partition, migrate)");
         let local = ghost_cells(&comm, &blocks, owned, self.ghosts)?;
@@ -558,7 +576,7 @@ where
         let nodes = fetch_nodes(&comm, &blocks, GD::N, &chunk, &local)?;
         log_memory(client, "stage 6 (nodes)");
         let local = order_cells(&blocks, local, &nodes, self.ordering);
-        let mut numbered = number(&comm, &blocks, &local, &nodes)?;
+        let mut numbered = number(&comm, &blocks, local, &nodes)?;
         log_memory(client, "stages 7-8 (order, number)");
 
         let vertex_local: HashMap<i64, u32> = numbered
@@ -572,11 +590,13 @@ where
             .iter()
             .map(|id| vertex_local.get(id).copied().unwrap_or(u32::MAX))
             .collect();
+        drop(chunk);
         let cells = agree(&comm, cell_tags(&numbered.blocks))?;
         let cell_elementary = agree(&comm, cell_elementary(&numbered.blocks))?;
         let directory = std::mem::take(&mut numbered.directory);
         // Stage 9, then the tags.
         let (mut topology, geometry) = upload(client, &comm, &blocks, &nodes, numbered)?;
+        drop(nodes);
         log_memory(client, "stage 9 (upload)");
         let tags = TagInputs {
             cells,

@@ -10,10 +10,10 @@ use gridcl_dims::TopoDim;
 use gridcl_parallel::{CommDyn, CommExt};
 use gridcl_topology::Topology;
 
-use super::agree;
 use super::input::{LowerTags, TagKind};
 use super::number::NumberedBlock;
 use super::rendezvous::{Outbox, rendezvous_rank};
+use super::{agree, release_pools};
 use crate::{MeshTags, TagRegistry};
 
 /// (flat local entity index, value) entries of one dimension.
@@ -259,6 +259,7 @@ fn match_lower<TD: TopoDim>(
 
     for dim in (0..TD::N).filter(|d| tagged & 1 << d != 0) {
         topology.create_entities(comm, dim)?;
+        release_pools(client, &format!("stage 10 (entities of dimension {dim})"));
     }
 
     // Match by (dimension, corner count): entries whose corners are all local vertices.
@@ -287,6 +288,7 @@ fn match_lower<TD: TopoDim>(
             let keys = SortKeys::from_host(client, &keys[&(dim, nv)], nv)?;
             // An I/O copy (ADR-0026, item 14): tag matching at mesh creation.
             let found = topology.match_entities(dim, &keys)?.to_host()?;
+            release_pools(client, &format!("stage 10 (matches of dimension {dim})"));
             for (&(source, kind, value, position), &f) in group.iter().zip(&found) {
                 if f != u32::MAX {
                     matched.push((source, dim, kind, f, value, position));

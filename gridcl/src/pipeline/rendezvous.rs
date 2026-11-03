@@ -39,7 +39,13 @@ impl Outbox {
     /// Errors of `CommExt::all_to_all_v`.
     pub(crate) fn exchange(self, comm: &dyn CommDyn) -> Result<Inbox> {
         let counts: Vec<usize> = self.bufs.iter().map(Vec::len).collect();
-        let (data, counts) = comm.all_to_all_v(&self.bufs.concat(), &counts)?;
+        // Each list is freed once copied, so the lists and the send buffer never coexist in
+        // full (the M8 memory bound).
+        let mut send = Vec::with_capacity(counts.iter().sum());
+        for buf in self.bufs {
+            send.extend_from_slice(&buf);
+        }
+        let (data, counts) = comm.all_to_all_v(&send, &counts)?;
         Ok(Inbox { data, counts })
     }
 }

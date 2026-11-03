@@ -114,7 +114,7 @@ pub(crate) fn local_cells_by(
     let read = read(comm, input).unwrap();
     let g = dual_graph(comm, &read.blocks, &read.cells).unwrap();
     let dest = partition(comm, partitioner, &g).unwrap();
-    let owned = migrate(comm, &read.cells, &dest).unwrap();
+    let owned = migrate(comm, read.cells.clone(), &dest).unwrap();
     let local = ghost_cells(comm, &read.blocks, owned, mode).unwrap();
     (read, local)
 }

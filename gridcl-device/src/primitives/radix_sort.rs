@@ -409,6 +409,38 @@ pub fn radix_sort(
     keys: &SortKeys,
     payload: &DeviceBuffer<u32>,
 ) -> Result<(SortKeys, DeviceBuffer<u32>)> {
+    sort(Source::Borrowed(keys, payload))
+}
+
+/// [`radix_sort`] that consumes its input and sorts through it, so the device holds two sets of
+/// keys and payloads instead of three; the result is the same. For gridcl's entity creation (the
+/// M8 memory bound, docs/plans/M8.md T5b); not part of the stable API.
+///
+/// # Errors
+///
+/// As for [`radix_sort`].
+#[doc(hidden)]
+pub fn radix_sort_owned(
+    keys: SortKeys,
+    payload: DeviceBuffer<u32>,
+) -> Result<(SortKeys, DeviceBuffer<u32>)> {
+    sort(Source::Owned(keys, payload))
+}
+
+/// The input of [`sort`].
+#[allow(clippy::large_enum_variant)] // passed once by value, never stored
+enum Source<'a> {
+    Borrowed(&'a SortKeys, &'a DeviceBuffer<u32>),
+    Owned(SortKeys, DeviceBuffer<u32>),
+}
+
+/// [`radix_sort`] of `source`. The passes alternate between two sets of keys and payloads: two
+/// new ones for a borrowed input (pass 0 reads the input), or a new one and the input itself.
+fn sort(source: Source<'_>) -> Result<(SortKeys, DeviceBuffer<u32>)> {
+    let (keys, payload) = match &source {
+        Source::Borrowed(k, p) => (*k, *p),
+        Source::Owned(k, p) => (k, p),
+    };
     let len = keys.len();
     if payload.len() != len {
         return Err(GridError::LengthMismatch {
@@ -419,11 +451,15 @@ pub fn radix_sort(
     let client = keys.words().client();
     let num_words = keys.num_words();
     if len == 0 {
-        return Ok((
-            SortKeys::uninit(client, 0, num_words)?,
-            DeviceBuffer::uninit(client, 0)?,
-        ));
+        return match source {
+            Source::Owned(k, p) => Ok((k, p)),
+            Source::Borrowed(..) => Ok((
+                SortKeys::uninit(client, 0, num_words)?,
+                DeviceBuffer::uninit(client, 0)?,
+            )),
+        };
     }
+    let client = &client.clone();
     let to_u32 = |v: usize| u32::try_from(v).map_err(|_| GridError::TooLarge);
     let len_u32 = to_u32(len)?;
     let pad = pad_len(len)?;
@@ -447,20 +483,25 @@ pub fn radix_sort(
     let shared = testing::properties(client).hardware.max_shared_memory_size;
     let scheme = scheme(&plan, shared)?;
 
-    let mut out = Vec::with_capacity(2);
-    for _ in 0..2 {
-        out.push((
+    let fresh = || -> Result<(SortKeys, DeviceBuffer<u32>)> {
+        Ok((
             SortKeys::uninit(client, len, num_words)?,
             DeviceBuffer::<u32>::uninit(client, len)?,
-        ));
-    }
+        ))
+    };
+    // Pass p writes out[p mod 2] and reads out[(p + 1) mod 2], or the borrowed input in pass 0.
+    let (input, out) = match source {
+        Source::Borrowed(k, p) => (Some((k, p)), [fresh()?, fresh()?]),
+        Source::Owned(k, p) => (None, [fresh()?, (k, p)]),
+    };
     let passes = 4 * num_words;
     for pass in 0..passes {
-        let (src_keys, src_payload) = if pass == 0 {
-            (keys, payload)
-        } else {
-            let (k, p) = &out[(pass - 1) % 2];
-            (k, p)
+        let (src_keys, src_payload) = match input {
+            Some(input) if pass == 0 => input,
+            _ => {
+                let (k, p) = &out[(pass + 1) % 2];
+                (k, p)
+            }
         };
         let (dst_keys, dst_payload) = &out[pass % 2];
         let word = num_words - 1 - pass / 4;
@@ -567,7 +608,8 @@ pub fn radix_sort(
             }
         }
     }
-    Ok(out.swap_remove((passes - 1) % 2))
+    let [even, odd] = out;
+    Ok(if (passes - 1) % 2 == 0 { even } else { odd })
 }
 
 /// The ranking scheme of `plan` on a device with `shared` bytes of shared memory per cube.

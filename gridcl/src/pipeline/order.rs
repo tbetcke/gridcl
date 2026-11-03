@@ -39,6 +39,10 @@ pub(crate) fn order_cells(
         CellOrdering::ReverseCuthillMcKee => rcm_order(blocks, cells, n),
     };
     order.extend(n..cells.len());
+    // No copy when the cells are in order already (the M8 memory bound).
+    if order.iter().enumerate().all(|(i, &j)| i == j) {
+        return local;
+    }
     LocalCells {
         cells: cells.select(&order),
         num_owned: n,

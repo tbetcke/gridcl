@@ -5,7 +5,7 @@
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, GridError, KernelKind, LaunchPlan, Result, SortKeys, debug_assert_bindings, fill,
-    pad_len, radix_sort, unique_by_key,
+    pad_len, radix_sort_owned, unique_by_key,
 };
 use gridcl_dims::{CellType, TopoDim};
 
@@ -210,7 +210,8 @@ impl<TD: TopoDim> Topology<TD> {
                 words,
             );
         }
-        let (sorted, sorted_payload) = radix_sort(&combined, &payload)?;
+        // Through the combined keys: two sets on the device, not three (the M8 memory bound).
+        let (sorted, sorted_payload) = radix_sort_owned(combined, payload)?;
         let unique = unique_by_key(&sorted, &sorted_payload)?; // the count read
         let launch = LaunchPlan::elementwise(client, KernelKind::Scalar, total, 4, 1, 1)?;
         debug_assert_bindings(client, 4);

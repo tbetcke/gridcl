@@ -311,7 +311,18 @@ fn chunk(
 ) -> Result<(NodeChunk, Cells)> {
     let num_nodes = input.coords.len() / input.gdim;
     let node_ids = ids_or_index(input.node_ids, num_nodes, node_first)?;
-    let mut cells = Cells::new();
+    // Exact capacities: the cells are the largest host arrays of the pipeline (the M8 memory
+    // bound).
+    let mut cells = Cells::with_capacity(
+        input
+            .blocks
+            .iter()
+            .map(|b| b.nodes.len() / b.spec.num_nodes())
+            .sum(),
+        input.blocks.iter().map(|b| b.nodes.len()).sum(),
+        input.blocks.iter().map(|b| b.physical.len()).sum(),
+        input.blocks.iter().any(|b| b.elementary.is_some()),
+    );
     let mut row = Vec::new();
     let mut values = Vec::new();
     for (b, &block) in input.blocks.iter().zip(block_of) {
@@ -357,7 +368,7 @@ fn check_cell_ids(comm: &dyn CommDyn, cells: &Cells, element_ids: &[i64]) -> Res
         out.push(rendezvous_rank(&[id], p), &[&[id]]);
     }
     let inbox = out.exchange(comm)?;
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::with_capacity(inbox.records().count());
     let repeat = inbox
         .records()
         .map(|(_, r)| r[0])

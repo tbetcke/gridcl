@@ -5,7 +5,7 @@
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, GridError, KernelKind, LaunchPlan, ReduceOp, Result, SortKeys,
-    debug_assert_bindings, fill, gather, radix_sort, run_length, scatter, segmented_reduce,
+    debug_assert_bindings, fill, gather, radix_sort, scatter, segmented_reduce,
 };
 
 use crate::emission::EmissionPlan;
@@ -121,14 +121,14 @@ fn fit(x: usize) -> Result<u32> {
 }
 
 /// The smallest touching-cell value of each of the `runs` provisional entities of one type,
-/// from the sorted keys and payloads of `plan`: a segmented minimum over the sorted runs of the
+/// from the run offsets of the sorted keys (`unique_by_key_runs`) and the payloads of `plan`: a segmented minimum over the sorted runs of the
 /// flat cell index of each occurrence, with the bit `GHOST_CELL` set for a ghost cell, so an
 /// entity lies in an owned cell exactly if its value is below `GHOST_CELL`. The sentinel group
 /// touches no cell and gets u32::MAX. `cell_offsets[b]` is the first flat cell index of cell
 /// block b and `owned[b]` its owned cell count; the flat cell count must be below `GHOST_CELL`.
 pub(crate) fn touching_cells(
     client: &Client,
-    sorted: &SortKeys,
+    offsets: &DeviceBuffer<u32>,
     payload: &DeviceBuffer<u32>,
     plan: &EmissionPlan,
     cell_offsets: &[usize],
@@ -160,8 +160,7 @@ pub(crate) fn touching_cells(
             );
         }
     }
-    let offsets = run_length(sorted)?.offsets; // the count read of run-length
-    segmented_reduce(&values, &offsets, ReduceOp::Min)
+    segmented_reduce(&values, offsets, ReduceOp::Min)
 }
 
 /// Step 7, first pass: the renumbering `old2new` of the `runs` provisional entities of one

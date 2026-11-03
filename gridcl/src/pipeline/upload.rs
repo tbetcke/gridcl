@@ -52,13 +52,19 @@ where
         .collect::<Result<Vec<_>>>()?;
     let vertex_map = index_map(comm, &numbered.vertex_map)?;
     let node_map = index_map(comm, &numbered.node_map)?;
+    let Numbered {
+        blocks: numbered_blocks,
+        vertex_ids,
+        sharers,
+        coords,
+        ..
+    } = numbered;
 
     let local = (|| {
         let gd = GD::N;
         let mut origin = GD::Array::<f64>::default();
         origin.as_mut().copy_from_slice(&nodes.origin());
-        let relative: Vec<F> = numbered
-            .coords
+        let relative: Vec<F> = coords
             .chunks_exact(gd)
             .flat_map(|x| {
                 x.iter()
@@ -69,7 +75,8 @@ where
 
         let mut cell_blocks = Vec::with_capacity(blocks.len());
         let mut geometry_blocks = Vec::with_capacity(blocks.len());
-        for ((spec, block), map) in blocks.iter().zip(&numbered.blocks).zip(cell_maps) {
+        // Each block's host arrays are freed once uploaded (the M8 memory bound).
+        for ((spec, block), map) in blocks.iter().zip(numbered_blocks).zip(cell_maps) {
             let cell = TD::Cell::try_from(spec.cell).map_err(|e| GridError::WrongCellDim {
                 found: cell_name(e.found),
                 expected_tdim: e.expected_tdim,
@@ -97,8 +104,9 @@ where
                 },
             });
         }
-        let mut topology = Topology::new(client, cell_blocks, vertex_map, &numbered.vertex_ids)?;
-        topology.set_vertex_sharers(numbered.sharers);
+        drop(coords);
+        let mut topology = Topology::new(client, cell_blocks, vertex_map, &vertex_ids)?;
+        topology.set_vertex_sharers(sharers);
         let geometry = Geometry::new(
             geometry_blocks,
             DeviceBuffer::from_host(client, &relative)?,

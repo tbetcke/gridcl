@@ -24,12 +24,12 @@ pub(crate) use fill::launch_fill;
 pub use gather::{gather, scatter};
 pub use histogram::histogram;
 pub use pack::{pack, unpack};
-pub use radix_sort::radix_sort;
+pub use radix_sort::{radix_sort, radix_sort_owned};
 pub use reduce::reduce;
 pub use scan::{exclusive_scan, inclusive_scan};
 pub use segmented::segmented_reduce;
 pub use sort_keys::SortKeys;
-pub use unique::{Runs, Unique, run_length, unique_by_key};
+pub use unique::{Runs, Unique, run_length, unique_by_key, unique_by_key_runs};
 
 mod sealed {
     /// Seals `DeviceScalar`. Its supertraits are the launch bounds the kernels need, which

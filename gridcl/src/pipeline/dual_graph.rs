@@ -81,6 +81,21 @@ pub(crate) fn dual_graph(
     })
 }
 
+/// Stage 2 for `Block`, which reads only the vertex distribution: the graph of `n` local cells
+/// without edges or weights. Collective.
+pub(crate) fn vertices_only(comm: &dyn CommDyn, n: usize) -> DistGraph {
+    let mut vtxdist = vec![0_i64];
+    for m in comm.all_gather(n as i64) {
+        vtxdist.push(vtxdist.last().expect("non-empty") + m);
+    }
+    DistGraph {
+        vtxdist,
+        xadj: vec![0; n + 1],
+        adjncy: Vec::new(),
+        vwgt: None,
+    }
+}
+
 /// Stage 3: the destination rank of every local cell, from `partitioner` with one part per
 /// rank. Collective.
 ///

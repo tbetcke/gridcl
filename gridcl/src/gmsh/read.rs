@@ -556,6 +556,7 @@ pub fn read<F: Real, C: Comm>(
 ) -> Result<AnyMesh<F, C>> {
     agree(&comm, check_precision::<F>(client))?;
     let path = path.as_ref();
+    log_memory(client, "read (start)");
     let (chunk, names, gdim) = local(&comm, path, options.gdim)?;
     log_memory(client, "read (chunk)");
     let tdim = chunk.tdim;

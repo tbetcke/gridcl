@@ -4,7 +4,7 @@
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, DeviceCsr, DeviceStrided, GridError, KernelKind, LaunchPlan, Result, Unique,
-    debug_assert_bindings, gather, radix_sort, scatter, unique_by_key,
+    debug_assert_bindings, gather, radix_sort_owned, scatter, unique_by_key_runs,
 };
 use gridcl_dims::CellType;
 use gridcl_parallel::{CommDyn, CommExt, IndexMap};
@@ -358,6 +358,14 @@ struct Provisional {
     mins: DeviceBuffer<u32>,
 }
 
+/// Gives the empty pages of the device pools back (`Client::memory_cleanup`), so the scratch of
+/// one step does not stay reserved beside the next (the M8 memory bound). Best effort: CubeCL
+/// refuses only while a stream records a graph, which entity creation never does, and a
+/// refusal changes no result, so it is not an error that one rank could see and the others not.
+fn release_pools(client: &Client) {
+    let _ = client.memory_cleanup();
+}
+
 /// Steps 2–5 for one entity type of `plan`, and its sharing candidates; `None` without
 /// emission. The keys hold vertex indices clamped to last_vertex < u32::MAX, so no real key
 /// equals the all-ones sentinel, and the sentinel group, if any, is the last run.
@@ -369,19 +377,27 @@ fn provisional(
     if plan.total == 0 {
         return Ok((None, Candidates::none(words)));
     }
-    let (keys, payload) = emit_keys(cx.client, cx.cells, cx.dim, plan, cx.last_vertex)?;
-    let (sorted, payload) = radix_sort(&keys, &payload)?;
-    let unique = unique_by_key(&sorted, &payload)?; // the count read
-    let runs = unique.keys.len();
-    let count = runs - usize::from(plan.has_sentinels());
+    let (keys, emitted) = emit_keys(cx.client, cx.cells, cx.dim, plan, cx.last_vertex)?;
+    // Sorting through the emission keeps two sets of keys on the device, not three (the M8
+    // memory bound).
+    let (sorted, payload) = radix_sort_owned(keys, emitted)?;
+    release_pools(cx.client);
+    // The groups and the run offsets from one numbering of the runs, and the sorted keys
+    // freed before the touching cells (the M8 memory bound).
+    let (unique, offsets) = unique_by_key_runs(&sorted, &payload)?; // the count read
+    drop(sorted);
+    release_pools(cx.client);
     let mins = crate::renumber::touching_cells(
         cx.client,
-        &sorted,
+        &offsets,
         &payload,
         plan,
         cx.cell_offsets,
         cx.owned,
     )?;
+    drop(offsets);
+    let runs = unique.keys.len();
+    let count = runs - usize::from(plan.has_sentinels());
     let candidates = match cx.sharing {
         Some(s) => crate::ownership::candidates(
             &unique.keys,
