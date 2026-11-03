@@ -7,7 +7,7 @@
 # MYRIAD_V100_HOST, ...). myriad-cpu and kathleen are the targets without GPUs: their jobs run
 # with GRIDCL_TEST_DEVICE=cpu, on Myriad's CPU-only D nodes (ADR-0014) or on whole Kathleen
 # nodes, at most two per job (Slurm; ADR-0016).
-# Scheduler kinds: sge (Myriad), slurm (Kathleen) and direct (Locust, no scheduler).
+# Scheduler kinds: sge (Myriad), slurm (Kathleen) and direct (Locust and a4000, no scheduler).
 #
 # Exit statuses of the runner: 2 usage error, 124 --max-wait exceeded (job deleted),
 # 125 runner failure (settings, ssh, sync, fetch, submission, job without exit status);
@@ -18,7 +18,7 @@
 # but bash; the functions must therefore run on both bash 3.2 and bash 4/5 and must not use
 # here-documents.
 
-HPC_TARGETS="myriad-v100 myriad-a100 myriad-cpu locust kathleen"
+HPC_TARGETS="myriad-v100 myriad-a100 myriad-cpu locust a4000 kathleen"
 HPC_SSH_OPTS="-o BatchMode=yes"
 
 hpc_msg() { # hpc_msg <text>: progress and errors, on stderr

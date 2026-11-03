@@ -116,6 +116,14 @@ write_targets_env() {
         echo "LOCUST_CUDA_PATH='$REMOTE/cuda-12'"
         echo "LOCUST_CORES_REQUEST="
         echo "LOCUST_MEM_REQUEST="
+        echo "A4000_HOST=fake-a4000"
+        echo "A4000_SCHEDULER=direct"
+        echo "A4000_BASE='$REMOTE/a4000'"
+        echo "A4000_LOGIN_MODULES=:"
+        echo "A4000_MODULES=:"
+        echo "A4000_CUDA_PATH='$REMOTE/cuda-12'"
+        echo "A4000_CORES_REQUEST="
+        echo "A4000_MEM_REQUEST="
         echo "KATHLEEN_HOST=fake-kathleen"
         echo "KATHLEEN_SCHEDULER=slurm"
         echo "KATHLEEN_BASE='$REMOTE/kathleen'"
@@ -256,7 +264,7 @@ case_usage() {
     rt
     expect_status 2 "no arguments"
     cat "$T/stdout" "$T/stderr" >"$T/both"
-    expect_grep "$T/both" 'targets: myriad-v100 \| myriad-a100 \| myriad-cpu \| locust \| kathleen' "usage lists the targets"
+    expect_grep "$T/both" 'targets: myriad-v100 \| myriad-a100 \| myriad-cpu \| locust \| a4000 \| kathleen' "usage lists the targets"
     rt nowhere -- true
     expect_status 2 "unknown target"
     rt myriad-v100 true
@@ -271,6 +279,10 @@ case_usage() {
     expect_status 2 "unknown option"
     rt locust --gpus 2 -- true
     expect_status 2 "--gpus 2 on locust (one GPU)"
+    rt a4000 --gpus 2 -- true
+    expect_status 2 "--gpus 2 on a4000 (one GPU)"
+    rt a4000 --ranks 2 -- true
+    expect_status 2 "--ranks on a4000 (no MPI)"
     expect_absent "$FAKE_STATE/ssh.log" "nothing contacted on usage errors"
 }
 

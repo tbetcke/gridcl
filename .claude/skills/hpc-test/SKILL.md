@@ -1,6 +1,6 @@
 ---
 name: hpc-test
-description: Run gridcl tests on the UCL remote targets through scripts/hpc/remote-test.sh — Locust for every CUDA run (kernel tasks, milestone reviews, benchmarks); Myriad V100/A100 only for multi-GPU tests, architecture comparisons and as the fallback; Myriad CPU-only D nodes for AVX-512 CPU benchmarks. Use for every CUDA test run and for 8-rank MPI runs.
+description: Run gridcl tests on the UCL remote targets through scripts/hpc/remote-test.sh — Locust for every CUDA run (kernel tasks, milestone reviews, benchmarks); the A4000 workstation as the first CUDA fallback; Myriad V100/A100 only for multi-GPU tests, architecture comparisons and as the fallback after it; Myriad CPU-only D nodes for AVX-512 CPU benchmarks. Use for every CUDA test run and for 8-rank MPI runs.
 argument-hint: "[target] [-- command]"
 ---
 
@@ -16,10 +16,17 @@ tests cannot run until E0 is merged, and stop.
 - **`locust`** unless one of the cases below applies. It is the CUDA platform for every run:
   after kernel changes, at every milestone review, and for benchmarks. No queue, and a build
   takes about a minute (ADR-0014).
+- **`a4000`** (one RTX A4000, sm_86, x86-64; no scheduler, shared CPU; ADR-0037), the first
+  fallback:
+    - when Locust is unreachable, or a run fails because another user occupies its GPU (the
+      `node load:` line names another user's GPU process);
+    - a Locust failure or result that looks architecture-dependent, to compare (sm_86).
+
+  Never for CPU benchmarks or MPI (one GPU, no MPI; `--gpus 2` and `--ranks` are rejected).
+  State the reason in one line when you choose it. All software for gridcl on the workstation
+  lives under `~/local_disk`, never in its network home.
 - **`myriad-v100`** or **`myriad-a100`** only:
-    - as the fallback when Locust is unreachable, a run fails because another user occupies its
-      GPU (the `node load:` line names another user's GPU process), or a benchmark cannot get
-      an idle node;
+    - as the fallback when `a4000` is unavailable too, or a benchmark cannot get an idle node;
     - multi-GPU and GPU-aware MPI tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has
       one GPU);
     - a Locust failure or result that looks architecture-dependent, to compare (sm_70, sm_80);
@@ -66,9 +73,10 @@ If the user named a target, use it.
 - Benchmarks on a fallback target (`myriad-cpu`, `myriad-v100`, `myriad-a100`): pass
   `--fallback-reason "<why>"` to `vector_sweep` and `mesh_throughput`; `perf_record` rejects
   Myriad records without one (ADR-0014, ADR-0016).
-- Benchmarks or timings on Locust: Locust has no scheduler and is shared with other users. Use
-  the result only if the summary's `node load:` line is `idle` before and after the run;
-  otherwise discard it and repeat the run later (ADR-0002).
+- Benchmarks or timings on Locust or `a4000`: neither has a scheduler, and both are shared with
+  other users. Use the result only if the summary's `node load:` line is `idle` before and after
+  the run; otherwise discard it and repeat the run later (ADR-0002, ADR-0037). Benchmark records
+  come from Locust (Myriad as its fallback), never from `a4000`.
 
 ## 4. Run
 
@@ -80,7 +88,8 @@ scripts/hpc/remote-test.sh <target> [options] -- <command>
   with work that does not depend on it; check the result before starting a task that does.
 - At most two scheduler jobs (Myriad, Kathleen) at a time; check with `scripts/hpc/status.sh`.
   A Kathleen job takes at most two nodes.
-  Locust jobs are independent of them: one Locust run may go in parallel with the scheduler jobs.
+  Locust and `a4000` runs are independent of them: one run on each may go in parallel with the
+  scheduler jobs.
 - Submit Myriad jobs one after the other, never at the same moment: they sync into one remote
   tree and race (rsync exit code 23). Locust syncs to its own host and is not affected.
 - Cancel jobs you no longer need with `scripts/hpc/cancel.sh <job id>`, and leave none queued
@@ -89,7 +98,7 @@ scripts/hpc/remote-test.sh <target> [options] -- <command>
 ## 5. Report
 
 Report the target, job id, commit (and whether the tree was dirty), the command, the result, and
-the first failure from the runner's summary. On Locust also report the `node load:` line. The full logs are in `target/hpc/<target>/<job id>/`;
+the first failure from the runner's summary. On Locust and `a4000` also report the `node load:` line. The full logs are in `target/hpc/<target>/<job id>/`;
 read them only as far as needed to locate a failure.
 
 ## 6. When it goes wrong
@@ -100,4 +109,4 @@ read them only as far as needed to locate a failure.
 | `CUDA_ERROR_UNSUPPORTED_PTX_VERSION` | Only with `cuda-cpp` (NVRTC; the default `cuda` path picks the PTX version for the driver, ADR-0001): the CUDA toolkit is newer than the node's driver. Use the toolkit recorded in docs/dev-environment.md. |
 | A V100 build or load failure after loading a CUDA 13 toolkit | CUDA 13 dropped sm_70. Use CUDA 12.x. |
 | Exit status 124 | The run exceeded `--max-wait` and was deleted. Report it; resubmit only if the queue was the cause. |
-| Locust unavailable, or its GPU occupied by another user | Run on `myriad-v100` instead and say why; Locust runs never block a milestone. |
+| Locust unavailable, or its GPU occupied by another user | Run on `a4000` instead and say why (`myriad-v100` if `a4000` is unavailable or busy too); Locust runs never block a milestone. |

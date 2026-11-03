@@ -34,7 +34,7 @@ The requirements are unchanged from the draft, apart from the development target
 - **Device residency:** all large mesh arrays live on the compute device. The host keeps only metadata and communication bookkeeping.
 - **Backends:** CUDA, HIP, Vulkan and Metal (through wgpu), and the CubeCL CPU runtime. f64 is used where the device supports it; f32 must work everywhere.
 - **CPU performance:** on the CubeCL CPU runtime, kernels use the host's SIMD units through CubeCL vectors where benchmarks show a gain. The same kernel source serves CPUs and GPUs.
-- **Development and test targets:** a local Apple-silicon Mac (Claude Code runs here; CubeCL CPU runtime and Metal; ADR-0034), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Kathleen (Slurm, Xeon Gold 6248 Cascade Lake with AVX-512) for CPU-only runs and CPU benchmarks (CpuSimd512) and for MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback, and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback when Locust is unavailable (ADR-0014, ADR-0016). See "Development environment and test targets".
+- **Development and test targets:** a local Apple-silicon Mac (Claude Code runs here; CubeCL CPU runtime and Metal; ADR-0034), UCL Locust (NVIDIA Grace Hopper GH200) as the CUDA platform for routine runs, milestone reviews and benchmarks, UCL Kathleen (Slurm, Xeon Gold 6248 Cascade Lake with AVX-512) for CPU-only runs and CPU benchmarks (CpuSimd512) and for MPI tests across two nodes, with Myriad's CPU-only D nodes as the fallback, an RTX A4000 workstation (sm_86) as the first CUDA fallback when Locust is unavailable and for architecture comparisons (ADR-0037), and Myriad's V100 and A100 nodes for multi-GPU tests and architecture comparisons, and as the fallback after the workstation (ADR-0014, ADR-0016). See "Development environment and test targets".
 - **Distribution:** MPI-distributed meshes with ownership, ghost layers and parallel partitioning. PT-Scotch is the production default; other partitioners are pluggable.
 - **High order:** geometry of arbitrary polynomial degree, with sub-entity orientation information for later high-order FEM and BEM.
 - **I/O:** Gmsh MSH 4.1 import and export, and VTK export (VTU/PVTU, VTKHDF) including VTK Lagrange cells.
@@ -1618,9 +1618,10 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 | --- | --- | --- |
 | Local Mac (macOS, arm64) | CubeCL CPU runtime in f32 and f64; Metal via wgpu in f32; MPI | every change |
 | Hosted CI, Linux x86-64 | CPU runtime in f32 and f64; Vulkan (software driver) in f32, plus f64 if supported; MPI under MPICH and Open MPI | every push |
-| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU and GPU-aware tests; architecture comparisons; fallback when Locust is unavailable (ADR-0014) |
+| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU and GPU-aware tests; architecture comparisons; fallback after the A4000 workstation (ADR-0014, ADR-0037) |
 | Myriad A100 (sm_80) | CUDA in f32 and f64 | when required (see "Development environment and test targets") |
 | Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review; benchmarks (ADR-0014) |
+| A4000 workstation (sm_86, x86-64, CUDA 12.x) | CUDA in f32 and f64 | first fallback when Locust is unavailable; architecture comparisons (ADR-0037) |
 | Kathleen (Slurm, x86-64, AVX-512, Omni-Path) | CPU runtime in f32 and f64; MPI on one and two nodes | CPU benchmarks; MPI runs beyond 4 ranks; two-node MPI at every review from M6 (ADR-0016) |
 | Myriad node with a CUDA-aware MPI | GPU-aware halo exchange | from M10 |
 
@@ -1665,11 +1666,12 @@ Claude Code runs on the local Apple-silicon Mac and tests there on every change;
 | Myriad CPU | D nodes: 36 cores (Xeon Gold 6240, AVX-512), 192 GB, no GPU | SGE batch jobs with `-ac allow=D` | fallback for CPU-only runs (ADR-0014, ADR-0016) |
 | Kathleen | 190 diskless nodes: 2 × 20 cores (Xeon Gold 6248, Cascade Lake, AVX-512), 192 GB, Omni-Path; RHEL 9 | Slurm batch jobs, whole nodes, at most two nodes per job; QoS `singlenode` (1 node) or `test` (2 nodes) | CPU-only runs and CPU benchmarks (CpuSimd512); MPI runs beyond 4 ranks; two-node MPI at every review from M6 (ADR-0016) |
 | Locust | NVIDIA GH200 Grace Hopper: Grace aarch64 CPU and Hopper GPU (sm_90) | UCL ARC experimental system; SSH to the node, no scheduler (recorded in E0) | CUDA platform for routine runs, milestone reviews and benchmarks; aarch64 host and Hopper GPU |
+| A4000 workstation | one RTX A4000 16 GB (sm_86), x86-64, shared CPU | SSH to the node, no scheduler | first CUDA fallback and fourth architecture; no benchmarks, no MPI; software under `~/local_disk` (ADR-0037) |
 | Hosted CI | Linux x86-64 runners | automatic | CPU runtime, Vulkan, both MPI flavours, conformance |
 
-**When the V100 and A100 run.** Locust is the CUDA platform for every run: Claude runs the CUDA tests there after every task that changes kernels and at every milestone review, and runs the benchmarks there (ADR-0014). Claude schedules Myriad V100 or A100 runs only:
+**When the fallbacks run.** Locust is the CUDA platform for every run: Claude runs the CUDA tests there after every task that changes kernels and at every milestone review, and runs the benchmarks there (ADR-0014). The A4000 workstation (`a4000`) is the first fallback: Claude runs there when Locust is unreachable or a run fails because another user occupies its GPU, and to compare when a Locust failure or result looks architecture-dependent (sm_86); the run report says why. It never runs CPU benchmarks (its CPU is shared), GPU timings only under the idle rule that applies to Locust, and no MPI tests (one GPU, no MPI). All software for gridcl on the workstation lives under `~/local_disk`, never in its network home (ADR-0037). Claude schedules Myriad V100 or A100 runs only:
 
-- as the fallback, when Locust is unreachable, a run fails because another user occupies its GPU, or a benchmark cannot get an idle node; the run report says why;
+- as the fallback, when the workstation is unavailable too or a benchmark cannot get an idle node; the run report says why;
 - for multi-GPU and GPU-aware MPI tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU);
 - to compare, when a Locust failure or result looks architecture-dependent (sm_70, sm_80);
 - when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device or the GPU-aware transport;
@@ -1677,13 +1679,13 @@ Claude Code runs on the local Apple-silicon Mac and tests there on every change;
 
 CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), which Locust cannot provide, use one whole Kathleen node; benchmarks bind to one socket (ADR-0020). A Myriad D node (`-ac allow=D`, never a GPU node) runs them only as the fallback: when Kathleen is unreachable, a job is still queued after `--max-wait`, or the user asks; the run report says why (ADR-0016). MPI runs beyond the local Mac's 4 ranks use Kathleen, at most two nodes per job; from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes.
 
-Locust is an experimental system, so its runs are kept short, build with at most half of the node's cores, and never block a milestone when it is unavailable. It is an open multi-user node without a scheduler, so other users' work can share its CPU and GPU at any time.
+Locust is an experimental system, so its runs are kept short, build with at most half of the node's cores, and never block a milestone when it is unavailable. It is an open multi-user node without a scheduler, so other users' work can share its CPU and GPU at any time. The same holds for the A4000 workstation, whose builds use at most a quarter of its cores (ADR-0037).
 
 **Remote-test runner.** Claude and developers run remote tests with one command from the local Mac:
 
 ```text
 scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--nodes N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
-targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | kathleen
+targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | a4000 | kathleen
 ```
 
 1. **Configuration.** It reads `scripts/hpc/targets.env`, which is personal and git-ignored and is created from the committed `targets.example.env`. The file holds the SSH host aliases, the remote base directory, the module lines, `CUDA_PATH` and the scheduler kind (`sge`, `slurm` or `direct`).
