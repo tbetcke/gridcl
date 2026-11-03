@@ -70,8 +70,8 @@ impl VtkScalar for u32 {}
 /// One attached data array: name, buffer and component count.
 type Attached<'a> = (String, sealed::DataRef<'a>, usize);
 
-/// Writes meshes as VTU files, or as a PVTU header with one VTU piece per rank (ADR-0024,
-/// ADR-0035).
+/// Writes meshes as VTU files, as a PVTU header with one VTU piece per rank, or (feature
+/// `hdf5`) as one VTKHDF file with those pieces (ADR-0024, ADR-0035).
 ///
 /// - Cells of degree p ≥ 2 are VTK Lagrange cells (68–73) unless `.lagrange(false)`; pyramids
 ///   of degree p ≥ 2 are written from their vertices (type 14), with one warning per file,
@@ -84,16 +84,29 @@ type Attached<'a> = (String, sealed::DataRef<'a>, usize);
 /// - On more than one rank, writes are collective. A VTU holds the owned cells gathered to rank
 ///   0, with the points in global node order and the data selected alike; a PVTU piece holds
 ///   every local cell and node and the cell data `vtkGhostType` (UInt8: 0 owned, 1 ghost, VTK's
-///   `DUPLICATECELL`), and the header's `GhostLevel` is 1 if any rank has ghost cells.
+///   `DUPLICATECELL`), and the header's `GhostLevel` is 1 if any rank has ghost cells. A
+///   VTKHDF file holds the PVTU pieces as its partitions, in rank order.
 pub struct VtkWriter<'a> {
     path: PathBuf,
-    pvtu: bool,
+    kind: Kind,
     lagrange: bool,
     base64: bool,
     zlib: bool,
     origin_ids: bool,
     point_data: Vec<Attached<'a>>,
     cell_data: Vec<Attached<'a>>,
+}
+
+/// The file a [`VtkWriter`] writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// One VTU file, at `path`.
+    Vtu,
+    /// A PVTU header and its pieces; `path` is the stem.
+    Pvtu,
+    /// One VTKHDF file, at `path`.
+    #[cfg(feature = "hdf5")]
+    Vtkhdf,
 }
 
 /// Creates `path` and writes it through `f`; I/O errors name the path.
@@ -309,7 +322,7 @@ impl<'a> VtkWriter<'a> {
         };
         VtkWriter {
             path,
-            pvtu: false,
+            kind: Kind::Vtu,
             lagrange: true,
             base64: false,
             zlib: false,
@@ -353,7 +366,7 @@ impl<'a> VtkWriter<'a> {
         };
         VtkWriter {
             path: stem,
-            pvtu: true,
+            kind: Kind::Pvtu,
             ..VtkWriter::vtu("")
         }
     }
@@ -394,12 +407,49 @@ impl<'a> VtkWriter<'a> {
         VtkWriter { base64, ..self }
     }
 
-    /// A writer of the VTKHDF file `<stem>.vtkhdf`: the pieces of [`pvtu`](VtkWriter::pvtu)
-    /// in one file (feature `hdf5`; ADR-0035, rule 8).
+    /// A writer of the VTKHDF file `<stem>.vtkhdf`: the pieces of [`pvtu`](VtkWriter::pvtu),
+    /// `vtkGhostType` included, as the partitions of one `UnstructuredGrid`, in rank order
+    /// (feature `hdf5`; ADR-0035, rule 8). The stem is `path` without a `.vtkhdf` extension.
+    ///
+    /// With an MPI communicator (feature `mpi`) every rank writes its partition through HDF5's
+    /// MPI-IO driver; otherwise the pieces are gathered and rank 0 writes the file
+    /// ([`gridcl_io::vtk::write_vtkhdf`]). `.base64` has no effect; `.zlib(true)` is refused.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: PlanarMesh<f32> = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let dir = std::env::temp_dir().join(format!("gridcl-doc-vtkhdf-{}", std::process::id()));
+    /// std::fs::create_dir_all(&dir).unwrap();
+    /// VtkWriter::vtkhdf(dir.join("square")).origin_ids(true).write(&mesh)?;
+    /// let bytes = std::fs::read(dir.join("square.vtkhdf")).unwrap();
+    /// // An HDF5 file.
+    /// assert_eq!(&bytes[..8], b"\x89HDF\r\n\x1a\n");
+    ///
+    /// // Compressed VTKHDF is not written.
+    /// let r = VtkWriter::vtkhdf(dir.join("square")).zlib(true).write(&mesh);
+    /// std::fs::remove_dir_all(&dir).ok();
+    /// assert!(matches!(r, Err(GridError::NotYetImplemented(_))));
+    /// # Ok::<(), GridError>(())
+    /// ```
     #[cfg(feature = "hdf5")]
     pub fn vtkhdf(path: impl AsRef<Path>) -> Self {
-        let _ = path.as_ref();
-        todo!("VtkWriter::vtkhdf (M8 T10)")
+        let path = path.as_ref();
+        let path = if path.extension().is_some_and(|e| e == "vtkhdf") {
+            path.to_path_buf()
+        } else {
+            let mut p = path.as_os_str().to_owned();
+            p.push(".vtkhdf");
+            PathBuf::from(p)
+        };
+        VtkWriter {
+            path,
+            kind: Kind::Vtkhdf,
+            ..VtkWriter::vtu("")
+        }
     }
 
     /// Adds the cell data array `OriginId` (Int64), the origin id of every cell in the writer's
@@ -424,7 +474,7 @@ impl<'a> VtkWriter<'a> {
         VtkWriter { origin_ids, ..self }
     }
 
-    /// zlib compression of every data array (default off).
+    /// zlib compression of every data array (default off). Not available for VTKHDF.
     ///
     /// # Example
     ///
@@ -512,8 +562,8 @@ impl<'a> VtkWriter<'a> {
         }
     }
 
-    /// Writes `mesh`, copying it to the host: the VTU file, or the PVTU header and the
-    /// pieces. Collective: on more than one rank every rank calls it, and every rank returns an
+    /// Writes `mesh`, copying it to the host: the VTU file, the PVTU header and the pieces, or
+    /// the VTKHDF file. Collective: on more than one rank every rank calls it, and every rank returns an
     /// error if any rank fails (ADR-0035, item 12).
     ///
     /// Pyramids of degree p ≥ 2 are written from their five vertices (VTK type 14), with one
@@ -521,8 +571,8 @@ impl<'a> VtkWriter<'a> {
     ///
     /// # Errors
     ///
-    /// `LengthMismatch` for a data array of the wrong length or without components, before
-    /// anything is written; `Io` on every rank if a file cannot be written (on another rank,
+    /// `LengthMismatch` for a data array of the wrong length or without components, and
+    /// `NotYetImplemented` for compressed VTKHDF, before anything is written; `Io` on every rank if a file cannot be written (on another rank,
     /// naming it), also for a PVTU stem without a UTF-8 file name; `TooLarge`; allocation and
     /// device errors. Errors of one rank are `RemoteFailure` on the others unless stated.
     ///
@@ -559,23 +609,26 @@ impl<'a> VtkWriter<'a> {
             .ok_or(GridError::TooLarge)
             .and_then(|num_cells| {
                 check_lengths(&self.point_data, num_points)?;
-                check_lengths(&self.cell_data, num_cells)
+                check_lengths(&self.cell_data, num_cells)?;
+                #[cfg(feature = "hdf5")]
+                if self.kind == Kind::Vtkhdf && self.zlib {
+                    return Err(GridError::NotYetImplemented("compressed VTKHDF"));
+                }
+                Ok(())
             });
         agree(comm, lengths)?;
-        if self.pvtu {
-            self.write_pieces(mesh)
-        } else {
-            self.write_gathered(mesh)
+        match self.kind {
+            Kind::Vtu => self.write_gathered(mesh),
+            Kind::Pvtu => self.write_pieces(mesh),
+            #[cfg(feature = "hdf5")]
+            Kind::Vtkhdf => self.write_vtkhdf(mesh),
         }
     }
 
     /// The VTU file of this rank's piece (ADR-0035, item 12): every local cell and node, the
     /// attached data, `OriginId` if asked for, and `vtkGhostType` on more than one rank; and
     /// the number of pyramids written from their vertices.
-    pub(crate) fn piece_file<F, TD, GD, C>(
-        &self,
-        mesh: &Mesh<F, TD, GD, C>,
-    ) -> Result<(VtuFile, usize)>
+    fn piece_file<F, TD, GD, C>(&self, mesh: &Mesh<F, TD, GD, C>) -> Result<(VtuFile, usize)>
     where
         F: Real,
         TD: TopoDim + EmbeddedIn<GD>,
@@ -652,6 +705,25 @@ impl<'a> VtkWriter<'a> {
         agree_write(comm, &self.path, local)
     }
 
+    /// The VTKHDF file of the PVTU pieces. Collective, with an agreed status.
+    #[cfg(feature = "hdf5")]
+    fn write_vtkhdf<F, TD, GD, C>(&self, mesh: &Mesh<F, TD, GD, C>) -> Result<()>
+    where
+        F: Real,
+        TD: TopoDim + EmbeddedIn<GD>,
+        GD: Dim,
+        C: Comm,
+    {
+        let comm = mesh.comm();
+        let (file, pyramids) = agree(comm, self.piece_file(mesh))?;
+        let pyramids = comm.sum(pyramids as u64);
+        gridcl_io::vtk::write_vtkhdf(&self.path, &file, comm)?;
+        if pyramids > 0 && comm.rank() == 0 {
+            warn_pyramids(&self.path, mesh, pyramids);
+        }
+        Ok(())
+    }
+
     /// A VTU of the owned cells, gathered to rank 0, which writes it. Collective, with an
     /// agreed status.
     fn write_gathered<F, TD, GD, C>(&self, mesh: &Mesh<F, TD, GD, C>) -> Result<()>
@@ -696,7 +768,7 @@ impl<'a> VtkWriter<'a> {
 
     /// For a PVTU, the path of the piece of `rank` and its name relative to the header.
     fn piece(&self, rank: usize) -> Result<Option<(PathBuf, String)>> {
-        if !self.pvtu {
+        if self.kind != Kind::Pvtu {
             return Ok(None);
         }
         let stem = self
@@ -925,5 +997,20 @@ mod tests {
             assert_eq!(source, name, "{given}");
         }
         assert!(VtkWriter::vtu("out/mesh").piece(0).unwrap().is_none());
+    }
+
+    /// `.vtkhdf` is appended unless the path has it; a VTKHDF writer has no pieces.
+    #[cfg(feature = "hdf5")]
+    #[test]
+    fn vtkhdf_path() {
+        for (given, path) in [
+            ("out/mesh", "out/mesh.vtkhdf"),
+            ("out/mesh.vtkhdf", "out/mesh.vtkhdf"),
+            ("out/mesh.v2", "out/mesh.v2.vtkhdf"),
+        ] {
+            let w = VtkWriter::vtkhdf(given);
+            assert_eq!(w.path, Path::new(path), "{given}");
+            assert!(w.piece(0).unwrap().is_none(), "{given}");
+        }
     }
 }
