@@ -1,6 +1,6 @@
 # ADR-0037: An RTX A4000 workstation as the first CUDA fallback
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-03
 - **Raised in:** M8 T5b (the Locust run after the commit; docs/plans/M8.md)
 - **Design sections affected:**
@@ -61,4 +61,4 @@ Option 2. Most of the fallback runs are correctness runs, and a CUDA target with
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-03, as proposed (option 2), without conditions. The maintainer asked for the setup in the same message, which covers its one-time SSH commands. Applied in `adr: 0037 apply` on its own branch, with the runner target.
