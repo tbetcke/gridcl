@@ -988,14 +988,28 @@ pub fn vtkhdf_equals_pvtu<C: Comm>(
 /// 256 MiB.
 pub const MEMORY_SLACK: u64 = 256 << 20;
 
-/// Bullet 2 (rule 10): reads `path` on `comm` with `Block` and no ghosts in f64, then compares
-/// the peak resident memory of this process (`peak_rss`, in bytes) with twice the mesh's
+/// Bullet 2 (rule 10): reads `path` on `comm` with `Block` and no ghosts in f64 (f32 where the
+/// device lacks f64: a smoke run, the measurement is on the CPU runtime), then compares the
+/// peak resident memory of this process (`peak_rss`, in bytes) with twice the mesh's
 /// `footprint_bytes` plus 256 MiB. Prints both on every rank.
 pub fn read_memory<C: Comm>(comm: &C, client: &Client, path: &Path, peak_rss: &dyn Fn() -> u64) {
+    if use_f64(client, true) {
+        read_memory_in::<f64, C>(comm, client, path, peak_rss);
+    } else {
+        read_memory_in::<f32, C>(comm, client, path, peak_rss);
+    }
+}
+
+fn read_memory_in<F: Real, C: Comm>(
+    comm: &C,
+    client: &Client,
+    path: &Path,
+    peak_rss: &dyn Fn() -> u64,
+) {
     let (rank, size) = (comm.rank(), comm.size());
     let at = format!("{}, {size} ranks, rank {rank}", path.display());
     let any = ok(
-        read_on::<f64, C>(client, comm.clone(), path, GhostMode::None, BLOCK),
+        read_on::<F, C>(client, comm.clone(), path, GhostMode::None, BLOCK),
         &at,
     );
     let footprint = with_mesh!(any.as_ref(), m => m.footprint_bytes()) as u64;
