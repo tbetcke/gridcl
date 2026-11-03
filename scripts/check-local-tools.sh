@@ -2,7 +2,8 @@
 # Check and print the local tool versions of the local Mac (docs/design.md, E0 acceptance):
 # the pinned Python packages in ${GRIDCL_PYTHON:-.venv/bin/python} (vtk 9.7.1 and meshio 5.3.5,
 # the M5 oracles, ADR-0024; gmsh 4.15.2, the M4 fixture corpus), gmsh, claude >= 2.1.286,
-# rsync >= 3 and mpirun. Prints one line per tool; exits 1 if any check fails.
+# rsync >= 3, mpirun, and a parallel HDF5 1.10.10-2.2.0 in ${HDF5_DIR:-/opt/homebrew/opt/hdf5-mpi}
+# (the M8 VTKHDF writer, ADR-0035 rule 9). Prints one line per tool; exits 1 if any check fails.
 #
 # usage: scripts/check-local-tools.sh
 set -u
@@ -81,5 +82,23 @@ report rsync "$(first_version "$(rsync --version 2>/dev/null | head -n 1)")" 3
 mpi=$(mpirun --version 2>/dev/null | head -n 1)
 report mpirun "$(first_version "$mpi")"
 [ -z "$mpi" ] || printf '%-8s %s\n' "" "$mpi"
+
+# The HDF5 that features hdf5 and mpi build against: hdf5-metno-sys reads include/ under
+# HDF5_DIR, and the MPI-IO driver needs H5_HAVE_PARALLEL.
+hdf5_dir=${HDF5_DIR:-/opt/homebrew/opt/hdf5-mpi}
+conf=$hdf5_dir/include/H5pubconf.h
+hdf5=$(sed -n 's/^#define H5_VERSION "\(.*\)"/\1/p' "$conf" 2>/dev/null)
+if [ -z "$hdf5" ]; then
+    printf '%-8s FAIL: no %s (brew install hdf5-mpi, or set HDF5_DIR)\n' hdf5 "$conf"
+    failed=1
+elif ! version_ge "$hdf5" 1.10.10 || ! version_ge 2.2.0 "$hdf5"; then
+    printf '%-8s %s FAIL: need 1.10.10 to 2.2.0 (hdf5-metno 0.15.1)\n' hdf5 "$hdf5"
+    failed=1
+elif ! grep -q '^#define H5_HAVE_PARALLEL 1' "$conf"; then
+    printf '%-8s %s FAIL: %s is not built with MPI\n' hdf5 "$hdf5" "$hdf5_dir"
+    failed=1
+else
+    printf '%-8s %s (parallel; HDF5_DIR=%s)\n' hdf5 "$hdf5" "$hdf5_dir"
+fi
 
 exit "$failed"
