@@ -1,6 +1,6 @@
 # ADR-0036: The M8 memory bound is measured with a fixed glibc mmap threshold
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-03
 - **Raised in:** M8 T5b (docs/plans/M8.md)
 - **Design sections affected:**
@@ -60,7 +60,7 @@ Option 3. The bullet is about how gridcl's own memory scales: rank-local chunks,
 
 ## Consequences
 
-- **docs/design.md:** none. The bullet keeps its text; ADR-0035 item 13 ("Read and run") gains: "the measured `mpirun` sets `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=1048576:glibc.malloc.trim_threshold=1048576` (ADR-0036)".
+- **docs/design.md:** none. The bullet keeps its text. This ADR amends ADR-0035, item 13 ("Read and run"): the measured `mpirun` sets `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=1048576:glibc.malloc.trim_threshold=1048576`. A line "Amended by ADR-0036" is added to ADR-0035's decision record.
 - **Public API:** none. Hidden items, outside the stable API:
   - `gridcl_device::radix_sort_owned` (T5b);
   - under option 3, the helpers that share the run offsets between `run_length` and `unique_by_key`.
@@ -68,8 +68,9 @@ Option 3. The bullet is about how gridcl's own memory scales: rank-local chunks,
   - `gridcl-mpi-tests::read_memory`: unchanged code. Its rustdoc says the bound assumes the fixed threshold on Linux.
   - The T5a command and T12's runs export `GLIBC_TUNABLES` and pass `-x GLIBC_TUNABLES` in `GRIDCL_MPIRUN_FLAGS`.
   - T11's `docs/dev-environment.md` section names the setting.
+- **Users:** the setting is not needed to use gridcl on Linux. Without it nothing leaks: the memory glibc keeps stays with the process and later allocations reuse it, but the read's peak resident memory is higher than what gridcl holds (about 190 MiB per rank for the 10^7-cell box on 8 ranks). T11's `docs/dev-environment.md` section says so and names the setting for runs near a node's memory limit; an application may also tune glibc or use another global allocator itself (the FFI rule binds gridcl's crates, not applications).
 - **Later milestones:** none directly. A later memory bullet on Linux would use the same setting.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-03, as proposed (option 3), with the users' note under Consequences added. Applied in `adr: 0036 apply`; T5b is ticked only with a margin of at least 32 MiB under option 2's measurement.

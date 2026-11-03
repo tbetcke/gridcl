@@ -219,3 +219,5 @@ Option 2, item by item.
 ## Decision record
 
 Accepted by the maintainer on 2026-11-02, as proposed (option 2, items 1–16), without conditions. Applied to docs/design.md in `adr: 0035 apply`.
+
+Amended by ADR-0036 (the measured `mpirun` of item 13 sets `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=1048576:glibc.malloc.trim_threshold=1048576`), accepted 2026-11-03.
