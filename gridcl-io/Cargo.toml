@@ -7,10 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-# VTKHDF output; hdf5-metno is added in M8 T9 (ADR-0035, rule 9).
-hdf5 = []
-# Collective VTKHDF writes through MPI-IO when `hdf5` is on too (ADR-0035, rule 9).
-mpi = ["gridcl-parallel/mpi"]
+# VTKHDF output (ADR-0035, rule 9).
+hdf5 = ["dep:hdf5-metno", "dep:ndarray"]
+# Collective VTKHDF writes through MPI-IO when `hdf5` is on too; needs a parallel HDF5
+# (HDF5_DIR; ADR-0035, rule 9).
+mpi = ["gridcl-parallel/mpi", "hdf5-metno?/mpio"]
 
 [dependencies]
 flate2.workspace = true
@@ -21,8 +22,12 @@ gridcl-parallel = { path = "../gridcl-parallel" }
 gridcl-partition = { path = "../gridcl-partition" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 gridcl-topology = { path = "../gridcl-topology" }
+hdf5-metno = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
 
 [dev-dependencies]
+# ThreadComm and the Python oracles of the VTKHDF tests (ADR-0035, rule 9).
+gridcl-testing = { path = "../gridcl-testing" }
 mshio.workspace = true
 proptest.workspace = true
 serde_json.workspace = true

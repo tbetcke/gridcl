@@ -89,7 +89,7 @@ fn with_header_room<T: LittleEndian>(xs: &[T]) -> Vec<u8> {
 }
 
 /// The VTK type name of `v`.
-fn type_name(v: &DataValues) -> &'static str {
+pub(super) fn type_name(v: &DataValues) -> &'static str {
     match v {
         DataValues::F32(_) => "Float32",
         DataValues::F64(_) => "Float64",
@@ -272,7 +272,7 @@ fn check_data(arrays: &[DataArray], entries: usize) -> Result<()> {
 impl VtuFile {
     /// `LengthMismatch` unless the arrays fit together (see [`VtuFile::write_to`]); returns
     /// the number of points.
-    fn check(&self) -> Result<usize> {
+    pub(super) fn check(&self) -> Result<usize> {
         let found = value_count(&self.points);
         if !found.is_multiple_of(3) {
             return Err(GridError::LengthMismatch {

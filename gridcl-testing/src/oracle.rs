@@ -94,7 +94,10 @@ impl Oracle {
     /// If the script fails (for example because the pinned versions are not installed) or its
     /// output is not JSON; the message holds its stderr.
     pub fn run(&self, command: &str, args: &[OsString]) -> Value {
+        // HDF5 opens files without close-on-exec, so a process spawned by one test while another
+        // test's HDF5 file is open keeps that file's lock until it exits; the readers need none.
         let out = Command::new(&self.python)
+            .env("HDF5_USE_FILE_LOCKING", "FALSE")
             .arg(&self.script)
             .arg(command)
             .args(args)

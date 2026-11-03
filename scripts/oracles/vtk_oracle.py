@@ -28,7 +28,8 @@ read: one object per file, in argument order:
      "bounds": [xmin, xmax, ymin, ymax, zmin, zmax], "point_data": [{"name", "components",
      "dtype"}], "cell_data": [...], "errors": [str], "warnings": [str]}
   .pvtu files are read with vtkXMLPUnstructuredGridReader, .vtkhdf and .hdf files with
-  vtkHDFReader, others with vtkXMLUnstructuredGridReader. --ghost-level N requests piece 0 of 1
+  vtkHDFReader (the partitions it reads appended in order), others with
+  vtkXMLUnstructuredGridReader. --ghost-level N requests piece 0 of 1
   with N ghost levels (UpdatePiece) instead of a plain Update(). Errors and warnings come from an observer on the reader and
   from VTK's global output window (messages of the XML parser, the pipeline and piece readers).
   "dtype" is the numpy name of the array's type (float32, float64, int32, uint32, int64, uint8).
@@ -184,8 +185,23 @@ def read_grid(path, messages, ghost_level=None):
 
 
 def output(reader):
-    """The reader's unstructured grid, or None."""
+    """The reader's unstructured grid, or None. vtkHDFReader gives a vtkPartitionedDataSet for a
+    file with more than one partition; its partitions (those read) are appended in order, with
+    vtkAppendFilter and no point merging, as the PVTU reader appends its pieces."""
+    from vtkmodules.vtkFiltersCore import vtkAppendFilter
+
     grid = reader.GetOutputDataObject(0)
+    if grid is not None and grid.IsA("vtkPartitionedDataSet"):
+        parts = [grid.GetPartition(i) for i in range(grid.GetNumberOfPartitions())]
+        parts = [p for p in parts if p is not None]
+        if not parts:
+            return None
+        append = vtkAppendFilter()
+        append.SetMergePoints(False)
+        for p in parts:
+            append.AddInputData(p)
+        append.Update()
+        grid = append.GetOutput()
     if grid is None or not grid.IsA("vtkUnstructuredGrid"):
         return None
     return grid
@@ -336,8 +352,9 @@ def compare_grids(a, b):
 def counts(grid):
     if grid is None:
         return {"cells": 0, "points": 0, "connectivity_ids": 0}
+    cells = grid.GetCells()  # None for an empty piece
     return {"cells": grid.GetNumberOfCells(), "points": grid.GetNumberOfPoints(),
-            "connectivity_ids": grid.GetCells().GetNumberOfConnectivityIds()}
+            "connectivity_ids": 0 if cells is None else cells.GetNumberOfConnectivityIds()}
 
 
 def by_origin_id(grid, diffs, which):

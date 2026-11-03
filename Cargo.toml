@@ -42,6 +42,10 @@ mshio = "=0.4.2"
 log = "0.4"
 # zlib for VTU output, pure Rust (ADR-0024, item 10).
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# VTKHDF output (feature `hdf5`; `mpio` with `mpi`), against the system HDF5 (ADR-0035, rule 9).
+hdf5-metno = { version = "=0.15.1", default-features = false }
+# The array views hdf5-metno writes from (the version it resolves to).
+ndarray = "=0.17.2"
 # Partitioners (ADR-0029): METIS vendored by the metis crate; Scotch from the system library,
 # with scotch-sys for the calls the scotch crate does not wrap.
 metis = "=0.2.2"
