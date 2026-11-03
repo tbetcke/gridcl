@@ -102,9 +102,14 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   user's approval.
 - Locust (`locust`) is the CUDA platform for every run: after every task that changes kernels,
   at every milestone review, and for benchmarks (ADR-0014).
-- Myriad V100 (`myriad-v100`) and A100 (`myriad-a100`) only: as the fallback when Locust is
-  unreachable, a run fails because another user occupies its GPU, or a benchmark cannot get an
-  idle node; for multi-GPU and GPU-aware MPI tests (`--gpus 2`); to compare
+- The A4000 workstation (`a4000`, one RTX A4000, sm_86; ADR-0037) is the first CUDA fallback:
+  when Locust is unreachable or a run fails because another user occupies its GPU, and to
+  compare architecture-dependent results. Never CPU benchmarks there (its CPU is shared), GPU
+  timings only if its `node load:` line is `idle` before and after, and no MPI (one GPU). All
+  software for gridcl on it lives under `~/local_disk`, never in its network home. Say why when
+  you schedule it.
+- Myriad V100 (`myriad-v100`) and A100 (`myriad-a100`) only: as the fallback when the A4000
+  workstation is unavailable too, or a benchmark cannot get an idle node; for multi-GPU and GPU-aware MPI tests (`--gpus 2`); to compare
   architecture-dependent results; for CUDA-version- or architecture-specific changes; or when
   the user asks. Say why when you schedule them.
 - Kathleen (`kathleen`, Slurm, Xeon Gold 6248 with AVX-512) runs every CPU-only remote run
@@ -115,10 +120,11 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   only as the fallback: Kathleen unreachable, a job still queued after `--max-wait`, or the user
   asks; say why. They request the whole node (`--cores 36`).
 - Never draw SIMD conclusions from a node shared with other jobs.
-- Locust has no scheduler (open multi-user node): never draw benchmark or timing conclusions
-  from a Locust run unless its `node load:` line is `idle` before and after (ADR-0002).
-- At most two scheduler jobs (Myriad, Kathleen) at a time. Locust jobs are independent of them:
-  one Locust run may go in parallel with the scheduler jobs. Cancel jobs you no longer need;
+- Locust and the A4000 workstation have no scheduler (open multi-user nodes): never draw
+  benchmark or timing conclusions from their runs unless the `node load:` line is `idle` before
+  and after (ADR-0002, ADR-0037).
+- At most two scheduler jobs (Myriad, Kathleen) at a time. Locust and a4000 runs are independent
+  of them: one Locust run and one a4000 run may go in parallel with the scheduler jobs. Cancel jobs you no longer need;
   leave none queued at the end of a session.
 - Never put user ids, private host names, project codes or credentials in committed files; they
   live in `scripts/hpc/targets.env`, which git ignores.
