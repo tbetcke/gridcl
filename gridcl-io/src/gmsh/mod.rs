@@ -21,7 +21,10 @@ mod write;
 pub use chunk::{
     BlockHeader, CellChunk, Layout, complete, element_range, geometric_dim, node_range,
 };
-pub use convert::{GmshCellBlock, GmshMesh, GmshTagGroup, from_gmsh_mesh, to_gmsh_mesh};
+pub use convert::{
+    FileNumbering, GmshCellBlock, GmshMesh, GmshTagGroup, from_gmsh_mesh, from_numbered_gmsh_mesh,
+    to_gmsh_mesh,
+};
 pub use element_type::{ElementType, element_type, lagrange_element_type};
 pub use index::{ElementChunk, MshIndex, NodeChunk};
 pub use model::{

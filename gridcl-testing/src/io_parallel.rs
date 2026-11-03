@@ -454,6 +454,23 @@ pub fn gather_snapshot(comm: &dyn CommDyn, local: &Snapshot) -> Result<Option<Sn
 
 /// Asserts `got == want`, naming the first difference.
 pub fn assert_same_snapshot(got: &Snapshot, want: &Snapshot, what: &dyn fmt::Display) {
+    assert_snapshot_within(got, want, None, what);
+}
+
+/// The vertex count of the cell type of `cell_code`.
+fn vertices_of_code(code: i64) -> usize {
+    [1, 2, 3, 4, 4, 8, 6, 5][code as usize]
+}
+
+/// Asserts `got == want`, naming the first difference; with `tol`, node coordinates need only
+/// agree to `tol` relative to max(|x|, 1) (a mesh read from a part has its own origin, so its
+/// coordinates round differently).
+pub fn assert_snapshot_within(
+    got: &Snapshot,
+    want: &Snapshot,
+    tol: Option<f64>,
+    what: &dyn fmt::Display,
+) {
     let (gk, wk): (BTreeSet<_>, BTreeSet<_>) =
         (got.cells.keys().collect(), want.cells.keys().collect());
     if gk != wk {
@@ -467,10 +484,24 @@ pub fn assert_same_snapshot(got: &Snapshot, want: &Snapshot, what: &dyn fmt::Dis
     }
     for (id, w) in &want.cells {
         let g = &got.cells[id];
+        let exact = match tol {
+            Some(_) if g.len() == w.len() && !w.is_empty() => 2 + vertices_of_code(w[0]),
+            _ => w.len(),
+        };
         assert_eq!(
-            g, w,
+            (g.len(), &g[..exact.min(g.len())]),
+            (w.len(), &w[..exact]),
             "{what}: cell {id} (type, degree, vertex ids, coordinate bits)"
         );
+        if let Some(tol) = tol {
+            for (j, (&a, &b)) in g[exact..].iter().zip(&w[exact..]).enumerate() {
+                let (a, b) = (f64::from_bits(a as u64), f64::from_bits(b as u64));
+                assert!(
+                    (a - b).abs() <= tol * b.abs().max(1.0),
+                    "{what}: cell {id}: coordinate {j}: {a} vs {b}"
+                );
+            }
+        }
     }
     if got.tags != want.tags {
         let missing: Vec<_> = want.tags.difference(&got.tags).take(4).collect();
@@ -578,7 +609,8 @@ pub const ROUND_TRIP: [&str; 3] = [
 /// Rule 7: each fixture of [`ROUND_TRIP`] read on `comm` with shared-facet ghosts and written
 /// with `.partitioned(true)` (more than one rank) and gathered. On rank 0: each part, read
 /// serially, holds `$PartitionedEntities` with P partitions; the parts' cells are disjoint and
-/// together, with their tags, equal the one-rank read; the gathered file, read serially, equals
+/// together, with their tags, equal the one-rank read (coordinates to the precision's
+/// tolerance, as each part has its own origin); the gathered file, read serially, equals
 /// the file written from the one-rank read (sorting by origin id).
 pub fn partitioned_round_trip<C: Comm>(comm: &C, client: &Client, dir: &Path) {
     for (i, name) in ROUND_TRIP.iter().enumerate() {
@@ -661,7 +693,19 @@ fn round_trip_in<F: Real, C: Comm>(comm: &C, client: &Client, name: &str, dir: &
             }
             union.tags.extend(part.tags);
         }
-        assert_same_snapshot(&union, &want, &format!("{at}: the union of the parts"));
+        // Each part has its own origin (its bounding box), so coordinates agree to the
+        // precision's tolerance only.
+        let tol = if size_of::<F>() == size_of::<f32>() {
+            1e-5
+        } else {
+            1e-12
+        };
+        assert_snapshot_within(
+            &union,
+            &want,
+            Some(tol),
+            &format!("{at}: the union of the parts"),
+        );
     }
 
     let serial_file = PathBuf::from(format!("{}-serial.msh", stem.display()));

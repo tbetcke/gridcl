@@ -85,7 +85,7 @@ pub(crate) fn release_pools(client: &Client, stage: &str) {
 }
 
 /// The cell types in the order of their wire code.
-const CELL_TYPES: [CellType; 8] = [
+pub(crate) const CELL_TYPES: [CellType; 8] = [
     CellType::Point,
     CellType::Interval,
     CellType::Triangle,

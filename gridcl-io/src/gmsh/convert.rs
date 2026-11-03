@@ -408,6 +408,38 @@ fn shift_to_one(tags: impl Iterator<Item = i64>) -> Result<i64> {
 /// # Ok::<(), gridcl_device::GridError>(())
 /// ```
 pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
+    file_of(mesh, None)
+}
+
+/// The numbering of one file of a distributed mesh (ADR-0035, item 11), computed over all
+/// ranks by the writer.
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FileNumbering {
+    /// Added to every node tag and tag-element corner.
+    pub node_shift: i64,
+    /// Added to every element tag.
+    pub element_shift: i64,
+    /// `Some((P, q))`: the file is partition q of P, with `$PartitionedEntities`.
+    pub partition: Option<(usize, i32)>,
+}
+
+/// The file of `mesh` as [`from_gmsh_mesh`] makes it, except that `mesh.node_tags` and the
+/// tag groups' `tags` are kept as given (before `numbering`'s shifts), and with `$PartitionedEntities`
+/// for a partition: one partitioned entity per written entity, with a fresh tag per
+/// dimension, the entity as its parent and `[q]` as its partitions; elements and nodes lie
+/// in the partitioned entities.
+///
+/// # Errors
+///
+/// As [`from_gmsh_mesh`].
+#[doc(hidden)]
+pub fn from_numbered_gmsh_mesh(mesh: &GmshMesh, numbering: &FileNumbering) -> Result<MshFile> {
+    file_of(mesh, Some(numbering))
+}
+
+/// [`from_gmsh_mesh`] (`numbering` `None`) or [`from_numbered_gmsh_mesh`].
+fn file_of(mesh: &GmshMesh, numbering: Option<&FileNumbering>) -> Result<MshFile> {
     let n = mesh.node_tags.len();
     let gd = mesh.gdim;
     let expected = n.checked_mul(gd).ok_or(GridError::TooLarge)?;
@@ -456,22 +488,28 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
             }
         }
     }
-    let max_vertex = (0..n)
-        .filter(|&i| is_vertex[i])
-        .map(|i| mesh.node_tags[i])
-        .max()
-        .unwrap_or(0);
-    let mut next = max_vertex;
-    let mut node_tags = Vec::with_capacity(n);
-    for (&vertex, &tag) in is_vertex.iter().zip(&mesh.node_tags) {
-        node_tags.push(if vertex {
-            tag
-        } else {
-            next = next.checked_add(1).ok_or(GridError::TooLarge)?;
-            next
-        });
-    }
-    let node_shift = shift_to_one(node_tags.iter().copied())?;
+    let (node_tags, node_shift) = match numbering {
+        Some(f) => (mesh.node_tags.clone(), f.node_shift),
+        None => {
+            let max_vertex = (0..n)
+                .filter(|&i| is_vertex[i])
+                .map(|i| mesh.node_tags[i])
+                .max()
+                .unwrap_or(0);
+            let mut next = max_vertex;
+            let mut node_tags = Vec::with_capacity(n);
+            for (&vertex, &tag) in is_vertex.iter().zip(&mesh.node_tags) {
+                node_tags.push(if vertex {
+                    tag
+                } else {
+                    next = next.checked_add(1).ok_or(GridError::TooLarge)?;
+                    next
+                });
+            }
+            let shift = shift_to_one(node_tags.iter().copied())?;
+            (node_tags, shift)
+        }
+    };
     let node_tags: Vec<i64> = node_tags
         .iter()
         .map(|&t| shifted(t, node_shift))
@@ -494,8 +532,13 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
         .and_then(|k| max_cell.checked_add(k))
         .ok_or(GridError::TooLarge)?;
     // Tag elements follow the cells, so the smallest cell tag decides the shift.
-    let element_shift = shift_to_one(mesh.blocks.iter().flat_map(|b| b.tags.iter().copied()))?;
-    shifted(last, element_shift)?;
+    let element_shift = match numbering {
+        Some(f) => f.element_shift,
+        None => shift_to_one(mesh.blocks.iter().flat_map(|b| b.tags.iter().copied()))?,
+    };
+    if numbering.is_none() {
+        shifted(last, element_shift)?;
+    }
 
     // Elements grouped by entity, in order of first appearance per dimension.
     let mut entities: Vec<EntityKey> = Vec::new();
@@ -545,7 +588,10 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
         };
         let physical = physical_sets(g.tags.len(), &g.physical);
         for (e, corners) in g.corners.chunks_exact(nv).enumerate() {
-            next_element += 1;
+            next_element = match numbering {
+                Some(_) => g.tags[e],
+                None => next_element + 1,
+            };
             let file_nodes: Vec<i64> = map.iter().map(|&i| corners[i]).collect();
             let xs = file_nodes
                 .iter()
@@ -611,7 +657,26 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
 
     let mut order: Vec<usize> = (0..entities.len()).collect();
     order.sort_by_key(|&e| (entities[e].0, tags[e]));
+    // A partition's elements lie in partitioned entities, tagged after the entities of their
+    // dimension.
+    let partition = numbering.and_then(|f| f.partition);
+    let mut part_tags = tags.clone();
+    if partition.is_some() {
+        for dim in 0..4 {
+            let mut next = order
+                .iter()
+                .filter(|&&e| entities[e].0 == dim)
+                .map(|&e| tags[e])
+                .max()
+                .unwrap_or(0);
+            for &e in order.iter().filter(|&&e| entities[e].0 == dim) {
+                next = next.checked_add(1).ok_or(GridError::TooLarge)?;
+                part_tags[e] = next;
+            }
+        }
+    }
     let mut model = super::Entities::default();
+    let mut parts = super::PartitionedEntities::default();
     let mut element_blocks = Vec::new();
     for &e in &order {
         let (dim, _, physical) = &entities[e];
@@ -628,6 +693,23 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
             physical_tags: physical.clone(),
             boundary: Vec::new(),
         };
+        if let Some((_, q)) = partition {
+            let part = super::PartitionedEntity {
+                entity: super::Entity {
+                    tag: part_tags[e],
+                    ..entity.clone()
+                },
+                parent_dim: *dim,
+                parent_tag: tags[e],
+                partitions: vec![q],
+            };
+            match dim {
+                0 => parts.points.push(part),
+                1 => parts.curves.push(part),
+                2 => parts.surfaces.push(part),
+                _ => parts.volumes.push(part),
+            }
+        }
         match dim {
             0 => model.points.push(entity),
             1 => model.curves.push(entity),
@@ -639,7 +721,7 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
         for (ty, tags_, nodes) in list {
             element_blocks.push(ElementBlock {
                 dim: *dim,
-                entity_tag: tags[e],
+                entity_tag: part_tags[e],
                 element_type: ty,
                 tags: tags_,
                 nodes,
@@ -649,11 +731,14 @@ pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
     let node_entity = order
         .iter()
         .find(|&&e| entities[e].0 == mesh.tdim)
-        .map_or(1, |&e| tags[e]);
+        .map_or(1, |&e| part_tags[e]);
     Ok(MshFile {
         physical_names: mesh.names.clone(),
         entities: Some(model),
-        partitioned_entities: None,
+        partitioned_entities: partition.map(|(p, _)| super::PartitionedEntities {
+            num_partitions: p,
+            ..parts
+        }),
         node_blocks: vec![super::NodeBlock {
             dim: mesh.tdim,
             entity_tag: node_entity,
@@ -1223,6 +1308,116 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The numbered conversion keeps the given node and tag-element tags: given
+    /// `from_gmsh_mesh`'s own numbering, it writes the same file. As a partition it adds
+    /// `$PartitionedEntities` (each written entity as the parent of one partitioned entity in
+    /// partition q, holding its elements) and reads back as the same mesh, in both encodings.
+    #[test]
+    fn convert_numbered_keeps_tags_and_partitions() {
+        for name in mesh_fixtures() {
+            let m = convert(&name);
+            let plain = from_gmsh_mesh(&m).unwrap();
+            let mut numbered = m.clone();
+            numbered.node_tags = plain.node_blocks[0].tags.clone();
+            let max_cell = m.blocks.iter().flat_map(|b| b.tags.iter().copied()).max();
+            let mut next = max_cell.unwrap_or(0);
+            let mut order: Vec<usize> = (0..m.tag_groups.len()).collect();
+            order.sort_by_key(|&g| m.tag_groups[g].dim);
+            for g in order {
+                for t in &mut numbered.tag_groups[g].tags {
+                    next += 1;
+                    *t = next;
+                }
+            }
+            let unshifted = FileNumbering::default();
+            assert_eq!(
+                from_numbered_gmsh_mesh(&numbered, &unshifted).unwrap(),
+                plain,
+                "{name}"
+            );
+
+            let numbering = FileNumbering {
+                partition: Some((3, 2)),
+                ..unshifted
+            };
+            let part = from_numbered_gmsh_mesh(&numbered, &numbering).unwrap();
+            let p = part.partitioned_entities.clone().expect("partitioned");
+            assert_eq!((p.num_partitions, p.ghost_entities.len()), (3, 0), "{name}");
+            let model = part.entities.clone().unwrap();
+            let lists = [
+                &model.points,
+                &model.curves,
+                &model.surfaces,
+                &model.volumes,
+            ];
+            let part_lists = [&p.points, &p.curves, &p.surfaces, &p.volumes];
+            for (dim, (entities, parts)) in lists.into_iter().zip(part_lists).enumerate() {
+                assert_eq!(entities.len(), parts.len(), "{name}: dimension {dim}");
+                for (e, x) in entities.iter().zip(parts) {
+                    assert_eq!((x.parent_dim, x.parent_tag), (dim, e.tag), "{name}");
+                    assert_eq!(x.partitions, [2], "{name}");
+                    assert_eq!(x.entity.physical_tags, e.physical_tags, "{name}");
+                    assert!(
+                        entities.iter().all(|f| f.tag != x.entity.tag),
+                        "{name}: fresh tag"
+                    );
+                }
+            }
+            for b in &part.element_blocks {
+                let parts = part_lists[b.dim];
+                assert!(parts.iter().any(|x| x.entity.tag == b.entity_tag), "{name}");
+            }
+            let want = to_gmsh_mesh(&plain, &Serial, Some(m.gdim)).unwrap();
+            for encoding in [crate::gmsh::Encoding::Ascii, crate::gmsh::Encoding::Binary] {
+                let mut bytes = Vec::new();
+                part.write_to(&mut bytes, encoding).unwrap();
+                let parsed = crate::gmsh::parse(&bytes).unwrap();
+                assert_eq!(parsed, part, "{name} {encoding:?}");
+                let back = to_gmsh_mesh(&parsed, &Serial, Some(m.gdim)).unwrap();
+                assert_eq!(back, want, "{name} {encoding:?}: read back");
+            }
+        }
+    }
+
+    /// The numbered conversion applies the given shifts, not its own.
+    #[test]
+    fn convert_numbered_applies_the_given_shifts() {
+        let mut m = convert("two_regions_p1.msh");
+        let plain = from_gmsh_mesh(&m).unwrap();
+        m.node_tags = plain.node_blocks[0].tags.clone();
+        for (i, t) in m
+            .tag_groups
+            .iter_mut()
+            .flat_map(|g| g.tags.iter_mut())
+            .enumerate()
+        {
+            *t = 1000 + i as i64;
+        }
+        let numbering = FileNumbering {
+            node_shift: 10,
+            element_shift: 100,
+            partition: None,
+        };
+        let file = from_numbered_gmsh_mesh(&m, &numbering).unwrap();
+        let nodes: Vec<i64> = m.node_tags.iter().map(|t| t + 10).collect();
+        assert_eq!(file.node_blocks[0].tags, nodes);
+        let mut cells: Vec<i64> = m
+            .blocks
+            .iter()
+            .flat_map(|b| b.tags.iter().map(|t| t + 100))
+            .collect();
+        let num_groups: usize = m.tag_groups.iter().map(|g| g.tags.len()).sum();
+        cells.extend((0..num_groups as i64).map(|i| 1100 + i));
+        cells.sort_unstable();
+        let mut written: Vec<i64> = file
+            .element_blocks
+            .iter()
+            .flat_map(|b| b.tags.clone())
+            .collect();
+        written.sort_unstable();
+        assert_eq!(written, cells);
     }
 
     /// Origin ids below 1 (MeshBuilder's defaults start at 0) are shifted so that node and

@@ -4,6 +4,7 @@
 //! the global Gmsh numbering of nodes and tag elements.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use gridcl_device::{GridError, Real, Result};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
@@ -14,7 +15,7 @@ use gridcl_topology::decode_origin_ids;
 
 use crate::Mesh;
 use crate::gmsh::{elementary_of, values_by_index};
-use crate::pipeline::agree;
+use crate::pipeline::{CELL_TYPES, agree};
 
 /// The cells of one block on the host.
 #[derive(Clone, Debug, PartialEq)]
@@ -219,6 +220,149 @@ where
         checked_len(data.len(), map.num_local(), components).map(|_| map.num_owned() * components);
     let owned = agree(comm, owned)?;
     gather_rows(comm, &data[..owned])
+}
+
+/// Variable-length cell lists in flat local cell order, `counts[c]` values of `values` per
+/// cell, selected and gathered as [`gather`] gathers the cells: the gathered counts and values.
+/// Collective, with an agreed status.
+///
+/// # Errors
+///
+/// `LengthMismatch` unless there is one count per local cell and the counts add up to
+/// `values.len()`; agreed.
+pub(crate) fn gather_cell_lists<F, TD, GD, C, T>(
+    mesh: &Mesh<F, TD, GD, C>,
+    counts: &[u32],
+    values: &[T],
+) -> Result<(Vec<u32>, Vec<T>)>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+    T: CommScalar,
+{
+    let comm = mesh.comm();
+    let local = (|| {
+        let blocks = mesh.cell_blocks();
+        let cells = blocks
+            .iter()
+            .try_fold(0usize, |n, b| n.checked_add(b.index_map.num_local()))
+            .ok_or(GridError::TooLarge)?;
+        checked_len(counts.len(), cells, 1)?;
+        let total = counts.iter().map(|&k| k as usize).sum();
+        checked_len(values.len(), total, 1)?;
+        let (mut first, mut next) = (0, 0);
+        Ok(blocks
+            .iter()
+            .map(|b| {
+                let sum = |n: usize| -> usize {
+                    counts[first..first + n].iter().map(|&k| k as usize).sum()
+                };
+                let owned = (
+                    first..first + b.index_map.num_owned(),
+                    next..next + sum(b.index_map.num_owned()),
+                );
+                next += sum(b.index_map.num_local());
+                first += b.index_map.num_local();
+                owned
+            })
+            .collect::<Vec<_>>())
+    })();
+    let (mut out_counts, mut out_values) = (Vec::new(), Vec::new());
+    for (cells, owned) in agree(comm, local)? {
+        out_counts.extend(gather_rows(comm, &counts[cells])?);
+        out_values.extend(gather_rows(comm, &values[owned])?);
+    }
+    Ok((out_counts, out_values))
+}
+
+/// The tag groups of every rank on rank 0, in rank order; empty elsewhere. Collective.
+///
+/// # Errors
+///
+/// Errors of the exchange.
+pub(crate) fn gather_tag_groups(
+    comm: &dyn CommDyn,
+    groups: &[GmshTagGroup],
+) -> Result<Vec<GmshTagGroup>> {
+    // Per group: dim, cell code, entries, physical pairs, then corners, tags, elementary
+    // tags and the (entry, value) pairs.
+    let mut words = Vec::new();
+    for g in groups {
+        let code = CELL_TYPES
+            .iter()
+            .position(|&c| c == g.cell)
+            .expect("a cell type");
+        words.extend([
+            g.dim as i64,
+            code as i64,
+            g.tags.len() as i64,
+            g.physical.len() as i64,
+        ]);
+        words.extend_from_slice(&g.corners);
+        words.extend_from_slice(&g.tags);
+        words.extend(g.elementary.iter().map(|&e| i64::from(e)));
+        words.extend(
+            g.physical
+                .iter()
+                .flat_map(|&(e, v)| [i64::from(e), i64::from(v)]),
+        );
+    }
+    let words = gather_rows(comm, &words)?;
+    let mut out = Vec::new();
+    let mut rest = &words[..];
+    while !rest.is_empty() {
+        let (head, tail) = rest.split_at(4);
+        let (dim, cell) = (head[0] as usize, CELL_TYPES[head[1] as usize]);
+        let (n, pairs) = (head[2] as usize, head[3] as usize);
+        let nv = gridcl_refcell::vertices(cell).len();
+        let (corners, tail) = tail.split_at(n * nv);
+        let (tags, tail) = tail.split_at(n);
+        let (elementary, tail) = tail.split_at(n);
+        let (physical, tail) = tail.split_at(2 * pairs);
+        rest = tail;
+        out.push(GmshTagGroup {
+            dim,
+            cell,
+            corners: corners.to_vec(),
+            tags: tags.to_vec(),
+            elementary: elementary.iter().map(|&e| e as i32).collect(),
+            physical: physical
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|p| (p[0] as u32, p[1] as i32))
+                .collect(),
+        });
+    }
+    Ok(out)
+}
+
+/// The agreed status of a collective write to `path` (ADR-0035, items 11 and 12): a failing
+/// rank returns its own error; if the lowest failing rank failed with `Io`, every other rank
+/// returns `Io` naming `path` and that rank, else `RemoteFailure`. Collective.
+pub(crate) fn agree_write(comm: &dyn CommDyn, path: &Path, local: Result<()>) -> Result<()> {
+    let lowest = comm.min(if local.is_err() {
+        comm.rank() as u64
+    } else {
+        u64::MAX
+    });
+    if lowest == u64::MAX {
+        return Ok(());
+    }
+    let io = matches!(local, Err(GridError::Io(_))) && comm.rank() as u64 == lowest;
+    let io = comm.max(u32::from(io)) == 1;
+    match local {
+        Err(e) => Err(e),
+        Ok(()) if io => Err(GridError::Io(format!(
+            "{}: the write failed on rank {lowest}",
+            path.display()
+        ))),
+        Ok(()) => Err(GridError::RemoteFailure {
+            rank: lowest as usize,
+        }),
+    }
 }
 
 /// The global Gmsh numbering of a mesh (ADR-0035, item 11), before the shift of tags below 1.
@@ -669,7 +813,11 @@ mod tests {
         GD: Dim,
         C: Comm,
     {
-        let file = gridcl_io::gmsh::from_gmsh_mesh(&crate::gmsh::download(mesh).unwrap()).unwrap();
+        // `from_gmsh_mesh` ignores the given non-vertex node tags and tag-element tags and
+        // numbers them itself, by M4's rule.
+        let numbering = gmsh_numbering(mesh).unwrap();
+        let host = crate::gmsh::gathered(mesh, &numbering).unwrap();
+        let file = gridcl_io::gmsh::from_gmsh_mesh(&host).unwrap();
         let tags = file
             .node_blocks
             .iter()

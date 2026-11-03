@@ -19,10 +19,6 @@ mod any;
 mod builder;
 mod entity_map;
 pub mod gmsh;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the writers use it from M8 T7 and T8 on")
-)]
 mod io_download;
 mod mesh;
 mod pipeline;
