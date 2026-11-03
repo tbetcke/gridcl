@@ -12,7 +12,8 @@
 #   max-wait    a --max-wait overrun: deleted, exit status 124
 # then checks that status.sh lists no job, and prints the rows for docs/dev-environment.md.
 # Without steps, all of the target's steps run (myriad-cpu and kathleen: turnaround fail
-# max-wait; nvrtc and gpus2 need GPUs). Exit status 0 iff every step met its expectation.
+# max-wait; nvrtc and gpus2 need GPUs; a4000: no gpus2, it has no MPI). Exit status 0 iff
+# every step met its expectation.
 #
 # Summaries and the rows: target/hpc/<target>/acceptance-<UTC time>/.
 # Environment: GRIDCL_ACCEPT_CUDA_MAJOR overrides the expected CUDA major version (empty: no
@@ -58,6 +59,11 @@ target_settings() {
             ;;
         locust)
             SM=90 CUDA_MAJOR="" FEATURES=cuda,cpu NVRTC_FEATURES=cuda-cpp MPI_GPUS=1 ARCH=aarch64
+            ;;
+        a4000)
+            # One RTX A4000 and no MPI (ADR-0037): no gpus2 step.
+            SM=86 CUDA_MAJOR=12 FEATURES=cuda,cpu NVRTC_FEATURES=cuda-cpp MPI_GPUS="" ARCH=x86_64
+            STEPS="turnaround nvrtc fail max-wait"
             ;;
         *) return 1 ;;
     esac

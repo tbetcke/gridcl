@@ -33,13 +33,13 @@ KATHLEEN_MAX_NODES=2
 usage() {
     cat <<EOF
 usage: scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [--nodes N] [--time HH:MM:SS] [--max-wait HH:MM:SS] -- <command>
-targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | kathleen
+targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | a4000 | kathleen
 
 Syncs the working tree to the target, fetches crates on its login node, runs <command> in
 a job from the root of the remote tree (offline, GRIDCL_TEST_DEVICE=cuda; =cpu on
 myriad-cpu and kathleen) and prints a summary of at most 40 lines. The words after -- are joined with
 spaces and run by bash.
-On SGE targets (Myriad) the job is queued; on direct targets (Locust: no scheduler) it starts
+On SGE targets (Myriad) the job is queued; on direct targets (Locust, a4000: no scheduler) it starts
 at once under timeout (the smaller of --time and --max-wait) and records the node load
 before and after the command (summary line "node load:"). myriad-cpu runs on a CPU-only
 D node (36 cores, AVX-512, no GPU). kathleen (Slurm) runs on whole nodes of 40 cores
@@ -148,6 +148,10 @@ parse_args() {
             OPT_GPUS=0
             ;;
         locust) [ "$OPT_GPUS" -le 1 ] || usage_error "--gpus $OPT_GPUS: Locust has one GH200" ;;
+        a4000)
+            [ "$OPT_GPUS" -le 1 ] || usage_error "--gpus $OPT_GPUS: a4000 has one RTX A4000 (ADR-0037)"
+            [ -z "$OPT_RANKS" ] || usage_error "--ranks $OPT_RANKS: a4000 has no MPI (ADR-0037)"
+            ;;
         kathleen)
             [ -z "$OPT_GPUS_GIVEN" ] ||
                 usage_error "--gpus $OPT_GPUS: kathleen has no GPUs; use locust or a Myriad GPU target"
