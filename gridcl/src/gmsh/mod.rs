@@ -54,7 +54,7 @@ pub struct GmshWriter {
 }
 
 /// The (entity index → values) map of `tags`, downloaded.
-fn values_by_index(tags: Option<&MeshTags>) -> Result<BTreeMap<u32, Vec<i32>>> {
+pub(crate) fn values_by_index(tags: Option<&MeshTags>) -> Result<BTreeMap<u32, Vec<i32>>> {
     let mut out: BTreeMap<u32, Vec<i32>> = BTreeMap::new();
     if let Some(t) = tags {
         let indices = t.indices.to_host()?;
@@ -67,7 +67,7 @@ fn values_by_index(tags: Option<&MeshTags>) -> Result<BTreeMap<u32, Vec<i32>>> {
 }
 
 /// The elementary tag of entity `i`: its first elementary value, or 1 without one.
-fn elementary_of(elementary: &BTreeMap<u32, Vec<i32>>, i: u32) -> i32 {
+pub(crate) fn elementary_of(elementary: &BTreeMap<u32, Vec<i32>>, i: u32) -> i32 {
     elementary.get(&i).map_or(1, |v| v[0])
 }
 
@@ -75,7 +75,7 @@ fn elementary_of(elementary: &BTreeMap<u32, Vec<i32>>, i: u32) -> i32 {
 /// GLL and with the origin added back (ADR-0022, item 9; ADR-0024, item 7), vertex origin
 /// ids as node tags (other nodes' tags are renumbered by `from_gmsh_mesh`), cell blocks with
 /// their tags, and one tag group per entity type of each tagged dimension below D_TOP.
-fn download<F, TD, GD, C>(mesh: &Mesh<F, TD, GD, C>) -> Result<GmshMesh>
+pub(crate) fn download<F, TD, GD, C>(mesh: &Mesh<F, TD, GD, C>) -> Result<GmshMesh>
 where
     F: Real,
     TD: TopoDim + EmbeddedIn<GD>,
