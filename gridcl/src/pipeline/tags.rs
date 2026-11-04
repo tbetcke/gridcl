@@ -258,7 +258,7 @@ fn match_lower<TD: TopoDim>(
     let at_holder = forward.exchange(comm)?;
 
     for dim in (0..TD::N).filter(|d| tagged & 1 << d != 0) {
-        topology.create_entities(comm, dim)?;
+        topology.create_entities_releasing_pools(comm, dim)?;
         release_pools(client, &format!("stage 10 (entities of dimension {dim})"));
     }
 

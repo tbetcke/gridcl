@@ -345,6 +345,8 @@ struct DimContext<'a> {
     last_vertex: u32,
     /// The first flat cell index of each cell block.
     cell_offsets: &'a [usize],
+    /// Whether to give the empty pool pages back between steps ([`release_pools`]).
+    release: bool,
 }
 
 /// One entity type after steps 2–5 on the device, before ownership.
@@ -358,12 +360,16 @@ struct Provisional {
     mins: DeviceBuffer<u32>,
 }
 
-/// Gives the empty pages of the device pools back (`Client::memory_cleanup`), so the scratch of
-/// one step does not stay reserved beside the next (the M8 memory bound). Best effort: CubeCL
-/// refuses only while a stream records a graph, which entity creation never does, and a
-/// refusal changes no result, so it is not an error that one rank could see and the others not.
-fn release_pools(client: &Client) {
-    let _ = client.memory_cleanup();
+/// Gives the empty pages of the device pools back (`Client::memory_cleanup`) if `cx` asks for
+/// it, so the scratch of one step does not stay reserved beside the next (the M8 memory bound).
+/// The cleanup waits for the device and frees cached pages, so only mesh creation asks for it.
+/// Best effort: CubeCL refuses only while a stream records a graph, which entity creation
+/// never does, and a refusal changes no result, so it is not an error that one rank could see
+/// and the others not.
+fn release_pools(cx: &DimContext<'_>) {
+    if cx.release {
+        let _ = cx.client.memory_cleanup();
+    }
 }
 
 /// Steps 2–5 for one entity type of `plan`, and its sharing candidates; `None` without
@@ -381,12 +387,12 @@ fn provisional(
     // Sorting through the emission keeps two sets of keys on the device, not three (the M8
     // memory bound).
     let (sorted, payload) = radix_sort_owned(keys, emitted)?;
-    release_pools(cx.client);
+    release_pools(cx);
     // The groups and the run offsets from one numbering of the runs, and the sorted keys
     // freed before the touching cells (the M8 memory bound).
     let (unique, offsets) = unique_by_key_runs(&sorted, &payload)?; // the count read
     drop(sorted);
-    release_pools(cx.client);
+    release_pools(cx);
     let mins = crate::renumber::touching_cells(
         cx.client,
         &offsets,
@@ -597,6 +603,7 @@ pub(crate) fn create_dimension(
     comm: &dyn CommDyn,
     cells: &Cells<'_>,
     dim: usize,
+    release: bool,
 ) -> Result<Dimension> {
     let parallel = comm.size() > 1;
     let counts = cell_counts(&cells.rows);
@@ -627,6 +634,7 @@ pub(crate) fn create_dimension(
         dim,
         last_vertex: last_vertex(cells.ids)?,
         cell_offsets: &cell_offsets,
+        release,
     };
 
     // Steps 2–5 and the candidates of every type, then their owners (step 6).

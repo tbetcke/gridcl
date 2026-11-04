@@ -527,6 +527,21 @@ where
     /// The bytes this rank holds for the mesh: every device buffer (topology, entities,
     /// connectivity, geometry, tags), padding included, plus the host vectors of its index
     /// maps. The "final mesh size" of the M8 memory acceptance test (ADR-0035, rule 10).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh: VolumeMesh<f32> = gridcl_testing::cube_box(Cell3::Tetrahedron, 1, 2).build(&client)?;
+    /// let before = mesh.footprint_bytes();
+    /// assert!(before > mesh.nodes().footprint_bytes());
+    /// // Created entities count too.
+    /// mesh.create_entities(1)?;
+    /// assert!(mesh.footprint_bytes() > before);
+    /// # Ok::<(), GridError>(())
+    /// ```
     #[doc(hidden)]
     pub fn footprint_bytes(&self) -> usize {
         self.topology.footprint_bytes()

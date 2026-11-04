@@ -310,6 +310,54 @@ impl<TD: TopoDim> Topology<TD> {
     /// entity receives no global number, which happens only if the vertex sharers are not
     /// consistent across ranks.
     pub fn create_entities(&mut self, comm: &dyn CommDyn, dim: usize) -> Result<()> {
+        self.create_entities_with(comm, dim, false)
+    }
+
+    /// [`create_entities`](Topology::create_entities) that gives the empty pages of the device
+    /// pools back after the sort and after the grouping (`Client::memory_cleanup`), so their
+    /// scratch does not stay reserved: gridcl's mesh creation calls it (the M8 memory bound,
+    /// ADR-0036). Each cleanup waits for the device, so other callers use `create_entities`.
+    /// Not part of the stable API.
+    ///
+    /// # Errors
+    ///
+    /// As [`create_entities`](Topology::create_entities).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, DeviceStrided};
+    /// use gridcl_dims::{Cell2, D2};
+    /// use gridcl_parallel::{IndexMap, Serial};
+    /// use gridcl_topology::{CellBlock, Topology, encode_origin_ids};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let block = CellBlock::<D2>::new(
+    ///     Cell2::Triangle,
+    ///     IndexMap::new(&Serial, 2).unwrap(),
+    ///     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1]).unwrap(), stride: 3 },
+    ///     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1])).unwrap(),
+    ///     DeviceBuffer::from_host(&client, &[0u32, 0]).unwrap(),
+    /// );
+    /// let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4).unwrap(), &[10, 11, 12, 13]).unwrap();
+    /// topology.create_entities_releasing_pools(&Serial, 1).unwrap();
+    /// assert_eq!(topology.entity_blocks(1).unwrap()[0].index_map.num_local(), 5);
+    /// ```
+    #[doc(hidden)]
+    pub fn create_entities_releasing_pools(
+        &mut self,
+        comm: &dyn CommDyn,
+        dim: usize,
+    ) -> Result<()> {
+        self.create_entities_with(comm, dim, true)
+    }
+
+    fn create_entities_with(
+        &mut self,
+        comm: &dyn CommDyn,
+        dim: usize,
+        release: bool,
+    ) -> Result<()> {
         if dim >= TD::N {
             return Err(GridError::EntitiesNotCreated(dim));
         }
@@ -331,8 +379,13 @@ impl<TD: TopoDim> Topology<TD> {
             self.entities[0] = Some(vec![block]);
             return Ok(());
         }
-        let crate::entity::Dimension { blocks, downward } =
-            crate::entity::create_dimension(&self.client, comm, &self.entity_cells(), dim)?;
+        let crate::entity::Dimension { blocks, downward } = crate::entity::create_dimension(
+            &self.client,
+            comm,
+            &self.entity_cells(),
+            dim,
+            release,
+        )?;
         self.entities[dim] = Some(blocks);
         self.connectivity.insert(
             ConnKey {
