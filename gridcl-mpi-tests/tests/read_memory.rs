@@ -161,6 +161,10 @@ fn main() -> ExitCode {
                     8,
                     "GRIDCL_M8_BOX: the measurement runs on 8 ranks"
                 );
+                assert!(
+                    gridcl_testing::supports::<f64>(&client),
+                    "GRIDCL_M8_BOX: the measurement reads in f64"
+                );
                 let cells = io::read_memory(comm, &client, &PathBuf::from(path), &peak_rss);
                 assert!(
                     cells >= 10_000_000,

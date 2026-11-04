@@ -472,7 +472,12 @@ where
     }
     builder
         .element_ids(element_ids)
-        .node_refs(node_refs)
+        .node_refs({
+            // One check per node, however many tag elements use it.
+            node_refs.sort_unstable();
+            node_refs.dedup();
+            node_refs
+        })
         .tag_names(&names)
         .ghosts(options.ghosts)
         .ordering(options.ordering)
