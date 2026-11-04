@@ -4,7 +4,6 @@
 //! the global Gmsh numbering of nodes and tag elements.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use gridcl_device::{GridError, Real, Result};
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
@@ -339,26 +338,18 @@ pub(crate) fn gather_tag_groups(
     Ok(out)
 }
 
-/// The agreed status of a collective write to `path` (ADR-0035, items 11 and 12): a failing
-/// rank returns its own error; if the lowest failing rank failed with `Io`, every other rank
-/// returns `Io` naming `path` and that rank, else `RemoteFailure`. Collective.
-pub(crate) fn agree_write(comm: &dyn CommDyn, path: &Path, local: Result<()>) -> Result<()> {
+/// The agreed status of a collective write (ADR-0026, item 15; ADR-0035, items 11 and 12): a
+/// failing rank returns its own error, every other rank `RemoteFailure` with the lowest
+/// failing rank. Collective.
+pub(crate) fn agree_write(comm: &dyn CommDyn, local: Result<()>) -> Result<()> {
     let lowest = comm.min(if local.is_err() {
         comm.rank() as u64
     } else {
         u64::MAX
     });
-    if lowest == u64::MAX {
-        return Ok(());
-    }
-    let io = matches!(local, Err(GridError::Io(_))) && comm.rank() as u64 == lowest;
-    let io = comm.max(u32::from(io)) == 1;
     match local {
+        _ if lowest == u64::MAX => Ok(()),
         Err(e) => Err(e),
-        Ok(()) if io => Err(GridError::Io(format!(
-            "{}: the write failed on rank {lowest}",
-            path.display()
-        ))),
         Ok(()) => Err(GridError::RemoteFailure {
             rank: lowest as usize,
         }),

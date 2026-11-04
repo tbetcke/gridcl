@@ -128,8 +128,9 @@ impl Layout {
 ///   names, components or types of their point or cell data arrays, which must be the same on
 ///   every rank;
 /// - `TooLarge` if the total sizes overflow;
-/// - `Io` naming `path` if HDF5 fails: on every rank when it failed on the lowest failing rank
-///   (the others name that rank), else `RemoteFailure`.
+/// - `Io` naming `path` on the rank where HDF5 fails.
+///
+/// A rank without a local error returns `RemoteFailure` with the lowest failing rank.
 ///
 /// # Example
 ///
@@ -153,7 +154,7 @@ impl Layout {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn write_vtkhdf(path: &Path, piece: &VtuFile, comm: &dyn CommDyn) -> Result<()> {
-    let points = agree(comm, path, piece.check())?;
+    let points = agree(comm, piece.check())?;
     let layout = Layout::new(all_gather_sizes(comm, Sizes::of(piece, points))?)?;
     check_schema(comm, piece)?;
     #[cfg(feature = "mpi")]
@@ -226,29 +227,20 @@ fn check_schema(comm: &dyn CommDyn, piece: &VtuFile) -> Result<()> {
     Ok(())
 }
 
-/// The agreed status of a collective step on `path` (ADR-0026, item 15): a failing rank
-/// returns its own error; if the lowest failing rank failed with `Io`, every other rank returns
-/// `Io` naming `path` and that rank, else `RemoteFailure`. Collective.
-fn agree<T>(comm: &dyn CommDyn, path: &Path, local: Result<T>) -> Result<T> {
+/// The agreed status of a collective step (ADR-0026, item 15): a failing rank returns its own
+/// error, every other rank `RemoteFailure` with the lowest failing rank. Collective.
+fn agree<T>(comm: &dyn CommDyn, local: Result<T>) -> Result<T> {
     let lowest = comm.min(if local.is_err() {
         comm.rank() as u64
     } else {
         u64::MAX
     });
-    if lowest == u64::MAX {
-        return local;
-    }
-    let io = matches!(local, Err(GridError::Io(_))) && comm.rank() as u64 == lowest;
-    let io = comm.max(u32::from(io)) == 1;
     match local {
         Err(e) => Err(e),
-        Ok(_) if io => Err(GridError::Io(format!(
-            "{}: the VTKHDF write failed on rank {lowest}",
-            path.display()
-        ))),
-        Ok(_) => Err(GridError::RemoteFailure {
+        Ok(_) if lowest != u64::MAX => Err(GridError::RemoteFailure {
             rank: lowest as usize,
         }),
+        ok => ok,
     }
 }
 
@@ -438,22 +430,22 @@ fn new_file(path: &Path, mpio: Option<&dyn CommDyn>) -> hdf5_metno::Result<File>
 /// also the counts), and closes the file.
 #[cfg(feature = "mpi")]
 fn collective(path: &Path, piece: &VtuFile, layout: &Layout, comm: &dyn CommDyn) -> Result<()> {
-    let file = agree(comm, path, new_file(path, Some(comm)).map_err(io(path)))?;
-    let sets = agree(comm, path, create(&file, piece, layout).map_err(io(path)))?;
+    let file = agree(comm, new_file(path, Some(comm)).map_err(io(path)))?;
+    let sets = agree(comm, create(&file, piece, layout).map_err(io(path)))?;
     let written = (|| {
         if comm.rank() == 0 {
             write_counts(&sets, layout)?;
         }
         write_piece(&sets, piece, layout, comm.rank())
     })();
-    agree(comm, path, written.map_err(io(path)))?;
+    agree(comm, written.map_err(io(path)))?;
     drop(sets);
-    agree(comm, path, file.close().map_err(io(path)))
+    agree(comm, file.close().map_err(io(path)))
 }
 
 /// The gather path: rank 0 receives every piece and writes them all.
 fn gathered(path: &Path, piece: &VtuFile, layout: &Layout, comm: &dyn CommDyn) -> Result<()> {
-    let pieces = agree(comm, path, gather_pieces(comm, piece))?;
+    let pieces = agree(comm, gather_pieces(comm, piece))?;
     let written = match pieces {
         Some(pieces) => (|| {
             let file = new_file(path, None)?;
@@ -468,7 +460,7 @@ fn gathered(path: &Path, piece: &VtuFile, layout: &Layout, comm: &dyn CommDyn) -
         .map_err(io(path)),
         None => Ok(()),
     };
-    agree(comm, path, written)
+    agree(comm, written)
 }
 
 /// The values of every rank on rank 0 (empty elsewhere), in rank order. Collective.

@@ -48,6 +48,7 @@ impl Nodes {
 /// Wire tags of the directory exchange.
 const POST: i64 = 0;
 const REQUEST: i64 = 1;
+const CHECK: i64 = 2;
 
 /// Role bits of a node request: the node is a vertex, or a non-vertex node, of an owned cell.
 const VERTEX: i64 = 1;
@@ -65,8 +66,8 @@ const NON_VERTEX: i64 = 2;
 ///
 /// Agreed over the ranks, in this order:
 /// - `DuplicateOriginId` for a node id posted twice (the first repeat on its directory rank);
-/// - `IndexOutOfRange` for a cell node id that no rank posted: `index` is the id (`usize::MAX`
-///   if negative), `len` the global node count;
+/// - `IndexOutOfRange` for a cell node id, or an id of `refs`, that no rank posted: `index` is
+///   the id (`usize::MAX` if negative), `len` the global node count;
 /// - `NodeRoleMismatch` for a node that is a vertex of one cell and a non-vertex node of
 ///   another: the node's global input position (an exscan of the chunk sizes plus its index),
 ///   the lowest on its directory rank.
@@ -78,6 +79,7 @@ pub(crate) fn fetch_nodes(
     gdim: usize,
     chunk: &NodeChunk,
     local: &LocalCells,
+    refs: &[i64],
 ) -> Result<Nodes> {
     let p = comm.size();
     let num_chunk = chunk.ids.len();
@@ -113,6 +115,9 @@ pub(crate) fn fetch_nodes(
     for &id in &wanted {
         out.push(rendezvous_rank(&[id], p), &[&[REQUEST, id, roles[&id]]]);
     }
+    for &id in refs {
+        out.push(rendezvous_rank(&[id], p), &[&[CHECK, id]]);
+    }
     let inbox = out.exchange(comm)?;
 
     // The directory: id → (global input position, coordinate words).
@@ -128,7 +133,10 @@ pub(crate) fn fetch_nodes(
         duplicate.map_or(Ok(()), |id| Err(GridError::DuplicateOriginId(id))),
     )?;
 
-    let mut unknown = None;
+    let mut unknown = inbox
+        .records()
+        .find(|(_, r)| r[0] == CHECK && !directory.contains_key(&r[1]))
+        .map(|(_, r)| r[1]);
     let mut node_roles: HashMap<i64, i64> = HashMap::new();
     let mut replies = Outbox::new(p);
     for (source, r) in inbox.records().filter(|(_, r)| r[0] == REQUEST) {
@@ -239,7 +247,7 @@ mod tests {
                         let (read, local) =
                             local_cells(&comm, &input.input(), GhostMode::SharedFacet);
                         let nodes =
-                            fetch_nodes(&comm, &read.blocks, gd, &read.nodes, &local).unwrap();
+                            fetch_nodes(&comm, &read.blocks, gd, &read.nodes, &local, &[]).unwrap();
                         (local, nodes)
                     });
                     for (r, (local, nodes)) in out.iter().enumerate() {
@@ -268,7 +276,7 @@ mod tests {
         let out = ThreadComm::run(3, |comm| {
             let input = OwnedInput::of_chunk(&HostChunk::empty(2));
             let (read, local) = local_cells(&comm, &input.input(), GhostMode::None);
-            fetch_nodes(&comm, &read.blocks, 2, &read.nodes, &local).unwrap()
+            fetch_nodes(&comm, &read.blocks, 2, &read.nodes, &local, &[]).unwrap()
         });
         for nodes in out {
             assert!(nodes.ids.is_empty());
@@ -295,7 +303,7 @@ mod tests {
                 tags: vec![],
             };
             let (read, local) = local_cells(&comm, &input.input(), GhostMode::None);
-            fetch_nodes(&comm, &read.blocks, 1, &read.nodes, &local)
+            fetch_nodes(&comm, &read.blocks, 1, &read.nodes, &local, &[])
         })
     }
 

@@ -154,7 +154,19 @@ fn main() -> ExitCode {
         log::set_max_level(log::LevelFilter::Debug);
         let client = gridcl_testing::test_client();
         match std::env::var_os("GRIDCL_M8_BOX").filter(|v| !v.is_empty()) {
-            Some(path) => io::read_memory(comm, &client, &PathBuf::from(path), &peak_rss),
+            Some(path) => {
+                // The measurement of bullet 2: 8 ranks, a 10^7-cell file.
+                assert_eq!(
+                    comm.size(),
+                    8,
+                    "GRIDCL_M8_BOX: the measurement runs on 8 ranks"
+                );
+                let cells = io::read_memory(comm, &client, &PathBuf::from(path), &peak_rss);
+                assert!(
+                    cells >= 10_000_000,
+                    "GRIDCL_M8_BOX: {cells} cells, the measurement needs at least 10^7"
+                );
+            }
             None => {
                 let dir = shared_dir(comm, "read-memory");
                 let path = dir.join("box.msh");

@@ -292,7 +292,7 @@ mod tests {
             };
             let input = OwnedInput::of_chunk(&chunk);
             let (read, local) = local_cells(&comm, &input.input(), mode);
-            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local).unwrap();
+            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local, &[]).unwrap();
             let before = local.clone();
             let local = order_cells(&read.blocks, local, &nodes, ordering);
             // A permutation of the owned cells; the ghosts and owners are unchanged.

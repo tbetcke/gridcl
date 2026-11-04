@@ -306,20 +306,23 @@ fn pieces_with_different_arrays_fail_everywhere() {
 }
 
 #[test]
-fn unwritable_path_gives_io_on_every_rank() {
+fn unwritable_path_gives_io_and_remote_failure() {
     let path = Path::new("/nonexistent-gridcl-dir/out.vtkhdf");
     let got = ThreadComm::run(2, |comm| {
         write_vtkhdf(path, &piece(comm.rank(), 2, false), &comm)
     });
-    for r in &got {
-        let Err(GridError::Io(message)) = r else {
-            panic!("{got:?}");
-        };
-        assert!(
-            message.contains("/nonexistent-gridcl-dir/out.vtkhdf"),
-            "{message}"
-        );
-    }
+    // Rank 0 writes on the gather path; rank 1 hears of its failure (ADR-0026, item 15).
+    let Err(GridError::Io(message)) = &got[0] else {
+        panic!("{got:?}");
+    };
+    assert!(
+        message.contains("/nonexistent-gridcl-dir/out.vtkhdf"),
+        "{message}"
+    );
+    assert!(
+        matches!(got[1], Err(GridError::RemoteFailure { rank: 0 })),
+        "{got:?}"
+    );
     let one = write_vtkhdf(path, &piece(0, 1, false), &Serial);
     assert!(matches!(one, Err(GridError::Io(_))), "{one:?}");
 }

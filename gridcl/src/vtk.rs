@@ -572,9 +572,10 @@ impl<'a> VtkWriter<'a> {
     /// # Errors
     ///
     /// `LengthMismatch` for a data array of the wrong length or without components, and
-    /// `NotYetImplemented` for compressed VTKHDF, before anything is written; `Io` on every rank if a file cannot be written (on another rank,
-    /// naming it), also for a PVTU stem without a UTF-8 file name; `TooLarge`; allocation and
-    /// device errors. Errors of one rank are `RemoteFailure` on the others unless stated.
+    /// `NotYetImplemented` for compressed VTKHDF, before anything is written; `Io` if a file
+    /// cannot be written, also for a PVTU stem without a UTF-8 file name; `TooLarge`;
+    /// allocation and device errors. Errors of one rank are `RemoteFailure` with the lowest
+    /// failing rank on the others (ADR-0026, item 15).
     ///
     /// # Example
     ///
@@ -702,7 +703,7 @@ impl<'a> VtkWriter<'a> {
             }
             Ok(())
         });
-        agree_write(comm, &self.path, local)
+        agree_write(comm, local)
     }
 
     /// The VTKHDF file of the PVTU pieces. Collective, with an agreed status.
@@ -763,7 +764,7 @@ impl<'a> VtkWriter<'a> {
             }
             Ok(())
         })();
-        agree_write(comm, &self.path, local)
+        agree_write(comm, local)
     }
 
     /// For a PVTU, the path of the piece of `rank` and its name relative to the header.

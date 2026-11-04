@@ -154,6 +154,7 @@ pub struct MeshBuilder<F: Real, TD: TopoDim, GD: Dim> {
     tags: Vec<TagInput>,
     tag_names: Vec<(String, usize, i32)>,
     element_ids: Vec<i64>,
+    node_refs: Vec<i64>,
     destinations: Option<Vec<i32>>,
     ghosts: GhostMode,
     partitioner: Box<dyn Partitioner>,
@@ -177,6 +178,7 @@ where
             tags: Vec::new(),
             tag_names: Vec::new(),
             element_ids: Vec::new(),
+            node_refs: Vec::new(),
             destinations: None,
             ghosts: GhostMode::None,
             partitioner: Box::new(Block),
@@ -278,6 +280,13 @@ where
     /// item 9): an id given twice, or also as a cell id, is `DuplicateOriginId`.
     pub(crate) fn element_ids(mut self, ids: Vec<i64>) -> Self {
         self.element_ids.extend(ids);
+        self
+    }
+
+    /// Node ids that must be in some rank's nodes (the Gmsh reader's tag-element corners;
+    /// ADR-0035, item 9): an id no rank passed is `IndexOutOfRange`, as a cell's node id.
+    pub(crate) fn node_refs(mut self, ids: Vec<i64>) -> Self {
+        self.node_refs.extend(ids);
         self
     }
 
@@ -573,7 +582,9 @@ where
         log_memory(client, "stages 2-4 (partition, migrate)");
         let local = ghost_cells(&comm, &blocks, owned, self.ghosts)?;
         log_memory(client, "stage 5 (ghosts)");
-        let nodes = fetch_nodes(&comm, &blocks, GD::N, &chunk, &local)?;
+        let refs = std::mem::take(&mut self.node_refs);
+        let nodes = fetch_nodes(&comm, &blocks, GD::N, &chunk, &local, &refs)?;
+        drop(refs);
         log_memory(client, "stage 6 (nodes)");
         let local = order_cells(&blocks, local, &nodes, self.ordering);
         let mut numbered = number(&comm, &blocks, local, &nodes)?;

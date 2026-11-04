@@ -358,8 +358,8 @@ fn local(
     Ok((chunk, names, gdim))
 }
 
-/// `Parse` for stage 6's `IndexOutOfRange`: a node of a D_TOP element that `$Nodes` lacks
-/// (rule 3).
+/// `Parse` for stage 6's `IndexOutOfRange`: a node of a D_TOP element, or a corner of a tag
+/// element, that `$Nodes` lacks (rule 3).
 fn missing_node(e: GridError) -> GridError {
     match e {
         GridError::IndexOutOfRange { index, .. } => GridError::Parse {
@@ -439,6 +439,7 @@ where
         builder = builder.tagged_cell_block(element, c.nodes, c.tags, c.physical, c.elementary);
     }
     let mut element_ids = Vec::new();
+    let mut node_refs = Vec::new();
     for g in groups {
         let nv = gridcl_refcell::vertices(g.cell).len();
         let mut corners = Vec::with_capacity(g.physical.len() * nv);
@@ -450,6 +451,7 @@ where
             values.push(v);
             errors.push(g.tags[e]);
         }
+        node_refs.extend_from_slice(&g.corners);
         builder = builder
             .tag_entries(
                 TagKind::Elementary,
@@ -470,6 +472,7 @@ where
     }
     builder
         .element_ids(element_ids)
+        .node_refs(node_refs)
         .tag_names(&names)
         .ghosts(options.ghosts)
         .ordering(options.ordering)

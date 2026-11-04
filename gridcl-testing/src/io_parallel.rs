@@ -92,7 +92,7 @@ pub struct ReadCase {
     pub ghosts: GhostMode,
     /// The partitioner.
     pub partitioner: Choice,
-    /// f64 if the device supports it, else f32.
+    /// f64 (nothing to check where the device lacks it), else f32.
     pub double: bool,
 }
 
@@ -140,8 +140,7 @@ pub const SUBSET: [&str; 11] = [
 /// The ghost modes of the read cases.
 pub const READ_GHOSTS: [GhostMode; 2] = [GhostMode::None, GhostMode::SharedFacet];
 
-/// The read cases of `coverage` with each of `partitioners`, both ghost modes, alternating f32
-/// and f64 over the files.
+/// The read cases of `coverage` with each of `partitioners`, both ghost modes, f32 and f64.
 pub fn read_cases(coverage: Coverage, partitioners: &[Choice]) -> Vec<ReadCase> {
     let mut sources: Vec<Source> = match coverage {
         Coverage::Full => fixtures::manifest()
@@ -155,15 +154,17 @@ pub fn read_cases(coverage: Coverage, partitioners: &[Choice]) -> Vec<ReadCase> 
     };
     sources.push(Source::MixedBox);
     let mut out = Vec::new();
-    for (i, source) in sources.into_iter().enumerate() {
+    for source in sources {
         for &ghosts in &READ_GHOSTS {
             for &partitioner in partitioners {
-                out.push(ReadCase {
-                    source: source.clone(),
-                    ghosts,
-                    partitioner,
-                    double: i % 2 == 0,
-                });
+                for double in [false, true] {
+                    out.push(ReadCase {
+                        source: source.clone(),
+                        ghosts,
+                        partitioner,
+                        double,
+                    });
+                }
             }
         }
     }
@@ -191,6 +192,15 @@ fn ok<T>(r: Result<T>, context: &dyn fmt::Display) -> T {
 /// Whether `double` is honoured on `client`.
 fn use_f64(client: &Client, double: bool) -> bool {
     double && supports::<f64>(client)
+}
+
+/// "f32" or "f64".
+fn precision_name<F: Real>() -> &'static str {
+    if size_of::<F>() == size_of::<f32>() {
+        "f32"
+    } else {
+        "f64"
+    }
 }
 
 /// A directory that every rank of `comm` sees, empty, named after `name`, the rank count and
@@ -517,13 +527,15 @@ pub fn assert_snapshot_within(
 /// Bullet 1 (rule 11): `case` read on `comm`, gathered to rank 0 by cell origin id, equals the
 /// one-rank read (cell types and degrees, vertex origin ids in cell order, node coordinates in
 /// internal order bitwise, physical and elementary tags keyed by sorted vertex origin ids, the
-/// name table). `dir` is a [`shared_dir`] for the generated box.
+/// name table). `dir` is a [`shared_dir`] for the generated box. An f64 case returns at once
+/// where the device lacks f64.
 pub fn global_mesh_identical<C: Comm>(comm: &C, client: &Client, case: &ReadCase, dir: &Path) {
-    let path = materialise(comm, client, &case.source, dir);
-    if use_f64(client, case.double) {
-        global_mesh_identical_in::<f64, C>(comm, client, case, &path);
-    } else {
+    if !case.double {
+        let path = materialise(comm, client, &case.source, dir);
         global_mesh_identical_in::<f32, C>(comm, client, case, &path);
+    } else if supports::<f64>(client) {
+        let path = materialise(comm, client, &case.source, dir);
+        global_mesh_identical_in::<f64, C>(comm, client, case, &path);
     }
 }
 
@@ -606,25 +618,25 @@ pub const ROUND_TRIP: [&str; 3] = [
     "hybrid_p1.msh",
 ];
 
-/// Rule 7: each fixture of [`ROUND_TRIP`] read on `comm` with shared-facet ghosts and written
-/// with `.partitioned(true)` (more than one rank) and gathered. On rank 0: each part, read
+/// Rule 7: each fixture of [`ROUND_TRIP`] read on `comm` with shared-facet ghosts, in f32 and,
+/// where the device supports it, f64, and written with `.partitioned(true)` and gathered. On rank 0: each part, read
 /// serially, holds `$PartitionedEntities` with P partitions; the parts' cells are disjoint and
 /// together, with their tags, equal the one-rank read (coordinates to the precision's
 /// tolerance, as each part has its own origin); the gathered file, read serially, equals
 /// the file written from the one-rank read (sorting by origin id).
 pub fn partitioned_round_trip<C: Comm>(comm: &C, client: &Client, dir: &Path) {
-    for (i, name) in ROUND_TRIP.iter().enumerate() {
-        if use_f64(client, i % 2 == 0) {
+    for name in ROUND_TRIP {
+        round_trip_in::<f32, C>(comm, client, name, dir);
+        if supports::<f64>(client) {
             round_trip_in::<f64, C>(comm, client, name, dir);
-        } else {
-            round_trip_in::<f32, C>(comm, client, name, dir);
         }
     }
 }
 
 fn round_trip_in<F: Real, C: Comm>(comm: &C, client: &Client, name: &str, dir: &Path) {
     let (rank, size) = (comm.rank(), comm.size());
-    let at = format!("{name}, {size} ranks, rank {rank}");
+    let precision = precision_name::<F>();
+    let at = format!("{name} {precision}, {size} ranks, rank {rank}");
     let source = fixtures::fixtures_dir().join(name);
     let any = ok(
         read_on::<F, C>(
@@ -636,17 +648,15 @@ fn round_trip_in<F: Real, C: Comm>(comm: &C, client: &Client, name: &str, dir: &
         ),
         &at,
     );
-    let stem = dir.join(name.trim_end_matches(".msh"));
+    let stem = dir.join(format!("{}-{precision}", name.trim_end_matches(".msh")));
     let gathered = PathBuf::from(format!("{}-gathered.msh", stem.display()));
     let parts = |r: usize| PathBuf::from(format!("{}_{}.msh", stem.display(), r + 1));
-    if size > 1 {
-        ok(
-            gmsh::GmshWriter::new(stem.with_extension("msh"))
-                .partitioned(true)
-                .write_any(any.as_ref()),
-            &format!("{at}: partitioned write"),
-        );
-    }
+    ok(
+        gmsh::GmshWriter::new(stem.with_extension("msh"))
+            .partitioned(true)
+            .write_any(any.as_ref()),
+        &format!("{at}: partitioned write"),
+    );
     ok(
         gmsh::GmshWriter::new(&gathered).write_any(any.as_ref()),
         &format!("{at}: gathered write"),
@@ -669,44 +679,42 @@ fn round_trip_in<F: Real, C: Comm>(comm: &C, client: &Client, name: &str, dir: &
     );
     let want = ok(snapshot_any(&one_rank, true), &at);
 
-    if size > 1 {
-        let mut union = Snapshot {
-            names: want.names.clone(),
-            ..Snapshot::default()
-        };
-        for r in 0..size {
-            let path = parts(r);
-            let text = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-            let marker = format!("$PartitionedEntities\n{size}\n");
-            assert!(
-                text.windows(marker.len()).any(|w| w == marker.as_bytes()),
-                "{at}: part {} lacks $PartitionedEntities with {size} partitions",
-                r + 1
-            );
-            let part = read_serial(&path);
-            assert_eq!(part.names, want.names, "{at}: part {}: names", r + 1);
-            for (id, record) in part.cells {
-                assert!(
-                    union.cells.insert(id, record).is_none(),
-                    "{at}: cell {id} is in more than one part"
-                );
-            }
-            union.tags.extend(part.tags);
-        }
-        // Each part has its own origin (its bounding box), so coordinates agree to the
-        // precision's tolerance only.
-        let tol = if size_of::<F>() == size_of::<f32>() {
-            1e-5
-        } else {
-            1e-12
-        };
-        assert_snapshot_within(
-            &union,
-            &want,
-            Some(tol),
-            &format!("{at}: the union of the parts"),
+    let mut union = Snapshot {
+        names: want.names.clone(),
+        ..Snapshot::default()
+    };
+    for r in 0..size {
+        let path = parts(r);
+        let text = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let marker = format!("$PartitionedEntities\n{size}\n");
+        assert!(
+            text.windows(marker.len()).any(|w| w == marker.as_bytes()),
+            "{at}: part {} lacks $PartitionedEntities with {size} partitions",
+            r + 1
         );
+        let part = read_serial(&path);
+        assert_eq!(part.names, want.names, "{at}: part {}: names", r + 1);
+        for (id, record) in part.cells {
+            assert!(
+                union.cells.insert(id, record).is_none(),
+                "{at}: cell {id} is in more than one part"
+            );
+        }
+        union.tags.extend(part.tags);
     }
+    // Each part has its own origin (its bounding box), so coordinates agree to the
+    // precision's tolerance only.
+    let tol = if precision_name::<F>() == "f32" {
+        1e-5
+    } else {
+        1e-12
+    };
+    assert_snapshot_within(
+        &union,
+        &want,
+        Some(tol),
+        &format!("{at}: the union of the parts"),
+    );
 
     let serial_file = PathBuf::from(format!("{}-serial.msh", stem.display()));
     ok(
@@ -790,7 +798,8 @@ fn assert_equal(result: &serde_json::Value, what: &dyn fmt::Display) {
 /// Bullet 4 (rule 8): each mesh of the VTK checks built on `comm` with `ghosts`, written as
 /// `format` with origin ids; after VTK removes the ghost cells (`vtkRemoveGhosts`), every cell
 /// origin id appears exactly once. The PVTU header has `GhostLevel` 1 exactly when some rank
-/// has ghost cells, and `vtkGhostType` exists exactly on more than one rank.
+/// has ghost cells, and `vtkGhostType` exists exactly on more than one rank. In f32 and, where
+/// the device supports it, f64.
 pub fn ghosts_once<C: Comm>(
     comm: &C,
     client: &Client,
@@ -798,17 +807,32 @@ pub fn ghosts_once<C: Comm>(
     format: VtkFormat,
     dir: &Path,
 ) {
+    ghosts_once_in::<f32, C>(comm, client, ghosts, format, dir);
+    if supports::<f64>(client) {
+        ghosts_once_in::<f64, C>(comm, client, ghosts, format, dir);
+    }
+}
+
+fn ghosts_once_in<F: Real, C: Comm>(
+    comm: &C,
+    client: &Client,
+    ghosts: GhostMode,
+    format: VtkFormat,
+    dir: &Path,
+) {
     let (rank, size) = (comm.rank(), comm.size());
+    let precision = precision_name::<F>();
     let oracle = oracle_on_root(comm, "ghosts_once");
     for (name, h, _) in vtk_meshes() {
-        let at = format!("{name} {ghosts:?}, {size} ranks, rank {rank}");
-        let mesh = ok(build_volume::<f32, C>(comm, client, &h, ghosts), &at);
+        let at = format!("{name} {ghosts:?} {precision}, {size} ranks, rank {rank}");
+        let mesh = ok(build_volume::<F, C>(comm, client, &h, ghosts), &at);
         let has_ghosts = mesh
             .cell_blocks()
             .iter()
             .any(|b| b.index_map.num_local() > b.index_map.num_owned());
         let any_ghosts = comm.max(u32::from(has_ghosts)) == 1;
-        let stem = dir.join(format!("{name}-{ghosts:?}").replace([' ', '{', '}', ':'], ""));
+        let stem =
+            dir.join(format!("{name}-{ghosts:?}-{precision}").replace([' ', '{', '}', ':'], ""));
         let (writer, file) = match format {
             VtkFormat::Pvtu => (VtkWriter::pvtu(&stem), stem.with_extension("pvtu")),
             VtkFormat::Vtkhdf(make) => (make(&stem), stem.with_extension("vtkhdf")),
@@ -858,15 +882,20 @@ pub fn ghosts_once<C: Comm>(
 
 /// Point data from the node coordinates (x + 2y + 3z) and cell data from the cell origin ids,
 /// for the writers: the same values on any partition.
-fn data_of<C: Comm>(mesh: &VolumeMesh<f64, C>) -> Result<(DeviceBuffer<f64>, DeviceBuffer<i32>)> {
+fn data_of<F: Real, C: Comm>(
+    mesh: &VolumeMesh<F, C>,
+) -> Result<(DeviceBuffer<F>, DeviceBuffer<i32>)> {
     let client = mesh.client();
     let nodes = mesh.nodes().to_host()?;
     let origin = mesh.origin();
-    let point: Vec<f64> = nodes
+    let point: Vec<F> = nodes
         .as_chunks::<3>()
         .0
         .iter()
-        .map(|x| (x[0] + origin[0]) + 2.0 * (x[1] + origin[1]) + 3.0 * (x[2] + origin[2]))
+        .map(|x| {
+            let at = |k: usize| x[k].widen() + origin[k];
+            F::narrow(at(0) + 2.0 * at(1) + 3.0 * at(2))
+        })
         .collect();
     let mut cell = Vec::new();
     for b in mesh.cell_blocks() {
@@ -885,21 +914,30 @@ fn data_of<C: Comm>(mesh: &VolumeMesh<f64, C>) -> Result<(DeviceBuffer<f64>, Dev
 /// Rule 8: each mesh of the VTK checks built on `comm` with shared-facet ghosts and written as
 /// a gathered VTU with origin ids, point data and cell data equals, after sorting by origin id,
 /// the VTU of the one-rank build (oracle `compare --by-origin-id`); it has no `vtkGhostType`.
+/// In f32 and, where the device supports it, f64.
 pub fn vtu_gathered_equals_serial<C: Comm>(comm: &C, client: &Client, dir: &Path) {
-    if !supports::<f64>(client) {
-        eprintln!("vtu_gathered_equals_serial: f64 is not supported on this device; skipped");
-        return;
+    vtu_gathered_equals_serial_in::<f32, C>(comm, client, dir);
+    if supports::<f64>(client) {
+        vtu_gathered_equals_serial_in::<f64, C>(comm, client, dir);
     }
+}
+
+fn vtu_gathered_equals_serial_in<F: Real + gridcl::vtk::VtkScalar, C: Comm>(
+    comm: &C,
+    client: &Client,
+    dir: &Path,
+) {
     let (rank, size) = (comm.rank(), comm.size());
+    let precision = precision_name::<F>();
     let oracle = oracle_on_root(comm, "vtu_gathered_equals_serial");
     for (name, h, _) in vtk_meshes() {
-        let at = format!("{name}, {size} ranks, rank {rank}");
+        let at = format!("{name} {precision}, {size} ranks, rank {rank}");
         let mesh = ok(
-            build_volume::<f64, C>(comm, client, &h, GhostMode::SharedFacet),
+            build_volume::<F, C>(comm, client, &h, GhostMode::SharedFacet),
             &at,
         );
         let (point, cell) = ok(data_of(&mesh), &at);
-        let gathered = dir.join(format!("{name}-gathered.vtu"));
+        let gathered = dir.join(format!("{name}-{precision}-gathered.vtu"));
         ok(
             VtkWriter::vtu(&gathered)
                 .origin_ids(true)
@@ -912,9 +950,9 @@ pub fn vtu_gathered_equals_serial<C: Comm>(comm: &C, client: &Client, dir: &Path
         if rank != 0 {
             continue;
         }
-        let serial: VolumeMesh<f64> = ok(h.build(client), &at);
+        let serial: VolumeMesh<F> = ok(h.build(client), &at);
         let (point, cell) = ok(data_of(&serial), &at);
-        let one = dir.join(format!("{name}-serial.vtu"));
+        let one = dir.join(format!("{name}-{precision}-serial.vtu"));
         ok(
             VtkWriter::vtu(&one)
                 .origin_ids(true)
@@ -936,27 +974,37 @@ pub fn vtu_gathered_equals_serial<C: Comm>(comm: &C, client: &Client, dir: &Path
 /// Bullet 3 (rule 12): each mesh of the VTK checks built on `comm` with shared-facet ghosts and
 /// written as PVTU and as VTKHDF (`vtkhdf`, the caller's `VtkWriter::vtkhdf`), with origin ids,
 /// point data and cell data: VTK's `vtkHDFReader` and `vtkXMLPUnstructuredGridReader` (ghost
-/// level 1) give equal arrays, bitwise, and equal per-piece counts.
+/// level 1) give equal arrays, bitwise, and equal per-piece counts. In f32 and, where the device
+/// supports it, f64.
 pub fn vtkhdf_equals_pvtu<C: Comm>(
     comm: &C,
     client: &Client,
     vtkhdf: fn(&Path) -> VtkWriter<'static>,
     dir: &Path,
 ) {
-    if !supports::<f64>(client) {
-        eprintln!("vtkhdf_equals_pvtu: f64 is not supported on this device; skipped");
-        return;
+    vtkhdf_equals_pvtu_in::<f32, C>(comm, client, vtkhdf, dir);
+    if supports::<f64>(client) {
+        vtkhdf_equals_pvtu_in::<f64, C>(comm, client, vtkhdf, dir);
     }
+}
+
+fn vtkhdf_equals_pvtu_in<F: Real + gridcl::vtk::VtkScalar, C: Comm>(
+    comm: &C,
+    client: &Client,
+    vtkhdf: fn(&Path) -> VtkWriter<'static>,
+    dir: &Path,
+) {
     let (rank, size) = (comm.rank(), comm.size());
+    let precision = precision_name::<F>();
     let oracle = oracle_on_root(comm, "vtkhdf_equals_pvtu");
     for (name, h, _) in vtk_meshes() {
-        let at = format!("{name}, {size} ranks, rank {rank}");
+        let at = format!("{name} {precision}, {size} ranks, rank {rank}");
         let mesh = ok(
-            build_volume::<f64, C>(comm, client, &h, GhostMode::SharedFacet),
+            build_volume::<F, C>(comm, client, &h, GhostMode::SharedFacet),
             &at,
         );
         let (point, cell) = ok(data_of(&mesh), &at);
-        let stem = dir.join(name);
+        let stem = dir.join(format!("{name}-{precision}"));
         for writer in [VtkWriter::pvtu(&stem), vtkhdf(&stem)] {
             ok(
                 writer
@@ -991,12 +1039,17 @@ pub const MEMORY_SLACK: u64 = 256 << 20;
 /// Bullet 2 (rule 10): reads `path` on `comm` with `Block` and no ghosts in f64 (f32 where the
 /// device lacks f64: a smoke run, the measurement is on the CPU runtime), then compares the
 /// peak resident memory of this process (`peak_rss`, in bytes) with twice the mesh's
-/// `footprint_bytes` plus 256 MiB. Prints both on every rank.
-pub fn read_memory<C: Comm>(comm: &C, client: &Client, path: &Path, peak_rss: &dyn Fn() -> u64) {
+/// `footprint_bytes` plus 256 MiB. Prints both on every rank and returns the global cell count.
+pub fn read_memory<C: Comm>(
+    comm: &C,
+    client: &Client,
+    path: &Path,
+    peak_rss: &dyn Fn() -> u64,
+) -> u64 {
     if use_f64(client, true) {
-        read_memory_in::<f64, C>(comm, client, path, peak_rss);
+        read_memory_in::<f64, C>(comm, client, path, peak_rss)
     } else {
-        read_memory_in::<f32, C>(comm, client, path, peak_rss);
+        read_memory_in::<f32, C>(comm, client, path, peak_rss)
     }
 }
 
@@ -1005,7 +1058,7 @@ fn read_memory_in<F: Real, C: Comm>(
     client: &Client,
     path: &Path,
     peak_rss: &dyn Fn() -> u64,
-) {
+) -> u64 {
     let (rank, size) = (comm.rank(), comm.size());
     let at = format!("{}, {size} ranks, rank {rank}", path.display());
     let any = ok(
@@ -1027,19 +1080,21 @@ fn read_memory_in<F: Real, C: Comm>(
         peak >> 20,
         bound >> 20
     );
-    comm.barrier();
+    let total = comm.sum(cells as u64);
     assert!(
         peak < bound,
         "{at}: peak RSS {peak} B >= 2 x footprint {footprint} B + 256 MiB"
     );
+    total
 }
 
 // ---------------------------------------------------------------------------------------------
 // Collective writes.
 
-/// Rules 7–8: writes that fail on one rank fail on every rank with `Io`: a gathered Gmsh file
-/// and a VTU in a missing directory (rank 0 fails), and, where a directory stands in the way of
-/// the last rank's file, a partitioned Gmsh write (more than one rank) and a PVTU.
+/// Rules 7–8 (ADR-0026, item 15): a write that fails on one rank gives `Io` there and
+/// `RemoteFailure` with that rank on the others: a gathered Gmsh file and a VTU in a missing
+/// directory (rank 0 fails), and, where a directory stands in the way of the last rank's file,
+/// a partitioned Gmsh write and a PVTU.
 pub fn collective_write_errors<C: Comm>(comm: &C, client: &Client, dir: &Path) {
     let (rank, size) = (comm.rank(), comm.size());
     let at = format!("{size} ranks, rank {rank}");
@@ -1054,33 +1109,43 @@ pub fn collective_write_errors<C: Comm>(comm: &C, client: &Client, dir: &Path) {
         std::fs::create_dir_all(dir.join(format!("blocked_{}.vtu", size - 1))).expect("blocker");
     }
     comm.barrier();
-    let mut writes: Vec<(&str, Result<()>)> = vec![
+    let last = size - 1;
+    let writes: [(&str, usize, Result<()>); 4] = [
         (
             "gathered Gmsh in a missing directory",
+            0,
             gmsh::GmshWriter::new(missing.join("m.msh")).write(&mesh),
         ),
         (
             "VTU in a missing directory",
+            0,
             VtkWriter::vtu(missing.join("m.vtu")).write(&mesh),
         ),
         (
             "PVTU whose last piece is blocked",
+            last,
             VtkWriter::pvtu(dir.join("blocked")).write(&mesh),
         ),
-    ];
-    if size > 1 {
-        writes.push((
+        (
             "partitioned Gmsh whose last part is blocked",
+            last,
             gmsh::GmshWriter::new(dir.join("blocked.msh"))
                 .partitioned(true)
                 .write(&mesh),
-        ));
-    }
-    for (what, r) in writes {
-        assert!(
-            matches!(r, Err(GridError::Io(_))),
-            "{at}: {what}: expected Io on every rank, got {r:?}"
-        );
+        ),
+    ];
+    for (what, failing, r) in writes {
+        if rank == failing {
+            assert!(
+                matches!(r, Err(GridError::Io(_))),
+                "{at}: {what}: expected Io, got {r:?}"
+            );
+        } else {
+            assert!(
+                matches!(r, Err(GridError::RemoteFailure { rank }) if rank == failing),
+                "{at}: {what}: expected RemoteFailure {{ rank: {failing} }}, got {r:?}"
+            );
+        }
     }
 }
 

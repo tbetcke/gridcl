@@ -164,6 +164,57 @@ mod tests {
         assert!(matches!(r, Err(GridError::Io(_))));
     }
 
+    /// A node that a triangle or a tag element references but `$Nodes` lacks is `Parse`, as in
+    /// M4 (ADR-0035, item 9), on one rank and on 1 and 3 threads.
+    #[test]
+    fn gmsh_read_missing_node_is_parse() {
+        let head = "$MeshFormat\n4.1 0 8\n$EndMeshFormat\n\
+            $Nodes\n1 4 1 4\n2 1 0 4\n1\n2\n3\n4\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n$EndNodes\n";
+        let cases = [
+            // `$Elements`: the section header, then each block's header and elements.
+            ("triangle", "1 2 1 2\n2 1 2 2\n1 1 2 3\n2 1 3 9\n"),
+            (
+                "tag element",
+                "2 3 1 3\n2 1 2 2\n1 1 2 3\n2 1 3 4\n1 1 1 1\n3 2 9\n",
+            ),
+        ];
+        let client = gridcl_testing::test_client();
+        for (what, elements) in cases {
+            let text = format!("{head}$Elements\n{elements}$EndElements\n");
+            let path = std::env::temp_dir().join(format!(
+                "gridcl-missing-node-{}-{}.msh",
+                what.replace(' ', "-"),
+                std::process::id()
+            ));
+            std::fs::write(&path, text).unwrap();
+            let r = read::<f32, _>(&client, Serial, &path, GmshOptions::default());
+            assert!(
+                matches!(r, Err(GridError::Parse { .. })),
+                "{what}: {:?}",
+                r.err()
+            );
+            for n in [1, 3] {
+                let got = gridcl_testing::ThreadComm::run(n, |comm| {
+                    read::<f32, _>(&client, comm, &path, GmshOptions::default()).err()
+                });
+                // Agreed: `Parse` where the directory misses the node, `RemoteFailure` with the
+                // lowest such rank elsewhere (ADR-0026, item 15).
+                let failing: Vec<usize> = (0..n)
+                    .filter(|&r| matches!(got[r], Some(GridError::Parse { .. })))
+                    .collect();
+                assert!(!failing.is_empty(), "{what}, {n} threads: {got:?}");
+                for (r, e) in got.iter().enumerate() {
+                    assert!(
+                        failing.contains(&r)
+                            || matches!(e, Some(GridError::RemoteFailure { rank }) if *rank == failing[0]),
+                        "{what}, {n} threads: {got:?}"
+                    );
+                }
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
     /// Physical names without elements, in D_TOP and below: empty groups of size 0.
     #[test]
     fn gmsh_read_named_groups_without_elements() {

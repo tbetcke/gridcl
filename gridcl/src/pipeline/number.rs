@@ -391,7 +391,7 @@ mod tests {
             } else {
                 local_cells_by(&comm, &input.input(), mode, &Block)
             };
-            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local).unwrap();
+            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local, &[]).unwrap();
             let local = order_cells(&read.blocks, local, &nodes, ordering);
             let numbered = number(&comm, &read.blocks, local.clone(), &nodes).unwrap();
             let first = |m: &MapInput| {

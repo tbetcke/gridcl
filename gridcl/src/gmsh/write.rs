@@ -292,12 +292,12 @@ impl GmshWriter {
         GmshWriter { binary, ..self }
     }
 
-    /// On more than one rank, one file `<stem>_<r+1>.msh` per rank r instead of one file
-    /// gathered on rank 0 (the default; ADR-0035, item 11). The stem is the path without a
+    /// One file `<stem>_<r+1>.msh` per rank r instead of one file gathered on rank 0 (the
+    /// default; ADR-0035, item 11). The stem is the path without a
     /// `.msh` extension. Each file holds the rank's owned cells, the nodes they use and its owned
     /// tag entities, `$Entities` and `$PartitionedEntities` (P partitions, one partitioned
     /// entity per entity, in partition r + 1, no ghost entities), and reads serially as that
-    /// rank's part. On one rank the writer writes `path` as without this option.
+    /// rank's part. On one rank this is `<stem>_1.msh` with one partition.
     ///
     /// # Example
     ///
@@ -315,9 +315,9 @@ impl GmshWriter {
         }
     }
 
-    /// The file of rank `rank` of `size` ranks.
-    fn file_path(&self, rank: usize, size: usize) -> PathBuf {
-        if !self.partitioned || size == 1 {
+    /// The file of rank `rank`.
+    fn file_path(&self, rank: usize) -> PathBuf {
+        if !self.partitioned {
             return self.path.clone();
         }
         let stem = if self.path.extension().is_some_and(|e| e == "msh") {
@@ -335,9 +335,9 @@ impl GmshWriter {
     ///
     /// # Errors
     ///
-    /// `EntitiesNotCreated` for tags of a dimension without entities; `Io` on every rank if
-    /// a file cannot be written (on another rank, naming it); `TooLarge` if a tag overflows;
-    /// device errors, as `RemoteFailure` on the other ranks.
+    /// `EntitiesNotCreated` for tags of a dimension without entities; `Io` if a file cannot be
+    /// written; `TooLarge` if a tag overflows; device errors. Errors of one rank are
+    /// `RemoteFailure` with the lowest failing rank on the others (ADR-0026, item 15).
     ///
     /// GLL geometry is written as its equispaced interpolant, converted on the device (ADR-0022,
     /// item 9).
@@ -383,8 +383,8 @@ impl GmshWriter {
     {
         let comm = mesh.comm();
         let (rank, size) = (comm.rank(), comm.size());
-        let partitioned = self.partitioned && size > 1;
-        let path = self.file_path(rank, size);
+        let partitioned = self.partitioned;
+        let path = self.file_path(rank);
         let numbering = io_download::gmsh_numbering(mesh)?;
         let shifts = shift_to_one(numbering.node_min)
             .and_then(|n| Ok((n, shift_to_one(numbering.cell_min)?)));
@@ -406,7 +406,7 @@ impl GmshWriter {
             let file = from_numbered_gmsh_mesh(&host, &numbering)?;
             self.write_file(&path, &file)
         });
-        agree_write(comm, &self.path, local)
+        agree_write(comm, local)
     }
 
     /// Writes `file` to `path`; I/O errors name the path.
