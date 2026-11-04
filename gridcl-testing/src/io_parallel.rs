@@ -528,7 +528,8 @@ pub fn assert_snapshot_within(
 /// one-rank read (cell types and degrees, vertex origin ids in cell order, node coordinates in
 /// internal order bitwise, physical and elementary tags keyed by sorted vertex origin ids, the
 /// name table). `dir` is a [`shared_dir`] for the generated box. An f64 case returns at once
-/// where the device lacks f64.
+/// where the device lacks f64. ParMETIS with fewer cells than ranks must instead fail with
+/// `PartitionerFailed { name: "parmetis", code: -1 }` on every rank (ADR-0029, item 12).
 pub fn global_mesh_identical<C: Comm>(comm: &C, client: &Client, case: &ReadCase, dir: &Path) {
     if !case.double {
         let path = materialise(comm, client, &case.source, dir);
@@ -547,19 +548,34 @@ fn global_mesh_identical_in<F: Real, C: Comm>(
 ) {
     let rank = comm.rank();
     let at = format!("{case}, {} ranks, rank {rank}", comm.size());
-    let any = ok(
-        read_on::<F, C>(client, comm.clone(), path, case.ghosts, case.partitioner),
-        &at,
-    );
-    let local = ok(snapshot_any(&any, true), &at);
-    let Some(global) = ok(gather_snapshot(comm, &local), &at) else {
-        return;
-    };
     let serial = ok(
         gmsh::read::<F, Serial>(client, Serial, path, GmshOptions::default()),
         &format!("{at}: one-rank read"),
     );
     let want = ok(snapshot_any(&serial, true), &at);
+    let read = read_on::<F, C>(client, comm.clone(), path, case.ghosts, case.partitioner);
+    if matches!(case.partitioner, Choice::Named("parmetis", _)) && want.cells.len() < comm.size() {
+        // Fewer cells than ranks leave a read chunk empty, and ParMETIS 4 fails on a rank
+        // without vertices (ADR-0029, item 12).
+        assert!(
+            matches!(
+                read,
+                Err(GridError::PartitionerFailed {
+                    name: "parmetis",
+                    code: -1
+                })
+            ),
+            "{at}: {} cells, want ParMETIS's agreed failure on empty ranks, got {:?}",
+            want.cells.len(),
+            read.as_ref().err()
+        );
+        return;
+    }
+    let any = ok(read, &at);
+    let local = ok(snapshot_any(&any, true), &at);
+    let Some(global) = ok(gather_snapshot(comm, &local), &at) else {
+        return;
+    };
     assert_same_snapshot(&global, &want, &at);
 }
 
