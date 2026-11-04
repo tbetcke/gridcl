@@ -29,8 +29,10 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  # As ci.yml: workspace crates at opt-level 1, checks on.
+  # As ci.yml: workspace crates at opt-level 1, checks on, no debug info (with it, this
+  # workflow's cache took 2.5 GB of the repository's 10 GB and pushed out the apt caches).
   CARGO_PROFILE_DEV_OPT_LEVEL: 1
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   # One job per feature set of ADR-0033 (METIS and ParMETIS exclude each other).

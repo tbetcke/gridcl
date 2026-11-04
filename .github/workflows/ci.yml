@@ -67,7 +67,7 @@ jobs:
           scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
 
-  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the four
+  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the six
   # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review).
   cpu-gridcl:
     name: cpu-gridcl-${{ matrix.shard }}
@@ -75,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust toolchain from rust-toolchain.toml
@@ -96,7 +96,7 @@ jobs:
       # io_threads' global_mesh_identical reads the corpus subset here: the full corpus in f32
       # and f64 took 55 min of one job (M8 review); it runs locally, on Locust and in the mpi
       # jobs at 1-4 ranks.
-      - run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}/4
+      - run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}
         env:
           GRIDCL_IO_THREADS_SUBSET: 1
 
@@ -180,15 +180,15 @@ jobs:
           GRIDCL_MPI_FEATURES: hdf5
           GRIDCL_MPI_TESTS: vtkhdf_parallel
 
-  # In three shards (33 min in one job, M8 review): gridcl in the two of
-  # scripts/ci-gridcl-shard.sh, and the other crates. Shard 3 builds the most and saves the cache.
+  # In five jobs (33 min in one, M8 review): gridcl's shards of scripts/ci-gridcl-shard.sh, two
+  # to a job where they are short, and the other crates, whose job saves the cache.
   vulkan:
     name: vulkan-${{ matrix.shard }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ["1", "2", "3,4", "5,6", other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)
@@ -205,7 +205,7 @@ jobs:
         with:
           key: vulkan
           cache-directories: ~/.local/share/tracel
-          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 3 }}
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 'other' }}
       - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
         run: |
           python3 -m venv .venv
@@ -213,11 +213,11 @@ jobs:
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
       # Release build: the primitives' property tests are too slow on lavapipe in a debug
       # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
-      - if: matrix.shard != 3
-        run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}/2 --release --features gridcl-testing/vulkan
+      - if: matrix.shard != 'other'
+        run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }} --release --features gridcl-testing/vulkan
         env:
           GRIDCL_TEST_DEVICE: vulkan
-      - if: matrix.shard == 3
+      - if: matrix.shard == 'other'
         run: cargo test --release --workspace --exclude gridcl --features gridcl-testing/vulkan
         env:
           GRIDCL_TEST_DEVICE: vulkan
