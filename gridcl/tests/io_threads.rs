@@ -24,10 +24,17 @@ fn global_mesh_identical_on(ranks: &[usize], coverage: Coverage, partitioners: &
 }
 
 /// Bullet 1, the full corpus at 1–4 and 8 ranks with the default partitioner (`Block` on
-/// threads, `Metis` with feature `metis`; rule 6).
+/// threads, `Metis` with feature `metis`; rule 6). With `GRIDCL_IO_THREADS_SUBSET=1` the subset
+/// instead: hosted CI's CPU job, where the full corpus in both precisions takes about 55 min
+/// (the full corpus runs locally, on Locust and in the MPI jobs).
 #[test]
 fn global_mesh_identical() {
-    global_mesh_identical_on(&[1, 2, 3, 4, 8], Coverage::Full, &[Choice::Default]);
+    let coverage = if std::env::var_os("GRIDCL_IO_THREADS_SUBSET").is_some_and(|v| v == "1") {
+        Coverage::Subset
+    } else {
+        Coverage::Full
+    };
+    global_mesh_identical_on(&[1, 2, 3, 4, 8], coverage, &[Choice::Default]);
 }
 
 /// Bullet 1, the subset at 5–7 ranks, with the default partitioner and `Block`.
