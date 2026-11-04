@@ -109,13 +109,16 @@ fn index_u32(i: usize) -> Result<u32> {
 pub(crate) fn number(
     comm: &dyn CommDyn,
     blocks: &[BlockSpec],
-    local: &LocalCells,
+    local: LocalCells,
     nodes: &Nodes,
 ) -> Result<Numbered> {
     let p = comm.size();
     let rank = comm.rank() as i32;
-    let cells = &local.cells;
-    let num_owned_cells = local.num_owned;
+    let LocalCells {
+        cells,
+        num_owned: num_owned_cells,
+        owner: cell_owner,
+    } = local;
 
     // The local cells of each block, in local order (`cells` holds the owned cells first).
     let mut order: Vec<Vec<usize>> = vec![Vec::new(); blocks.len()];
@@ -210,18 +213,13 @@ pub(crate) fn number(
     // Owned ranges.
     let vertex_first = comm.exscan_sum(num_owned_vertices as u64) as i64;
     let node_first = comm.exscan_sum(num_owned_nodes as u64) as i64;
-    let mut cell_global: HashMap<i64, i64> = HashMap::new();
-    for cells_of_block in &order {
-        let owned: Vec<usize> = cells_of_block
-            .iter()
-            .copied()
-            .filter(|&i| i < num_owned_cells)
-            .collect();
-        let first = comm.exscan_sum(owned.len() as u64) as i64;
-        for (k, &i) in owned.iter().enumerate() {
-            cell_global.insert(cells.ids[i], first + k as i64);
-        }
-    }
+    let cell_first: Vec<i64> = order
+        .iter()
+        .map(|c| {
+            let owned = c.iter().filter(|&&i| i < num_owned_cells).count();
+            comm.exscan_sum(owned as u64) as i64
+        })
+        .collect();
 
     // Ghost global numbers from their owners.
     let mut requests = Outbox::new(p);
@@ -234,17 +232,28 @@ pub(crate) fn number(
             }
         }
     }
-    for i in num_owned_cells..cells.len() {
-        requests.push(local.owner[i] as usize, &[&[CELL, cells.ids[i]]]);
+    let ghosts = num_owned_cells..cells.len();
+    for (&owner, &id) in cell_owner[ghosts.clone()].iter().zip(&cells.ids[ghosts]) {
+        requests.push(owner as usize, &[&[CELL, id]]);
     }
     let inbox = requests.exchange(comm)?;
+    // The global number of every owned cell by origin id, made only if a ghost cell asks.
+    let mut cell_global: Option<HashMap<i64, i64>> = None;
     let mut answers = Outbox::new(p);
     for (source, r) in inbox.records() {
         let (kind, id) = (r[0], r[1]);
         let global = match kind {
             VERTEX => vertex_first + vertex_local[&id] as i64,
             NODE => node_first + node_local[&id] as i64,
-            _ => cell_global[&id],
+            _ => cell_global.get_or_insert_with(|| {
+                let mut global = HashMap::with_capacity(num_owned_cells);
+                for (b, c) in order.iter().enumerate() {
+                    for (k, &i) in c.iter().filter(|&&i| i < num_owned_cells).enumerate() {
+                        global.insert(cells.ids[i], cell_first[b] + k as i64);
+                    }
+                }
+                global
+            })[&id],
         };
         answers.push(source, &[&[kind, id, global]]);
     }
@@ -275,38 +284,45 @@ pub(crate) fn number(
     debug_assert_eq!(vertex_map.num_owned, num_owned_vertices);
     debug_assert_eq!(node_map.num_owned, num_owned_nodes);
 
-    let numbered_blocks = order
-        .iter()
-        .enumerate()
-        .map(|(b, cells_of_block)| {
-            let nv = blocks[b].num_vertices();
-            let ghosts: Vec<usize> = cells_of_block
-                .iter()
-                .copied()
-                .filter(|&i| i >= num_owned_cells)
-                .collect();
-            let mut vertices = Vec::with_capacity(cells_of_block.len() * nv);
-            let mut dofmap = Vec::with_capacity(cells_of_block.len() * blocks[b].num_nodes());
-            for &i in cells_of_block {
-                let row = cells.nodes_of(i);
-                vertices.extend(row[..nv].iter().map(|id| vertex_local[id] as u32));
-                dofmap.extend(row.iter().map(|id| node_local[id] as u32));
-            }
-            NumberedBlock {
-                cells: cells.select(cells_of_block),
-                map: MapInput {
-                    num_owned: cells_of_block.len() - ghosts.len(),
-                    ghosts: ghosts
-                        .iter()
-                        .map(|&i| ghost_global[&(CELL, cells.ids[i])])
-                        .collect(),
-                    ghost_owners: ghosts.iter().map(|&i| local.owner[i]).collect(),
-                },
-                vertices,
-                dofmap,
-            }
-        })
-        .collect();
+    // A block of every local cell takes them without a copy (the M8 memory bound).
+    let whole = order.iter().position(|c| c.len() == cells.len());
+    let mut numbered_blocks = Vec::with_capacity(order.len());
+    for (b, cells_of_block) in order.iter().enumerate() {
+        let nv = blocks[b].num_vertices();
+        let ghosts: Vec<usize> = cells_of_block
+            .iter()
+            .copied()
+            .filter(|&i| i >= num_owned_cells)
+            .collect();
+        let mut vertices = Vec::with_capacity(cells_of_block.len() * nv);
+        let mut dofmap = Vec::with_capacity(cells_of_block.len() * blocks[b].num_nodes());
+        for &i in cells_of_block {
+            let row = cells.nodes_of(i);
+            vertices.extend(row[..nv].iter().map(|id| vertex_local[id] as u32));
+            dofmap.extend(row.iter().map(|id| node_local[id] as u32));
+        }
+        numbered_blocks.push(NumberedBlock {
+            cells: if whole == Some(b) {
+                Cells::new()
+            } else {
+                cells.select(cells_of_block)
+            },
+            map: MapInput {
+                num_owned: cells_of_block.len() - ghosts.len(),
+                ghosts: ghosts
+                    .iter()
+                    .map(|&i| ghost_global[&(CELL, cells.ids[i])])
+                    .collect(),
+                ghost_owners: ghosts.iter().map(|&i| cell_owner[i]).collect(),
+            },
+            vertices,
+            dofmap,
+        });
+    }
+    match whole {
+        Some(b) => numbered_blocks[b].cells = cells,
+        None => drop(cells),
+    }
 
     let mut sharers = VertexSharers {
         offsets: vec![0],
@@ -375,9 +391,9 @@ mod tests {
             } else {
                 local_cells_by(&comm, &input.input(), mode, &Block)
             };
-            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local).unwrap();
+            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local, &[]).unwrap();
             let local = order_cells(&read.blocks, local, &nodes, ordering);
-            let numbered = number(&comm, &read.blocks, &local, &nodes).unwrap();
+            let numbered = number(&comm, &read.blocks, local.clone(), &nodes).unwrap();
             let first = |m: &MapInput| {
                 let map = IndexMap::with_ghosts(
                     &comm,

@@ -13,7 +13,6 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use common::python::Oracle;
 use common::vtk::{
     Case, ENCODINGS, Expected, TempDir, build_any, capture_warnings, check_file, corpus,
     data_cases, decode_array, expected_geometry, expected_type, floats, ints, my_warnings,
@@ -24,6 +23,7 @@ use cubecl::prelude::Client;
 use gridcl::prelude::*;
 use gridcl_io::vtk::VtuFile;
 use gridcl_testing::HostMesh;
+use gridcl_testing::oracle::Oracle;
 use serde_json::Value;
 
 /// The corpus of `F`, written and checked in Rust, plus a PVTU with data: (expected contents
@@ -616,4 +616,106 @@ fn p2_pyramids_written_linear_with_one_warning() {
             e.what
         );
     }
+}
+
+/// Two pieces of a strip of three triangles, written by the M5 writers: piece 0 owns triangles
+/// 0 and 1 and holds triangle 2 as a ghost, piece 1 owns triangle 2 and holds triangle 1 as a
+/// ghost. Cell data `vtkGhostType` (1 = `DUPLICATECELL`) and `OriginId`. Returns the PVTU path;
+/// `shift` moves the x coordinates of piece 1.
+fn ghost_pvtu(dir: &TempDir, stem: &str, shift: f64) -> PathBuf {
+    use gridcl_io::vtk::{Binary, DataArray, DataValues, write_pvtu};
+
+    let points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [2.0, 0.0]];
+    let triangles = [[0, 1, 2], [1, 3, 2], [1, 4, 3]];
+    let piece = |cells: &[usize], ghost: usize, shift: f64| {
+        let mut used: Vec<usize> = cells.iter().flat_map(|&c| triangles[c]).collect();
+        used.sort_unstable();
+        used.dedup();
+        let local = |v: usize| used.binary_search(&v).expect("used") as i64;
+        VtuFile {
+            points: DataValues::F64(
+                used.iter()
+                    .flat_map(|&v| [points[v][0] + shift, points[v][1], 0.0])
+                    .collect(),
+            ),
+            connectivity: cells
+                .iter()
+                .flat_map(|&c| triangles[c].map(local))
+                .collect(),
+            offsets: (1..=cells.len()).map(|k| 3 * k as i64).collect(),
+            types: vec![5; cells.len()],
+            point_data: vec![],
+            cell_data: vec![
+                DataArray {
+                    name: "vtkGhostType".into(),
+                    components: 1,
+                    values: DataValues::U8(cells.iter().map(|&c| u8::from(c == ghost)).collect()),
+                },
+                DataArray {
+                    name: "OriginId".into(),
+                    components: 1,
+                    values: DataValues::I64(cells.iter().map(|&c| c as i64).collect()),
+                },
+            ],
+        }
+    };
+    let pieces = [piece(&[0, 1, 2], 2, 0.0), piece(&[1, 2], 1, shift)];
+    let mut names = Vec::new();
+    for (r, p) in pieces.iter().enumerate() {
+        let name = format!("{stem}_{r}.vtu");
+        let mut bytes = Vec::new();
+        p.write_to(&mut bytes, Binary::Appended, false)
+            .expect("write piece");
+        std::fs::write(dir.join(&name), bytes).expect("write piece file");
+        names.push(name);
+    }
+    let mut bytes = Vec::new();
+    write_pvtu(&mut bytes, &names, &pieces[0], 1).expect("write header");
+    let path = dir.join(&format!("{stem}.pvtu"));
+    std::fs::write(&path, bytes).expect("write header file");
+    path
+}
+
+/// The M8 oracle commands on an M5 PVTU (docs/plans/M8.md, T0a): `read --ghost-level`,
+/// `remove-ghosts` and `compare`.
+#[test]
+fn oracle_ghost_commands() {
+    let Some(oracle) = Oracle::find("oracle_ghost_commands") else {
+        return;
+    };
+    let dir = TempDir::new("oracle-ghosts");
+    let a = ghost_pvtu(&dir, "a", 0.0);
+    let b = ghost_pvtu(&dir, "b", 0.0);
+    let moved = ghost_pvtu(&dir, "moved", 0.5);
+
+    let read = oracle.run(
+        "read",
+        &[
+            "--ghost-level".into(),
+            "1".into(),
+            a.clone().into_os_string(),
+        ],
+    );
+    assert_eq!(read[0]["num_cells"], 5, "{read}");
+    assert_eq!(read[0]["errors"], Value::Array(vec![]), "{read}");
+
+    let removed = oracle.run_files("remove-ghosts", std::slice::from_ref(&a));
+    let r = &removed[0];
+    assert_eq!(
+        (&r["num_cells_before"], &r["num_cells"]),
+        (&5.into(), &3.into()),
+        "{r}"
+    );
+    let mut ids = ints(&r["origin_ids"]);
+    ids.sort_unstable();
+    assert_eq!(ids, [0, 1, 2], "{r}");
+
+    let same = oracle.run("compare", &[a.clone().into(), b.into()]);
+    assert_eq!(same["equal"], true, "{same}");
+    assert_eq!(same["pieces"], 2, "{same}");
+    assert_eq!(same["counts"][1]["cells"], 2, "{same}");
+    let differ = oracle.run("compare", &[a.into(), moved.into()]);
+    assert_eq!(differ["equal"], false, "{differ}");
+    let diffs = differ["differences"].to_string();
+    assert!(diffs.contains("points differ"), "{differ}");
 }

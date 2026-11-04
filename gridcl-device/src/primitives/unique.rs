@@ -135,6 +135,25 @@ fn unique_kernel(
     }
 }
 
+/// The run offsets alone: as [`runs_kernel`] without the keys.
+#[cube(launch_unchecked)]
+fn offsets_kernel(starts: &[u32], offsets: &mut [u32], len: u32, items_per_unit: u32) {
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for k in 0..items_per_unit as usize {
+        let i = first + k;
+        if i < len as usize {
+            let r = starts[i];
+            let next = starts[i + 1];
+            if next != r {
+                offsets[r as usize] = i as u32;
+            }
+            if i + 1 == len as usize {
+                offsets[next as usize] = len;
+            }
+        }
+    }
+}
+
 /// Runs of consecutive equal keys; `offsets` has runs + 1 entries.
 ///
 /// # Example
@@ -263,6 +282,66 @@ pub struct Unique {
 /// assert_eq!(u.group.to_host().unwrap(), vec![0, 0, 1, 2, 2, 2]);
 /// ```
 pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<Unique> {
+    Ok(groups(sorted, payload)?.0)
+}
+
+/// [`unique_by_key`] and the `offsets` of [`run_length`] from one numbering of the runs, so a
+/// caller that needs both holds the keys once and reads the count once (the M8 memory bound).
+/// Not part of the stable API.
+///
+/// # Errors
+///
+/// As [`unique_by_key`].
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, SortKeys, unique_by_key_runs};
+///
+/// let client = gridcl_testing::test_client();
+/// let keys = SortKeys::from_host(&client, &[2, 2, 5, 7, 7, 7], 1).unwrap();
+/// let payload = DeviceBuffer::from_host(&client, &[10u32, 11, 12, 13, 14, 15]).unwrap();
+/// let (u, offsets) = unique_by_key_runs(&keys, &payload).unwrap();
+/// assert_eq!(u.keys.to_host().unwrap(), vec![2, 5, 7]);
+/// assert_eq!(u.first.to_host().unwrap(), vec![10, 12, 13]);
+/// assert_eq!(offsets.to_host().unwrap(), vec![0, 2, 3, 6]);
+/// ```
+#[doc(hidden)]
+pub fn unique_by_key_runs(
+    sorted: &SortKeys,
+    payload: &DeviceBuffer<u32>,
+) -> Result<(Unique, DeviceBuffer<u32>)> {
+    let (unique, numbering) = groups(sorted, payload)?;
+    let client = sorted.words().client();
+    let runs = unique.first.len();
+    let mut offsets = DeviceBuffer::<u32>::uninit(client, runs + 1)?;
+    let Some((plan, starts)) = numbering else {
+        fill(&mut offsets, 0u32)?;
+        return Ok((unique, offsets));
+    };
+    debug_assert_bindings(client, 2);
+    // SAFETY: starts[i] and starts[i + 1] are read only for i < len, within the len + 1
+    // elements of `starts`; every run number r < runs and starts[len] = runs, so offsets is
+    // written at r <= runs, within its runs + 1 elements.
+    unsafe {
+        offsets_kernel::launch_unchecked(
+            client,
+            plan.cube_count,
+            plan.cube_dim,
+            starts.arg(),
+            offsets.arg(),
+            to_u32(sorted.len())?,
+            plan.items_per_unit,
+        );
+    }
+    Ok((unique, offsets))
+}
+
+/// The partition and the run numbers of [`number_runs`].
+type Numbering = (LaunchPlan, DeviceBuffer<u32>);
+
+/// [`unique_by_key`], with the numbering of its runs (`None` for empty keys).
+fn groups(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<(Unique, Option<Numbering>)> {
     let len = sorted.len();
     if payload.len() != len {
         return Err(GridError::LengthMismatch {
@@ -273,11 +352,12 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
     let client = sorted.words().client();
     let num_words = sorted.num_words();
     if len == 0 {
-        return Ok(Unique {
+        let unique = Unique {
             keys: SortKeys::uninit(client, 0, num_words)?,
             first: DeviceBuffer::uninit(client, 0)?,
             group: DeviceBuffer::uninit(client, 0)?,
-        });
+        };
+        return Ok((unique, None));
     }
     let (plan, starts, runs) = number_runs(sorted)?;
     let keys = SortKeys::uninit(client, runs, num_words)?;
@@ -289,7 +369,7 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
     unsafe {
         unique_kernel::launch_unchecked(
             client,
-            plan.cube_count,
+            plan.cube_count.clone(),
             plan.cube_dim,
             sorted.words().arg(),
             starts.arg(),
@@ -304,7 +384,7 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
             plan.items_per_unit,
         );
     }
-    Ok(Unique { keys, first, group })
+    Ok((Unique { keys, first, group }, Some((plan, starts))))
 }
 
 /// The partition of the primitive, the run numbers (the exclusive scan of the run-start flags,

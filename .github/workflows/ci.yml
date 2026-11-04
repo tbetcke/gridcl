@@ -87,7 +87,12 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
+      # io_threads' global_mesh_identical reads the corpus subset here: the full corpus in f32
+      # and f64 took 55 min of this job (M8 review); it runs locally, on Locust and in the mpi
+      # jobs at 1-4 ranks.
       - run: cargo test -p gridcl
+        env:
+          GRIDCL_IO_THREADS_SUBSET: 1
 
   mpi:
     name: mpi-${{ matrix.mpi }}
@@ -100,14 +105,19 @@ jobs:
           # CPU it may use; unbound, 3-4 ranks oversubscribe the 4 vCPUs and exceed the time
           # limit (M6).
           - mpi: mpich
-            packages: mpich libmpich-dev
+            packages: mpich libmpich-dev libhdf5-mpich-dev
             bind: -bind-to hwthread
           - mpi: openmpi
-            packages: openmpi-bin libopenmpi-dev
+            packages: openmpi-bin libopenmpi-dev libhdf5-openmpi-dev
             bind: --use-hwthread-cpus --bind-to hwthread
+    env:
+      # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
+      # (ibv_create_srq: Operation not supported), so MPI_Init fails.
+      UCX_TLS: self,sm,tcp
+      GRIDCL_MPIRUN_FLAGS: ${{ matrix.bind }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: MPI and libclang (rsmpi's bindgen)
+      - name: MPI, its parallel HDF5 (M8 VTKHDF) and libclang (rsmpi's bindgen)
         uses: ./.github/actions/apt-install
         with:
           packages: ${{ matrix.packages }} libclang-dev
@@ -122,13 +132,35 @@ jobs:
           key: mpi-${{ matrix.mpi }}
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Pinned Python oracles of the VTK tests (ADR-0024, ADR-0035)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
+          .venv/bin/python scripts/oracles/vtk_oracle.py versions
       - run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
       - run: scripts/mpi-test.sh 1 2 3 4
+      # Feature hdf5 with Ubuntu's HDF5 1.10.10 (ADR-0035, rules 8-9): the gather path
+      # (gridcl-io, ThreadComm) and the MPI-IO path (vtkhdf_parallel), read back by VTK.
+      - name: HDF5_DIR for the parallel HDF5 of this MPI
+        run: |
+          # hdf5-metno-sys looks for include/ and lib/ under HDF5_DIR; Ubuntu keeps the headers
+          # and libraries of its MPI builds in separate trees.
+          so=$(dpkg -L libhdf5-${{ matrix.mpi }}-dev | grep '/libhdf5\.so$' | head -n 1)
+          test -n "$so"
+          root=$RUNNER_TEMP/hdf5-${{ matrix.mpi }}
+          mkdir -p "$root"
+          ln -sfn /usr/include/hdf5/${{ matrix.mpi }} "$root/include"
+          ln -sfn "$(dirname "$so")" "$root/lib"
+          grep -E '^#define H5_(VERSION|HAVE_PARALLEL) ' "$root/include/H5pubconf.h"
+          echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
+      - run: cargo clippy -p gridcl-mpi-tests --features mpi,hdf5 --all-targets -- -D warnings
+      - run: cargo test -p gridcl-io --features hdf5
+      - run: cargo test -p gridcl --features hdf5 --test io_threads vtkhdf
+      - run: cargo test -p gridcl --features hdf5 --doc vtkhdf
+      - run: scripts/mpi-test.sh 1 2 3 4
         env:
-          # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
-          # (ibv_create_srq: Operation not supported), so MPI_Init fails.
-          UCX_TLS: self,sm,tcp
-          GRIDCL_MPIRUN_FLAGS: ${{ matrix.bind }}
+          GRIDCL_MPI_FEATURES: hdf5
+          GRIDCL_MPI_TESTS: vtkhdf_parallel
 
   vulkan:
     runs-on: ubuntu-24.04

@@ -251,7 +251,7 @@ pub fn gather_to_root<T: CommScalar>(comm: &dyn CommDyn, data: &[T]) -> Result<V
 }
 
 /// The ids of interleaved (hi ^ 0x8000_0000, lo) device words (gridcl-topology's layout).
-fn decode_ids(words: &[u32]) -> Vec<i64> {
+pub(crate) fn decode_ids(words: &[u32]) -> Vec<i64> {
     words
         .as_chunks::<2>()
         .0

@@ -713,7 +713,8 @@ mod tests {
         for dim in 1..TD::N {
             let want = spread.owners(dim);
             let crate::entity::Dimension { blocks, .. } =
-                crate::entity::create_dimension(t.client(), comm, &t.entity_cells(), dim).unwrap();
+                crate::entity::create_dimension(t.client(), comm, &t.entity_cells(), dim, false)
+                    .unwrap();
             let mut ghosts = 0i64;
             let mut global = 0i64;
             for block in &blocks {
@@ -835,10 +836,15 @@ mod tests {
             let (t, _) = Spread::new(&d3[0], 1, true).topology::<D3>(&comm);
             assert!(t.entity_cells().sharing.is_some());
             for dim in 1..3 {
-                let blocks =
-                    crate::entity::create_dimension(t.client(), &comm, &t.entity_cells(), dim)
-                        .unwrap()
-                        .blocks;
+                let blocks = crate::entity::create_dimension(
+                    t.client(),
+                    &comm,
+                    &t.entity_cells(),
+                    dim,
+                    false,
+                )
+                .unwrap()
+                .blocks;
                 assert!(blocks.iter().all(|b| b.index_map.num_ghosts() == 0));
             }
         });

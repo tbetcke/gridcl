@@ -147,6 +147,56 @@ where
         Ok(cache.get_or_init(|| xe))
     }
 
+    /// The allocated bytes of every device array (dofmaps, nodes, the uploaded origin and the
+    /// E-vectors built so far) plus the [`footprint_bytes`](IndexMap::footprint_bytes) of the
+    /// node index map. For memory accounting in tests (`Mesh::footprint_bytes`, ADR-0035);
+    /// not part of the stable API.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, DeviceStrided};
+    /// use gridcl_dims::{Cell1, D1, D2};
+    /// use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// let geometry = Geometry::<f32, D1, D2>::new(
+    ///     vec![GeometryBlock { element, dofmap }],
+    ///     nodes,
+    ///     IndexMap::new(&Serial, 2).unwrap(),
+    ///     [1.0, 2.0],
+    /// )
+    /// .unwrap();
+    /// // At least the nodes and the dofmap.
+    /// let arrays = geometry.nodes().footprint_bytes() + geometry.blocks()[0].dofmap.data.footprint_bytes();
+    /// assert!(geometry.footprint_bytes() > arrays);
+    /// ```
+    #[doc(hidden)]
+    pub fn footprint_bytes(&self) -> usize {
+        let dofmaps: usize = self
+            .blocks
+            .iter()
+            .map(|b| b.dofmap.data.footprint_bytes())
+            .sum();
+        // An E-vector's origin is a share of `origin_device`.
+        let evectors: usize = self
+            .evectors
+            .iter()
+            .filter_map(OnceCell::get)
+            .flat_map(EVector::chunks)
+            .map(|c| c.data.footprint_bytes())
+            .sum();
+        dofmaps
+            + evectors
+            + self.nodes.footprint_bytes()
+            + self.origin_device.footprint_bytes()
+            + self.node_index_map.footprint_bytes()
+    }
+
     /// A deep copy of every device array; the E-vector cache starts empty. The node index
     /// map, ghosts included, is cloned and shares its neighbourhoods with the original, so the
     /// copy is not collective and `comm` is unused.

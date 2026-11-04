@@ -6,15 +6,27 @@
 //! - [`ElementType`], [`element_type`], [`lagrange_element_type`]: the element table of A.7.
 //! - [`GmshMesh`]: the mesh a file describes, with cell blocks in A.5 node order, tag elements
 //!   and names ([`to_gmsh_mesh`], [`from_gmsh_mesh`]).
+//! - [`MshIndex`]: the layout of a binary file, for reading ranges of nodes and elements
+//!   ([`NodeChunk`], [`ElementChunk`]) on every rank (ADR-0035).
 
+mod chunk;
 mod convert;
 mod element_type;
+mod index;
 mod model;
 mod parse;
 mod write;
 
-pub use convert::{GmshCellBlock, GmshMesh, GmshTagGroup, from_gmsh_mesh, to_gmsh_mesh};
+#[doc(hidden)]
+pub use chunk::{
+    BlockHeader, CellChunk, Layout, complete, element_range, geometric_dim, node_range,
+};
+pub use convert::{
+    FileNumbering, GmshCellBlock, GmshMesh, GmshTagGroup, from_gmsh_mesh, from_numbered_gmsh_mesh,
+    to_gmsh_mesh,
+};
 pub use element_type::{ElementType, element_type, lagrange_element_type};
+pub use index::{ElementChunk, MshIndex, NodeChunk};
 pub use model::{
     ElementBlock, Entities, Entity, MshFile, NodeBlock, PartitionedEntities, PartitionedEntity,
     Periodic, PhysicalName,

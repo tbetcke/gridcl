@@ -39,6 +39,10 @@ pub(crate) fn order_cells(
         CellOrdering::ReverseCuthillMcKee => rcm_order(blocks, cells, n),
     };
     order.extend(n..cells.len());
+    // No copy when the cells are in order already (the M8 memory bound).
+    if order.iter().enumerate().all(|(i, &j)| i == j) {
+        return local;
+    }
     LocalCells {
         cells: cells.select(&order),
         num_owned: n,
@@ -288,7 +292,7 @@ mod tests {
             };
             let input = OwnedInput::of_chunk(&chunk);
             let (read, local) = local_cells(&comm, &input.input(), mode);
-            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local).unwrap();
+            let nodes = fetch_nodes(&comm, &read.blocks, h.gdim, &read.nodes, &local, &[]).unwrap();
             let before = local.clone();
             let local = order_cells(&read.blocks, local, &nodes, ordering);
             // A permutation of the owned cells; the ghosts and owners are unchanged.

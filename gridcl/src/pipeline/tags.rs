@@ -1,5 +1,6 @@
-//! Tags after stage 9: the physical tags and the name table of the built mesh (docs/design.md,
-//! "Tags, regions and submeshes"; ADR-0026, items 3 and 10).
+//! Tags after stage 9: the physical and elementary tags and the name table of the built mesh
+//! (docs/design.md, "Tags, regions and submeshes"; ADR-0026, items 3 and 10; ADR-0035,
+//! item 8).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -9,22 +10,36 @@ use gridcl_dims::TopoDim;
 use gridcl_parallel::{CommDyn, CommExt};
 use gridcl_topology::Topology;
 
-use super::agree;
-use super::input::LowerTags;
+use super::input::{LowerTags, TagKind};
 use super::number::NumberedBlock;
 use super::rendezvous::{Outbox, rendezvous_rank};
+use super::{agree, release_pools};
 use crate::{MeshTags, TagRegistry};
 
 /// (flat local entity index, value) entries of one dimension.
 type Entries = Vec<(u32, i32)>;
 
-/// (source rank, value, global input position) of each entry a holder received.
-type Received = Vec<(usize, i32, i64)>;
+/// (source rank, kind word, value, global input position) of each entry a holder received.
+type Received = Vec<(usize, i64, i32, i64)>;
+
+/// The words of a lower-dimensional entry before its key: dimension, kind, value, global input
+/// position, error id.
+const HEAD: usize = 5;
+
+/// The wire word of a tag kind.
+fn kind_word(kind: TagKind) -> i64 {
+    match kind {
+        TagKind::Physical => 0,
+        TagKind::Elementary => 1,
+    }
+}
 
 /// The tag inputs of one rank after stage 8.
 pub(crate) struct TagInputs<'a> {
     /// The cell tags: (flat local cell index, value), from [`cell_tags`].
     pub(crate) cells: Entries,
+    /// The elementary tags of the cells, from [`cell_elementary`].
+    pub(crate) cell_elementary: Entries,
     /// The tags of dimension below the cells' (stage 1).
     pub(crate) lower: &'a [LowerTags],
     /// This rank's name table (name, dimension, value).
@@ -50,25 +65,42 @@ pub(crate) fn cell_tags(blocks: &[NumberedBlock]) -> Result<Entries> {
     Ok(entries)
 }
 
+/// The elementary tags of the stage-8 blocks' cells (none if the cells have none), numbered as
+/// [`cell_tags`].
+pub(crate) fn cell_elementary(blocks: &[NumberedBlock]) -> Result<Entries> {
+    let mut entries = Vec::new();
+    let mut first = 0usize;
+    for b in blocks {
+        for (i, &v) in b.cells.elementary.iter().enumerate() {
+            let index = u32::try_from(first + i).map_err(|_| GridError::TooLarge)?;
+            entries.push((index, v));
+        }
+        first += b.cells.len();
+    }
+    Ok(entries)
+}
+
 /// The tag registry of a mesh on `comm` whose topology the stages 1–9 built. Collective.
 ///
 /// - **Names.** The name tables of every rank, agreed: rank 0's, then each further rank's
 ///   entries that no lower rank gave.
-/// - **Cells.** The cell tags travelled with their cells (stages 1, 4 and 5).
+/// - **Cells.** The cell tags, physical and elementary, travelled with their cells (stages 1,
+///   4 and 5).
 /// - **Lower dimensions.** For every dimension with a tag on any rank, the entities are created
 ///   (`Topology::create_entities`). Each entry goes to the rendezvous rank of its sorted key,
 ///   which asks the stage-8 directory for the holders of each corner vertex and forwards the
 ///   entry to every rank that holds all of them; each of those ranks matches it with
 ///   `Topology::match_entities` and reports a match back. Owned and ghost holders thus get the
 ///   same values (ADR-0026, item 10).
-/// - **Registry.** Entries are sorted by (index, value) without repeats; group sizes are local
-///   counts, ghosts included.
+///   Elementary entries take the same path.
+/// - **Registry.** Entries are sorted by (index, value) without repeats; group sizes of the
+///   physical tags are local counts, ghosts included.
 ///
 /// # Errors
 ///
 /// `UnmatchedTagElement` on every rank for the entry of lowest global input position that no
-/// rank matched (with its dimension); agreed allocation, device and communication errors, and
-/// those of `create_entities`.
+/// rank matched (with its dimension and error id); agreed allocation, device and communication
+/// errors, and those of `create_entities`.
 pub(crate) fn registry<TD: TopoDim>(
     client: &Client,
     comm: &dyn CommDyn,
@@ -76,15 +108,20 @@ pub(crate) fn registry<TD: TopoDim>(
     mut inputs: TagInputs<'_>,
 ) -> Result<TagRegistry> {
     let names = agree_names(comm, inputs.names)?;
-    let mut entries: BTreeMap<usize, Entries> = BTreeMap::new();
-    entries.insert(TD::N, std::mem::take(&mut inputs.cells));
-    match_lower(client, comm, topology, &inputs, &mut entries)?;
+    let mut physical: BTreeMap<usize, Entries> = BTreeMap::new();
+    let mut elementary: BTreeMap<usize, Entries> = BTreeMap::new();
+    physical.insert(TD::N, std::mem::take(&mut inputs.cells));
+    elementary.insert(TD::N, std::mem::take(&mut inputs.cell_elementary));
+    match_lower(
+        client,
+        comm,
+        topology,
+        &inputs,
+        [&mut physical, &mut elementary],
+    )?;
     let local = (|| {
         let mut registry = TagRegistry::new(client, TD::N, names);
-        for (dim, mut e) in entries {
-            if e.is_empty() {
-                continue;
-            }
+        let upload = |dim: usize, mut e: Entries| -> Result<(MeshTags, BTreeMap<i32, usize>)> {
             e.sort_unstable();
             e.dedup();
             let mut sizes: BTreeMap<i32, usize> = BTreeMap::new();
@@ -97,7 +134,14 @@ pub(crate) fn registry<TD: TopoDim>(
                 indices: DeviceBuffer::from_host(client, &indices)?,
                 values: DeviceBuffer::from_host(client, &values)?,
             };
+            Ok((tags, sizes))
+        };
+        for (dim, e) in physical.into_iter().filter(|(_, e)| !e.is_empty()) {
+            let (tags, sizes) = upload(dim, e)?;
             registry.set_physical(tags, sizes);
+        }
+        for (dim, e) in elementary.into_iter().filter(|(_, e)| !e.is_empty()) {
+            registry.set_elementary(upload(dim, e)?.0);
         }
         Ok(registry)
     })();
@@ -137,14 +181,14 @@ fn agree_names(
     Ok(union)
 }
 
-/// Matches the tags of dimension below the cells' and adds their entries to `entries`.
-/// Collective.
+/// Matches the tags of dimension below the cells' and adds their entries to `entries`, the
+/// physical and the elementary entries by dimension. Collective.
 fn match_lower<TD: TopoDim>(
     client: &Client,
     comm: &dyn CommDyn,
     topology: &mut Topology<TD>,
     inputs: &TagInputs<'_>,
-    entries: &mut BTreeMap<usize, Entries>,
+    entries: [&mut BTreeMap<usize, Entries>; 2],
 ) -> Result<()> {
     let p = comm.size();
     let tagged = inputs
@@ -157,16 +201,19 @@ fn match_lower<TD: TopoDim>(
         return Ok(());
     }
 
-    // Each entry [dim, value, position, sorted key…] to the rendezvous rank of its key.
+    // Each entry [dim, kind, value, position, error id, sorted key…] to the rendezvous rank of
+    // its key.
     let mut out = Outbox::new(p);
     for t in inputs.lower {
         let nv = gridcl_refcell::vertices(t.tags.entity).len();
         let dim = gridcl_refcell::tdim(t.tags.entity) as i64;
+        let kind = kind_word(t.tags.kind);
         let rows = t.tags.corners.chunks_exact(nv).zip(&t.tags.values);
         for (j, (corners, &value)) in rows.enumerate() {
             let mut key = corners.to_vec();
             key.sort_unstable();
-            let head = [dim, i64::from(value), t.first + j as i64];
+            let at = t.first + j as i64;
+            let head = [dim, kind, i64::from(value), at, t.tags.error_id(j, at)];
             out.push(rendezvous_rank(&key, p), &[&head, &key]);
         }
     }
@@ -175,7 +222,7 @@ fn match_lower<TD: TopoDim>(
     // The holders of each corner, from the stage-8 directory (none for an unknown id).
     let corners: BTreeSet<i64> = at_key
         .records()
-        .flat_map(|(_, r)| r[3..].iter().copied())
+        .flat_map(|(_, r)| r[HEAD..].iter().copied())
         .collect();
     let mut queries = Outbox::new(p);
     for &c in &corners {
@@ -198,7 +245,7 @@ fn match_lower<TD: TopoDim>(
     // Each entry to every rank that holds all its corners (holder lists are ascending).
     let mut forward = Outbox::new(p);
     for (_, r) in at_key.records() {
-        let key = &r[3..];
+        let key = &r[HEAD..];
         let mut common = holders[&key[0]].clone();
         for c in &key[1..] {
             let h = &holders[c];
@@ -211,7 +258,8 @@ fn match_lower<TD: TopoDim>(
     let at_holder = forward.exchange(comm)?;
 
     for dim in (0..TD::N).filter(|d| tagged & 1 << d != 0) {
-        topology.create_entities(comm, dim)?;
+        topology.create_entities_releasing_pools(comm, dim)?;
+        release_pools(client, &format!("stage 10 (entities of dimension {dim})"));
     }
 
     // Match by (dimension, corner count): entries whose corners are all local vertices.
@@ -219,7 +267,7 @@ fn match_lower<TD: TopoDim>(
         let mut groups: BTreeMap<(usize, usize), Received> = BTreeMap::new();
         let mut keys: BTreeMap<(usize, usize), Vec<u32>> = BTreeMap::new();
         for (source, r) in at_holder.records() {
-            let key = &r[3..];
+            let key = &r[HEAD..];
             let Some(mut local) = key
                 .iter()
                 .map(|id| inputs.vertex_local.get(id).copied())
@@ -232,7 +280,7 @@ fn match_lower<TD: TopoDim>(
             groups
                 .entry(group)
                 .or_default()
-                .push((source, r[1] as i32, r[2]));
+                .push((source, r[1], r[2] as i32, r[3]));
             keys.entry(group).or_default().extend(local);
         }
         let mut matched = Vec::new();
@@ -240,9 +288,10 @@ fn match_lower<TD: TopoDim>(
             let keys = SortKeys::from_host(client, &keys[&(dim, nv)], nv)?;
             // An I/O copy (ADR-0026, item 14): tag matching at mesh creation.
             let found = topology.match_entities(dim, &keys)?.to_host()?;
-            for (&(source, value, position), &f) in group.iter().zip(&found) {
+            release_pools(client, &format!("stage 10 (matches of dimension {dim})"));
+            for (&(source, kind, value, position), &f) in group.iter().zip(&found) {
                 if f != u32::MAX {
-                    matched.push((source, dim, f, value, position));
+                    matched.push((source, dim, kind, f, value, position));
                 }
             }
         }
@@ -252,7 +301,13 @@ fn match_lower<TD: TopoDim>(
 
     // Matches back to the rendezvous rank, which names the first entry nobody matched.
     let mut replies = Outbox::new(p);
-    for &(source, dim, f, value, position) in &matched {
+    let [physical, elementary] = entries;
+    for &(source, dim, kind, f, value, position) in &matched {
+        let entries = if kind == kind_word(TagKind::Elementary) {
+            &mut *elementary
+        } else {
+            &mut *physical
+        };
         entries.entry(dim).or_default().push((f, value));
         replies.push(source, &[&[position]]);
     }
@@ -264,15 +319,22 @@ fn match_lower<TD: TopoDim>(
     // (position, dimension) as one word: positions stay below 2^61.
     let unmatched = at_key
         .records()
-        .filter(|(_, r)| !found.contains(&r[2]))
-        .map(|(_, r)| (r[2] as u64) << 2 | r[0] as u64)
+        .filter(|(_, r)| !found.contains(&r[3]))
+        .map(|(_, r)| (r[3] as u64) << 2 | r[0] as u64)
         .min()
         .unwrap_or(u64::MAX);
-    match comm.min(unmatched) {
-        u64::MAX => Ok(()),
-        lowest => Err(GridError::UnmatchedTagElement {
-            dim: (lowest & 3) as usize,
-            tag: (lowest >> 2) as i64,
-        }),
+    let lowest = comm.min(unmatched);
+    if lowest == u64::MAX {
+        return Ok(());
     }
+    // The error id of that entry, from its rendezvous rank.
+    let position = (lowest >> 2) as i64;
+    let tag = at_key
+        .records()
+        .find(|(_, r)| r[3] == position)
+        .map_or(i64::MAX, |(_, r)| r[4]);
+    Err(GridError::UnmatchedTagElement {
+        dim: (lowest & 3) as usize,
+        tag: comm.min(tag),
+    })
 }

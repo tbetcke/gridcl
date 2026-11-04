@@ -19,12 +19,11 @@ mod any;
 mod builder;
 mod entity_map;
 pub mod gmsh;
+mod io_download;
 mod mesh;
 mod pipeline;
 pub mod prelude;
 mod tags;
-#[cfg(test)]
-mod test_comm;
 pub mod vtk;
 
 pub use any::{AnyMesh, AnyMeshRef};

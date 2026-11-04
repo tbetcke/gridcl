@@ -1,6 +1,6 @@
 [package]
 name = "gridcl-testing"
-description = "Test support for gridcl: the test device, test meshes and tolerances"
+description = "Test support for gridcl: the test device, test meshes, tolerances and the Python oracles"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -28,6 +28,13 @@ gridcl-device = { path = "../gridcl-device", features = ["testing"] }
 gridcl-dims = { path = "../gridcl-dims" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 mpi = { workspace = true, optional = true }
+# Exact float parsing: the oracles print f32 values that must compare bitwise.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[[bin]]
+# The binary box file of the M8 memory test (ADR-0035, rule 10):
+# gen-gmsh-box N PATH writes cube_box(Tetrahedron, N, 1).
+name = "gen-gmsh-box"
 
 [dev-dependencies]
 proptest.workspace = true

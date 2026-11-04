@@ -278,6 +278,7 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, C: Comm,
     pub fn read_node(&self, i: usize) -> Result<GD::Array<F>>;
     /// Physical and elementary tags and the name table (empty unless read from a file).
     pub fn tags(&self) -> &TagRegistry;
+    // #[doc(hidden)] pub fn footprint_bytes(&self) -> usize;  test accessor: bytes of the mesh's buffers (ADR-0035)
     pub fn create_entities(&mut self, dim: usize) -> Result<()>;
     pub fn create_connectivity(&mut self, from: usize, to: usize) -> Result<()>;
 }
@@ -621,7 +622,7 @@ println!("{owned} owned cells on rank {}, running on {}", comm.rank(), client.na
 
 On a device without f64 support (Metal, some Vulkan adapters), reading into an f64 mesh returns `GridError::UnsupportedPrecision`; use `AnyMesh<f32, _>` there.
 
-`gmsh::read` is generic over `C: Comm`. Until M8 it requires one rank, and `GmshOptions` offers only `gdim`; `partitioner` and `ghosts` arrive with M7 and M6–M8 (ADR-0022).
+`gmsh::read` is generic over `C: Comm`. `GmshOptions` has `gdim`, `partitioner`, `ghosts` (default `GhostMode::None`) and `ordering` (default `CellOrdering::Input`); without a partitioner, a read on more than one rank uses the default choice of "Partitioning" (ADR-0022, ADR-0035).
 
 ### Volume mesh to BEM surface mesh
 
@@ -713,7 +714,7 @@ VtkWriter::vtu("out/scalp").lagrange(true).write(&scalp)?;          // generic o
 VtkWriter::vtu("out/scalp2").write_any(AnyMeshRef::Surface(&scalp))?; // erased path, no clone
 ```
 
-`VtkWriter` (gridcl) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. `vtu` and `pvtu` require one rank until M8 (ADR-0024).
+`VtkWriter` (gridcl) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. On more than one rank, `vtu` gathers the owned cells to rank 0, and `pvtu` and `vtkhdf` (feature `hdf5`) write one piece per rank with a `vtkGhostType` cell array; `.origin_ids(true)` adds the cell array `OriginId`. Writes are collective (ADR-0024, ADR-0035).
 
 ## Reference cells and conventions
 
@@ -1481,9 +1482,9 @@ Locality ordering happens before any numbering, so global numbers are assigned o
 
 | Stage | Where | What | Output |
 | --- | --- | --- | --- |
-| 1 Read | host, all ranks | Builder chunks (`MeshBuilder::build_on`) or file chunks: for files, rank r gets cells [rN/P, (r+1)N/P) with origin ids, types and tags, and an independent chunk of nodes (origin node ids and coordinates); for ASCII files, rank 0 reads and scatters. Cells reference nodes by origin id; global duplicate checks and cell-tag matching by rendezvous (ADR-0026). | cell chunk, node chunk |
+| 1 Read | host, all ranks | Builder chunks (`MeshBuilder::build_on`) or file chunks: for files, rank r gets cells [rN/P, (r+1)N/P) with origin ids, types and tags, and an independent chunk of nodes (origin node ids and coordinates); for ASCII files, rank 0 reads and scatters. Cells reference nodes by origin id; global duplicate checks and cell-tag matching by rendezvous (ADR-0026). Binary files are scanned by block headers and read in byte-range chunks; ASCII files and files with serendipity elements are read on rank 0 and scattered in the same chunks (ADR-0035). | cell chunk, node chunk |
 | 2 Dual graph | host + MPI | Facet keys (sorted origin vertex ids) are hashed to ranks and matched; cells are adjacent if they share a facet (M6; vertex weights from M7: the Lagrange node count of the cell's type and degree; ADR-0026, ADR-0029). | distributed CSR graph (vtxdist, xadj, adjncy) |
-| 3 Partition | host | `Partitioner` trait; vertex weights from the cost model by cell type and degree (ADR-0029). | destination rank per cell |
+| 3 Partition | host | `Partitioner` trait; vertex weights from the cost model by cell type and degree (ADR-0029). Skipped when Block honours a file's partition data (ADR-0035). | destination rank per cell |
 | 4 Migrate | MPI all-to-all-v | Send cells with origin ids and tags to their destination. | owned cells per rank |
 | 5 Ghost cells | host + MPI | Cells sharing a vertex or facet with another rank's cells, per GhostMode. | ghost cells with owner ranks |
 | 6 Fetch nodes | MPI | Fetch the coordinates of all nodes of owned and ghost cells, by origin node id, from the rendezvous directory `owner_hash(id) mod P` (ADR-0026). A cell node id that no rank posted is `IndexOutOfRange { index: id, len: global node count }` (`usize::MAX` for a negative id; ADR-0028). | node coordinates by origin id |
@@ -1531,14 +1532,14 @@ impl Partitioner for PtScotch { /* ... */ }              // name(): "ptscotch", 
 
 | Backend | Integration | Feature | Role |
 | --- | --- | --- | --- |
-| Block | built in | – | CI default for pipeline tests. Also honours partition data stored in Gmsh files. |
+| Block | built in | – | CI default for pipeline tests. Also honours partition data stored in Gmsh files whose partition count equals the rank count (ADR-0035). |
 | METIS on rank 0 | `metis` crate with its `vendored` feature, which builds METIS from source | `metis` | CI default for partition-quality tests; small and medium meshes; not together with `parmetis` (ADR-0033) |
 | PT-Scotch | Scotch 7.0.x (context API; verified 7.0.4 and 7.0.14; 7.0.18 is not deterministic, ADR-0034); own `ptscotch-sys` (bindgen of `ptscotch.h`, `SCOTCH_Num` width probed at build time) plus a safe wrapper; the existing `scotch-sys` binds only `scotch.h`; feature `mpi` of ptscotch-sys; libraries from `SCOTCH_DIR` or the system paths | `ptscotch` | production default; tested in its own CI job on an image with a known PT-Scotch build |
 | Scotch on rank 0 | `scotch` crate, plus `scotch-sys` for the seed and strategy | `scotch` | rank-0 alternative; the reference edge cut in M7 |
 | ParMETIS | own `parmetis-sys` (no crate exists; `idx_t` and `real_t` widths probed at build time); feature `mpi` of parmetis-sys; libraries from `PARMETIS_DIR`, `METIS_DIR` or the system paths | `parmetis` | optional; check the licence terms before redistributing binaries; not together with `metis` (ADR-0033) |
 
 - **Rank-0 partitioners** gather the graph on rank 0, partition it and scatter the destinations, through `all_to_all_v`. Rank 0 then needs memory for the whole graph, which limits them to meshes of about 10^7 cells.
-- **Default choice** for distributed reads: PT-Scotch when the `ptscotch` feature is enabled, otherwise METIS on rank 0 when `metis` is enabled, otherwise Block with a warning. Serial meshes need no partitioner.
+- **Default choice** for distributed reads: PT-Scotch when the `ptscotch` feature is enabled and the communicator has an MPI handle, otherwise METIS on rank 0 when `metis` is enabled, otherwise Block with a warning (ADR-0035). Serial meshes need no partitioner.
 - **Reproducibility:** PT-Scotch and Scotch on rank 0 run each call in a `SCOTCH_Context` with `SCOTCH_OPTIONNUMDETERMINISTIC` set and a private random generator seeded with the fixed seed (`SCOTCH_contextRandomSeed`, then `SCOTCH_contextRandomReset`), under a process-wide mutex; threaded Scotch builds are otherwise not deterministic (ADR-0031). Scotch 7.0.18's threaded build is not deterministic even in this context; the verified versions are listed in the backend table (ADR-0034). METIS uses `METIS_OPTION_SEED` under the same mutex; ParMETIS takes the seed in `options`. Results are reproducible for a fixed number of ranks only.
 - **Checks and balance:** every external partitioner validates the graph (ranges, self-loops, symmetry, non-negative weights, totals within the library's index type) before calling the library, returns zeros for one part, and targets 3% imbalance. PT-Scotch builds with `SCOTCH_PTHREAD_MPI` are not supported (MPI runs at `Threading::Single`). ParMETIS needs every rank to hold a vertex (ADR-0029).
 
@@ -1571,8 +1572,8 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
     - one node block, in the first D_TOP entity; `$Entities` is rebuilt from the elementary tags, one entity per (elementary tag, set of physical tags), with a bounding box from its nodes, point coordinates for dimension 0, and empty boundary lists; a mesh without tags gets one entity with tag 1;
     - three coordinates per node; binary is always little-endian with an 8-byte `size_t`.
 - **Serendipity nodes** (ADR-0022). `gridcl_refcell::serendipity_upgrade` gives the weights of the missing complete-P2 nodes from Gmsh's serendipity map. An added face-centre node is created once per face, keyed by the face's sorted corner node tags; it reuses the node of a complete-P2 neighbour where there is one, and otherwise takes a fresh tag above the file's largest node tag, in order of first use.
-- **Parallel read.** Binary files are read in byte-range chunks per rank. Block headers are scanned first, since records within a block have a fixed size and offsets are therefore computable. ASCII files are read on rank 0 and scattered.
-- **Parallel write:** gather to rank 0, or one partitioned file per rank with $PartitionedEntities.
+- **Parallel read.** Binary files are read in byte-range chunks per rank. Block headers are scanned first, since records within a block have a fixed size and offsets are therefore computable. ASCII files are read on rank 0 and scattered. Files with serendipity elements are also read on rank 0. Errors keep their serial form (`UnmatchedTagElement` names the Gmsh element tag). Elementary tags travel with their cells and entities like physical tags (ADR-0035).
+- **Parallel write:** gather to rank 0, or one partitioned file per rank with $PartitionedEntities. `GmshWriter::partitioned(true)` writes `<stem>_<rank+1>.msh`; non-vertex node tags and tag-element tags are numbered globally, so that every file and the gathered file agree, and one rank gives the serial numbering (ADR-0035).
 - **Precision.** Reading into an f32 mesh narrows coordinates and logs one warning per file (`log::warn!`).
 
 ### VTK
@@ -1582,10 +1583,10 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
     - Degree is inferred from the point count for isotropic cells.
     - gridcl-io holds the file model (`VtuFile`), the cell-type table, the writer and `parse_vtu`; `gridcl::vtk::VtkWriter` downloads meshes. Points are all geometry nodes (Float64, or Float32 for f32 meshes), also for linear output. zlib through `flate2` (`rust_backend`) (ADR-0024).
 - **High-order pyramids** are written as vertices only (VTK type 14) with one warning per file (`log::warn!`). A subdivided output mesh is a possible later option (ADR-0024). VTK's type 74 (`VTK_LAGRANGE_PYRAMID`) is a placeholder, and DOLFINx's writer also refuses pyramids with more than five nodes.
-- **PVTU** for parallel runs: one piece per rank plus the parallel header. Ghost cells carry a `vtkGhostType` cell array (value 1 = duplicate cell) so that ParaView hides them. M5 writes the header and one piece on one rank; M8 adds more ranks and `vtkGhostType`.
-- **VTKHDF** (feature `hdf5`) through hdf5-metno with its `mpio` feature for parallel HDF5: a single file with per-rank offsets, the same cell types and the same ghost array.
+- **PVTU** for parallel runs: one piece per rank plus the parallel header. Ghost cells carry a `vtkGhostType` cell array (value 1 = duplicate cell) so that ParaView hides them. `vtkGhostType` is written with more than one rank; the header's `GhostLevel` is 1 if any rank has ghost cells (ADR-0035).
+- **VTKHDF** (feature `hdf5`) through hdf5-metno with its `mpio` feature for parallel HDF5: a single file with per-rank offsets, the same cell types and the same ghost array. `VtkWriter::vtkhdf`; one partition per rank with the PVTU piece's arrays; collective through `mpio` with an MPI communicator, otherwise gathered to rank 0; no compression (ADR-0035).
 - **VTU reading** (`parse_vtu`, file level; linear and Lagrange) has lower priority and is used for round-trip tests and the VTK-written fixtures; no mesh is built from a VTU (ADR-0024).
-- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays of the inline-base64 files (with and without zlib); it writes version 0.1 and applies no conversion. meshio 5.3.5 accepts only versions 0.1 and 1.0, so the oracle hands it a copy whose version attribute reads 1.0. Its appended-data decoder fails on VTK's own appended files under CPython ≥ 3.13, so appended files are checked through base64 twins (ADR-0025). Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024).
+- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays of the inline-base64 files (with and without zlib); it writes version 0.1 and applies no conversion. meshio 5.3.5 accepts only versions 0.1 and 1.0, so the oracle hands it a copy whose version attribute reads 1.0. Its appended-data decoder fails on VTK's own appended files under CPython ≥ 3.13, so appended files are checked through base64 twins (ADR-0025). Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024). VTKHDF files are compared with the PVTU through VTK's `vtkHDFReader` (ADR-0035).
 
 ### High-order node orderings
 
@@ -1603,7 +1604,7 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 
 Tags and submeshes connect the volume mesh to boundary problems; the boundary of a volume mesh becomes the BEM surface mesh with outward orientation.
 
-- **MeshTags:** (dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device, covering owned and ghost entities. An index repeats only with distinct values. Every holder of an entity, owner or ghost, receives its tags by key matching, so ghost values equal the owner's (ADR-0026). `MeshBuilder::physical_tags` and `tag_names` give tags with host arrays. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value, filled from Gmsh physical names, and each group's size; `named` and `group` select one group on the device (ADR-0022).
+- **MeshTags:** (dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device, covering owned and ghost entities. An index repeats only with distinct values. Every holder of an entity, owner or ghost, receives its tags by key matching, so ghost values equal the owner's (ADR-0026). `MeshBuilder::physical_tags` and `tag_names` give tags with host arrays. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value, filled from Gmsh physical names, and each group's size; `named` and `group` select one group on the device (ADR-0022). The Gmsh reader also passes elementary tags through the same matching (ADR-0035).
 - **Codimension addressing** (NGSolve): `Codim::Vol`, `Bnd`, `BBnd` and `BBBnd` map to D_TOP, D_TOP−1, D_TOP−2 and D_TOP−3 (`Codim::dim(tdim) -> Option<usize>`). The same region code then works for curve, surface and volume meshes.
 - **Submeshes:** tagged cells (same D_TOP), tagged boundary facets (`facet_submesh`, D_TOP−1), and tagged edges of 3D meshes (curves in 3D). Each comes with an `EntityMap`: child → parent indices on the device, parent → child as a sparse map.
     - Ownership and ghosting are inherited from the parent.
@@ -1645,7 +1646,8 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
-    - every VTU fixture read back by VTK's Python reader (the files the M5 tests write, and the committed VTK-written reference cells).
+    - every VTU fixture read back by VTK's Python reader (the files the M5 tests write, and the committed VTK-written reference cells);
+    - VTKHDF and PVTU output of the same mesh read back identically by VTK's Python reader.
 - **Conformance with ndelement:** gridcl-conformance (A.10).
 - **Property tests** (proptest) cover node-ordering permutations, primitives and IndexMap scatter consistency. They use sizes up to 10^5 with 256 cases, plus fixed sizes of 10^6 and 10^7 for primitives.
 - **Compile-fail tests:** trybuild, as in Listing B10.
@@ -1718,12 +1720,12 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
 | gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional) |
-| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional); dev: mshio, serde_json |
+| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional, `mpio` with feature `mpi`); dev: mshio, serde_json, gridcl-testing |
 | gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
-| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
-| gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing |
+| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026), the Python oracle helper and `gen-gmsh-box` (ADR-0035); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features; serde_json; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
+| gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing; nix (unix; getrusage; ADR-0035) |
 | gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
 | tools/env-check (outside the workspace) | Probe of a development target: devices, properties, sample kernels in f32 and f64, MPI allreduce; JSON report. Built in E0. | cubecl with the target's runtime features; mpi (optional) |
@@ -1736,10 +1738,11 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 4. Runtime features (`cpu`, `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`) are enabled only in gridcl-testing, examples, benchmarks and binaries. The one exception is `gpu-aware-cuda` in gridcl-device, which enables cubecl's `cuda` feature.
 5. No crate depends on MPI unless its `mpi` feature is on. `cargo test --workspace` without features needs neither MPI nor a GPU.
 6. ndelement appears only in conformance/. The workspace excludes conformance/ and tools/env-check/ (`exclude = ["conformance", "tools/env-check"]`).
+7. A workspace crate may expose a `#[doc(hidden)] pub` item to other workspace crates when no stable API serves the purpose (hidden hooks and test accessors). Such an item is documented as not part of the stable API, has a rustdoc example or a named test, is listed in its milestone plan, and is semver-exempt (ADR-0015, ADR-0028, ADR-0038).
 
 ### Cargo features
 
-- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029).
+- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
 - **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it.
 - **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on.
@@ -1750,7 +1753,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- | --- |
 | local | the local Mac (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `GRIDCL_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
 | cpu | hosted Linux | `cargo test --workspace` on the CPU runtime in f32 and f64; clippy; rustdoc | every push |
-| mpi-mpich, mpi-openmpi | hosted Linux | gridcl-mpi-tests on 1–4 ranks (`--oversubscribe` for Open MPI) | every push |
+| mpi-mpich, mpi-openmpi | hosted Linux | gridcl-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI) | every push |
 | vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `GRIDCL_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
 | ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to gridcl-partition; nightly |
 | conformance | hosted Linux with OpenBLAS, or the local Mac with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
@@ -1983,7 +1986,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Scope:** chunked binary Gmsh reading, partitioned writing, PVTU with `vtkGhostType`, and VTKHDF (hdf5-metno with `mpio`).
 
-**Acceptance:**
+**Acceptance** (read as in ADR-0035: bullet 1 item 14, bullet 2 item 13, bullet 3 item 15):
 
 - the global mesh, compared by origin ids, is identical for 1–8 ranks;
 - reading a 10^7-cell binary file on 8 ranks of one Kathleen node keeps peak resident memory per rank below twice the rank's final mesh size plus 256 MiB (measured with getrusage);

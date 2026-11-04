@@ -175,6 +175,24 @@ impl<T: CubeElement> DeviceBuffer<T> {
         self.padded
     }
 
+    /// The allocated bytes, `padded_len` elements. For memory accounting in tests
+    /// (`Mesh::footprint_bytes`, ADR-0035); not part of the stable API.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, VECTOR_PAD};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let b = DeviceBuffer::<f64>::uninit(&client, 17).unwrap();
+    /// assert_eq!(b.footprint_bytes(), 2 * VECTOR_PAD * 8);
+    /// ```
+    #[doc(hidden)]
+    pub fn footprint_bytes(&self) -> usize {
+        // `check_allocation` bounded padded × size_of::<T>() at construction.
+        self.padded * size_of::<T>()
+    }
+
     /// The CubeCL handle, which keeps the allocation alive.
     ///
     /// # Example

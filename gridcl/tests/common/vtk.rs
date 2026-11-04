@@ -716,7 +716,7 @@ impl ReferenceCell {
 
 /// The directory of the VTK-written reference cells.
 pub fn reference_dir() -> PathBuf {
-    super::python::repo().join("gridcl-io/tests/fixtures/vtk")
+    gridcl_testing::oracle::repo().join("gridcl-io/tests/fixtures/vtk")
 }
 
 /// The reference cells of `manifest.json`.

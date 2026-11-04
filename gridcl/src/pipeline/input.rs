@@ -29,20 +29,57 @@ impl NodeRefs {
     }
 }
 
-/// One cell block of the input: its element, cell → node rows and optional cell ids.
+/// One cell block of the input: its element, cell → node rows and optional cell ids, and the
+/// tag values its cells carry (the Gmsh reader's; ADR-0035, item 8).
 pub(crate) struct BlockInput<'a> {
     pub(crate) spec: BlockSpec,
     pub(crate) nodes: &'a NodeRefs,
     pub(crate) origin_ids: Option<&'a [i64]>,
+    /// (cell index in the block, physical tag value) entries.
+    pub(crate) physical: &'a [(u32, i32)],
+    /// The elementary tag of every cell of the block, if the cells have them.
+    pub(crate) elementary: Option<&'a [i32]>,
 }
 
-/// One `MeshBuilder::physical_tags` call: `entity`'s vertex count of corner origin ids per
-/// entry, and one value per entry.
+/// The kind of a tag value (docs/design.md, "Tags, regions and submeshes").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TagKind {
+    /// A physical group (`MeshBuilder::physical_tags`).
+    Physical,
+    /// An elementary (Gmsh entity) tag; the Gmsh reader's only (ADR-0035, item 8).
+    Elementary,
+}
+
+/// One `MeshBuilder::physical_tags` call, or a tag input of the Gmsh reader: `entity`'s vertex
+/// count of corner origin ids per entry, and one value per entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TagInput {
     pub(crate) entity: CellType,
     pub(crate) corners: Vec<i64>,
     pub(crate) values: Vec<i32>,
+    pub(crate) kind: TagKind,
+    /// The `tag` of `UnmatchedTagElement` for each entry (the Gmsh element tags; ADR-0035,
+    /// item 9); `None` for the entry's global input position.
+    pub(crate) error_ids: Option<Vec<i64>>,
+}
+
+impl TagInput {
+    /// The physical tags of `MeshBuilder::physical_tags`.
+    pub(crate) fn physical(entity: CellType, corners: Vec<i64>, values: Vec<i32>) -> TagInput {
+        TagInput {
+            entity,
+            corners,
+            values,
+            kind: TagKind::Physical,
+            error_ids: None,
+        }
+    }
+
+    /// The `tag` of `UnmatchedTagElement` for entry `j`, whose global input position is
+    /// `position`.
+    pub(crate) fn error_id(&self, j: usize, position: i64) -> i64 {
+        self.error_ids.as_ref().map_or(position, |ids| ids[j])
+    }
 }
 
 /// One rank's input to the pipeline.
@@ -57,8 +94,11 @@ pub(crate) struct Input<'a> {
     pub(crate) node_ids: Option<&'a [i64]>,
     /// The cell blocks in call order.
     pub(crate) blocks: Vec<BlockInput<'a>>,
-    /// The physical tags in call order.
+    /// The tag inputs in call order.
     pub(crate) tags: &'a [TagInput],
+    /// Ids that share the cell ids' space without being cells (the Gmsh reader's tag-element
+    /// tags; ADR-0035, item 9).
+    pub(crate) element_ids: &'a [i64],
 }
 
 /// A rank's node chunk with origin ids.
@@ -100,18 +140,23 @@ const TAG: i64 = 1;
 /// - Agrees on the cell blocks.
 /// - Gives default ids: an exscan of the node and cell counts plus the local index (cells
 ///   count over the blocks in call order).
-/// - Translates `NodeRefs::Indices` to node origin ids.
-/// - Checks cell ids for global duplicates by a rendezvous on `owner_hash(&[id])`.
-/// - Matches cell tags to cells by a rendezvous on the sorted vertex key.
+/// - Translates `NodeRefs::Indices` to node origin ids, and attaches the blocks' cell tag
+///   values to their cells.
+/// - Checks cell ids and element ids for global duplicates by a rendezvous on
+///   `owner_hash(&[id])`.
+/// - Matches cell tags to cells by a rendezvous on the sorted vertex key (skipped when no rank
+///   has a tag input of the cell dimension or above).
 ///
 /// # Errors
 ///
 /// Agreed over the ranks: `LengthMismatch` and `IndexOutOfRange` as `MeshBuilder::build`,
-/// and for tag corners that are not `values.len()` rows; `DuplicateCellBlock` for one cell
-/// type twice on a rank or in two elements over the ranks; `UnsupportedNodeFamily` and
-/// `UnsupportedDegree`; `DuplicateOriginId` for a cell id given twice (the first repeat on
-/// its rendezvous rank); `UnmatchedTagElement` for a tag of the cell dimension (or above)
-/// that matches no cell, `tag` being the entry's global input position.
+/// for tag corners that are not `values.len()` rows, for error ids that are not one per entry
+/// and for block tag values that are not one per cell or name a cell beyond the block;
+/// `DuplicateCellBlock` for one cell type twice on a rank or in two elements over the ranks;
+/// `UnsupportedNodeFamily` and `UnsupportedDegree`; `NotYetImplemented` for elementary tag
+/// inputs of the cell dimension or above; `DuplicateOriginId` for a cell or element id given
+/// twice (the first repeat on its rendezvous rank); `UnmatchedTagElement` for a tag of the
+/// cell dimension (or above) that matches no cell, `tag` being the entry's error id.
 pub(crate) fn read(comm: &dyn CommDyn, input: &Input<'_>) -> Result<Read> {
     agree(comm, check(input))?;
     let (blocks, block_of) = agree(comm, union_blocks(comm, &input.blocks))?;
@@ -128,7 +173,7 @@ pub(crate) fn read(comm: &dyn CommDyn, input: &Input<'_>) -> Result<Read> {
     let tag_first = comm.exscan_sum(num_tags as u64) as i64;
 
     let (nodes, mut cells) = agree(comm, chunk(input, &block_of, node_first, cell_first))?;
-    check_cell_ids(comm, &cells)?;
+    check_cell_ids(comm, &cells, input.element_ids)?;
     let lower_tags = match_cell_tags(comm, input, &blocks, &mut cells, tag_first)?;
     Ok(Read {
         blocks,
@@ -180,12 +225,21 @@ fn check(input: &Input<'_>) -> Result<()> {
                 len: num_nodes,
             });
         }
-        if let Some(ids) = b.origin_ids
-            && ids.len() != len / k
-        {
-            return Err(GridError::LengthMismatch {
-                expected: len / k,
-                found: ids.len(),
+        let n = len / k;
+        for found in [
+            b.origin_ids.map(<[i64]>::len),
+            b.elementary.map(<[i32]>::len),
+        ] {
+            if let Some(found) = found
+                && found != n
+            {
+                return Err(GridError::LengthMismatch { expected: n, found });
+            }
+        }
+        if let Some(&(bad, _)) = b.physical.iter().find(|&&(c, _)| c as usize >= n) {
+            return Err(GridError::IndexOutOfRange {
+                index: bad as usize,
+                len: n,
             });
         }
     }
@@ -196,6 +250,19 @@ fn check(input: &Input<'_>) -> Result<()> {
                 expected: t.values.len() * nv,
                 found: t.corners.len(),
             });
+        }
+        if let Some(ids) = &t.error_ids
+            && ids.len() != t.values.len()
+        {
+            return Err(GridError::LengthMismatch {
+                expected: t.values.len(),
+                found: ids.len(),
+            });
+        }
+        if t.kind == TagKind::Elementary && gridcl_refcell::tdim(t.entity) >= input.tdim {
+            return Err(GridError::NotYetImplemented(
+                "elementary tag inputs of the cell dimension",
+            ));
         }
     }
     Ok(())
@@ -244,13 +311,29 @@ fn chunk(
 ) -> Result<(NodeChunk, Cells)> {
     let num_nodes = input.coords.len() / input.gdim;
     let node_ids = ids_or_index(input.node_ids, num_nodes, node_first)?;
-    let mut cells = Cells::new();
+    // Exact capacities: the cells are the largest host arrays of the pipeline (the M8 memory
+    // bound).
+    let mut cells = Cells::with_capacity(
+        input
+            .blocks
+            .iter()
+            .map(|b| b.nodes.len() / b.spec.num_nodes())
+            .sum(),
+        input.blocks.iter().map(|b| b.nodes.len()).sum(),
+        input.blocks.iter().map(|b| b.physical.len()).sum(),
+        input.blocks.iter().any(|b| b.elementary.is_some()),
+    );
     let mut row = Vec::new();
+    let mut values = Vec::new();
     for (b, &block) in input.blocks.iter().zip(block_of) {
         let k = b.spec.num_nodes();
         let n = b.nodes.len() / k;
         let first = cell_first + cells.len();
         let ids = ids_or_index(b.origin_ids, n, first)?;
+        let mut physical = b.physical.to_vec();
+        physical.sort_unstable();
+        physical.dedup();
+        let mut physical = physical.into_iter().peekable();
         for (c, &id) in ids.iter().enumerate() {
             row.clear();
             match b.nodes {
@@ -259,8 +342,13 @@ fn chunk(
                 }
                 NodeRefs::Ids(v) => row.extend_from_slice(&v[c * k..(c + 1) * k]),
             }
+            values.clear();
+            while let Some((_, v)) = physical.next_if(|&(i, _)| i as usize == c) {
+                values.push(v);
+            }
             let position = i64::try_from(first + c).map_err(|_| GridError::TooLarge)?;
-            cells.push(block, id, position, &row, &[]);
+            let elementary = b.elementary.map(|e| e[c]);
+            cells.push(block, id, position, &row, &values, elementary);
         }
     }
     let nodes = NodeChunk {
@@ -270,16 +358,17 @@ fn chunk(
     Ok((nodes, cells))
 }
 
-/// `DuplicateOriginId` (agreed) for a cell id that two cells share: every id goes to its
-/// rendezvous rank, which reports the first repeat in arrival order. Collective.
-fn check_cell_ids(comm: &dyn CommDyn, cells: &Cells) -> Result<()> {
+/// `DuplicateOriginId` (agreed) for an id that two cells, two elements or a cell and an
+/// element share: every id goes to its rendezvous rank, which reports the first repeat in
+/// arrival order. Collective.
+fn check_cell_ids(comm: &dyn CommDyn, cells: &Cells, element_ids: &[i64]) -> Result<()> {
     let p = comm.size();
     let mut out = Outbox::new(p);
-    for &id in &cells.ids {
+    for &id in cells.ids.iter().chain(element_ids) {
         out.push(rendezvous_rank(&[id], p), &[&[id]]);
     }
     let inbox = out.exchange(comm)?;
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::with_capacity(inbox.records().count());
     let repeat = inbox
         .records()
         .map(|(_, r)| r[0])
@@ -290,9 +379,10 @@ fn check_cell_ids(comm: &dyn CommDyn, cells: &Cells) -> Result<()> {
     )
 }
 
-/// Attaches the cell tags of `input` to `cells` and returns the tags of lower dimension.
-/// Cells and tag entries meet at the rendezvous rank of their sorted vertex key, which sends
-/// each match to the cell's rank. Collective.
+/// Adds the cell tags of `input` to the values `cells` carry and returns the tags of lower
+/// dimension. Cells and tag entries meet at the rendezvous rank of their sorted vertex key,
+/// which sends each match to the cell's rank; without a tag input of the cell dimension (or
+/// above) on any rank, nothing is exchanged. Collective.
 fn match_cell_tags(
     comm: &dyn CommDyn,
     input: &Input<'_>,
@@ -302,14 +392,11 @@ fn match_cell_tags(
 ) -> Result<Vec<LowerTags>> {
     let p = comm.size();
     let mut out = Outbox::new(p);
-    for i in 0..cells.len() {
-        let mut key = cells.vertices_of(i, blocks).to_vec();
-        key.sort_unstable();
-        out.push(rendezvous_rank(&key, p), &[&[CELL, i as i64], &key]);
-    }
     let mut lower = Vec::new();
-    let mut unmatched: Option<(i64, usize)> = None;
+    // (position, dimension, error id) of the first unmatched entry.
+    let mut unmatched: Option<(i64, usize, i64)> = None;
     let mut position = tag_first;
+    let mut upper = 0u64;
     for t in input.tags {
         let nv = gridcl_refcell::vertices(t.entity).len();
         let dim = gridcl_refcell::tdim(t.entity);
@@ -318,20 +405,32 @@ fn match_cell_tags(
                 let mut key = corners.to_vec();
                 key.sort_unstable();
                 let at = position + j as i64;
-                out.push(
-                    rendezvous_rank(&key, p),
-                    &[&[TAG, i64::from(value), at], &key],
-                );
+                let head = [TAG, i64::from(value), at, t.error_id(j, at)];
+                out.push(rendezvous_rank(&key, p), &[&head, &key]);
             }
+            upper += t.values.len() as u64;
         } else if dim < input.tdim {
             lower.push(LowerTags {
                 tags: t.clone(),
                 first: position,
             });
         } else if !t.values.is_empty() && unmatched.is_none() {
-            unmatched = Some((position, dim));
+            unmatched = Some((position, dim, t.error_id(0, position)));
         }
         position += t.values.len() as i64;
+    }
+    if comm.max(upper) == 0 {
+        return agree(
+            comm,
+            unmatched.map_or(Ok(lower), |(_, dim, tag)| {
+                Err(GridError::UnmatchedTagElement { dim, tag })
+            }),
+        );
+    }
+    for i in 0..cells.len() {
+        let mut key = cells.vertices_of(i, blocks).to_vec();
+        key.sort_unstable();
+        out.push(rendezvous_rank(&key, p), &[&[CELL, i as i64], &key]);
     }
     let inbox = out.exchange(comm)?;
 
@@ -342,28 +441,30 @@ fn match_cell_tags(
     }
     let mut replies = Outbox::new(p);
     for (_, r) in inbox.records().filter(|(_, r)| r[0] == TAG) {
-        match holders.get(&r[3..]) {
+        match holders.get(&r[4..]) {
             Some(cells) => {
                 for &(rank, cell) in cells {
                     replies.push(rank, &[&[cell, r[1]]]);
                 }
             }
             None => {
-                if unmatched.is_none_or(|(at, _)| r[2] < at) {
-                    unmatched = Some((r[2], input.tdim));
+                if unmatched.is_none_or(|(at, _, _)| r[2] < at) {
+                    unmatched = Some((r[2], input.tdim, r[3]));
                 }
             }
         }
     }
     agree(
         comm,
-        unmatched.map_or(Ok(()), |(tag, dim)| {
+        unmatched.map_or(Ok(()), |(_, dim, tag)| {
             Err(GridError::UnmatchedTagElement { dim, tag })
         }),
     )?;
 
     let inbox = replies.exchange(comm)?;
-    let mut values: Vec<Vec<i32>> = vec![Vec::new(); cells.len()];
+    let mut values: Vec<Vec<i32>> = (0..cells.len())
+        .map(|i| cells.tags_of(i).to_vec())
+        .collect();
     for (_, r) in inbox.records() {
         values[r[0] as usize].push(r[1] as i32);
     }

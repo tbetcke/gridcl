@@ -1,5 +1,5 @@
-//! Test support for gridcl: the test device chosen by `GRIDCL_TEST_DEVICE`, test meshes and
-//! tolerance helpers.
+//! Test support for gridcl: the test device chosen by `GRIDCL_TEST_DEVICE`, test meshes,
+//! tolerance helpers and the Python oracles.
 //!
 //! This crate is not published. Its features forward CubeCL's runtime features; besides it,
 //! only gridcl-bench and gridcl-device (`gpu-aware-cuda`) enable them (docs/design.md,
@@ -7,7 +7,9 @@
 
 mod comm;
 pub mod comm_checks;
+pub mod io_parallel;
 mod meshes;
+pub mod oracle;
 pub mod parallel;
 pub mod partition;
 

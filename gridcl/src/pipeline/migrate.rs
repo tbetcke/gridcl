@@ -9,19 +9,50 @@ use super::rendezvous::Outbox;
 
 /// Stage 4: sends cell `i` of `cells`, with its block, origin id, input position, nodes and
 /// tags, to rank `dest[i]`, and returns the cells this rank owns, by source rank and then in
-/// input order. Collective.
+/// input order. Cells whose destination is this rank stay in place, without a copy when no
+/// lower rank sends any (the M8 memory bound, docs/plans/M8.md T5b). Collective.
 ///
 /// # Errors
 ///
 /// Errors of the exchange.
-pub(crate) fn migrate(comm: &dyn CommDyn, cells: &Cells, dest: &[i32]) -> Result<Cells> {
+pub(crate) fn migrate(comm: &dyn CommDyn, mut cells: Cells, dest: &[i32]) -> Result<Cells> {
+    let rank = comm.rank();
     let mut out = Outbox::new(comm.size());
+    let mut stay = vec![false; cells.len()];
     for (i, &d) in dest.iter().enumerate() {
-        out.push(d as usize, &[&cells.record(i)]);
+        if d as usize == rank {
+            stay[i] = true;
+        } else {
+            out.push(d as usize, &[&cells.record(i)]);
+        }
     }
+    cells.retain(&stay);
+    drop(stay);
     let inbox = out.exchange(comm)?;
-    let mut owned = Cells::new();
+    let lower = inbox.records().take_while(|&(s, _)| s < rank).count();
+    // Exact room for the received cells (record layout of `Cells::record`).
+    let (mut num, mut nodes, mut tags) = (0, 0, 0);
     for (_, r) in inbox.records() {
+        let (n, e) = (r[3] as usize, r[4] as usize);
+        (num, nodes, tags) = (num + 1, nodes + n, tags + r.len() - 5 - n - e);
+    }
+    let mut owned = if lower == 0 {
+        cells.reserve(num, nodes, tags);
+        cells
+    } else {
+        let mut owned = Cells::with_capacity(
+            num + cells.len(),
+            nodes + cells.nodes.len(),
+            tags + cells.tags.len(),
+            !cells.elementary.is_empty(),
+        );
+        for (_, r) in inbox.records().take(lower) {
+            owned.push_record(r);
+        }
+        owned.append(&cells);
+        owned
+    };
+    for (_, r) in inbox.records().skip(lower) {
         owned.push_record(r);
     }
     Ok(owned)
@@ -53,7 +84,7 @@ mod tests {
                         } else {
                             partition(&comm, &Block, &g)
                         };
-                        let cells = migrate(&comm, &read.cells, &dest.unwrap()).unwrap();
+                        let cells = migrate(&comm, read.cells, &dest.unwrap()).unwrap();
                         (read.blocks, cells)
                     });
                     let n = want.len() as i64;

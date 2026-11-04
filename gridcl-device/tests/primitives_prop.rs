@@ -206,6 +206,21 @@ fn check_radix_sort(client: &Client, len: usize, seed: u64) {
         want_payload,
         "payload: stability"
     );
+    // The consuming variant sorts through its input to the same result.
+    let (sorted, payload) =
+        radix_sort_owned(keys, upload(client, &payload_host)).expect("radix_sort_owned");
+    assert_eq!(sorted.len(), len);
+    assert_eq!(sorted.num_words(), num_words);
+    assert_eq!(
+        sorted.to_host().expect("read keys"),
+        want_keys,
+        "owned: keys"
+    );
+    assert_eq!(
+        payload.to_host().expect("read payload"),
+        want_payload,
+        "owned: payload"
+    );
 }
 
 fn check_run_length(client: &Client, len: usize, seed: u64) {
@@ -262,6 +277,31 @@ fn check_unique_by_key(client: &Client, len: usize, seed: u64) {
         unique.group.to_host().expect("read group"),
         want_group,
         "groups"
+    );
+    let (runs, run_offsets) = unique_by_key_runs(
+        &upload_keys(client, &keys_host, num_words),
+        &upload(client, &payload_host),
+    )
+    .expect("unique_by_key_runs");
+    assert_eq!(
+        runs.keys.to_host().expect("read keys"),
+        want_keys,
+        "runs: keys"
+    );
+    assert_eq!(
+        runs.first.to_host().expect("read first"),
+        want_first,
+        "runs: first"
+    );
+    assert_eq!(
+        runs.group.to_host().expect("read group"),
+        want_group,
+        "runs: groups"
+    );
+    assert_eq!(
+        run_offsets.to_host().expect("read offsets"),
+        offsets,
+        "runs: offsets"
     );
 }
 

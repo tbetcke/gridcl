@@ -5,18 +5,23 @@
 //!   turns it into a [`VtuFile`].
 //! - [`VtuFile`]: the arrays of one `UnstructuredGrid` piece, as stored
 //!   ([`VtuFile::write_to`], [`parse_vtu`]); [`write_pvtu`] writes the parallel header.
+//! - `write_vtkhdf` (feature `hdf5`): the pieces of all ranks in one VTKHDF file (ADR-0035).
 //!
 //! `gridcl::vtk::VtkWriter` downloads meshes.
 
 mod base64;
 mod cell_type;
 mod convert;
+#[cfg(feature = "hdf5")]
+mod hdf;
 mod model;
 mod parse;
 mod write;
 
 pub use cell_type::vtk_cell_type;
 pub use convert::to_vtu;
+#[cfg(feature = "hdf5")]
+pub use hdf::write_vtkhdf;
 pub use model::{DataArray, DataValues, VtkCellBlock, VtkMesh, VtuFile};
 pub use parse::parse_vtu;
 pub use write::{Binary, write_pvtu};

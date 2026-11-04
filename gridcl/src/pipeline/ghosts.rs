@@ -253,7 +253,7 @@ mod tests {
                         } else {
                             partition(&comm, &Block, &g)
                         };
-                        let owned = migrate(&comm, &read.cells, &dest.unwrap()).unwrap();
+                        let owned = migrate(&comm, read.cells.clone(), &dest.unwrap()).unwrap();
                         let local = ghost_cells(&comm, &read.blocks, owned, mode).unwrap();
                         (read.blocks, local)
                     });

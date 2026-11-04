@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""The Python oracles of the M5 VTK tests (docs/plans/M5.md, T1; ADR-0024, item 11; ADR-0025).
+"""The Python oracles of the VTK tests (docs/plans/M5.md, T1; ADR-0024, item 11; ADR-0025;
+docs/plans/M8.md, T0a; ADR-0035).
 
-Runs VTK's own XML readers and meshio on VTU/PVTU files and prints JSON on stdout. The consumer
-is gridcl/tests/common/python.rs. The pinned versions are asserted: any other vtk or meshio
+Runs VTK's own readers and meshio on VTU, PVTU and VTKHDF files and prints JSON on stdout. The
+consumer is gridcl-testing/src/oracle.rs. The pinned versions are asserted: any other vtk or meshio
 version is refused with a non-zero exit and the install command on stderr.
 
 Usage:
-    vtk_oracle.py read FILE...          VTK's reader: counts, cell types, bounds, arrays,
+    vtk_oracle.py read [--ghost-level N] FILE...
+                                        VTK's reader: counts, cell types, bounds, arrays,
                                         errors and warnings
+    vtk_oracle.py remove-ghosts [--ghost-level N] FILE...
+                                        vtkRemoveGhosts on VTK's reader: cell counts and the
+                                        OriginId cell array of the cells that remain
+    vtk_oracle.py compare [--pieces N | --by-origin-id] A B
+                                        whether two files read alike, array by array, bitwise
     vtk_oracle.py integrate FILE...     vtkIntegrateAttributes: length, area, volume
     vtk_oracle.py evaluate REQUEST.json vtkCell::EvaluateLocation at given parametric points
     vtk_oracle.py meshio FILE...        the raw arrays as meshio reads them
@@ -20,10 +27,30 @@ read: one object per file, in argument order:
     {"file", "num_points", "num_cells", "types": [VTK type of each cell],
      "bounds": [xmin, xmax, ymin, ymax, zmin, zmax], "point_data": [{"name", "components",
      "dtype"}], "cell_data": [...], "errors": [str], "warnings": [str]}
-  .pvtu files are read with vtkXMLPUnstructuredGridReader, others with
-  vtkXMLUnstructuredGridReader. Errors and warnings come from an observer on the reader and
+  .pvtu files are read with vtkXMLPUnstructuredGridReader, .vtkhdf and .hdf files with
+  vtkHDFReader (the partitions it reads appended in order), others with
+  vtkXMLUnstructuredGridReader. --ghost-level N requests piece 0 of 1
+  with N ghost levels (UpdatePiece) instead of a plain Update(). Errors and warnings come from an observer on the reader and
   from VTK's global output window (messages of the XML parser, the pipeline and piece readers).
   "dtype" is the numpy name of the array's type (float32, float64, int32, uint32, int64, uint8).
+
+remove-ghosts: {"file", "num_cells_before", "num_cells", "origin_ids": [int] or null (no
+  OriginId cell array), "errors", "warnings"}, one per file: the reader's output (as in read)
+  through vtkRemoveGhosts, which drops every cell whose vtkGhostType has DUPLICATECELL set.
+
+compare: {"a", "b", "pieces", "equal", "differences": [str], "counts": [{"cells", "points",
+  "connectivity_ids"} per piece of a], "errors", "warnings"}. Both files are read whole with
+  one ghost level requested (UpdatePiece(0, 1, 1)); points, connectivity, offsets, cell types
+  and every point and cell array (matched by name) must hold the same values, and float arrays
+  the same type and bits. Then each piece i of N is read from both files (UpdatePiece(i, N, 0))
+  and its counts compared. N is --pieces, else the piece count of whichever file is a PVTU,
+  else 1. "differences" names every mismatch; "equal" is true when it is empty and neither
+  reader reported an error.
+  With --by-origin-id the files are compared after sorting by origin id instead: the cells are
+  matched by their OriginId cell data (each id must appear once in each file), and each matched
+  pair must have the same cell type, the same point coordinates in connectivity order (bits),
+  the same point data at those points and the same cell data; the number of points must agree.
+  No piece counts are compared ("pieces" is 0 and "counts" empty).
 
 integrate: {"file", "length", "area", "volume", "errors", "warnings"}: the sums
   vtkIntegrateAttributes puts in its output cell data ("Length", "Area", "Volume"; 0.0 when
@@ -129,18 +156,64 @@ class Messages:
         return errors, warnings
 
 
-def read_grid(path, messages):
-    """VTK's reader of `path` (observed), after Update()."""
+def new_reader(path, messages):
+    """VTK's reader of `path` (observed), before any update."""
+    from vtkmodules.vtkIOHDF import vtkHDFReader
     from vtkmodules.vtkIOXML import vtkXMLPUnstructuredGridReader, vtkXMLUnstructuredGridReader
 
-    if path.lower().endswith(".pvtu"):
+    lower = path.lower()
+    if lower.endswith(".pvtu"):
         reader = vtkXMLPUnstructuredGridReader()
+    elif lower.endswith((".vtkhdf", ".hdf")):
+        reader = vtkHDFReader()
     else:
         reader = vtkXMLUnstructuredGridReader()
     messages.observe(reader)
     reader.SetFileName(path)
-    reader.Update()
     return reader
+
+
+def read_grid(path, messages, ghost_level=None):
+    """VTK's reader of `path` (observed), after Update(), or after UpdatePiece(0, 1, N) with
+    N = ghost_level."""
+    reader = new_reader(path, messages)
+    if ghost_level is None:
+        reader.Update()
+    else:
+        reader.UpdatePiece(0, 1, ghost_level)
+    return reader
+
+
+def output(reader):
+    """The reader's unstructured grid, or None. vtkHDFReader gives a vtkPartitionedDataSet for a
+    file with more than one partition; its partitions (those read) are appended in order, with
+    vtkAppendFilter and no point merging, as the PVTU reader appends its pieces."""
+    from vtkmodules.vtkFiltersCore import vtkAppendFilter
+
+    grid = reader.GetOutputDataObject(0)
+    if grid is not None and grid.IsA("vtkPartitionedDataSet"):
+        parts = [grid.GetPartition(i) for i in range(grid.GetNumberOfPartitions())]
+        parts = [p for p in parts if p is not None]
+        if not parts:
+            return None
+        append = vtkAppendFilter()
+        append.SetMergePoints(False)
+        for p in parts:
+            append.AddInputData(p)
+        append.Update()
+        grid = append.GetOutput()
+    if grid is None or not grid.IsA("vtkUnstructuredGrid"):
+        return None
+    return grid
+
+
+def ghost_level_option(args):
+    """(N of a leading --ghost-level N or None, the remaining args)."""
+    if args[:1] == ["--ghost-level"]:
+        if len(args) < 2 or not args[1].isdigit():
+            die("--ghost-level needs a non-negative integer")
+        return int(args[1]), args[2:]
+    return None, args
 
 
 def numpy_dtype(array):
@@ -163,11 +236,14 @@ def arrays(data):
     return out
 
 
-def cmd_read(files):
+def cmd_read(args):
+    ghost_level, files = ghost_level_option(args)
+    if not files:
+        die("read needs at least one FILE")
     messages = Messages()
     out = []
     for path in files:
-        grid = read_grid(path, messages).GetOutput()
+        grid = output(read_grid(path, messages, ghost_level))
         result = {"file": path, "num_points": 0, "num_cells": 0, "types": [],
                   "bounds": [0.0] * 6, "point_data": [], "cell_data": []}
         if grid is not None:
@@ -182,6 +258,196 @@ def cmd_read(files):
         result["errors"], result["warnings"] = messages.take()
         out.append(result)
     return out
+
+
+def cmd_remove_ghosts(args):
+    from vtkmodules.vtkFiltersParallel import vtkRemoveGhosts
+
+    ghost_level, files = ghost_level_option(args)
+    if not files:
+        die("remove-ghosts needs at least one FILE")
+    messages = Messages()
+    out = []
+    for path in files:
+        reader = read_grid(path, messages, ghost_level)
+        before = output(reader)
+        result = {"file": path, "num_cells_before": 0, "num_cells": 0, "origin_ids": None}
+        if before is not None:
+            remover = messages.observe(vtkRemoveGhosts())
+            remover.SetInputData(before)
+            remover.Update()
+            grid = remover.GetOutput()
+            ids = grid.GetCellData().GetArray("OriginId")
+            result.update(
+                num_cells_before=before.GetNumberOfCells(),
+                num_cells=grid.GetNumberOfCells(),
+                origin_ids=None if ids is None
+                else [int(ids.GetValue(i)) for i in range(ids.GetNumberOfTuples())],
+            )
+        result["errors"], result["warnings"] = messages.take()
+        out.append(result)
+    return out
+
+
+def numpy_of(array):
+    """The values of a VTK array as a numpy array of its own type."""
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    return vtk_to_numpy(array)
+
+
+def same_values(x, y):
+    """Whether two numpy arrays hold the same values: integers by value, floats by type and
+    bits."""
+    import numpy as np
+
+    if x.shape != y.shape:
+        return False
+    if x.dtype.kind == "f" or y.dtype.kind == "f":
+        return x.dtype == y.dtype and x.tobytes() == y.tobytes()
+    return bool(np.array_equal(x.astype(np.int64), y.astype(np.int64)))
+
+
+def compare_grids(a, b):
+    """The differences of two unstructured grids, as messages."""
+    diffs = []
+    if a is None or b is None:
+        return ["no unstructured grid output: " + ("a" if a is None else "b")]
+    for what, n in [("cells", lambda g: g.GetNumberOfCells()),
+                    ("points", lambda g: g.GetNumberOfPoints())]:
+        if n(a) != n(b):
+            diffs.append(f"number of {what}: {n(a)} != {n(b)}")
+    if diffs:
+        return diffs
+    pairs = [("points", a.GetPoints().GetData(), b.GetPoints().GetData())
+             if a.GetNumberOfPoints() else None,
+             ("connectivity", a.GetCells().GetConnectivityArray(),
+              b.GetCells().GetConnectivityArray()),
+             ("offsets", a.GetCells().GetOffsetsArray(), b.GetCells().GetOffsetsArray()),
+             ("types", a.GetCellTypes(), b.GetCellTypes())]
+    for pair in pairs:
+        if pair is None:
+            continue
+        what, x, y = pair
+        if not same_values(numpy_of(x), numpy_of(y)):
+            diffs.append(f"{what} differ ({numpy_dtype(x)} vs {numpy_dtype(y)})")
+    for kind, da, db in [("point", a.GetPointData(), b.GetPointData()),
+                         ("cell", a.GetCellData(), b.GetCellData())]:
+        names_a = sorted(da.GetAbstractArray(i).GetName() for i in range(da.GetNumberOfArrays()))
+        names_b = sorted(db.GetAbstractArray(i).GetName() for i in range(db.GetNumberOfArrays()))
+        if names_a != names_b:
+            diffs.append(f"{kind} data arrays: {names_a} != {names_b}")
+        for name in sorted(set(names_a) & set(names_b)):
+            x, y = da.GetAbstractArray(name), db.GetAbstractArray(name)
+            if x.GetNumberOfComponents() != y.GetNumberOfComponents():
+                diffs.append(f"{kind} data {name}: components {x.GetNumberOfComponents()} != "
+                             f"{y.GetNumberOfComponents()}")
+            elif numpy_dtype(x) != numpy_dtype(y):
+                diffs.append(f"{kind} data {name}: type {numpy_dtype(x)} != {numpy_dtype(y)}")
+            elif not same_values(numpy_of(x), numpy_of(y)):
+                diffs.append(f"{kind} data {name}: values differ")
+    return diffs
+
+
+def counts(grid):
+    if grid is None:
+        return {"cells": 0, "points": 0, "connectivity_ids": 0}
+    cells = grid.GetCells()  # None for an empty piece
+    return {"cells": grid.GetNumberOfCells(), "points": grid.GetNumberOfPoints(),
+            "connectivity_ids": 0 if cells is None else cells.GetNumberOfConnectivityIds()}
+
+
+def by_origin_id(grid, diffs, which):
+    """{origin id: (type, point bytes, point data bytes, cell data bytes)} of `grid`."""
+    import numpy as np
+
+    ids = grid.GetCellData().GetArray("OriginId")
+    if ids is None:
+        diffs.append(f"{which}: no OriginId cell array")
+        return {}
+    ids = numpy_of(ids).astype(np.int64)
+    points = numpy_of(grid.GetPoints().GetData()) if grid.GetNumberOfPoints() else None
+    offsets = numpy_of(grid.GetCells().GetOffsetsArray()).astype(np.int64)
+    conn = numpy_of(grid.GetCells().GetConnectivityArray()).astype(np.int64)
+    types = numpy_of(grid.GetCellTypes())
+    pd, cd = grid.GetPointData(), grid.GetCellData()
+    point_arrays = sorted((pd.GetAbstractArray(i).GetName(), numpy_of(pd.GetAbstractArray(i)))
+                          for i in range(pd.GetNumberOfArrays()))
+    cell_arrays = sorted((cd.GetAbstractArray(i).GetName(), numpy_of(cd.GetAbstractArray(i)))
+                         for i in range(cd.GetNumberOfArrays()))
+    out = {}
+    for c, key in enumerate(ids.tolist()):
+        p = conn[offsets[c]:offsets[c + 1]]
+        value = (int(types[c]),
+                 points[p].tobytes() if points is not None else b"",
+                 tuple((n, a.dtype.name, a[p].tobytes()) for n, a in point_arrays),
+                 tuple((n, a.dtype.name, a[c].tobytes()) for n, a in cell_arrays))
+        if key in out:
+            diffs.append(f"{which}: origin id {key} appears more than once")
+        out[key] = value
+    return out
+
+
+def cmd_compare(args):
+    if args[:1] == ["--by-origin-id"]:
+        if len(args) != 3:
+            die("compare --by-origin-id takes two files")
+        a, b = args[1:]
+        messages = Messages()
+        ga, gb = output(read_grid(a, messages)), output(read_grid(b, messages))
+        diffs = []
+        if ga is None or gb is None:
+            diffs.append("no unstructured grid output")
+        else:
+            if ga.GetNumberOfPoints() != gb.GetNumberOfPoints():
+                diffs.append(f"number of points: {ga.GetNumberOfPoints()} != "
+                             f"{gb.GetNumberOfPoints()}")
+            ca, cb = by_origin_id(ga, diffs, "a"), by_origin_id(gb, diffs, "b")
+            if sorted(ca) != sorted(cb):
+                diffs.append(f"origin ids differ: {len(ca)} vs {len(cb)} cells, "
+                             f"{len(set(ca) ^ set(cb))} not in both")
+            for key in sorted(set(ca) & set(cb)):
+                if ca[key] != cb[key]:
+                    what = ["type", "points", "point data", "cell data"]
+                    bad = [w for w, x, y in zip(what, ca[key], cb[key]) if x != y]
+                    diffs.append(f"cell {key}: {', '.join(bad)} differ")
+                    if len(diffs) > 20:
+                        diffs.append("...")
+                        break
+        errors, warnings = messages.take()
+        return {"a": a, "b": b, "pieces": 0, "equal": not diffs and not errors,
+                "differences": diffs, "counts": [], "errors": errors, "warnings": warnings}
+    pieces = None
+    if args[:1] == ["--pieces"]:
+        if len(args) < 2 or not args[1].isdigit() or int(args[1]) < 1:
+            die("--pieces needs a positive integer")
+        pieces, args = int(args[1]), args[2:]
+    if len(args) != 2:
+        die("compare takes two files")
+    a, b = args
+    messages = Messages()
+    diffs = compare_grids(output(read_grid(a, messages, 1)), output(read_grid(b, messages, 1)))
+    if pieces is None:
+        pieces = 1
+        for path in (a, b):
+            if path.lower().endswith(".pvtu"):
+                reader = new_reader(path, messages)
+                reader.UpdateInformation()
+                pieces = reader.GetNumberOfPieces()
+                break
+    per_piece = []
+    for i in range(pieces):
+        got = []
+        for path in (a, b):
+            reader = new_reader(path, messages)
+            reader.UpdatePiece(i, pieces, 0)
+            got.append(counts(output(reader)))
+        if got[0] != got[1]:
+            diffs.append(f"piece {i} of {pieces}: {got[0]} != {got[1]}")
+        per_piece.append(got[0])
+    errors, warnings = messages.take()
+    return {"a": a, "b": b, "pieces": pieces, "equal": not diffs and not errors,
+            "differences": diffs, "counts": per_piece, "errors": errors, "warnings": warnings}
 
 
 def cmd_integrate(files):
@@ -224,7 +490,7 @@ def cmd_evaluate(args):
         for t, p in points.items():
             if len(p) % 3:
                 die(f"{args[0]}: {path}: type {t}: {len(p)} coordinates, not a multiple of 3")
-        grid = read_grid(path, messages).GetOutput()
+        grid = output(read_grid(path, messages))
         cells = []
         missing = set()
         for i in range(grid.GetNumberOfCells() if grid is not None else 0):
@@ -337,10 +603,10 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         sys.exit(0 if len(argv) >= 2 else 2)
     command, args = argv[1], argv[2:]
-    commands = {"read": cmd_read, "integrate": cmd_integrate, "evaluate": cmd_evaluate,
-                "meshio": cmd_meshio}
+    commands = {"read": cmd_read, "remove-ghosts": cmd_remove_ghosts, "compare": cmd_compare,
+                "integrate": cmd_integrate, "evaluate": cmd_evaluate, "meshio": cmd_meshio}
     if command != "versions" and command not in commands:
-        die(f"unknown command {command!r} (read, integrate, evaluate, meshio, versions)")
+        die(f"unknown command {command!r} ({', '.join(commands)}, versions)")
     found = check_versions()
     if command == "versions":
         import platform

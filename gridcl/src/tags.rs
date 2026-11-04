@@ -239,6 +239,16 @@ impl TagRegistry {
         })
     }
 
+    /// The allocated bytes of the physical and elementary tag arrays.
+    pub(crate) fn footprint_bytes(&self) -> usize {
+        self.physical
+            .iter()
+            .chain(&self.elementary)
+            .flatten()
+            .map(|t| t.indices.footprint_bytes() + t.values.footprint_bytes())
+            .sum()
+    }
+
     /// The physical names: (name, dimension, value).
     ///
     /// # Example

@@ -53,11 +53,7 @@ impl OwnedInput {
             tags: c
                 .tags
                 .iter()
-                .map(|t| TagInput {
-                    entity: t.entity,
-                    corners: t.corners.clone(),
-                    values: t.values.clone(),
-                })
+                .map(|t| TagInput::physical(t.entity, t.corners.clone(), t.values.clone()))
                 .collect(),
         }
     }
@@ -89,9 +85,12 @@ impl OwnedInput {
                     spec: *spec,
                     nodes,
                     origin_ids: ids.as_deref(),
+                    physical: &[],
+                    elementary: None,
                 })
                 .collect(),
             tags: &self.tags,
+            element_ids: &[],
         }
     }
 }
@@ -115,7 +114,7 @@ pub(crate) fn local_cells_by(
     let read = read(comm, input).unwrap();
     let g = dual_graph(comm, &read.blocks, &read.cells).unwrap();
     let dest = partition(comm, partitioner, &g).unwrap();
-    let owned = migrate(comm, &read.cells, &dest).unwrap();
+    let owned = migrate(comm, read.cells.clone(), &dest).unwrap();
     let local = ghost_cells(comm, &read.blocks, owned, mode).unwrap();
     (read, local)
 }

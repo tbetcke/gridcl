@@ -3,7 +3,6 @@
 #![allow(dead_code)]
 
 pub mod gmsh;
-pub mod python;
 pub mod reference;
 pub mod vtk;
 

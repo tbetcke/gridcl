@@ -81,6 +81,21 @@ pub(crate) fn dual_graph(
     })
 }
 
+/// Stage 2 for `Block`, which reads only the vertex distribution: the graph of `n` local cells
+/// without edges or weights. Collective.
+pub(crate) fn vertices_only(comm: &dyn CommDyn, n: usize) -> DistGraph {
+    let mut vtxdist = vec![0_i64];
+    for m in comm.all_gather(n as i64) {
+        vtxdist.push(vtxdist.last().expect("non-empty") + m);
+    }
+    DistGraph {
+        vtxdist,
+        xadj: vec![0; n + 1],
+        adjncy: Vec::new(),
+        vwgt: None,
+    }
+}
+
 /// Stage 3: the destination rank of every local cell, from `partitioner` with one part per
 /// rank. Collective.
 ///
@@ -95,23 +110,29 @@ pub(crate) fn partition(
 ) -> Result<Vec<i32>> {
     let p = comm.size();
     let n = graph.xadj.len() - 1;
-    let local = partitioner.partition(comm, graph, p).and_then(|dest| {
-        if dest.len() != n {
-            return Err(GridError::LengthMismatch {
-                expected: n,
-                found: dest.len(),
-            });
-        }
-        let in_range = |d: i32| usize::try_from(d).is_ok_and(|d| d < p);
-        if let Some(&bad) = dest.iter().find(|&&d| !in_range(d)) {
-            return Err(GridError::IndexOutOfRange {
-                index: usize::try_from(bad).unwrap_or(usize::MAX),
-                len: p,
-            });
-        }
-        Ok(dest)
-    });
+    let local = partitioner
+        .partition(comm, graph, p)
+        .and_then(|dest| check_destinations(&dest, n, p).map(|()| dest));
     agree(comm, local)
+}
+
+/// `LengthMismatch` unless `dest` has `n` entries, `IndexOutOfRange` for an entry outside
+/// `0..p`.
+pub(crate) fn check_destinations(dest: &[i32], n: usize, p: usize) -> Result<()> {
+    if dest.len() != n {
+        return Err(GridError::LengthMismatch {
+            expected: n,
+            found: dest.len(),
+        });
+    }
+    let in_range = |d: i32| usize::try_from(d).is_ok_and(|d| d < p);
+    if let Some(&bad) = dest.iter().find(|&&d| !in_range(d)) {
+        return Err(GridError::IndexOutOfRange {
+            index: usize::try_from(bad).unwrap_or(usize::MAX),
+            len: p,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
