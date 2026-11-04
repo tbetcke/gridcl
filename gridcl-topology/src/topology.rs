@@ -403,6 +403,31 @@ impl<TD: TopoDim> Topology<TD> {
     /// [`footprint_bytes`](IndexMap::footprint_bytes) of every index map. The host sharer sets
     /// are not counted. For memory accounting in tests (`Mesh::footprint_bytes`, ADR-0035);
     /// not part of the stable API.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, DeviceStrided};
+    /// use gridcl_dims::{Cell2, D2};
+    /// use gridcl_parallel::{IndexMap, Serial};
+    /// use gridcl_topology::{CellBlock, Topology, encode_origin_ids};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let block = CellBlock::<D2>::new(
+    ///     Cell2::Triangle,
+    ///     IndexMap::new(&Serial, 2).unwrap(),
+    ///     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1]).unwrap(), stride: 3 },
+    ///     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1])).unwrap(),
+    ///     DeviceBuffer::from_host(&client, &[0u32, 0]).unwrap(),
+    /// );
+    /// let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4).unwrap(), &[10, 11, 12, 13]).unwrap();
+    /// let cells = topology.cell_blocks()[0].vertices.data.footprint_bytes();
+    /// let before = topology.footprint_bytes();
+    /// assert!(before > cells);
+    /// // The edges add their vertices.
+    /// topology.create_entities(&Serial, 1).unwrap();
+    /// assert!(topology.footprint_bytes() > before);
+    /// ```
     #[doc(hidden)]
     pub fn footprint_bytes(&self) -> usize {
         let cells: usize = self

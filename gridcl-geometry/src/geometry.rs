@@ -151,6 +151,30 @@ where
     /// E-vectors built so far) plus the [`footprint_bytes`](IndexMap::footprint_bytes) of the
     /// node index map. For memory accounting in tests (`Mesh::footprint_bytes`, ADR-0035);
     /// not part of the stable API.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, DeviceStrided};
+    /// use gridcl_dims::{Cell1, D1, D2};
+    /// use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// use gridcl_parallel::{IndexMap, Serial};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// let geometry = Geometry::<f32, D1, D2>::new(
+    ///     vec![GeometryBlock { element, dofmap }],
+    ///     nodes,
+    ///     IndexMap::new(&Serial, 2).unwrap(),
+    ///     [1.0, 2.0],
+    /// )
+    /// .unwrap();
+    /// // At least the nodes and the dofmap.
+    /// let arrays = geometry.nodes().footprint_bytes() + geometry.blocks()[0].dofmap.data.footprint_bytes();
+    /// assert!(geometry.footprint_bytes() > arrays);
+    /// ```
     #[doc(hidden)]
     pub fn footprint_bytes(&self) -> usize {
         let dofmaps: usize = self

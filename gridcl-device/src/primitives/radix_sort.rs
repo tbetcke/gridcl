@@ -413,12 +413,27 @@ pub fn radix_sort(
 }
 
 /// [`radix_sort`] that consumes its input and sorts through it, so the device holds two sets of
-/// keys and payloads instead of three; the result is the same. For gridcl's entity creation (the
-/// M8 memory bound, docs/plans/M8.md T5b); not part of the stable API.
+/// keys and payloads instead of three; the result is the same. The passes write into the
+/// input's memory, so a buffer that shares it (`DeviceBuffer::share`) is overwritten. For
+/// gridcl's entity creation (the M8 memory bound, docs/plans/M8.md T5b); not part of the
+/// stable API.
 ///
 /// # Errors
 ///
 /// As for [`radix_sort`].
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, SortKeys, radix_sort_owned};
+///
+/// let client = gridcl_testing::test_client();
+/// let keys = SortKeys::from_host(&client, &[1, 5, 0, 9, 1, 2, 0, 9], 2).unwrap();
+/// let payload = DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3]).unwrap();
+/// let (sorted, perm) = radix_sort_owned(keys, payload).unwrap();
+/// assert_eq!(sorted.to_host().unwrap(), vec![0, 9, 0, 9, 1, 2, 1, 5]);
+/// assert_eq!(perm.to_host().unwrap(), vec![1, 3, 2, 0]);
+/// ```
 #[doc(hidden)]
 pub fn radix_sort_owned(
     keys: SortKeys,

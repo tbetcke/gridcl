@@ -292,6 +292,20 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
 /// # Errors
 ///
 /// As [`unique_by_key`].
+///
+/// # Example
+///
+/// ```
+/// use gridcl_device::{DeviceBuffer, SortKeys, unique_by_key_runs};
+///
+/// let client = gridcl_testing::test_client();
+/// let keys = SortKeys::from_host(&client, &[2, 2, 5, 7, 7, 7], 1).unwrap();
+/// let payload = DeviceBuffer::from_host(&client, &[10u32, 11, 12, 13, 14, 15]).unwrap();
+/// let (u, offsets) = unique_by_key_runs(&keys, &payload).unwrap();
+/// assert_eq!(u.keys.to_host().unwrap(), vec![2, 5, 7]);
+/// assert_eq!(u.first.to_host().unwrap(), vec![10, 12, 13]);
+/// assert_eq!(offsets.to_host().unwrap(), vec![0, 2, 3, 6]);
+/// ```
 #[doc(hidden)]
 pub fn unique_by_key_runs(
     sorted: &SortKeys,
