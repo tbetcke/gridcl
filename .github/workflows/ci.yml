@@ -67,9 +67,15 @@ jobs:
           scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
 
-  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's).
+  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the six
+  # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review).
   cpu-gridcl:
+    name: cpu-gridcl-${{ matrix.shard }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust toolchain from rust-toolchain.toml
@@ -88,18 +94,22 @@ jobs:
           .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
       # io_threads' global_mesh_identical reads the corpus subset here: the full corpus in f32
-      # and f64 took 55 min of this job (M8 review); it runs locally, on Locust and in the mpi
+      # and f64 took 55 min of one job (M8 review); it runs locally, on Locust and in the mpi
       # jobs at 1-4 ranks.
-      - run: cargo test -p gridcl
+      - run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}
         env:
           GRIDCL_IO_THREADS_SUBSET: 1
 
+  # Each MPI in two jobs: the MPI tests, and the hdf5 steps (together 25 min in one job, M8
+  # review). The hdf5 jobs restore the mpi jobs' cache and save none.
   mpi:
-    name: mpi-${{ matrix.mpi }}
+    name: mpi-${{ matrix.mpi }}${{ matrix.part == 'hdf5' && '-hdf5' || '' }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
+        mpi: [mpich, openmpi]
+        part: [tests, hdf5]
         include:
           # bind: one hardware thread per rank. Each rank's CPU runtime starts one thread per
           # CPU it may use; unbound, 3-4 ranks oversubscribe the 4 vCPUs and exceed the time
@@ -131,17 +141,20 @@ jobs:
         with:
           key: mpi-${{ matrix.mpi }}
           cache-directories: ~/.local/share/tracel
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.part == 'tests' }}
       - name: Pinned Python oracles of the VTK tests (ADR-0024, ADR-0035)
         run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
-      - run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
-      - run: scripts/mpi-test.sh 1 2 3 4
+      - if: matrix.part == 'tests'
+        run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
+      - if: matrix.part == 'tests'
+        run: scripts/mpi-test.sh 1 2 3 4
       # Feature hdf5 with Ubuntu's HDF5 1.10.10 (ADR-0035, rules 8-9): the gather path
       # (gridcl-io, ThreadComm) and the MPI-IO path (vtkhdf_parallel), read back by VTK.
       - name: HDF5_DIR for the parallel HDF5 of this MPI
+        if: matrix.part == 'hdf5'
         run: |
           # hdf5-metno-sys looks for include/ and lib/ under HDF5_DIR; Ubuntu keeps the headers
           # and libraries of its MPI builds in separate trees.
@@ -153,17 +166,29 @@ jobs:
           ln -sfn "$(dirname "$so")" "$root/lib"
           grep -E '^#define H5_(VERSION|HAVE_PARALLEL) ' "$root/include/H5pubconf.h"
           echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
-      - run: cargo clippy -p gridcl-mpi-tests --features mpi,hdf5 --all-targets -- -D warnings
-      - run: cargo test -p gridcl-io --features hdf5
-      - run: cargo test -p gridcl --features hdf5 --test io_threads vtkhdf
-      - run: cargo test -p gridcl --features hdf5 --doc vtkhdf
-      - run: scripts/mpi-test.sh 1 2 3 4
+      - if: matrix.part == 'hdf5'
+        run: cargo clippy -p gridcl-mpi-tests --features mpi,hdf5 --all-targets -- -D warnings
+      - if: matrix.part == 'hdf5'
+        run: cargo test -p gridcl-io --features hdf5
+      - if: matrix.part == 'hdf5'
+        run: cargo test -p gridcl --features hdf5 --test io_threads vtkhdf
+      - if: matrix.part == 'hdf5'
+        run: cargo test -p gridcl --features hdf5 --doc vtkhdf
+      - if: matrix.part == 'hdf5'
+        run: scripts/mpi-test.sh 1 2 3 4
         env:
           GRIDCL_MPI_FEATURES: hdf5
           GRIDCL_MPI_TESTS: vtkhdf_parallel
 
+  # In five jobs (33 min in one, M8 review): gridcl's shards of scripts/ci-gridcl-shard.sh, two
+  # to a job where they are short, and the other crates, whose job saves the cache.
   vulkan:
+    name: vulkan-${{ matrix.shard }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1", "2", "3,4", "5,6", other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)
@@ -180,7 +205,7 @@ jobs:
         with:
           key: vulkan
           cache-directories: ~/.local/share/tracel
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 'other' }}
       - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
         run: |
           python3 -m venv .venv
@@ -188,6 +213,11 @@ jobs:
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
       # Release build: the primitives' property tests are too slow on lavapipe in a debug
       # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
-      - run: cargo test --release --workspace --features gridcl-testing/vulkan -- --nocapture
+      - if: matrix.shard != 'other'
+        run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }} --release --features gridcl-testing/vulkan
+        env:
+          GRIDCL_TEST_DEVICE: vulkan
+      - if: matrix.shard == 'other'
+        run: cargo test --release --workspace --exclude gridcl --features gridcl-testing/vulkan
         env:
           GRIDCL_TEST_DEVICE: vulkan
