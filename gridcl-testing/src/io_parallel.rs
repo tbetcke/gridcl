@@ -548,34 +548,41 @@ fn global_mesh_identical_in<F: Real, C: Comm>(
 ) {
     let rank = comm.rank();
     let at = format!("{case}, {} ranks, rank {rank}", comm.size());
-    let serial = ok(
-        gmsh::read::<F, Serial>(client, Serial, path, GmshOptions::default()),
-        &format!("{at}: one-rank read"),
-    );
-    let want = ok(snapshot_any(&serial, true), &at);
-    let read = read_on::<F, C>(client, comm.clone(), path, case.ghosts, case.partitioner);
-    if matches!(case.partitioner, Choice::Named("parmetis", _)) && want.cells.len() < comm.size() {
-        // Fewer cells than ranks leave a read chunk empty, and ParMETIS 4 fails on a rank
-        // without vertices (ADR-0029, item 12).
-        assert!(
-            matches!(
-                read,
-                Err(GridError::PartitionerFailed {
-                    name: "parmetis",
-                    code: -1
-                })
-            ),
-            "{at}: {} cells, want ParMETIS's agreed failure on empty ranks, got {:?}",
-            want.cells.len(),
-            read.as_ref().err()
+    // The one-rank read is the reference on rank 0; ParMETIS needs its cell count on every rank.
+    let one_rank = || {
+        let serial = ok(
+            gmsh::read::<F, Serial>(client, Serial, path, GmshOptions::default()),
+            &format!("{at}: one-rank read"),
         );
-        return;
+        ok(snapshot_any(&serial, true), &at)
+    };
+    let read = read_on::<F, C>(client, comm.clone(), path, case.ghosts, case.partitioner);
+    let mut want = None;
+    if matches!(case.partitioner, Choice::Named("parmetis", _)) {
+        let cells = want.insert(one_rank()).cells.len();
+        if cells < comm.size() {
+            // Fewer cells than ranks leave a read chunk empty, and ParMETIS 4 fails on a rank
+            // without vertices (ADR-0029, item 12).
+            assert!(
+                matches!(
+                    read,
+                    Err(GridError::PartitionerFailed {
+                        name: "parmetis",
+                        code: -1
+                    })
+                ),
+                "{at}: {cells} cells, want ParMETIS's agreed failure on empty ranks, got {:?}",
+                read.as_ref().err()
+            );
+            return;
+        }
     }
     let any = ok(read, &at);
     let local = ok(snapshot_any(&any, true), &at);
     let Some(global) = ok(gather_snapshot(comm, &local), &at) else {
         return;
     };
+    let want = want.unwrap_or_else(one_rank);
     assert_same_snapshot(&global, &want, &at);
 }
 
