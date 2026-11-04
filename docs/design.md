@@ -1738,6 +1738,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 4. Runtime features (`cpu`, `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`) are enabled only in gridcl-testing, examples, benchmarks and binaries. The one exception is `gpu-aware-cuda` in gridcl-device, which enables cubecl's `cuda` feature.
 5. No crate depends on MPI unless its `mpi` feature is on. `cargo test --workspace` without features needs neither MPI nor a GPU.
 6. ndelement appears only in conformance/. The workspace excludes conformance/ and tools/env-check/ (`exclude = ["conformance", "tools/env-check"]`).
+7. A workspace crate may expose a `#[doc(hidden)] pub` item to other workspace crates when no stable API serves the purpose (hidden hooks and test accessors). Such an item is documented as not part of the stable API, has a rustdoc example or a named test, is listed in its milestone plan, and is semver-exempt (ADR-0015, ADR-0028, ADR-0038).
 
 ### Cargo features
 

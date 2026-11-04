@@ -1,6 +1,6 @@
 # ADR-0038: Hidden cross-crate hooks of M8
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-04
 - **Raised in:** M8 review (design review of the review fixes, Minor 3; docs/plans/M8.md, question 19)
 - **Design sections affected:** "Workspace layout" / "Dependency rules"; Listing H1 (the `footprint_bytes` comment)
@@ -40,4 +40,4 @@ Option 2. The hooks keep the stable API unchanged while letting gridcl's mesh cr
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-04 (M8 review), as proposed; applied in docs/design.md, "Dependency rules", rule 7.
