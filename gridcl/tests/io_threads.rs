@@ -10,37 +10,83 @@ use gridcl_testing::io_parallel::{
 };
 
 /// Bullet 1 on `ranks` threads: every case of `coverage` with `partitioners`.
-fn global_mesh_identical_on(ranks: &[usize], coverage: Coverage, partitioners: &[Choice]) {
-    for &n in ranks {
-        ThreadComm::run(n, |comm| {
-            let client = gridcl_testing::test_client();
-            let dir = shared_dir(&comm, "global-mesh");
-            for case in read_cases(coverage, partitioners) {
-                io::global_mesh_identical(&comm, &client, &case, &dir);
-            }
-            remove_shared_dir(&comm, &dir);
-        });
-    }
+fn global_mesh_identical_on(ranks: usize, coverage: Coverage, partitioners: &[Choice]) {
+    ThreadComm::run(ranks, |comm| {
+        let client = gridcl_testing::test_client();
+        let dir = shared_dir(&comm, "global-mesh");
+        for case in read_cases(coverage, partitioners) {
+            io::global_mesh_identical(&comm, &client, &case, &dir);
+        }
+        remove_shared_dir(&comm, &dir);
+    });
 }
 
 /// Bullet 1, the full corpus at 1–4 and 8 ranks with the default partitioner (`Block` on
-/// threads, `Metis` with feature `metis`; rule 6). With `GRIDCL_IO_THREADS_SUBSET=1` the subset
-/// instead: hosted CI's CPU job, where the full corpus in both precisions takes about 55 min
-/// (the full corpus runs locally, on Locust and in the MPI jobs).
-#[test]
-fn global_mesh_identical() {
-    let coverage = if std::env::var_os("GRIDCL_IO_THREADS_SUBSET").is_some_and(|v| v == "1") {
-        Coverage::Subset
-    } else {
-        Coverage::Full
-    };
-    global_mesh_identical_on(&[1, 2, 3, 4, 8], coverage, &[Choice::Default]);
+/// threads, `Metis` with feature `metis`; rule 6), one test per rank count so that hosted CI's
+/// shards can share them out. With `GRIDCL_IO_THREADS_SUBSET=1` the subset instead: hosted
+/// CI's CPU jobs, where the full corpus in both precisions takes about 55 min (the full corpus
+/// runs locally, on Locust and in the MPI jobs).
+mod global_mesh_identical {
+    use super::*;
+
+    fn on(ranks: usize) {
+        let coverage = if std::env::var_os("GRIDCL_IO_THREADS_SUBSET").is_some_and(|v| v == "1") {
+            Coverage::Subset
+        } else {
+            Coverage::Full
+        };
+        global_mesh_identical_on(ranks, coverage, &[Choice::Default]);
+    }
+
+    #[test]
+    fn ranks_1() {
+        on(1);
+    }
+
+    #[test]
+    fn ranks_2() {
+        on(2);
+    }
+
+    #[test]
+    fn ranks_3() {
+        on(3);
+    }
+
+    #[test]
+    fn ranks_4() {
+        on(4);
+    }
+
+    #[test]
+    fn ranks_8() {
+        on(8);
+    }
 }
 
-/// Bullet 1, the subset at 5–7 ranks, with the default partitioner and `Block`.
-#[test]
-fn global_mesh_identical_subset() {
-    global_mesh_identical_on(&[5, 6, 7], Coverage::Subset, &[Choice::Default, BLOCK]);
+/// Bullet 1, the subset at 5–7 ranks, with the default partitioner and `Block`; one test per
+/// rank count.
+mod global_mesh_identical_subset {
+    use super::*;
+
+    fn on(ranks: usize) {
+        global_mesh_identical_on(ranks, Coverage::Subset, &[Choice::Default, BLOCK]);
+    }
+
+    #[test]
+    fn ranks_5() {
+        on(5);
+    }
+
+    #[test]
+    fn ranks_6() {
+        on(6);
+    }
+
+    #[test]
+    fn ranks_7() {
+        on(7);
+    }
 }
 
 /// Rule 5 at 1–4 ranks (the fixtures have 2 and 3 partitions).
