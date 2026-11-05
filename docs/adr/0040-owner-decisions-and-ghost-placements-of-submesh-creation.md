@@ -1,6 +1,6 @@
 # ADR-0040: Owner decisions and ghost placements of submesh creation on the copy list
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-05
 - **Raised in:** M9 T5a (found while planning it after T4b)
 - **Design sections affected:** "Handing this design to Claude Code", the working-agreement
@@ -79,4 +79,5 @@ T4a and T4b are named so that the list says what the code does.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-05 (option 2), without conditions. Applied to the copy
+list in docs/design.md ("Handing this design to Claude Code") and CLAUDE.md.
