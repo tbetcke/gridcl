@@ -15,9 +15,9 @@ pub mod partition;
 
 pub use comm::ThreadComm;
 pub use meshes::{
-    HostBlock, HostChunk, HostChunkBlock, HostMesh, HostTags, ball, cube_box,
-    hex_prism_pyramid_box, interval_box, mixed_box, mixed_surface, sphere, square_box,
-    triangle_strip,
+    HostBlock, HostChunk, HostChunkBlock, HostMesh, HostTags, ball, book, circle, cube_box,
+    hemisphere, hex_prism_pyramid_box, interval_box, mixed_box, mixed_surface, mobius_strip,
+    sphere, square_box, triangle_strip, y_junction,
 };
 
 use cubecl::Device;

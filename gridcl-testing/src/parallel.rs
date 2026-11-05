@@ -39,6 +39,18 @@ pub enum Family {
     Interval,
     /// `sphere`, one refinement.
     Sphere,
+    /// `mixed_surface`, one refinement (M9).
+    MixedSurface,
+    /// `circle` of 12 intervals (M9).
+    Circle,
+    /// `hemisphere`, one refinement: an open surface (M9).
+    Hemisphere,
+    /// `mobius_strip` of 12 squares, P1 at every degree: non-orientable (M9).
+    Mobius,
+    /// `book(3)`, P1 at every degree: non-manifold (M9).
+    Book,
+    /// `y_junction`: a non-manifold curve (M9).
+    YJunction,
 }
 
 /// Every family: `cube_box` of every `Cell3`, `mixed_box`, `square_box` of both `Cell2`,
@@ -65,6 +77,12 @@ impl Family {
             Family::Square(cell) => crate::square_box(cell, 3, p),
             Family::Interval => crate::interval_box(12, p),
             Family::Sphere => crate::sphere(1, p),
+            Family::MixedSurface => crate::mixed_surface(1, p),
+            Family::Circle => crate::circle(12, p),
+            Family::Hemisphere => crate::hemisphere(1, p),
+            Family::Mobius => crate::mobius_strip(12),
+            Family::Book => crate::book(3),
+            Family::YJunction => crate::y_junction(p),
         }
     }
 }
@@ -221,6 +239,64 @@ pub fn determinism_cases() -> Vec<Case> {
     ]
 }
 
+/// The cases of the M9 submesh checks: every family with facets of a lower `TopoDim` (the
+/// boxes, the mixed box, both squares, and `sphere`, whose boundary is empty), at p = 1 and 2.
+/// `Full` runs every ghost mode; `Quick` one per case, cycling, with distributions cycling and
+/// every other case in f32.
+pub fn submesh_cases(coverage: Coverage) -> Vec<Case> {
+    const SUBMESH_FAMILIES: [Family; 8] = [
+        Family::Cube(Cell3::Tetrahedron),
+        Family::Cube(Cell3::Hexahedron),
+        Family::Cube(Cell3::Prism),
+        Family::Cube(Cell3::Pyramid),
+        Family::Mixed,
+        Family::Square(Cell2::Triangle),
+        Family::Square(Cell2::Quadrilateral),
+        Family::Sphere,
+    ];
+    m9_cases(&SUBMESH_FAMILIES, coverage)
+}
+
+/// The cases of the M9 `orient` checks: the orientable closed families (`sphere`,
+/// `mixed_surface`, `circle`; the checks flip a random subset of their cells), the open
+/// `hemisphere`, and the error families `mobius_strip`, `book` and `y_junction`, at p = 1 and 2
+/// (as [`submesh_cases`]).
+pub fn orient_cases(coverage: Coverage) -> Vec<Case> {
+    const ORIENT_FAMILIES: [Family; 7] = [
+        Family::Sphere,
+        Family::MixedSurface,
+        Family::Circle,
+        Family::Hemisphere,
+        Family::Mobius,
+        Family::Book,
+        Family::YJunction,
+    ];
+    m9_cases(&ORIENT_FAMILIES, coverage)
+}
+
+/// The cases of `families` at p = 1 and 2: every ghost mode (`Full`) or one, cycling (`Quick`);
+/// distributions cycle, and every other case runs in f32.
+fn m9_cases(families: &[Family], coverage: Coverage) -> Vec<Case> {
+    let mut out = Vec::new();
+    for (f, &family) in families.iter().enumerate() {
+        for degree in 1..=2 {
+            for (g, &ghosts) in GHOST_MODES.iter().enumerate() {
+                let k = f + degree as usize;
+                if coverage == Coverage::Full || g == k % GHOST_MODES.len() {
+                    out.push(Case {
+                        family,
+                        degree,
+                        ghosts,
+                        distribution: DISTRIBUTIONS[(k + g) % 3],
+                        double: (k + g).is_multiple_of(2),
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 /// A test-only partitioner that sends global graph vertex i to rank i mod nparts, so almost
 /// every cell migrates.
 #[derive(Clone, Copy, Debug, Default)]
@@ -331,7 +407,12 @@ pub fn dispatch<K: MeshCheck>(client: &Client, case: &Case, check: &mut K) {
         Family::Cube(_) | Family::Mixed => run!(D3, D3),
         Family::Square(_) => run!(D2, D2),
         Family::Interval => run!(D1, D1),
-        Family::Sphere => run!(D2, D3),
+        Family::Circle | Family::YJunction => run!(D1, D2),
+        Family::Sphere
+        | Family::MixedSurface
+        | Family::Hemisphere
+        | Family::Mobius
+        | Family::Book => run!(D2, D3),
     }
 }
 

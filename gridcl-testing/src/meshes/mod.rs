@@ -1,6 +1,7 @@
 //! Test meshes with origin ids at any degree p (docs/design.md, "Testing and validation"):
 //! structured boxes of every cell type, the mixed box and the hexahedron/prism/pyramid box, curved sphere surfaces, a mixed
-//! triangle–quadrilateral surface and curved balls.
+//! triangle–quadrilateral surface and curved balls; for M9 a Möbius strip, a book, a circle, a Y
+//! junction, an open cap of the sphere and randomly flipped cells.
 //!
 //! Generators return a [`HostMesh`] of host arrays; [`HostMesh::build`] turns it into a
 //! `Mesh` through `MeshBuilder`.
@@ -9,6 +10,7 @@ mod ball;
 mod boxes;
 mod chunk;
 mod lattice;
+mod manifold;
 mod sphere;
 mod surface;
 
@@ -17,6 +19,7 @@ pub use boxes::{
     cube_box, hex_prism_pyramid_box, interval_box, mixed_box, square_box, triangle_strip,
 };
 pub use chunk::{HostChunk, HostChunkBlock, HostTags};
+pub use manifold::{book, circle, hemisphere, mobius_strip, y_junction};
 pub use sphere::sphere;
 pub use surface::mixed_surface;
 
@@ -328,17 +331,34 @@ impl HostMesh {
     /// assert_eq!((empty.num_cells(), empty.num_nodes(), empty.blocks.len()), (0, 0, 1));
     /// ```
     pub fn first_cells(&self, n: usize) -> HostMesh {
+        self.retain_cells(|_, c| c < n)
+    }
+
+    /// The mesh with only the cells c of block b for which `keep(b, c)` holds, and without the
+    /// nodes no remaining cell uses.
+    ///
+    /// The remaining cells and nodes keep their relative order, coordinates and origin ids
+    /// (index-based ids are materialised first); blocks are kept even when they become empty.
+    pub(crate) fn retain_cells(&self, mut keep: impl FnMut(usize, usize) -> bool) -> HostMesh {
         let gd = self.gdim;
         let mut out = self.clone();
         let mut used = vec![false; self.num_nodes()];
-        for block in &mut out.blocks {
-            let keep = n.min(block.num_cells());
-            block.cells.truncate(keep * block.nodes_per_cell());
-            if let Some(ids) = &mut block.cell_ids {
-                ids.truncate(keep);
+        for (b, block) in out.blocks.iter_mut().enumerate() {
+            let k = block.nodes_per_cell();
+            let mut cells = Vec::with_capacity(block.cells.len());
+            let mut ids = Vec::new();
+            for (c, row) in block.cells.chunks_exact(k).enumerate() {
+                if keep(b, c) {
+                    cells.extend_from_slice(row);
+                    ids.push(block.cell_ids.as_ref().map_or(c as i64, |ids| ids[c]));
+                }
             }
-            for &node in &block.cells {
+            for &node in &cells {
                 used[node as usize] = true;
+            }
+            block.cells = cells;
+            if block.cell_ids.is_some() {
+                block.cell_ids = Some(ids);
             }
         }
         let mut new_index = vec![u32::MAX; self.num_nodes()];
