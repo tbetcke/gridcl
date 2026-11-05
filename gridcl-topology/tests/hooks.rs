@@ -12,7 +12,7 @@ use gridcl_topology::{CellBlock, Topology, VertexSharers};
 /// permutation info and origin ids of `Topology::new`, on the general id path.
 fn check_from_device_ids<TD: TopoDim + EmbeddedIn<TD>>(h: &HostMesh) {
     let client = gridcl_testing::test_client();
-    let mesh = h.build::<f64, TD, TD>(&client).expect("build");
+    let mesh = h.build::<f32, TD, TD>(&client).expect("build");
     let blocks: Vec<CellBlock<TD>> = mesh
         .cell_blocks()
         .iter()

@@ -579,6 +579,14 @@ where
             + self.geometry.footprint_bytes()
             + self.tags.footprint_bytes()
     }
+
+    /// The mesh's topology, for gridcl-topology's tests of the hooks that take a
+    /// `&Topology` (`facet_cell_counts`). Not part of the stable API (ADR-0038; test:
+    /// gridcl-topology's `facet_cells`).
+    #[doc(hidden)]
+    pub fn topology(&self) -> &Topology<TD> {
+        &self.topology
+    }
 }
 
 impl<F, TD, GD, C> Mesh<F, TD, GD, C>
