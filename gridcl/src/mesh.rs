@@ -719,9 +719,32 @@ where
     ///
     /// # Errors
     ///
-    /// `EntitiesNotCreated(tdim − 1)` before `create_entities(tdim − 1)`; `NonManifold` if a
-    /// facet has more than two cells (agreed); allocation, device and communication errors;
-    /// `RemoteFailure` if another rank failed.
+    /// `EntitiesNotCreated(tdim − 1)` before `create_entities(tdim − 1)`; agreed across ranks:
+    /// `NonManifold` if a facet has more than two cells, `TooLarge` if a child origin id
+    /// 8 · (cell origin id) + local facet overflows i64, `UnsupportedDegree` or
+    /// `UnsupportedNodeFamily` if the parent cells of one facet type differ in degree or node
+    /// family; allocation, device and communication errors; `RemoteFailure` if another rank
+    /// failed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut volume: VolumeMesh<f32> = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 1).build(&client)?;
+    /// volume.create_entities(2)?;
+    /// let (mut surface, map) = volume.boundary()?;
+    /// // Six faces of 2 × 2 quadrilaterals, each with one parent facet.
+    /// assert_eq!(surface.cell_blocks()[0].index_map.num_local(), 24);
+    /// assert_eq!(map.child_to_parent().len(), 24);
+    /// assert!((surface.measure(1)? - 6.0).abs() < 1e-5);
+    /// // `volume.boundary().boundary()` compiles; a closed surface has an empty boundary.
+    /// surface.create_entities(1)?;
+    /// let (curve, _) = surface.boundary()?;
+    /// assert!(curve.cell_blocks().is_empty());
+    /// # Ok::<(), GridError>(())
+    /// ```
     #[allow(clippy::type_complexity)] // Listing B4's signature
     pub fn boundary(&self) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)> {
         crate::submesh::boundary(self)
@@ -735,6 +758,36 @@ where
     /// `DimensionMismatch` if `facets.dim` is not tdim − 1; `InteriorFacet` if a tagged facet
     /// has two cells and `NonManifold` if a facet has more (both agreed); the errors of
     /// [`boundary`](Mesh::boundary).
+    ///
+    /// # Example
+    ///
+    /// Listing B9 on a box whose boundary facets carry the generated tags 100 and 101:
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut head: VolumeMesh<f32> = gridcl_testing::cube_box(Cell3::Tetrahedron, 2, 2)
+    ///     .chunk(0, 1)
+    ///     .builder::<f32, D3, D3>(&client)?
+    ///     .build()?;
+    /// head.create_entities(2)?;
+    /// let scalp_tag = head.tags().named(Codim::Bnd, "boundary-100")?; // boundary facets only
+    /// let (scalp, emap): (SurfaceMesh<f32>, EntityMap) = head.facet_submesh(&scalp_tag)?;
+    /// // Each facet has one parent cell; normals inherit outward orientation from it.
+    /// assert_eq!(emap.child_to_parent().len(), scalp_tag.indices.len());
+    ///
+    /// let rule = QuadRule::for_grid(&scalp, 6)?; // one point set per cell type present
+    /// let n = scalp.normals(&rule)?; // compiles: D2 is Codim1 in D3
+    /// let j = scalp.jacobians(&rule)?; // per point two columns of three
+    /// let k = scalp.pseudo_inverse_jacobians(&rule)?; // for surface gradients
+    /// let area = scalp.measure(6)?; // pseudo-determinant path, chosen at comptime
+    /// assert_eq!((n.blocks.len(), j.blocks.len(), k.blocks.len()), (1, 1, 1));
+    /// assert!(area > 0.0 && area < 6.0);
+    /// // The child carries the tagged facets as cell tags.
+    /// assert_eq!(scalp.tags().group(2, 100)?.indices.len(), scalp_tag.indices.len());
+    /// # Ok::<(), GridError>(())
+    /// ```
     #[allow(clippy::type_complexity)] // Listing B4's signature
     pub fn facet_submesh(
         &self,

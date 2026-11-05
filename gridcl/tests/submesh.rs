@@ -204,6 +204,89 @@ fn interior_facet_is_rejected() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// T4b: empty boundaries and child tags.
+
+/// The boundary of a closed boundary is a valid empty mesh.
+#[test]
+fn boundary_of_a_boundary_is_empty() {
+    let client = client();
+    for h in [
+        gridcl_testing::mixed_box(2, 2),
+        gridcl_testing::ball(1, 2),
+        gridcl_testing::hex_prism_pyramid_box(1, 1),
+    ] {
+        let mesh = build_tagged::<f32, D3, D3>(&h, &client);
+        let (mut surface, _) = mesh.boundary().expect("boundary");
+        surface.create_entities(1).expect("edges");
+        let (curve, map) = surface.boundary().expect("boundary of the boundary");
+        assert!(curve.cell_blocks().is_empty());
+        assert_eq!(curve.vertex_index_map().num_local(), 0);
+        assert_eq!(curve.measure(1).expect("measure"), 0.0);
+        assert_eq!(map.child_to_parent().len(), 0);
+    }
+}
+
+/// The physical tags of `m` of dimension `dim`, keyed by the sorted vertex origin ids of each
+/// tagged entity.
+fn tags_by_key<F, TD, GD>(m: &Mesh<F, TD, GD>, dim: usize) -> HashMap<Vec<i64>, Vec<i32>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let rows = entity_rows(m, dim).expect("rows");
+    let mut out: HashMap<Vec<i64>, Vec<i32>> = HashMap::new();
+    if let Some(t) = m.tags().physical(dim) {
+        let indices = t.indices.to_host().expect("indices");
+        let values = t.values.to_host().expect("values");
+        assert!(
+            indices
+                .iter()
+                .zip(&values)
+                .collect::<Vec<_>>()
+                .windows(2)
+                .all(|w| w[0] < w[1]),
+            "tags sorted by (index, value)"
+        );
+        for (i, v) in indices.into_iter().zip(values) {
+            out.entry(rows[i as usize].clone()).or_default().push(v);
+        }
+    }
+    out
+}
+
+/// The child of `boundary` and of `facet_submesh` carries the parent's facet tags of its
+/// cells as cell tags, keyed by origin ids, with the facet rows of the name table and their
+/// group sizes; the parent's cell tags and names are not carried.
+#[test]
+fn child_tags_equal_parent_facet_tags() {
+    let client = client();
+    for (what, h) in [
+        ("mixed box", gridcl_testing::mixed_box(2, 1)),
+        ("prism box", BoxKind::Prism.host(2, 2)),
+    ] {
+        let mesh = build_tagged::<f32, D3, D3>(&h, &client);
+        let parent = tags_by_key(&mesh, 2);
+        assert!(!parent.is_empty(), "{what}: parent facet tags");
+        let (child, _) = mesh.boundary().expect("boundary");
+        assert_eq!(tags_by_key(&child, 2), parent, "{what}: boundary tags");
+        assert_eq!(child.tags().lookup(2, "boundary-100"), Some(100));
+        assert_eq!(child.tags().lookup(3, "cells-1"), None);
+        assert!(child.tags().physical(3).is_none());
+        let group = mesh.tags().group(2, 101).expect("group 101");
+        assert_eq!(child.tags().group_size(2, 101), Some(group.indices.len()));
+        let (sub, _) = mesh.facet_submesh(&group).expect("facet_submesh");
+        let want: HashMap<Vec<i64>, Vec<i32>> = parent
+            .iter()
+            .filter(|(_, v)| v.contains(&101))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        assert_eq!(tags_by_key(&sub, 2), want, "{what}: facet_submesh tags");
+        assert_eq!(sub.tags().group_size(2, 100), Some(0));
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // T3: the EntityMap property test.
 
 /// `facet_submesh` of a random half of the boundary facets of `h`: the `EntityMap` checks of

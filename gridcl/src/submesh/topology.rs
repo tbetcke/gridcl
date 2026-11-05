@@ -88,13 +88,12 @@ pub(crate) fn gather_pairs(
 /// children, the parent cell and local facet of each child cell (flat child order).
 pub(crate) struct ChildTopology<CTD: TopoDim> {
     pub(crate) topology: Topology<CTD>,
-    /// The block index of the parent block each child block comes from.
-    pub(crate) parent_blocks: Vec<usize>,
     pub(crate) child_to_parent: DeviceBuffer<u32>,
     pub(crate) parent_to_child: (DeviceBuffer<u32>, DeviceBuffer<u32>),
     pub(crate) vertex_to_parent: DeviceBuffer<u32>,
     /// The child local vertex of each parent local vertex, meaningful for parent vertices of
     /// child cells only.
+    #[allow(dead_code)] // for the child vertex sharers (M9 T5a)
     pub(crate) parent_to_child_vertex: DeviceBuffer<u32>,
     pub(crate) facet_of: Option<(DeviceBuffer<u32>, DeviceBuffer<u32>)>,
     /// Facet children: the parent cells and local facets of each child block (empty
@@ -165,18 +164,17 @@ pub(crate) fn compact(
     Ok((to_parent, pos))
 }
 
-/// The child topology of `selected` (one entry per child block, in child block order: the
-/// parent block index and the children), with child vertices in parent local order and
+/// The child topology of `selected` (one entry per child block, in child block order), with child vertices in parent local order and
 /// one-rank index maps; `facet_children` keeps the parent cells and local facets. Collective
 /// (index maps).
 pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
     comm: &dyn CommDyn,
     parent: &Topology<TD>,
-    selected: Vec<(usize, Selected)>,
+    selected: Vec<Selected>,
     facet_children: bool,
 ) -> Result<ChildTopology<CTD>> {
     let client = parent.client();
-    let sel: Vec<&Selected> = selected.iter().map(|(_, s)| s).collect();
+    let sel: Vec<&Selected> = selected.iter().collect();
     let rows: Vec<&DeviceStrided<u32>> = sel.iter().map(|s| &s.rows).collect();
     let nv = parent.vertex_index_map().num_local();
     let (vertex_to_parent, parent_to_child_vertex) = compact(client, nv, &rows)?;
@@ -196,11 +194,10 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
         None
     };
     let mut blocks = Vec::with_capacity(selected.len());
-    let mut parent_blocks = Vec::with_capacity(selected.len());
     let mut facet_blocks = Vec::new();
     let mut base = 0usize;
     drop(sel);
-    for (b, s) in selected {
+    for s in selected {
         let n = s.parents.len();
         place(&s.parents, &child_to_parent, base, n)?;
         if let Some((c, f)) = &s.facet_of {
@@ -226,7 +223,6 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
             s.origin_ids,
             DeviceBuffer::zeros(client, n)?,
         ));
-        parent_blocks.push(b);
         base += n;
     }
     let ids = gather_pairs(parent.vertex_origin_ids(), &vertex_to_parent)?;
@@ -235,7 +231,6 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
     let parent_to_child = sparse_inverse(&child_to_parent)?;
     Ok(ChildTopology {
         topology,
-        parent_blocks,
         child_to_parent,
         parent_to_child,
         vertex_to_parent,

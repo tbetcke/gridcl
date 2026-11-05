@@ -215,6 +215,15 @@ impl TagRegistry {
     /// # Panics
     ///
     /// If the dimension exceeds tdim.
+    /// The values of the physical groups of dimension `dim` with a recorded size.
+    pub(crate) fn group_values(&self, dim: usize) -> Vec<i32> {
+        self.sizes
+            .keys()
+            .filter(|&&(d, _)| d == dim)
+            .map(|&(_, v)| v)
+            .collect()
+    }
+
     pub(crate) fn set_elementary(&mut self, tags: MeshTags) {
         let dim = tags.dim;
         self.elementary[dim] = Some(tags);

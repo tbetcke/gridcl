@@ -242,8 +242,6 @@ pub(crate) struct ParentBlock {
 
 /// The masked entities of one parent block.
 pub(crate) struct Chosen {
-    /// The parent block index.
-    pub(crate) block: usize,
     pub(crate) cell: CellType,
     /// The flat parent indices, in parent local order.
     pub(crate) parents: DeviceBuffer<u32>,
@@ -260,7 +258,7 @@ pub(crate) fn select(
 ) -> Result<Vec<Chosen>> {
     let client = mask.client();
     let mut out = Vec::new();
-    for (b, block) in blocks.iter().enumerate() {
+    for block in blocks {
         let n = block.num_local;
         let (owned, total, parents) = if n == 0 {
             (0, 0, DeviceBuffer::<u32>::uninit(client, 0)?)
@@ -325,7 +323,6 @@ pub(crate) fn select(
         };
         if comm.sum(total as u64) > 0 {
             out.push(Chosen {
-                block: b,
                 cell: block.cell,
                 parents,
                 num_owned: owned,

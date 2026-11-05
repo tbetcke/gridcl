@@ -5,12 +5,11 @@
 //! block (`select`), the child topology with the cell and vertex maps (`topology`), then the
 //! child geometry, flags and tags. Kernels plan as `KernelKind::Scalar`.
 
-// Wired into `boundary` and `facet_submesh` with the child geometry and flags (M9 T4b).
-#![allow(dead_code)]
-
 mod closure;
+mod flags;
 mod geometry;
 mod select;
+mod tags;
 mod topology;
 
 use cubecl::prelude::*;
@@ -23,6 +22,7 @@ use gridcl_geometry::{Geometry, NodeFamily};
 use gridcl_parallel::{Comm, CommDyn, CommExt};
 use gridcl_topology::facet_cell_counts;
 
+use crate::entity_map::EntityMapParts;
 use crate::{CurveMesh, EntityMap, Mesh, MeshTags};
 use select::ParentBlock;
 use topology::ChildTopology;
@@ -173,7 +173,7 @@ where
         let (s, o, p) =
             select::facet_children(parent, &facet_cells, c.cell, c.parents, c.num_owned)?;
         overflow |= o;
-        selected.push((c.block, s));
+        selected.push(s);
         present.push(p);
     }
     if comm.max(u32::from(overflow)) != 0 {
@@ -262,10 +262,12 @@ where
     )
 }
 
-/// `Mesh::boundary`.
+/// The facet submesh of `mesh` on every boundary facet (`tags = None`) or on the tagged
+/// facets: child topology, geometry, flags, `EntityMap` and tags. Collective.
 #[allow(clippy::type_complexity)] // Listing B4's signature
-pub(crate) fn boundary<F, TD, GD, C>(
-    _mesh: &Mesh<F, TD, GD, C>,
+fn facet_mesh<F, TD, GD, C>(
+    mesh: &Mesh<F, TD, GD, C>,
+    tags: Option<&MeshTags>,
 ) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>
 where
     F: Real,
@@ -274,14 +276,61 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
-    todo!("boundary: M9 T4b")
+    let fdim = TD::N - 1;
+    let child = facet_topology(mesh, tags)?;
+    let (geometry, node_to_parent) = facet_geometry(mesh, &child)?;
+    let flags = flags::facet_flags(mesh, &child)?;
+    let ChildTopology {
+        mut topology,
+        child_to_parent,
+        parent_to_child,
+        vertex_to_parent,
+        facet_of,
+        ..
+    } = child;
+    for (b, f) in flags.into_iter().enumerate() {
+        topology.set_cell_flags(b, f)?;
+    }
+    let map = EntityMap::from_parts(EntityMapParts {
+        parent_dim: fdim,
+        child_to_parent,
+        parent_to_child,
+        vertex_to_parent,
+        node_to_parent,
+        facet_of,
+    });
+    let num_facets = mesh
+        .topology
+        .entity_blocks(fdim)?
+        .iter()
+        .map(|b| b.index_map.num_local())
+        .sum();
+    let tags = tags::child_tags(&mesh.tags, &map, num_facets, fdim, &mesh.client)?;
+    let mut child = Mesh::from_parts(mesh.client.clone(), mesh.comm.clone(), topology, geometry);
+    child.set_tags(tags);
+    Ok((child, map))
+}
+
+/// `Mesh::boundary`.
+#[allow(clippy::type_complexity)] // Listing B4's signature
+pub(crate) fn boundary<F, TD, GD, C>(
+    mesh: &Mesh<F, TD, GD, C>,
+) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>
+where
+    F: Real,
+    GD: Dim,
+    C: Comm,
+    TD: TopoDim + EmbeddedIn<GD>,
+    TD::Lower: TopoDim + EmbeddedIn<GD>,
+{
+    facet_mesh(mesh, None)
 }
 
 /// `Mesh::facet_submesh`.
 #[allow(clippy::type_complexity)] // Listing B4's signature
 pub(crate) fn facet_submesh<F, TD, GD, C>(
-    _mesh: &Mesh<F, TD, GD, C>,
-    _facets: &MeshTags,
+    mesh: &Mesh<F, TD, GD, C>,
+    facets: &MeshTags,
 ) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>
 where
     F: Real,
@@ -290,7 +339,7 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
-    todo!("facet_submesh: M9 T4b")
+    facet_mesh(mesh, Some(facets))
 }
 
 /// `Mesh::edge_submesh`.
