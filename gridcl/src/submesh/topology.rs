@@ -8,10 +8,12 @@ use gridcl_device::{
     exclusive_scan, gather, radix_sort, reduce,
 };
 use gridcl_dims::TopoDim;
-use gridcl_parallel::{CommDyn, IndexMap};
+use gridcl_parallel::CommDyn;
 use gridcl_topology::{CellBlock, Topology};
 
+use super::numbering::cell_map;
 use super::select::Selected;
+use super::sharers::child_vertices;
 use super::{fit, iota, place, plan};
 
 /// `used[rows[i]] = 1` for i < len, with u32 atomic stores (several rows share a vertex).
@@ -93,7 +95,7 @@ pub(crate) struct ChildTopology<CTD: TopoDim> {
     pub(crate) vertex_to_parent: DeviceBuffer<u32>,
     /// The child local vertex of each parent local vertex, meaningful for parent vertices of
     /// child cells only.
-    #[allow(dead_code)] // for the child vertex sharers (M9 T5a)
+    #[allow(dead_code)] // for the child nodes (M9 T5b)
     pub(crate) parent_to_child_vertex: DeviceBuffer<u32>,
     pub(crate) facet_of: Option<(DeviceBuffer<u32>, DeviceBuffer<u32>)>,
     /// Facet children: the parent cells and local facets of each child block (empty
@@ -164,9 +166,10 @@ pub(crate) fn compact(
     Ok((to_parent, pos))
 }
 
-/// The child topology of `selected` (one entry per child block, in child block order), with child vertices in parent local order and
-/// one-rank index maps; `facet_children` keeps the parent cells and local facets. Collective
-/// (index maps).
+/// The child topology of `selected` (one entry per child block, in child block order): child
+/// cells inherit their parent entities' owners, child vertices are numbered and shared as
+/// ADR-0039 item 6 says (`numbering`, `sharers`); `facet_children` keeps the parent cells and
+/// local facets. Collective.
 pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
     comm: &dyn CommDyn,
     parent: &Topology<TD>,
@@ -174,12 +177,11 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
     facet_children: bool,
 ) -> Result<ChildTopology<CTD>> {
     let client = parent.client();
-    let sel: Vec<&Selected> = selected.iter().collect();
-    let rows: Vec<&DeviceStrided<u32>> = sel.iter().map(|s| &s.rows).collect();
-    let nv = parent.vertex_index_map().num_local();
-    let (vertex_to_parent, parent_to_child_vertex) = compact(client, nv, &rows)?;
+    let rows: Vec<(&DeviceStrided<u32>, usize)> =
+        selected.iter().map(|s| (&s.rows, s.num_owned)).collect();
+    let vertices = child_vertices(comm, parent, &rows)?;
     drop(rows);
-    let num_cells = sel
+    let num_cells = selected
         .iter()
         .try_fold(0usize, |acc, s| acc.checked_add(s.parents.len()))
         .ok_or(GridError::TooLarge)?;
@@ -196,7 +198,6 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
     let mut blocks = Vec::with_capacity(selected.len());
     let mut facet_blocks = Vec::new();
     let mut base = 0usize;
-    drop(sel);
     for s in selected {
         let n = s.parents.len();
         place(&s.parents, &child_to_parent, base, n)?;
@@ -212,29 +213,37 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
             expected_tdim: e.expected_tdim,
         })?;
         let rows = DeviceStrided {
-            data: gather(&parent_to_child_vertex, &s.rows.data)?,
+            data: gather(&vertices.to_child, &s.rows.data)?,
             stride: s.rows.stride,
         };
-        let _ = s.num_owned;
+        let index_map = cell_map(
+            comm,
+            &s.parents,
+            s.num_owned,
+            &s.parent_map,
+            s.parent_offset,
+        )?;
         blocks.push(CellBlock::new(
             cell,
-            IndexMap::new(comm, n)?,
+            index_map,
             rows,
             s.origin_ids,
             DeviceBuffer::zeros(client, n)?,
         ));
         base += n;
     }
-    let ids = gather_pairs(parent.vertex_origin_ids(), &vertex_to_parent)?;
-    let vertex_map = IndexMap::new(comm, vertex_to_parent.len())?;
-    let topology = Topology::from_device_ids(client, blocks, vertex_map, ids)?;
+    let ids = gather_pairs(parent.vertex_origin_ids(), &vertices.to_parent)?;
+    let mut topology = Topology::from_device_ids(client, blocks, vertices.index_map, ids)?;
+    if let Some(s) = vertices.sharers {
+        topology.set_vertex_sharers(s)?;
+    }
     let parent_to_child = sparse_inverse(&child_to_parent)?;
     Ok(ChildTopology {
         topology,
         child_to_parent,
         parent_to_child,
-        vertex_to_parent,
-        parent_to_child_vertex,
+        vertex_to_parent: vertices.to_parent,
+        parent_to_child_vertex: vertices.to_child,
         facet_of,
         facet_blocks,
         present: Vec::new(),

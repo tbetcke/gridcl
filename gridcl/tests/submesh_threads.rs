@@ -39,3 +39,17 @@ fn submeshes_match_one_rank() {
         });
     }
 }
+
+/// The cells, vertices, ownership and sharers of `boundary()` and `facet_submesh` (M9 T5a),
+/// every family, one ghost mode per case (all modes over the cases).
+#[test]
+fn child_topology_matches_one_rank() {
+    for n in RANKS {
+        ThreadComm::run(n, |comm| {
+            let client = gridcl_testing::test_client();
+            for case in parallel::submesh_cases(Coverage::Quick) {
+                parallel::submesh_topology(&comm, &client, &case);
+            }
+        });
+    }
+}

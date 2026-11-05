@@ -1637,6 +1637,202 @@ where
     }
 }
 
+/// The owned vertex origin ids of `m` on all ranks, sorted, on rank 0 (empty elsewhere).
+fn owned_vertex_ids<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>) -> Result<Vec<i64>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let ids = decode_ids(&m.vertex_origin_ids().to_host()?);
+    let owned = &ids[..m.vertex_index_map().num_owned()];
+    let mut all = gather_to_root(m.comm(), owned)?;
+    all.sort_unstable();
+    Ok(all)
+}
+
+/// The topology of a child on `comm` against the one-rank child `want`: the cell summary, the
+/// vertex count, each vertex owned once, ghosts that receive their global ids by a forward
+/// scatter over every map, vertex sharer rows that list the holders with an owned-cell holder
+/// as owner, and the entities of every lower dimension.
+#[allow(clippy::too_many_arguments)]
+fn child_topology_matches<F, TD, GD, C>(
+    client: &Client,
+    child: &mut Mesh<F, TD, GD, C>,
+    want: &mut Mesh<F, TD, GD, Serial>,
+    degree: u32,
+    rank: usize,
+    tol: f64,
+    at: &str,
+) -> Result<()>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    assert_same_child(
+        &child_summary(child, degree)?,
+        &child_summary(want, degree)?,
+        rank,
+        tol,
+        at,
+    );
+    let map = child.vertex_index_map();
+    assert_eq!(
+        map.size_global() as usize,
+        want.vertex_index_map().num_local(),
+        "{at}: child vertex count"
+    );
+    let owned = owned_vertex_ids(child)?;
+    if rank == 0 {
+        let mut all = decode_ids(&want.vertex_origin_ids().to_host()?);
+        all.sort_unstable();
+        assert!(
+            owned == all,
+            "{at}: owned child vertices are not each vertex once"
+        );
+    }
+    let me = rank as i32;
+    let held = holders(child.comm(), map)?;
+    let s = child
+        .topology()
+        .vertex_sharers()
+        .expect("a child has vertex sharers");
+    for v in 0..map.num_local() {
+        let row = &s.ranks[s.offsets[v]..s.offsets[v + 1]];
+        let owner = if v < map.num_owned() {
+            me
+        } else {
+            map.ghost_owners()[v - map.num_owned()]
+        };
+        let k = row.iter().position(|&r| r == owner);
+        assert!(
+            k.is_some_and(|k| s.owned_cell[s.offsets[v] + k]),
+            "{at}: child vertex {v}: owner {owner} is not an owned-cell sharer in {row:?}"
+        );
+        assert!(
+            row.contains(&me),
+            "{at}: child vertex {v}: row {row:?} lacks this rank"
+        );
+        if let Some(&h) = held.get(v) {
+            assert_eq!(
+                row.len(),
+                h as usize,
+                "{at}: child vertex {v}: sharer row {row:?} vs holders"
+            );
+        }
+    }
+    let sizes =
+        |b: &[gridcl::EntityBlock]| b.iter().map(|b| b.index_map.size_global()).sum::<i64>();
+    for d in 0..TD::N {
+        child.create_entities(d)?;
+        want.create_entities(d)?;
+        assert_eq!(
+            sizes(child.entity_blocks(d)?),
+            sizes(want.entity_blocks(d)?),
+            "{at}: child entities of dimension {d}"
+        );
+    }
+    for (name, map) in index_maps(child)? {
+        let x = forward_global_ids(client, map, 1)?;
+        let owned = map.num_owned();
+        for (k, &g) in map.ghosts().iter().enumerate() {
+            assert_eq!(
+                i64::from(x[owned + k]),
+                g,
+                "{at}: {name}: forward of ghost {k}"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The child topology check of one case on `comm`, in scalar `F`: `boundary()` and the
+/// `facet_submesh` of the facets tagged 100 against a one-rank build's.
+fn submesh_topology_case<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    TD::Lower: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rank = comm.rank();
+    let at = format!("{case}, rank {rank}");
+    let tol = if size_of::<F>() == 8 { 1e-10 } else { TOL_F32 };
+    let fdim = TD::N - 1;
+    let serial = ok(
+        build::<F, TD, GD, _>(Serial, client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let mesh = ok(
+        build::<F, TD, GD, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let degree = 3 * case.degree;
+    let (mut got, _) = ok(mesh.boundary(), &at);
+    let (mut want, _) = ok(serial.boundary(), &at);
+    ok(
+        child_topology_matches(
+            client,
+            &mut got,
+            &mut want,
+            degree,
+            rank,
+            tol,
+            &format!("{at}: boundary"),
+        ),
+        &at,
+    );
+    let tagged = |m: &Mesh<F, TD, GD, _>| m.tags().group(fdim, 100);
+    let (mut got, _) = ok(mesh.facet_submesh(&ok(tagged(&mesh), &at)), &at);
+    let (mut want, _) = ok(
+        serial.facet_submesh(&ok(serial.tags().group(fdim, 100), &at)),
+        &at,
+    );
+    ok(
+        child_topology_matches(
+            client,
+            &mut got,
+            &mut want,
+            degree,
+            rank,
+            tol,
+            &format!("{at}: facet_submesh"),
+        ),
+        &at,
+    );
+}
+
+/// Runs the child topology check of `case` on `comm` (M9 T5a): the cells, vertices, ownership
+/// and sharers of `boundary()` and `facet_submesh` equal a one-rank build's. [`submesh_cases`]
+/// families only.
+///
+/// # Panics
+///
+/// If a check fails, or `case` is not a submesh family.
+pub fn submesh_topology<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    let host = case.family.host(case.degree);
+    let double = case.double && supports::<f64>(client);
+    macro_rules! run {
+        ($td:ty, $gd:ty) => {
+            if double {
+                submesh_topology_case::<f64, $td, $gd, C>(comm, client, case, &host)
+            } else {
+                submesh_topology_case::<f32, $td, $gd, C>(comm, client, case, &host)
+            }
+        };
+    }
+    match case.family {
+        Family::Cube(_) | Family::Mixed | Family::Ball => run!(D3, D3),
+        Family::Square(_) => run!(D2, D2),
+        Family::Sphere => run!(D2, D3),
+        other => panic!("{other:?} is not a submesh family"),
+    }
+}
+
 /// Runs the M9 submesh check of `case` on `comm`: [`submesh_cases`] families only.
 ///
 /// # Panics

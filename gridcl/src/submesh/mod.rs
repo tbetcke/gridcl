@@ -8,7 +8,9 @@
 mod closure;
 mod flags;
 mod geometry;
+mod numbering;
 mod select;
+mod sharers;
 mod tags;
 mod topology;
 
@@ -162,16 +164,14 @@ where
         .map(|b| ParentBlock {
             cell: b.cell,
             offset: b.offset as usize,
-            num_owned: b.index_map.num_owned(),
-            num_local: b.index_map.num_local(),
+            index_map: &b.index_map,
         })
         .collect();
     let mut selected = Vec::new();
     let mut present = Vec::new();
     let mut overflow = false;
     for c in select::select(comm, &mask, &blocks)? {
-        let (s, o, p) =
-            select::facet_children(parent, &facet_cells, c.cell, c.parents, c.num_owned)?;
+        let (s, o, p) = select::facet_children(parent, &facet_cells, c)?;
         overflow |= o;
         selected.push(s);
         present.push(p);

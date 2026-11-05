@@ -13,7 +13,7 @@ use gridcl_device::{
     exclusive_scan, gather, reduce,
 };
 use gridcl_dims::{CellType, TopoDim};
-use gridcl_parallel::{CommDyn, CommExt};
+use gridcl_parallel::{CommDyn, CommExt, IndexMap};
 use gridcl_topology::{FacetCells, Topology};
 
 use super::{fit, plan};
@@ -26,6 +26,10 @@ pub(crate) struct Selected {
     pub(crate) parents: DeviceBuffer<u32>,
     /// The number of owned children; they come first.
     pub(crate) num_owned: usize,
+    /// The index map of the parent block and its first flat index: child cells inherit its
+    /// ownership (ADR-0039, item 6).
+    pub(crate) parent_map: IndexMap,
+    pub(crate) parent_offset: usize,
     /// The child vertex rows, in parent local vertex indices.
     pub(crate) rows: DeviceStrided<u32>,
     /// The interleaved (hi ^ 0x8000_0000, lo) origin id of each child.
@@ -232,12 +236,11 @@ pub(crate) fn facet_mask(
     }
 }
 
-/// One parent block for [`select`]: its first flat index, owned and local counts.
-pub(crate) struct ParentBlock {
+/// One parent block for [`select`]: its first flat index and its index map.
+pub(crate) struct ParentBlock<'a> {
     pub(crate) cell: CellType,
     pub(crate) offset: usize,
-    pub(crate) num_owned: usize,
-    pub(crate) num_local: usize,
+    pub(crate) index_map: &'a IndexMap,
 }
 
 /// The masked entities of one parent block.
@@ -247,23 +250,35 @@ pub(crate) struct Chosen {
     pub(crate) parents: DeviceBuffer<u32>,
     /// The number of owned parents; they come first.
     pub(crate) num_owned: usize,
+    /// The parent block's index map and first flat index.
+    pub(crate) parent_map: IndexMap,
+    pub(crate) parent_offset: usize,
 }
 
 /// The masked entities of each parent block with a non-zero global count, the same list on
-/// every rank (ADR-0039, item 10). One count read per block (owned and total); collective.
+/// every rank (ADR-0039, item 10). On more than one rank a ghost entity takes its owner's mask
+/// entry (a forward scatter over the block's index map), so that every ghost child has its
+/// parent selected on the owner. One count read per block (owned and total); collective.
 pub(crate) fn select(
     comm: &dyn CommDyn,
     mask: &DeviceBuffer<u32>,
-    blocks: &[ParentBlock],
+    blocks: &[ParentBlock<'_>],
 ) -> Result<Vec<Chosen>> {
     let client = mask.client();
     let mut out = Vec::new();
     for block in blocks {
-        let n = block.num_local;
+        let n = block.index_map.num_local();
+        let num_owned = block.index_map.num_owned();
         let (owned, total, parents) = if n == 0 {
+            if comm.size() > 1 {
+                block
+                    .index_map
+                    .scatterer(client, 1)?
+                    .forward(&mut DeviceBuffer::<u32>::uninit(client, 0)?)?;
+            }
             (0, 0, DeviceBuffer::<u32>::uninit(client, 0)?)
         } else {
-            let flags = DeviceBuffer::<u32>::uninit(client, n)?;
+            let mut flags = DeviceBuffer::<u32>::uninit(client, n)?;
             let launch = plan(client, n)?;
             debug_assert_bindings(client, 2);
             // SAFETY: the kernel reads mask[offset + i] < offset + n ≤ mask.len() (the blocks
@@ -280,6 +295,9 @@ pub(crate) fn select(
                     launch.items_per_unit,
                 );
             }
+            if comm.size() > 1 {
+                block.index_map.scatterer(client, 1)?.forward(&mut flags)?;
+            }
             let pos = exclusive_scan(&flags)?;
             let counts = DeviceBuffer::<u32>::uninit(client, 2)?;
             let one = plan(client, 1)?;
@@ -293,7 +311,7 @@ pub(crate) fn select(
                     one.cube_dim,
                     pos.arg(),
                     counts.arg(),
-                    fit(block.num_owned)?,
+                    fit(num_owned)?,
                     fit(n)?,
                 );
             }
@@ -326,6 +344,8 @@ pub(crate) fn select(
                 cell: block.cell,
                 parents,
                 num_owned: owned,
+                parent_map: block.index_map.clone(),
+                parent_offset: block.offset,
             });
         }
     }
@@ -397,8 +417,8 @@ pub(super) fn restrict_rows(
     Ok(out)
 }
 
-/// The facet children of the selected facets `parents` (flat facet indices, one child block of
-/// type `cell`): their parent cell and local facet from `facet_cells`, their vertex rows in
+/// The facet children of the selected facets `chosen` (flat facet indices, one child block):
+/// their parent cell and local facet from `facet_cells`, their vertex rows in
 /// the parent cell's local facet order (ADR-0039, item 8) and their origin ids
 /// 8 · id(parent cell) + local facet (item 7). Also returns whether an origin id overflowed
 /// i64, and which parent cell blocks hold a parent cell (for the element check of item 8),
@@ -406,10 +426,15 @@ pub(super) fn restrict_rows(
 pub(crate) fn facet_children<TD: TopoDim>(
     topology: &Topology<TD>,
     facet_cells: &FacetCells,
-    cell: CellType,
-    parents: DeviceBuffer<u32>,
-    num_owned: usize,
+    chosen: Chosen,
 ) -> Result<(Selected, bool, Vec<bool>)> {
+    let Chosen {
+        cell,
+        parents,
+        num_owned,
+        parent_map,
+        parent_offset,
+    } = chosen;
     let client = topology.client();
     let n = parents.len();
     let cells = gather(&facet_cells.cell, &parents)?;
@@ -480,6 +505,8 @@ pub(crate) fn facet_children<TD: TopoDim>(
             cell,
             parents,
             num_owned,
+            parent_map,
+            parent_offset,
             rows: DeviceStrided {
                 data: rows,
                 stride: fit(k)?,
