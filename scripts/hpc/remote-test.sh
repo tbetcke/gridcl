@@ -4,7 +4,9 @@
 # See usage() below; the steps live in lib/{config,sync,submit,direct,report}.sh.
 #
 # Environment: GRIDCL_TARGETS_ENV overrides the settings file (default
-# scripts/hpc/targets.env); GRIDCL_HPC_POLL sets the polling interval in seconds (default 30).
+# scripts/hpc/targets.env); GRIDCL_HPC_POLL sets the polling interval in seconds (default 30),
+# GRIDCL_HPC_POLL_LIMIT how long a poll, the collect step or the copy of the results may go
+# without an answer (default 120 s; five failed polls in a row end the runner with status 125).
 # shellcheck source-path=SCRIPTDIR
 set -u
 set -o pipefail
@@ -239,6 +241,9 @@ main() {
     parse_args "$@"
     HPC_POLL=${GRIDCL_HPC_POLL:-30}
     printf '%s\n' "$HPC_POLL" | grep -Eq '^[0-9]+([.][0-9]+)?$' || HPC_POLL=30
+    # Seconds a poll, the collect step or the copy of the results may go without an answer.
+    HPC_POLL_LIMIT=${GRIDCL_HPC_POLL_LIMIT:-120}
+    printf '%s\n' "$HPC_POLL_LIMIT" | grep -Eqx '[1-9][0-9]*' || HPC_POLL_LIMIT=120
     config_load "$TARGET"
     if [ "$CFG_SCHEDULER" = direct ]; then
         if [ -n "$OPT_CORES" ]; then

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fake ssh for scripts/hpc/tests: runs the remote command locally, in the fake remote
 # home, with fake-bin/remote (cargo, rustup, rustc, nvidia-smi) and the fake scheduler
-# first on PATH. FAKE_SSH_UNREACHABLE=1 simulates a closed connection.
+# first on PATH. FAKE_SSH_UNREACHABLE=1 simulates a closed connection, and
+# FAKE_SSH_HANG_ON=<function> a stale one: a call of that remote function r_<...> never ends.
 set -u
 : "${FAKE_STATE:?fake ssh: FAKE_STATE is not set}"
 here=$(cd "$(dirname "$0")" && pwd)
@@ -27,6 +28,14 @@ mkdir -p "$FAKE_STATE/remote-home"
 cd "$FAKE_STATE/remote-home" || exit 255
 export HOME="$FAKE_STATE/remote-home" FAKE_SSH_HOST="$host"
 export PATH="$here/remote:$here:$PATH"
+# The runner's remote functions come as a script on stdin to `bash -s`; its last line calls one.
+if [ -n "${FAKE_SSH_HANG_ON:-}" ] && [ "$*" = "bash -s" ]; then
+    script=$(cat)
+    case $(printf '%s\n' "$script" | tail -n 1) in
+        "$FAKE_SSH_HANG_ON" | "$FAKE_SSH_HANG_ON "*) exec sleep 300 ;;
+    esac
+    exec bash -s <<<"$script"
+fi
 if [ $# -eq 0 ]; then
     exec bash -s
 fi

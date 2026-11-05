@@ -6,6 +6,8 @@
 #   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported GRIDCL_HPC_TARGET, CARGO_TARGET_DIR,
 #   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE (cuda; cpu on myriad-cpu and kathleen) and, for
 #   --ranks N, GRIDCL_RANKS=N (and on two Kathleen nodes GRIDCL_MPIRUN_FLAGS=--map-by node).
+# The command also sees GRIDCL_HPC_TREE, and GRIDCL_MPI_TEST_DIR=<results>/mpi-test: the logs
+# of scripts/mpi-test.sh then belong to the job, not to the tree that jobs of one branch share.
 # JOB_ID comes from the scheduler (SGE; jobs/kathleen.sh sets it from SLURM_JOB_ID), or from
 # the runner on direct targets.
 #
@@ -19,8 +21,10 @@
 #   exit_status    the command's exit status (the build's, when the build failed)
 #   node-load-before.txt, node-load-after.txt
 #                  direct targets only (ADR-0002): node-load snapshots taken immediately
-#                  before and after the command; the last line is node_load=idle or
-#                  node_load=busy: <reasons>
+#                  before the command and GRIDCL_HPC_LOAD_SETTLE seconds (default 15) after
+#                  it, so that the GPU utilisation no longer includes the job's own tail; the
+#                  last line is node_load=idle or node_load=busy: <reasons>
+#   mpi-test/      logs and build.json of scripts/mpi-test.sh, when the command runs it
 # submit.env (written at submission) and sge.log or slurm.log (moved in afterwards), or job.sh,
 # direct.log and direct_status on direct targets, complete it.
 # The job itself always exits 0: SGE treats the exit statuses 99 (requeue) and 100 (error
@@ -243,6 +247,8 @@ gridcl_job_main() {
         "cubecl database=${XDG_CACHE_HOME:-$HOME/.cache}/cubecl (cubecl.toml)" >>"$results/prologue.txt"
     gridcl_job_prologue >>"$results/prologue.txt" 2>&1 </dev/null
 
+    GRIDCL_MPI_TEST_DIR=$results/mpi-test
+    export GRIDCL_HPC_TREE GRIDCL_MPI_TEST_DIR
     : >"$log"
     if [ -n "${GRIDCL_HPC_BUILD:-}" ]; then
         echo "build_start=$(date +%s)" >>"$times"
@@ -260,6 +266,7 @@ gridcl_job_main() {
         status=$?
         echo "end=$(date +%s)" >>"$times"
         if [ "${GRIDCL_HPC_SCHEDULER:-}" = direct ]; then
+            sleep "${GRIDCL_HPC_LOAD_SETTLE:-15}"
             gridcl_job_node_load "$results/node-load-after.txt"
         fi
     else

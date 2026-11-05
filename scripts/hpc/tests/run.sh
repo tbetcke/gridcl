@@ -30,6 +30,8 @@
 #     line node_load=idle or node_load=busy: <reasons>, and its summary has a line
 #     "node load: before ...; after ..." (ADR-0002);
 #   - status.sh prints nothing when no job is queued or running.
+# GRIDCL_HPC_LOAD_SETTLE=0 reaches the direct jobs through the fake ssh, so that their
+# after-run node-load snapshot does not wait.
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -41,7 +43,8 @@ SGE_CASES="usage missing_targets_env job_script_sge_lines exit_status_passthroug
 failing_command_first_error summary_header_and_length max_wait_deletes_job results_copied
 results_survive_resync busy_tree_refused cubecl_toml_written myriad_cpu_job_script
 myriad_cpu_rejects_gpus"
-DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees"
+DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees
+job_environment direct_job_group_ended no_answer_ends_runner"
 SLURM_CASES="kathleen_job_script kathleen_two_nodes kathleen_rejects kathleen_max_wait_cancels
 kathleen_status_and_cancel cancel_only_own_jobs"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
@@ -152,9 +155,10 @@ setup() {
     g checkout -q -b dev/e0-test
     TREE=$REMOTE/myriad/dev_e0-test
     write_targets_env
-    export FAKE_STATE GRIDCL_TARGETS_ENV=$T/targets.env GRIDCL_HPC_POLL=0.2
+    export FAKE_STATE GRIDCL_TARGETS_ENV=$T/targets.env GRIDCL_HPC_POLL=0.2 GRIDCL_HPC_LOAD_SETTLE=0
     export PATH="$here/fake-bin:$orig_path"
-    unset FAKE_SGE_HOLD FAKE_SGE_QUEUE_DELAY FAKE_SSH_UNREACHABLE FAKE_SLURM_HOLD FAKE_SLURM_QUEUE_DELAY
+    unset FAKE_SGE_HOLD FAKE_SGE_QUEUE_DELAY FAKE_SSH_UNREACHABLE FAKE_SSH_HANG_ON FAKE_SLURM_HOLD \
+        FAKE_SLURM_QUEUE_DELAY GRIDCL_HPC_POLL_LIMIT
     RT=$LOCAL/scripts/hpc/remote-test.sh
     STATUS=$LOCAL/scripts/hpc/status.sh
     CANCEL=$LOCAL/scripts/hpc/cancel.sh
@@ -769,6 +773,54 @@ case_direct_remote_timeout() {
     [ $((SECONDS - start)) -lt 30 ] || fail "runner took $((SECONDS - start)) s for a 2 s max-wait"
     [ -z "$(pid_files)" ] || fail "remote pid file left: $(pid_files)"
     no_process 'sleep 59' || fail "timed-out direct job still running"
+}
+
+# The command sees GRIDCL_HPC_TREE and the job's own GRIDCL_MPI_TEST_DIR (M8 review).
+case_job_environment() {
+    rt locust -- 'echo "tree=$GRIDCL_HPC_TREE"; echo "mpi=$GRIDCL_MPI_TEST_DIR"'
+    expect_status 0 "direct run"
+    local id tree=$REMOTE/locust/dev_e0-test
+    id=$(job_id)
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "tree=$tree" "GRIDCL_HPC_TREE"
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "mpi=$tree/results/$id/mpi-test" \
+        "GRIDCL_MPI_TEST_DIR in the job's results"
+}
+
+# No process of a direct job outlives it: neither one left behind when the command ends nor
+# one that ignores SIGTERM when the job is cancelled (M8 review: a GPU test process).
+case_direct_job_group_ended() {
+    rt locust -- 'sleep 47 & echo left-behind'
+    expect_status 0 "command that leaves a process behind"
+    no_process 'sleep 47' || fail "process left behind by the command still running"
+
+    bg_rt ignoring locust --max-wait 00:01:00 -- 'trap "" TERM; sleep 48 & sleep 49'
+    local pidfile did
+    pidfile=$(wait_for_pid_file) || { fail "direct job never started"; return; }
+    did=$(basename "$pidfile" .pid)
+    "$CANCEL" "$did" >"$T/cancel" 2>&1
+    RC=$?
+    expect_status 0 "cancel direct job"
+    wait_exit "$BG" 30
+    expect_nonzero "runner of a cancelled direct job"
+    no_process 'sleep 48' || fail "process that ignores SIGTERM outlived the cancel"
+    no_process 'sleep 49' || fail "command that ignores SIGTERM outlived the cancel"
+}
+
+# A connection that stops answering ends the runner with 125 instead of blocking it (M8
+# review: the runner did not return after its Locust job had ended).
+case_no_answer_ends_runner() {
+    local start=$SECONDS
+    FAKE_SSH_HANG_ON=r_poll GRIDCL_HPC_POLL_LIMIT=1 rt locust -- true
+    expect_status 125 "polls without an answer"
+    [ $((SECONDS - start)) -lt 40 ] || fail "runner took $((SECONDS - start)) s with a 1 s poll limit"
+    expect_grep "$T/stderr" 'no answer from fake-locust within 1 s \(r_poll\)' "message per failed poll"
+    expect_grep "$T/stderr" 'lost contact with fake-locust' "lost-contact message"
+
+    start=$SECONDS
+    FAKE_SSH_HANG_ON=r_collect GRIDCL_HPC_POLL_LIMIT=1 rt locust -- true
+    expect_status 125 "collect step without an answer"
+    [ $((SECONDS - start)) -lt 30 ] || fail "runner took $((SECONDS - start)) s to give up collecting"
+    no_process 'sleep 300' || fail "hung ssh still running"
 }
 
 case_prune_merged_branch_trees() {

@@ -15,13 +15,15 @@ REPORT_FAILURE_RE='(^|[^A-Za-z_])(error(\[E[0-9]+\])?:|ERROR([^A-Za-z_]|$)|FAILE
 # $LOCAL_RESULTS; sets HAVE_RESULTS (yes|no).
 report_collect() {
     local out
-    out=$(hpc_remote r_collect "$TREE" "$JOB_ID")
+    out=$(HPC_REMOTE_LIMIT=$HPC_POLL_LIMIT hpc_remote r_collect "$TREE" "$JOB_ID")
     hpc_remote_check $? "collecting the results"
     HAVE_RESULTS=no
     case $out in
         *results=yes*)
             mkdir -p "$LOCAL_RESULTS" || hpc_die 125 "cannot create $LOCAL_RESULTS"
-            rsync -az -e "ssh $HPC_SSH_OPTS" "$CFG_HOST:$TREE/results/$JOB_ID/" "$LOCAL_RESULTS/" ||
+            # --timeout: like the polls, give up on a connection that stopped answering.
+            rsync -az --timeout="$HPC_POLL_LIMIT" -e "ssh $HPC_SSH_OPTS" \
+                "$CFG_HOST:$TREE/results/$JOB_ID/" "$LOCAL_RESULTS/" ||
                 hpc_die 125 "copying the results of job $JOB_ID failed"
             HAVE_RESULTS=yes
             ;;
