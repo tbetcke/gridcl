@@ -106,7 +106,7 @@ where
         }
         drop(coords);
         let mut topology = Topology::new(client, cell_blocks, vertex_map, &vertex_ids)?;
-        topology.set_vertex_sharers(sharers);
+        topology.set_vertex_sharers(sharers)?;
         let geometry = Geometry::new(
             geometry_blocks,
             DeviceBuffer::from_host(client, &relative)?,

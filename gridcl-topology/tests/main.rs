@@ -3,6 +3,7 @@
 mod bounds;
 mod connectivity;
 mod entities;
+mod hooks;
 mod matching;
 mod permutation;
 mod renumber;

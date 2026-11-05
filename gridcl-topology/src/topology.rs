@@ -103,34 +103,21 @@ impl<TD: TopoDim> Topology<TD> {
                 found: vertex_origin_ids.len(),
             });
         }
-        for block in &cell_blocks {
-            let cell: CellType = block.cell.into();
-            let nv = gridcl_refcell::vertices(cell).len();
-            let rows = block.index_map.num_local();
-            let entries = rows.checked_mul(nv).ok_or(GridError::TooLarge)?;
-            if block.vertices.stride as usize != nv || block.vertices.data.len() != entries {
-                return Err(GridError::LengthMismatch {
-                    expected: entries,
-                    found: block.vertices.data.len(),
-                });
-            }
-            // Interleaved (hi, lo) words: two per cell (crate::origin).
-            let words = rows.checked_mul(2).ok_or(GridError::TooLarge)?;
-            if block.origin_ids.len() != words {
-                return Err(GridError::LengthMismatch {
-                    expected: words,
-                    found: block.origin_ids.len(),
-                });
-            }
-            if block.flags.len() != rows {
-                return Err(GridError::LengthMismatch {
-                    expected: rows,
-                    found: block.flags.len(),
-                });
-            }
-        }
+        check_cell_blocks(&cell_blocks)?;
         let ids_fit_u32 = origin_ids_fit_u32(vertex_origin_ids);
         let ids = DeviceBuffer::from_host(client, &encode_origin_ids(vertex_origin_ids))?;
+        Self::assemble(client, cell_blocks, vertex_index_map, ids, ids_fit_u32)
+    }
+
+    /// The topology of checked cell blocks and encoded vertex origin ids, with the
+    /// permutation info of every block of dimension ≥ 2.
+    fn assemble(
+        client: &Client,
+        cell_blocks: Vec<CellBlock<TD>>,
+        vertex_index_map: IndexMap,
+        ids: DeviceBuffer<u32>,
+        ids_fit_u32: bool,
+    ) -> Result<Self> {
         let permutation_info = cell_blocks
             .iter()
             .map(|b| {
@@ -155,8 +142,9 @@ impl<TD: TopoDim> Topology<TD> {
     /// [`new`](Topology::new) with the vertex origin ids already on the device, as interleaved
     /// (hi ^ 0x8000_0000, lo) words ([`encode_origin_ids`]): submesh creation keeps the
     /// parent's ids without a host round trip (ADR-0039, item 17). Computes the permutation
-    /// info as `new` does. For gridcl's submeshes; not part of the stable API (test:
-    /// `from_device_ids_equals_new`).
+    /// info as `new` does. The ids are not read back, so [`ids_fit_u32`](Topology::ids_fit_u32)
+    /// is false and the kernels take the general two-word path, with the same results. For
+    /// gridcl's submeshes; not part of the stable API (test: `from_device_ids_equals_new`).
     ///
     /// # Errors
     ///
@@ -164,12 +152,29 @@ impl<TD: TopoDim> Topology<TD> {
     /// two words per local vertex.
     #[doc(hidden)]
     pub fn from_device_ids(
-        _client: &Client,
-        _cell_blocks: Vec<CellBlock<TD>>,
-        _vertex_index_map: IndexMap,
-        _vertex_origin_ids: DeviceBuffer<u32>,
+        client: &Client,
+        cell_blocks: Vec<CellBlock<TD>>,
+        vertex_index_map: IndexMap,
+        vertex_origin_ids: DeviceBuffer<u32>,
     ) -> Result<Self> {
-        todo!("Topology::from_device_ids: M9 T1")
+        let words = vertex_index_map
+            .num_local()
+            .checked_mul(2)
+            .ok_or(GridError::TooLarge)?;
+        if vertex_origin_ids.len() != words {
+            return Err(GridError::LengthMismatch {
+                expected: words,
+                found: vertex_origin_ids.len(),
+            });
+        }
+        check_cell_blocks(&cell_blocks)?;
+        Self::assemble(
+            client,
+            cell_blocks,
+            vertex_index_map,
+            vertex_origin_ids,
+            false,
+        )
     }
 
     /// The client the arrays live on.
@@ -270,22 +275,44 @@ impl<TD: TopoDim> Topology<TD> {
     /// Stores the sharer sets of the local vertices, uploads one shared flag per vertex and
     /// derives the sharing neighbourhood: every rank that shares a vertex with this one
     /// (ADR-0026). Without sharers every vertex is unshared. Pipeline stage 9 calls it at mesh
-    /// creation.
+    /// creation, and submesh creation for the child (ADR-0039, item 16).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// If `s` does not have one row per local vertex, or `ranks` and `owned_cell` do not
-    /// match the offsets; if the upload of the flags fails.
-    pub fn set_vertex_sharers(&mut self, s: VertexSharers) {
+    /// `LengthMismatch` if `s` does not have one row per local vertex, its offsets do not
+    /// start at 0 and ascend, or `ranks` and `owned_cell` do not match the offsets;
+    /// `IndexOutOfRange { index: v, len }` for the first vertex v whose row is not strictly
+    /// ascending, holds a negative rank, or lacks this rank (the one rank common to every
+    /// row); device errors of the upload. On error nothing is stored.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{DeviceBuffer, DeviceStrided, GridError};
+    /// use gridcl_dims::{Cell1, D1};
+    /// use gridcl_parallel::{IndexMap, Serial};
+    /// use gridcl_topology::{CellBlock, Topology, VertexSharers, encode_origin_ids};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let block = CellBlock::<D1>::new(
+    ///     Cell1::Interval,
+    ///     IndexMap::new(&Serial, 1).unwrap(),
+    ///     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 },
+    ///     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0])).unwrap(),
+    ///     DeviceBuffer::from_host(&client, &[0u32]).unwrap(),
+    /// );
+    /// let mut t = Topology::new(&client, vec![block], IndexMap::new(&Serial, 2).unwrap(), &[0, 1]).unwrap();
+    /// // Rank 1 holds both vertices; vertex 1 is shared with rank 2.
+    /// let ok = VertexSharers { offsets: vec![0, 1, 3], ranks: vec![1, 1, 2], owned_cell: vec![true; 3] };
+    /// // Vertex 1's row lacks rank 1, the rank of vertex 0's row.
+    /// let bad = VertexSharers { offsets: vec![0, 1, 2], ranks: vec![1, 2], owned_cell: vec![true; 2] };
+    /// assert!(matches!(t.set_vertex_sharers(bad), Err(GridError::IndexOutOfRange { index: 1, len: 2 })));
+    /// t.set_vertex_sharers(ok.clone()).unwrap();
+    /// assert_eq!(t.vertex_sharers(), Some(&ok));
+    /// ```
+    pub fn set_vertex_sharers(&mut self, s: VertexSharers) -> Result<()> {
         let n = self.vertex_index_map.num_local();
-        assert!(
-            s.offsets.len() == n + 1
-                && s.offsets[0] == 0
-                && s.offsets.is_sorted()
-                && s.ranks.len() == s.offsets[n]
-                && s.owned_cell.len() == s.ranks.len(),
-            "VertexSharers must have one row per local vertex ({n})"
-        );
+        check_sharers(&s, n)?;
         let mut flags = Vec::with_capacity(n);
         let mut ranks = Vec::new();
         for row in s.offsets.windows(2) {
@@ -298,12 +325,12 @@ impl<TD: TopoDim> Topology<TD> {
         }
         ranks.sort_unstable();
         ranks.dedup();
-        // The vertex shared flags at mesh creation (CLAUDE.md, ADR-0026).
-        let flags = DeviceBuffer::from_host(&self.client, &flags)
-            .expect("the upload of the vertex shared flags");
+        // The vertex shared flags at mesh and submesh creation (CLAUDE.md, ADR-0026, ADR-0039).
+        let flags = DeviceBuffer::from_host(&self.client, &flags)?;
         self.vertex_sharers = s;
         self.vertex_shared = Some(flags);
         self.sharing_ranks = ranks;
+        Ok(())
     }
 
     /// The sharer sets stored by [`set_vertex_sharers`](Topology::set_vertex_sharers);
@@ -311,7 +338,7 @@ impl<TD: TopoDim> Topology<TD> {
     /// items 6 and 17); not part of the stable API (test: `vertex_sharers_round_trip`).
     #[doc(hidden)]
     pub fn vertex_sharers(&self) -> Option<&VertexSharers> {
-        todo!("Topology::vertex_sharers: M9 T1")
+        self.vertex_shared.as_ref().map(|_| &self.vertex_sharers)
     }
 
     /// Replaces the flags of cell block `b`, one word per local cell: bit 0 is the manifold
@@ -323,8 +350,21 @@ impl<TD: TopoDim> Topology<TD> {
     /// `IndexOutOfRange` if `b` is not a block index; `LengthMismatch` if `flags` does not
     /// have one word per local cell of block `b`.
     #[doc(hidden)]
-    pub fn set_cell_flags(&mut self, _b: usize, _flags: DeviceBuffer<u32>) -> Result<()> {
-        todo!("Topology::set_cell_flags: M9 T1")
+    pub fn set_cell_flags(&mut self, b: usize, flags: DeviceBuffer<u32>) -> Result<()> {
+        let len = self.cell_blocks.len();
+        let block = self
+            .cell_blocks
+            .get_mut(b)
+            .ok_or(GridError::IndexOutOfRange { index: b, len })?;
+        let rows = block.index_map.num_local();
+        if flags.len() != rows {
+            return Err(GridError::LengthMismatch {
+                expected: rows,
+                found: flags.len(),
+            });
+        }
+        block.flags = flags;
+        Ok(())
     }
 
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
@@ -619,6 +659,76 @@ impl<TD: TopoDim> Topology<TD> {
     }
 }
 
+/// The length checks of [`Topology::new`] on the cell blocks.
+fn check_cell_blocks<TD: TopoDim>(cell_blocks: &[CellBlock<TD>]) -> Result<()> {
+    for block in cell_blocks {
+        let cell: CellType = block.cell.into();
+        let nv = gridcl_refcell::vertices(cell).len();
+        let rows = block.index_map.num_local();
+        let entries = rows.checked_mul(nv).ok_or(GridError::TooLarge)?;
+        if block.vertices.stride as usize != nv || block.vertices.data.len() != entries {
+            return Err(GridError::LengthMismatch {
+                expected: entries,
+                found: block.vertices.data.len(),
+            });
+        }
+        // Interleaved (hi, lo) words: two per cell (crate::origin).
+        let words = rows.checked_mul(2).ok_or(GridError::TooLarge)?;
+        if block.origin_ids.len() != words {
+            return Err(GridError::LengthMismatch {
+                expected: words,
+                found: block.origin_ids.len(),
+            });
+        }
+        if block.flags.len() != rows {
+            return Err(GridError::LengthMismatch {
+                expected: rows,
+                found: block.flags.len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The checks of [`Topology::set_vertex_sharers`] on `s` for `n` local vertices.
+fn check_sharers(s: &VertexSharers, n: usize) -> Result<()> {
+    let mismatch = |expected, found| GridError::LengthMismatch { expected, found };
+    if s.offsets.len() != n + 1 {
+        return Err(mismatch(n + 1, s.offsets.len()));
+    }
+    if s.offsets[0] != 0 {
+        return Err(mismatch(0, s.offsets[0]));
+    }
+    if let Some(w) = s.offsets.windows(2).find(|w| w[1] < w[0]) {
+        return Err(mismatch(w[0], w[1]));
+    }
+    if s.ranks.len() != s.offsets[n] {
+        return Err(mismatch(s.offsets[n], s.ranks.len()));
+    }
+    if s.owned_cell.len() != s.ranks.len() {
+        return Err(mismatch(s.ranks.len(), s.owned_cell.len()));
+    }
+    let bad = |v| GridError::IndexOutOfRange { index: v, len: n };
+    let rows = || s.offsets.windows(2).map(|w| &s.ranks[w[0]..w[1]]);
+    for (v, row) in rows().enumerate() {
+        if row.first().is_some_and(|&r| r < 0) || !row.windows(2).all(|w| w[0] < w[1]) {
+            return Err(bad(v));
+        }
+    }
+    // This rank is in every row: the candidates are the first row's ranks.
+    let Some(first) = rows().next() else {
+        return Ok(());
+    };
+    let mut candidates = first.to_vec();
+    for (v, row) in rows().enumerate() {
+        candidates.retain(|r| row.binary_search(r).is_ok());
+        if candidates.is_empty() {
+            return Err(bad(v));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,7 +763,7 @@ mod tests {
             ranks: vec![1, 1, 4, 0, 1, 2, 1],
             owned_cell: vec![true, true, false, true, true, false, true],
         };
-        t.set_vertex_sharers(s.clone());
+        t.set_vertex_sharers(s.clone()).unwrap();
         let flags = t.vertex_shared.as_ref().unwrap().to_host().unwrap();
         assert_eq!(flags, [0, 1, 1, 0]);
         assert_eq!(t.sharing_ranks, [0, 1, 2, 4]);
@@ -661,15 +771,5 @@ mod tests {
         let c = t.try_clone(&Serial).unwrap();
         assert_eq!(c.vertex_shared.unwrap().to_host().unwrap(), flags);
         assert_eq!((c.sharing_ranks, c.vertex_sharers), (t.sharing_ranks, s));
-    }
-
-    #[test]
-    #[should_panic(expected = "one row per local vertex")]
-    fn sharers_need_one_row_per_vertex() {
-        two_triangles().set_vertex_sharers(VertexSharers {
-            offsets: vec![0, 1],
-            ranks: vec![0],
-            owned_cell: vec![true],
-        });
     }
 }
