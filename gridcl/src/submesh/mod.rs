@@ -8,14 +8,18 @@
 // Wired into `boundary` and `facet_submesh` with the child geometry and flags (M9 T4b).
 #![allow(dead_code)]
 
+mod closure;
+mod geometry;
 mod select;
 mod topology;
 
 use cubecl::prelude::*;
 use gridcl_device::{
-    DeviceBuffer, GridError, KernelKind, LaunchPlan, Real, Result, debug_assert_bindings, histogram,
+    DeviceBuffer, DeviceStrided, GridError, KernelKind, LaunchPlan, Real, Result,
+    debug_assert_bindings, histogram,
 };
-use gridcl_dims::{D3, Dim, EmbeddedIn, TopoDim};
+use gridcl_dims::{CellType, D3, Dim, EmbeddedIn, TopoDim};
+use gridcl_geometry::{Geometry, NodeFamily};
 use gridcl_parallel::{Comm, CommDyn, CommExt};
 use gridcl_topology::facet_cell_counts;
 
@@ -163,16 +167,99 @@ where
         })
         .collect();
     let mut selected = Vec::new();
+    let mut present = Vec::new();
     let mut overflow = false;
     for c in select::select(comm, &mask, &blocks)? {
-        let (s, o) = select::facet_children(parent, &facet_cells, c.cell, c.parents, c.num_owned)?;
+        let (s, o, p) =
+            select::facet_children(parent, &facet_cells, c.cell, c.parents, c.num_owned)?;
         overflow |= o;
         selected.push((c.block, s));
+        present.push(p);
     }
     if comm.max(u32::from(overflow)) != 0 {
         return Err(GridError::TooLarge);
     }
-    topology::child_topology(comm, parent, selected, true)
+    let mut child = topology::child_topology(comm, parent, selected, true)?;
+    child.present = present;
+    Ok(child)
+}
+
+/// A child geometry and its `node_to_parent`.
+pub(crate) type ChildGeometry<F, CTD, GD> = (Geometry<F, CTD, GD>, DeviceBuffer<u32>);
+
+/// The child geometry of the facet children `child` of `mesh`: each child block takes
+/// the agreed element of its parent cells, and its dofmap through the closure node maps
+/// (ADR-0039, items 8 and 9). Also returns `node_to_parent`. Collective.
+///
+/// # Errors
+///
+/// Agreed: `UnsupportedDegree` or `UnsupportedNodeFamily` if the parent cells of a child block
+/// differ in degree or node family; allocation, device and communication errors.
+pub(crate) fn facet_geometry<F, TD, GD, C>(
+    mesh: &Mesh<F, TD, GD, C>,
+    child: &ChildTopology<TD::Lower>,
+) -> Result<ChildGeometry<F, TD::Lower, GD>>
+where
+    F: Real,
+    GD: Dim,
+    C: Comm,
+    TD: TopoDim + EmbeddedIn<GD>,
+    TD::Lower: TopoDim + EmbeddedIn<GD>,
+{
+    let comm: &dyn CommDyn = &mesh.comm;
+    let parent_blocks = mesh.geometry.blocks();
+    let elements: Vec<(u32, NodeFamily)> = parent_blocks
+        .iter()
+        .map(|b| (b.element.degree, b.element.family))
+        .collect();
+    let mut blocks = Vec::new();
+    for ((block, (cells, facets)), present) in child
+        .topology
+        .cell_blocks()
+        .iter()
+        .zip(&child.facet_blocks)
+        .zip(&child.present)
+    {
+        let cell: CellType = block.cell.into();
+        let (degree, family) = geometry::agreed_element(comm, cell, &elements, present)?;
+        let k = gridcl_refcell::num_lagrange_nodes(cell, degree);
+        let tables = parent_blocks
+            .iter()
+            .zip(present)
+            .map(|(b, &p)| {
+                p.then(|| closure::closure_table(b.element.cell.into(), cell, degree, family))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let rows: Vec<_> = parent_blocks
+            .iter()
+            .zip(mesh.topology.cell_blocks())
+            .zip(&tables)
+            .map(|((g, t), table)| select::RowSource {
+                rows: &g.dofmap,
+                num_local: t.index_map.num_local(),
+                table: table.as_deref(),
+            })
+            .collect();
+        let dofmap = select::restrict_rows(cells, facets, &rows, k)?;
+        blocks.push((
+            cell,
+            degree,
+            family,
+            DeviceStrided {
+                data: dofmap,
+                stride: fit(k)?,
+            },
+        ));
+    }
+    let nodes = mesh.geometry.nodes();
+    geometry::child_geometry(
+        comm,
+        nodes,
+        mesh.geometry.node_index_map().num_local(),
+        mesh.geometry.origin(),
+        blocks,
+    )
 }
 
 /// `Mesh::boundary`.
@@ -237,12 +324,21 @@ mod tests {
     use gridcl_testing::HostMesh;
     use gridcl_topology::{Topology, decode_origin_ids};
 
-    use super::facet_topology;
+    use super::{facet_geometry, facet_topology};
     use crate::prelude::*;
 
     /// `h` through the crate's own builder (gridcl-testing's `build` gives the dependency's
     /// `Mesh`), with the entities of every dimension below the cells.
     fn build<TD, GD>(client: &Client, h: &HostMesh) -> Mesh<f32, TD, GD>
+    where
+        TD: TopoDim + EmbeddedIn<GD>,
+        GD: Dim,
+    {
+        build_family(client, h, NodeFamily::Equispaced)
+    }
+
+    /// [`build`] with coordinate elements of node family `family`.
+    fn build_family<TD, GD>(client: &Client, h: &HostMesh, family: NodeFamily) -> Mesh<f32, TD, GD>
     where
         TD: TopoDim + EmbeddedIn<GD>,
         GD: Dim,
@@ -253,7 +349,7 @@ mod tests {
             let element = CoordinateElement::<TD> {
                 cell: TD::Cell::try_from(block.cell).expect("cell dimension"),
                 degree: block.degree,
-                family: NodeFamily::Equispaced,
+                family,
             };
             builder = builder.cell_block(element, &block.cells, block.cell_ids.as_deref());
         }
@@ -567,5 +663,199 @@ mod tests {
         let all: Vec<u32> = (0..12).collect();
         let r = facet_topology(&mesh, Some(&tags(&client, 1, &all)));
         assert!(matches!(r, Err(GridError::InteriorFacet)));
+    }
+
+    /// The boundary geometry of `mesh` is the restriction of the parent's: child nodes are
+    /// bitwise parent nodes with the parent's origin, and at interior points of every child
+    /// cell the child map equals the parent map at the facet's points (host tabulation in f64
+    /// of the same node values).
+    fn geometry_restricts<TD>(mesh: &Mesh<f32, TD, TD>, what: &str)
+    where
+        TD: TopoDim + EmbeddedIn<TD>,
+        TD::Lower: TopoDim + EmbeddedIn<TD>,
+    {
+        let gd = TD::N;
+        let child = facet_topology(mesh, None).expect("facet_topology");
+        let (geometry, n2p) = facet_geometry(mesh, &child).expect("facet_geometry");
+        let pn = mesh.geometry.nodes().to_host().expect("parent nodes");
+        let cn = geometry.nodes().to_host().expect("child nodes");
+        let n2p = n2p.to_host().expect("node_to_parent");
+        assert_eq!(cn.len(), n2p.len() * gd);
+        for (i, &p) in n2p.iter().enumerate() {
+            for g in 0..gd {
+                assert_eq!(
+                    cn[i * gd + g].to_bits(),
+                    pn[p as usize * gd + g].to_bits(),
+                    "{what}: node {i}"
+                );
+            }
+        }
+        let bits = |o: TD::Array<f64>| o.as_ref().iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        assert_eq!(
+            bits(geometry.origin()),
+            bits(mesh.geometry.origin()),
+            "{what}: origin"
+        );
+
+        // Parent cells by flat index: (cell type, element, dofmap row).
+        let mut parent = Vec::new();
+        for (t, g) in mesh
+            .topology
+            .cell_blocks()
+            .iter()
+            .zip(mesh.geometry.blocks())
+        {
+            let cell: CellType = t.cell.into();
+            let e = gridcl_refcell::LagrangeElement::new(cell, g.element.degree, g.element.family)
+                .expect("element");
+            let rows = g.dofmap.data.to_host().expect("dofmap");
+            for row in rows.chunks_exact(g.dofmap.stride as usize) {
+                parent.push((cell, e.clone(), row.to_vec()));
+            }
+        }
+        let (cells, facets) = child.facet_of.as_ref().expect("facet children");
+        let (cells, facets) = (
+            cells.to_host().expect("cells"),
+            facets.to_host().expect("facets"),
+        );
+        let mut c = 0;
+        for g in geometry.blocks() {
+            let cell: CellType = g.element.cell.into();
+            let e = gridcl_refcell::LagrangeElement::new(cell, g.element.degree, g.element.family)
+                .expect("element");
+            let t: Vec<f64> = match cell {
+                CellType::Interval => vec![0.3, 0.85],
+                CellType::Triangle => vec![0.2, 0.3, 0.6, 0.1],
+                _ => vec![0.3, 0.7, 0.9, 0.2],
+            };
+            let nq = t.len() / (TD::N - 1);
+            let tab = e.tabulate(&t, 0).expect("tabulate");
+            let eval = |tab: &gridcl_refcell::Tabulation,
+                        nodes: &[f32],
+                        row: &[u32],
+                        q: usize|
+             -> Vec<f64> {
+                (0..gd)
+                    .map(|d| {
+                        row.iter()
+                            .enumerate()
+                            .map(|(j, &n)| tab.get(0, q, j) * nodes[n as usize * gd + d] as f64)
+                            .sum()
+                    })
+                    .collect()
+            };
+            for row in g
+                .dofmap
+                .data
+                .to_host()
+                .expect("dofmap")
+                .chunks_exact(g.dofmap.stride as usize)
+            {
+                let (pcell, pe, prow) = &parent[cells[c] as usize];
+                let tp = gridcl_refcell::facet_points_to_cell(*pcell, facets[c] as usize, &t);
+                let ptab = pe.tabulate(&tp, 0).expect("tabulate");
+                for q in 0..nq {
+                    let x = eval(&tab, &cn, row, q);
+                    let y = eval(&ptab, &pn, prow, q);
+                    let err = x
+                        .iter()
+                        .zip(&y)
+                        .map(|(a, b)| (a - b).abs())
+                        .fold(0.0, f64::max);
+                    assert!(
+                        err < 1e-10,
+                        "{what}: child cell {c} point {q}: {x:?} vs {y:?}"
+                    );
+                }
+                c += 1;
+            }
+        }
+        assert_eq!(c, cells.len());
+    }
+
+    #[test]
+    fn child_geometry_restricts_the_parent() {
+        let client = gridcl_testing::test_client();
+        for p in 2..=3 {
+            let mesh = build::<D3, D3>(&client, &gridcl_testing::ball(1, p));
+            geometry_restricts(&mesh, &format!("ball p={p}"));
+            let mesh = build::<D3, D3>(&client, &gridcl_testing::hex_prism_pyramid_box(2, p));
+            geometry_restricts(&mesh, &format!("hex/prism/pyramid box p={p}"));
+            let mesh = build::<D3, D3>(&client, &gridcl_testing::cube_box(Cell3::Pyramid, 1, p));
+            geometry_restricts(&mesh, &format!("pyramid box p={p}"));
+        }
+        let mesh = build::<D3, D3>(&client, &gridcl_testing::mixed_box(2, 3).perturbed(0.05));
+        geometry_restricts(&mesh, "perturbed mixed box p=3");
+        for cell in [Cell3::Tetrahedron, Cell3::Prism] {
+            let mesh = build::<D3, D3>(
+                &client,
+                &gridcl_testing::cube_box(cell, 1, 4).perturbed(0.05),
+            );
+            geometry_restricts(&mesh, &format!("perturbed {cell:?} box p=4"));
+        }
+        for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+            let h = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 4).perturbed(0.05);
+            geometry_restricts(
+                &build_family::<D3, D3>(&client, &h, family),
+                &format!("hexahedra p=4 {family:?}"),
+            );
+            let h = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 4).perturbed(0.05);
+            geometry_restricts(
+                &build_family::<D2, D2>(&client, &h, family),
+                &format!("quadrilaterals p=4 {family:?}"),
+            );
+        }
+        let h = gridcl_testing::square_box(Cell2::Triangle, 2, 4).perturbed(0.05);
+        geometry_restricts(&build::<D2, D2>(&client, &h), "perturbed triangles p=4");
+    }
+
+    /// A hexahedron of degree 1 and a disjoint prism of degree 2: their quadrilateral boundary
+    /// facets differ in degree.
+    #[test]
+    fn mixed_degree_facet_type_is_unsupported() {
+        let client = gridcl_testing::test_client();
+        let mut nodes: Vec<f64> = gridcl_refcell::vertices(CellType::Hexahedron).concat();
+        let prism = gridcl_refcell::lagrange_points(CellType::Prism, 2, NodeFamily::Equispaced)
+            .expect("prism points");
+        nodes.extend(
+            prism
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .flat_map(|x| [x[0] + 2.0, x[1], x[2]]),
+        );
+        let element = |cell, degree| CoordinateElement::<D3> {
+            cell,
+            degree,
+            family: NodeFamily::Equispaced,
+        };
+        let mut mesh: Mesh<f32, D3, D3> = MeshBuilder::new(&client)
+            .nodes(&nodes, None)
+            .cell_block(
+                element(Cell3::Hexahedron, 1),
+                &(0..8).collect::<Vec<u32>>(),
+                None,
+            )
+            .cell_block(
+                element(Cell3::Prism, 2),
+                &(8..26).collect::<Vec<u32>>(),
+                None,
+            )
+            .build()
+            .expect("two cells");
+        mesh.create_entities(2).expect("faces");
+        let child = facet_topology(&mesh, None).expect("facet_topology");
+        let r = facet_geometry(&mesh, &child);
+        assert!(
+            matches!(
+                r,
+                Err(GridError::UnsupportedDegree {
+                    cell: "Quadrilateral",
+                    degree: 2
+                })
+            ),
+            "{:?}",
+            r.err().map(|e| e.to_string())
+        );
     }
 }

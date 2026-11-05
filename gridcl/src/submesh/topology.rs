@@ -97,20 +97,26 @@ pub(crate) struct ChildTopology<CTD: TopoDim> {
     /// child cells only.
     pub(crate) parent_to_child_vertex: DeviceBuffer<u32>,
     pub(crate) facet_of: Option<(DeviceBuffer<u32>, DeviceBuffer<u32>)>,
+    /// Facet children: the parent cells and local facets of each child block (empty
+    /// otherwise).
+    pub(crate) facet_blocks: Vec<(DeviceBuffer<u32>, DeviceBuffer<u32>)>,
+    /// Facet children: per child block, whether each parent cell block holds a parent cell on
+    /// this rank (empty otherwise).
+    pub(crate) present: Vec<Vec<bool>>,
 }
 
-/// The child local vertices of the parent vertices used by `selected`, in parent local order:
-/// (child → parent, parent → child) vertex maps.
-fn compact_vertices<TD: TopoDim>(
-    parent: &Topology<TD>,
-    selected: &[&Selected],
+/// The parent items (vertices or nodes, `nv` of them) that the rows `rows` use, compacted in
+/// parent local order: the parent item of each child item, and the exclusive scan of the used
+/// flags, whose entry at a used parent item is its child item. One count read.
+pub(crate) fn compact(
+    client: &Client,
+    nv: usize,
+    rows: &[&DeviceStrided<u32>],
 ) -> Result<(DeviceBuffer<u32>, DeviceBuffer<u32>)> {
-    let client = parent.client();
-    let nv = parent.vertex_index_map().num_local();
     let used = DeviceBuffer::<u32>::zeros(client, nv)?;
     let last = fit(nv)?.saturating_sub(1);
-    for s in selected {
-        let len = s.rows.data.len();
+    for r in rows {
+        let len = r.data.len();
         if len > 0 && nv > 0 {
             let launch = plan(client, len)?;
             debug_assert_bindings(client, 2);
@@ -121,7 +127,7 @@ fn compact_vertices<TD: TopoDim>(
                     client,
                     launch.cube_count,
                     launch.cube_dim,
-                    s.rows.data.arg(),
+                    r.data.arg(),
                     used.arg(),
                     fit(len)?,
                     last,
@@ -131,7 +137,7 @@ fn compact_vertices<TD: TopoDim>(
         }
     }
     let pos = exclusive_scan(&used)?;
-    // The count read of the vertex compaction (CLAUDE.md, ADR-0039 item 18).
+    // The count read of the compaction (CLAUDE.md, ADR-0039 item 18).
     let count = if nv > 0 {
         reduce(&used, ReduceOp::Sum)?.to_host()?[0] as usize
     } else {
@@ -171,7 +177,10 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
 ) -> Result<ChildTopology<CTD>> {
     let client = parent.client();
     let sel: Vec<&Selected> = selected.iter().map(|(_, s)| s).collect();
-    let (vertex_to_parent, parent_to_child_vertex) = compact_vertices(parent, &sel)?;
+    let rows: Vec<&DeviceStrided<u32>> = sel.iter().map(|s| &s.rows).collect();
+    let nv = parent.vertex_index_map().num_local();
+    let (vertex_to_parent, parent_to_child_vertex) = compact(client, nv, &rows)?;
+    drop(rows);
     let num_cells = sel
         .iter()
         .try_fold(0usize, |acc, s| acc.checked_add(s.parents.len()))
@@ -188,11 +197,15 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
     };
     let mut blocks = Vec::with_capacity(selected.len());
     let mut parent_blocks = Vec::with_capacity(selected.len());
+    let mut facet_blocks = Vec::new();
     let mut base = 0usize;
     drop(sel);
     for (b, s) in selected {
         let n = s.parents.len();
         place(&s.parents, &child_to_parent, base, n)?;
+        if let Some((c, f)) = &s.facet_of {
+            facet_blocks.push((c.share(), f.share()));
+        }
         if let (Some((cells, facets)), Some((c, f))) = (&facet_of, &s.facet_of) {
             place(c, cells, base, n)?;
             place(f, facets, base, n)?;
@@ -228,6 +241,8 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
         vertex_to_parent,
         parent_to_child_vertex,
         facet_of,
+        facet_blocks,
+        present: Vec::new(),
     })
 }
 
