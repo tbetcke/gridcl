@@ -281,6 +281,10 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, C: Comm,
     // #[doc(hidden)] pub fn footprint_bytes(&self) -> usize;  test accessor: bytes of the mesh's buffers (ADR-0035)
     pub fn create_entities(&mut self, dim: usize) -> Result<()>;
     pub fn create_connectivity(&mut self, from: usize, to: usize) -> Result<()>;
+    /// Tagged cells as a mesh of the same dimensions (ADR-0039).
+    pub fn cell_submesh(&self, cells: &MeshTags) -> Result<(Self, EntityMap)>;
+    /// Reference points of physical points per cell and point, by Newton iteration (ADR-0039).
+    pub fn pull_back(&self, x: &BlockFields<F, VecShape<GD>>, opts: &PullBackOptions) -> Result<PullBack<F, TD>>;
 }
 
 impl<F, TD, GD, C> Mesh<F, TD, GD, C>
@@ -304,11 +308,18 @@ impl<F, TD, GD, C> Mesh<F, TD, GD, C>
 where F: Real, GD: Dim, C: Comm,
       TD: TopoDim + EmbeddedIn<GD>, TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
-    /// All boundary facets as a mesh one dimension lower, oriented outward.
-    /// Returns GridError::NotYetImplemented until M9 (ADR-0012).
+    /// All boundary facets as a mesh one dimension lower; facet entities must exist
+    /// (EntitiesNotCreated). Codimension-1 children are oriented outward through their flags;
+    /// codimension-2 children have flags 0 (ADR-0039).
     pub fn boundary(&self) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>;
     /// Tagged boundary facets only; interior facets are rejected (GridError::InteriorFacet).
     pub fn facet_submesh(&self, facets: &MeshTags) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)>;
+}
+
+impl<F: Real, C: Comm> Mesh<F, D3, D3, C> {
+    /// Tagged edges, interior or boundary, as a curve mesh; needs create_entities(1) and
+    /// create_connectivity(1, 3) (ADR-0039).
+    pub fn edge_submesh(&self, edges: &MeshTags) -> Result<(CurveMesh<F, C>, EntityMap)>;
 }
 ```
 
@@ -389,6 +400,17 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
 }
 /// One QuadField per cell block, indexed like cell_blocks().
 pub struct BlockFields<F: Real, S: FieldShape> { pub blocks: Vec<QuadField<F, S>> }
+
+/// Pull-back options (ADR-0039). tolerance None: 1e-13 in f64, 1e-5 in f32.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PullBackOptions { pub tolerance: Option<f64>, pub max_iterations: u32 } // Default: None, 16
+pub struct PullBack<F: Real, TD: TopoDim> {
+    pub reference: BlockFields<F, VecShape<TD>>,   // ξ per cell and point
+    pub last_step: BlockFields<F, ScalarShape>,    // |Δξ|∞ of the last iteration; > tolerance: not converged
+}
+pub fn pull_back_block<F, TD, GD, G>(g: &G, b: usize, x: &QuadField<F, VecShape<GD>>, opts: &PullBackOptions)
+    -> Result<(QuadField<F, VecShape<TD>>, QuadField<F, ScalarShape>)>
+where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = TD, GD = GD>;
 
 /// The cached E-vector of one geometry block (ADR-0012): chunks of whole tiles, [k][g][cell] with
 /// cells fastest, the cell count padded to VECTOR_PAD with copies of the block's last cell. An empty
@@ -732,7 +754,7 @@ gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 
 
 - **Vertex numbering (A.1).** Every cell uses the DefElement reference cell, shared with ndelement, Basix and Symfem. Quadrilaterals and hexahedra use tensor (lexicographic) order, e.g. (0,0), (1,0), (0,1), (1,1) for the quadrilateral. This differs from the counter-clockwise order of Gmsh and VTK but keeps the tensor structure that sum-factorisation kernels need. I/O applies the maps in A.9.
 - **Sub-entity numbering (A.2, A.3).** Sub-entities of each dimension are numbered by their sorted vertex lists in lexicographic order (DefElement Convention 2). ndelement main and Symfem main use the same rule. For triangles and tetrahedra this reverses the Basix and DOLFINx order (conversion in A.11); for all other cells the two coincide. Every cell stores, per dimension, the local vertex lists of its sub-entities and their cell types, since prism and pyramid faces are mixed.
-- **Origin ids.** Every vertex has an origin id, an i64 that does not depend on the partition. It is the Gmsh node tag of the corner node, the id passed to the mesh builder (or the construction index if none is given), or the parent's id for a submesh. Origin ids must be globally unique; readers check this and return `GridError::DuplicateOriginId`. They travel with the vertex through migration and ghosting. On the device they are stored as interleaved (hi ^ 0x8000_0000, lo) u32 pairs, so unsigned pair order equals i64 order and negative ids stay valid; a comptime fast path compares only the lo words when every id lies in [0, 2^32), that is, when every stored hi word is 0x8000_0000 (ADR-0012). Cells carry origin ids too (Gmsh element tags or builder indices); these are used for output ordering and tests. A future refinement must derive new ids independently of the partition, e.g. from the pair of origin ids of the parent edge.
+- **Origin ids.** Every vertex has an origin id, an i64 that does not depend on the partition. It is the Gmsh node tag of the corner node, the id passed to the mesh builder (or the construction index if none is given), or the parent's id for a submesh. Origin ids must be globally unique; readers check this and return `GridError::DuplicateOriginId`. They travel with the vertex through migration and ghosting. On the device they are stored as interleaved (hi ^ 0x8000_0000, lo) u32 pairs, so unsigned pair order equals i64 order and negative ids stay valid; a comptime fast path compares only the lo words when every id lies in [0, 2^32), that is, when every stored hi word is 0x8000_0000 (ADR-0012). Cells carry origin ids too (Gmsh element tags or builder indices); these are used for output ordering and tests. A submesh's cells take 8 · (parent cell id) + local facet index (facet children), the smallest 12 · (cell id) + local edge index over the cells containing the edge (edge children), or the parent's id (cell children); an i64 overflow gives `TooLarge` (ADR-0039). A future refinement must derive new ids independently of the partition, e.g. from the pair of origin ids of the parent edge.
 - **Canonical entity orientation (A.6).** An edge or face is stored starting at its smallest origin id and continuing towards the smaller neighbour. This is the low-to-high rule of ndelement, Basix and DOLFINx, applied to origin ids. Every rank sharing an entity therefore agrees on its orientation, and the orientation does not change when the mesh is repartitioned. Storing entity vertex lists in this orientation is a deliberate difference from DOLFINx: device kernels can orient an entity without a lookup.
     - Edges and triangle faces are simply sorted by origin id.
     - For a quadrilateral face the four slots follow its tensor order (boundary cycle 0–1–3–2). Slot 0 holds the lowest vertex, slot 1 its lower neighbour, slot 2 its other neighbour and slot 3 the opposite vertex.
@@ -849,7 +871,7 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). M7 adds `PartitionerFailed { name: &'static str, code: i32 }` and `NeedsMpiCommunicator(&'static str)` (ADR-0029). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). M7 adds `PartitionerFailed { name: &'static str, code: i32 }` and `NeedsMpiCommunicator(&'static str)` (ADR-0029). M9 adds `NonManifold`, `InteriorFacet`, `NeedsReferencePoint` and `NonOrientable`, unit variants agreed across ranks (ADR-0039). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
@@ -1232,7 +1254,7 @@ A vertex is *shared* if it appears on more than one rank, whether in owned or gh
 - **Global numbers** flow from owner to ghost holders (forward direction).
 - **Hash** (ADR-0026). `gridcl_parallel::owner_hash(key: &[i64]) -> u64` starts at h = 0x6772_6964_636C_0006 and sets h = mix(h ^ (w as u64)) for each word w, where mix is SplitMix64's finaliser (z += 0x9E37_79B9_7F4A_7C15; z = (z ^ (z >> 30)) · 0xBF58_476D_1CE4_E5B9; z = (z ^ (z >> 27)) · 0x94D0_49BB_1331_11EB; z ^ (z >> 31), wrapping). The vertex and node owner is the candidate at position `owner_hash(&[origin id]) mod n`, the entity owner the one at `owner_hash(sorted origin ids) mod n`, and the rendezvous rank of any key `owner_hash(key) mod P`.
 - **Local order.** Owned vertices and nodes are numbered in order of first touching cell; ghost vertices, nodes and entities are ordered by (owner rank, global index) (ADR-0026).
-- **Sharer sets in the topology.** `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (gridcl-topology) is a host CSR over local vertices: row v lists every rank holding vertex v, this one included, in ascending order, and `owned_cell` says whether that rank holds v in an owned cell. `Topology::set_vertex_sharers(&mut self, s: VertexSharers)` stores it, uploads one shared flag per vertex and derives the sharing neighbourhood (every rank sharing a vertex with this one). Without sharers, as in every serial mesh, every vertex is unshared (ADR-0026).
+- **Sharer sets in the topology.** `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (gridcl-topology) is a host CSR over local vertices: row v lists every rank holding vertex v, this one included, in ascending order, and `owned_cell` says whether that rank holds v in an owned cell. `Topology::set_vertex_sharers(&mut self, s: VertexSharers) -> Result<()>` checks lengths, row order and the own rank (`LengthMismatch`, `IndexOutOfRange`; ADR-0039), stores it, uploads one shared flag per vertex and derives the sharing neighbourhood (every rank sharing a vertex with this one). Without sharers, as in every serial mesh, every vertex is unshared (ADR-0026).
 
 All exchanges use the neighbourhood communicator and touch only process-boundary entities, so the volume is small and the exchange runs on the host. Keys are origin ids, so ownership does not depend on local numbering. For a given input and partition the owners are deterministic.
 
@@ -1248,13 +1270,14 @@ Geometry is a vector-valued Lagrange field of arbitrary degree, evaluated by dev
 
 - **Coordinate element:** (cell type, degree p, node family). Each cell block has a geometry block: a geometry dofmap (cells × nodes per cell) into the shared node array, as in DOLFINx. Every block of one cell type has one degree; a mesh may use different degrees for different cell types.
 - **Geometry as a field** (Firedrake). Raising the degree after loading (NGSolve's `Curve`) is an interpolation, optionally followed by projection onto a CAD or analytic surface given as a callback.
-- **Coordinates relative to an origin.** The origin is the centre of the global bounding box, agreed by an allreduce at mesh creation and kept in f64 on the host. Device kernels see coordinates relative to it. `physical_points`, `read_node`, readers and writers add it back.
+- **Coordinates relative to an origin.** The origin is the centre of the global bounding box, agreed by an allreduce at mesh creation and kept in f64 on the host. Device kernels see coordinates relative to it. `physical_points`, `read_node`, readers and writers add it back. A submesh keeps its parent's origin (ADR-0039).
 
 ### Tabulation and quadrature
 
 - **Tabulation** happens on the host in gridcl-refcell, in f64. It uses an orthonormal basis (Legendre, Dubiner, or orthonormal rationomials for pyramids) and the generalised Vandermonde matrix. The matrix is solved with gridcl-refcell's own dense LU with partial pivoting, so the crate needs no linear-algebra dependency.
     - Equispaced points are well conditioned up to about p = 10; above that, GLL points (tensor cells) are recommended.
     - Values and reference derivatives are uploaded once per (element, point set) and narrowed to `F`.
+    - The pull-back evaluates the same orthonormal bases on the device by recurrence, with `LagrangeElement::coefficients` uploaded once per geometry block; pyramid ζ is clamped to at most 1 − 2^−10 (ADR-0039).
 - **Quadrature:** collapsed Gauss–Jacobi rules on triangles, tetrahedra and pyramids. Quadrilaterals and hexahedra use tensor Gauss rules; prisms use a triangle rule times a Gauss interval rule.
 - **Rules for mixed meshes:** a `QuadRule<F, TD>` holds one point set per cell type, and a `FacetQuadRule<F, TD>` holds point sets on each reference facet type.
 
@@ -1279,18 +1302,23 @@ Factors are computed on the device, following MFEM's GeometricFactors. Caching b
 2. **Parity per interior facet.** Each of the two cells induces a direction on the shared facet: the edge's direction in the cell's boundary cycle combined with the edge's permutation bit, or for curves whether the point is the cell's start or end. The parity is 0 if the two directions are opposite (consistent), 1 otherwise.
 3. **Signs by parity label propagation.** The constraint is s_a · s_b = (−1)^parity.
     - Each cell starts with its own origin id as label and parity 0, and repeatedly adopts the smallest label among its neighbours, accumulating parity. Pointer jumping keeps the number of rounds logarithmic on each rank.
-    - Between rounds, (label, parity) of ghost cells is exchanged, until a global allreduce reports no change.
-    - Two different parities for the same label give `GridError::NonOrientable` (e.g. a Möbius strip).
+    - Between rounds, the (label, parity) of the cells on both sides of every process-boundary facet is exchanged over the facet `IndexMap`, and ghost cells take their owner's; this works in every `GhostMode`. Rounds continue until a global allreduce reports no change. The kernels are Jacobi-style (no atomics) and bind at most four buffers (ADR-0039).
+    - Two different parities for the same label give `GridError::NonOrientable` (e.g. a Möbius strip): after convergence, any interior facet whose cells violate the constraint, process-boundary facets included (ADR-0039).
 4. **Direction of each component**, from `OrientationRule`:
     - `Outward`: closed components (no boundary facets) are flipped where needed so that the enclosed signed measure (1/D_GEO) ∮ x·n is positive. Open components return `GridError::NeedsReferencePoint`.
     - `AwayFrom(p)` and `Towards(p)`: each component is flipped so that ∫ (x − p)·n has the requested sign. These work for open components too.
+    - The sums use Gauss degree 3p, are formed per label on the device, finished in f64 on the host and combined at rank `owner_hash(&[label]) mod P` in rank order; a sum of exactly 0 flips nothing. Existing flags are ignored and overwritten; `orient` creates the facet entities and the (tdim − 1, tdim) connectivity it needs (ADR-0039).
 5. **Result.** Flags are written to bit 0 of `CellBlock::flags`.
 
-Boundary submeshes (`boundary()`, `facet_submesh`) need no propagation. Each facet cell is oriented so that its normal agrees with the outward facet normal of its single parent cell. Tagged interior facets are rejected with `GridError::InteriorFacet`. Non-manifold surfaces and interior-interface submeshes are out of scope.
+Boundary submeshes (`boundary()`, `facet_submesh`) need no propagation. Each facet cell is oriented so that its normal agrees with the outward facet normal of its single parent cell: a codimension-1 child sets flag bit 0 where its geometric normal at the facet midpoint has a negative dot product with that outward normal. Children of codimension 2 (the boundary of a surface in 3D, edge submeshes) have no normal, and their flags are 0 (ADR-0039). Tagged interior facets are rejected with `GridError::InteriorFacet`. Non-manifold surfaces and interior-interface submeshes are out of scope.
 
 ### Pull-back
 
 Physical-to-reference mapping by Newton iteration, for point location and interpolation between meshes, is part of M9. The Newton kernel is generic over the vector size: lanes that have converged keep their value through arithmetic masks while the others iterate.
+
+- The input is a `BlockFields` of absolute physical points per cell and point, as `physical_points` returns; lanes are consecutive cells of a tile reading the E-vector, and plans use `KernelKind::PullBack` with `max_vector` equal to the tile.
+- Iteration starts at the reference cell's vertex centroid with Δ = K(ξ)(x − X(ξ)), K the pseudo-inverse (Newton in codimension 0, Gauss–Newton otherwise). A lane freezes through a lane select once |Δ|∞ ≤ tolerance. The loop always runs `max_iterations`, with no early exit; non-convergence shows in `last_step`.
+- Results are bitwise identical across vector sizes on the CPU runtime and agree to 10^−12 (f64) and 10^−5 (f32) on GPUs (ADR-0039).
 
 ## Distributed mesh model
 
@@ -1606,8 +1634,10 @@ Tags and submeshes connect the volume mesh to boundary problems; the boundary of
 
 - **MeshTags:** (dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device, covering owned and ghost entities. An index repeats only with distinct values. Every holder of an entity, owner or ghost, receives its tags by key matching, so ghost values equal the owner's (ADR-0026). `MeshBuilder::physical_tags` and `tag_names` give tags with host arrays. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value, filled from Gmsh physical names, and each group's size; `named` and `group` select one group on the device (ADR-0022). The Gmsh reader also passes elementary tags through the same matching (ADR-0035).
 - **Codimension addressing** (NGSolve): `Codim::Vol`, `Bnd`, `BBnd` and `BBBnd` map to D_TOP, D_TOP−1, D_TOP−2 and D_TOP−3 (`Codim::dim(tdim) -> Option<usize>`). The same region code then works for curve, surface and volume meshes.
-- **Submeshes:** tagged cells (same D_TOP), tagged boundary facets (`facet_submesh`, D_TOP−1), and tagged edges of 3D meshes (curves in 3D). Each comes with an `EntityMap`: child → parent indices on the device, parent → child as a sparse map.
-    - Ownership and ghosting are inherited from the parent.
+- **Submeshes:** tagged cells (`cell_submesh`, same D_TOP), all boundary facets (`boundary`) or tagged boundary facets (`facet_submesh`, D_TOP−1), and tagged edges of volume meshes (`edge_submesh`, curves in 3D). Each comes with an `EntityMap`: child → parent indices on the device, parent → child as a sparse map, and the parent vertex and geometry node of each child vertex and node (ADR-0039).
+    - Cells inherit ownership and ghosting from the parent; vertices and nodes are re-owned among the ranks holding them in owned child cells, by the owner hash (ADR-0039).
+    - Submesh methods create no topology: `boundary` and `facet_submesh` need the facet entities, `edge_submesh` the edges and the (1, 3) connectivity.
+    - A submesh keeps its parent's origin and vertex origin ids. It has one cell block per parent block with a non-zero global child count, in the parent's order, and may be empty. Its tags are the parent's tags of the dimension its cells come from, as cell tags; lower-dimensional tags are not carried (ADR-0039).
     - Facet submeshes accept boundary facets only (`GridError::InteriorFacet` otherwise), and inherit outward orientation from the single parent cell.
     - Interface submeshes for multi-domain coupling are out of scope.
 
@@ -1719,14 +1749,14 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
-| gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional) |
-| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno (optional, `mpio` with feature `mpi`); dev: mshio, serde_json, gridcl-testing |
+| gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional); build: scotch-sys-bindgen (bindgen 0.65.1, feature `scotch`; ADR-0039) |
+| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno and ndarray (optional, with `hdf5`; `mpio` with feature `mpi`; ADR-0039); dev: mshio, serde_json, gridcl-testing |
 | gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `ThreadComm` (an in-process multi-rank communicator; ADR-0026), the Python oracle helper and `gen-gmsh-box` (ADR-0035); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features; serde_json; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
 | gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing; nix (unix; getrusage; ADR-0035) |
-| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml |
+| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device, gridcl-refcell, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml; dev: proptest (ADR-0039) |
 | conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
 | tools/env-check (outside the workspace) | Probe of a development target: devices, properties, sample kernels in f32 and f64, MPI allreduce; JSON report. Built in E0. | cubecl with the target's runtime features; mpi (optional) |
 
@@ -1995,7 +2025,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M9 Submeshes and manifolds
 
-**Scope:** boundary, facet and edge submeshes with `EntityMap` (`boundary()` replaces M3's `NotYetImplemented`); distributed manifold orientation (`orient`); the manifold tests of normals, pseudo-inverse and facet normals, whose kernels exist from M3 (ADR-0012); pull-back, generic over the vector size.
+**Scope:** boundary, facet, edge and cell submeshes with `EntityMap` (`boundary()` replaces M3's `NotYetImplemented`; ADR-0039); distributed manifold orientation (`orient`); the manifold tests of normals, pseudo-inverse and facet normals, whose kernels exist from M3 (ADR-0012); pull-back, generic over the vector size.
 
 **Acceptance:**
 
@@ -2008,7 +2038,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
     - `Outward` on an open surface gives `NeedsReferencePoint`;
     - a Möbius strip gives `NonOrientable`;
 - pull-back recovers reference points to 10^−12 for p = 1–3;
-- pull-back gives the same reference points at vector size 1 and at the widest size the device offers, to 10^−12.
+- pull-back gives the same reference points at vector size 1 and at the widest size the device offers, to 10^−12 (read as in ADR-0039 item 14: bitwise on the CPU runtime).
 
 ### M10 Hardening
 
@@ -2105,10 +2135,18 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   owned candidates to the host; owners, global numbers and ghost placements back), the
   upload of an IndexMap's send and receive index lists when its first scatterer is created,
   and of a scatterer's reverse lists when it is created, and the vertex shared flags at
-  mesh creation (ADR-0026, ADR-0028).
+  mesh creation (ADR-0026, ADR-0028); in submesh creation, the per-block count reads of
+  compaction, the agreed TooLarge, NonManifold and InteriorFacet flags, the child ghost
+  lists for IndexMap::with_ghosts, the child sharer rows of shared vertices and the
+  node-owner candidates of shared nodes, the upload of the closure node maps and the
+  child's vertex shared flags; in orient, the per-round change flag, the agreed error
+  flags, the per-component (label, sum, open) records and the flip decisions back; and
+  the upload of a geometry block's expansion coefficients when the pull-back first uses
+  it (ADR-0039).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
-  (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers. Every unsafe block needs a SAFETY comment.
+  (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
+  and examples may call its declarations (ADR-0039). Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.

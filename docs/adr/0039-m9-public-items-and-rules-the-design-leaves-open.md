@@ -1,6 +1,6 @@
 # ADR-0039: M9 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-05
 - **Raised in:** M9 planning (docs/plans/M9.md, "Planned public API and rules" and questions 1–20)
 - **Design sections affected:**
@@ -179,7 +179,7 @@ Option 2, item by item. Items 3, 4, 5, 10 (tags) and 15 record the maintainer's 
 - **Text to change in docs/design.md:**
   - **Listing B4:**
     - The `boundary` doc becomes: "All boundary facets as a mesh one dimension lower; facet entities must exist (`EntitiesNotCreated`). Codimension-1 children are oriented outward through their flags; codimension-2 children have flags 0 (ADR-0039)."
-    - The fourth `impl` block adds `cell_submesh` and `pull_back`.
+    - The first `impl` block (`TD: EmbeddedIn<GD>`) adds `cell_submesh` and `pull_back` (items 4 and 13).
     - A new block `impl<F: Real, C: Comm> Mesh<F, D3, D3, C>` holds `edge_submesh`.
   - **Listing B4b:** add `PullBackOptions`, `PullBack` and `pull_back_block` after `BlockFields`.
   - **"Device containers"**, the variant history, adds: "M9 adds `NonManifold`, `InteriorFacet`, `NeedsReferencePoint` and `NonOrientable`, unit variants agreed across ranks (ADR-0039)."
@@ -215,4 +215,4 @@ Option 2, item by item. Items 3, 4, 5, 10 (tags) and 15 record the maintainer's 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-05, as proposed (option 2, items 1–20), without conditions. Applied to docs/design.md and CLAUDE.md in `adr: 0039 apply`. When applied, one slip in Consequences was corrected: `cell_submesh` and `pull_back` go into Listing B4's first `impl` block (`TD: EmbeddedIn<GD>`), as items 4 and 13 state, not the fourth (`TD::Lower` bounds), which would hide them on curve meshes.

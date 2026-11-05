@@ -165,3 +165,5 @@ Amended by ADR-0031 (Scotch and PT-Scotch seeds in a deterministic context; item
 Amended by ADR-0032 (cut bullets at 4 and 8 ranks; METIS within 25%), accepted 2026-10-31.
 
 Item 14 superseded by ADR-0033 (`metis` and `parmetis` mutually exclusive), accepted 2026-10-31.
+
+Corrected by ADR-0039 (item 20), accepted 2026-11-05: parmetis-sys links `parmetis` only (item 5); the shared libparmetis resolves METIS itself.

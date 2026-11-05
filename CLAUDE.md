@@ -44,10 +44,18 @@
   owned candidates to the host; owners, global numbers and ghost placements back), the
   upload of an IndexMap's send and receive index lists when its first scatterer is created,
   and of a scatterer's reverse lists when it is created, and the vertex shared flags at
-  mesh creation (ADR-0026, ADR-0028).
+  mesh creation (ADR-0026, ADR-0028); in submesh creation, the per-block count reads of
+  compaction, the agreed TooLarge, NonManifold and InteriorFacet flags, the child ghost
+  lists for IndexMap::with_ghosts, the child sharer rows of shared vertices and the
+  node-owner candidates of shared nodes, the upload of the closure node maps and the
+  child's vertex shared flags; in orient, the per-round change flag, the agreed error
+  flags, the per-component (label, sum, open) records and the flip decisions back; and
+  the upload of a geometry block's expansion coefficients when the pull-back first uses
+  it (ADR-0039).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
-  (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers. Every unsafe block needs a SAFETY comment.
+  (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
+  and examples may call its declarations (ADR-0039). Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.
