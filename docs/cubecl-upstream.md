@@ -135,3 +135,12 @@ Never put user ids, host names or project codes in an entry (CLAUDE.md).
 - **gridcl workaround:** best-effort `Client::memory_cleanup` after the sort and unique steps of entity creation when mesh creation creates the entities (the hidden `Topology::create_entities_releasing_pools`, gridcl-topology `entity.rs`), and after each step of stage 10 of mesh creation (`gridcl/src/pipeline/tags.rs`). `Topology::create_entities` does not clean up: each cleanup waits for the device and frees cached pages, which slowed entity creation by about 2× on CUDA (M8 review).
 - **Suggestion:** a pool setting that returns an emptied page of the current pool after a threshold (bytes or allocations), or document that long pipelines should call `memory_cleanup` between phases.
 - **Status:** open.
+
+### C14 Device-channel clients spin while the queue is full
+
+- **Version:** cubecl-common 0.11.0 (every runtime; observed on the CPU runtime).
+- **Observation:** a device has one server thread and a queue of `CHANNEL_MAX_TASK` = 32 tasks. A client that finds it full retries `available_index.fetch_add` in a loop: `SPIN_BUDGET_CLIENT` = 8192 × 64 = 524 288 `spin_loop` iterations, then 4096 `yield_now` calls, then 75 µs sleeps (`src/device/handle/channel.rs`, `DeviceClient::enqueue`). Every waiting client hits the same atomic. When the threads that submit to one device outnumber the cores, they take the CPU from the server thread that would empty the queue, and throughput collapses.
+- **Evidence:** gridcl's `io_threads` tests (`ThreadComm`, a thread per rank, all submitting to the one CPU-runtime device) on the M6 Mac mini (12 cores): about 37 rank threads at once ran at 1100% CPU for over 30 min with one of eight `global_mesh_identical` tests done. `sample` of the process: 8533 on-CPU samples in `ChannelDeviceHandle::submit_inner`/`submit_blocking` and `swtch_pri` (yield), 3797 in kernel code (2026-11-05).
+- **gridcl workaround:** `ThreadComm::run` (gridcl-testing `comm.rs`) limits the rank threads of a process to half the hardware threads; a run waits until enough others have finished. `io_threads` then took 311 s (808 s with the hardware threads as the limit).
+- **Suggestion:** a short spin, then block on a condition variable or futex that the server signals after swapping buffers; or a backoff that grows per client.
+- **Status:** open.

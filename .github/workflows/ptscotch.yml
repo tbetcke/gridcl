@@ -76,7 +76,7 @@ jobs:
       - name: Partitioner tests
         run: |
           cargo test -p gridcl-partition --features "$FEATURES"
-          cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --test partition_threads
+          cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --test integration partition_threads::
           cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --doc -- partitioner
         env:
           FEATURES: ${{ matrix.features }}

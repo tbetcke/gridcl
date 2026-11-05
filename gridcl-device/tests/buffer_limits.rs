@@ -1,8 +1,6 @@
 //! M2 acceptance: "with an injected limit, an allocation above `max_page_size` returns
 //! `AllocationTooLarge`", and "an f64 request on Metal returns `UnsupportedPrecision`".
 
-mod common;
-
 use cubecl::prelude::*;
 use gridcl_device::testing::with_properties;
 use gridcl_device::{DeviceBuffer, GridError, VECTOR_PAD, check_precision};

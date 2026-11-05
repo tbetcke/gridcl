@@ -1,7 +1,7 @@
 //! M3 acceptance: closed-form entity counts and Euler characteristic 1 for boxes of every cell
 //! type and the mixed box, at three refinements.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

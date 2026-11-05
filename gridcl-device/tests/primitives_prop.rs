@@ -3,7 +3,7 @@
 //! words. Edge cases of the index-driven primitives (out-of-range and duplicate indices) are
 //! fixed tests at the end.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::*;

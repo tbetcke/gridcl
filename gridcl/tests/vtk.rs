@@ -8,7 +8,7 @@
 //! (`scripts/oracles/vtk_oracle.py`, pinned VTK and meshio) follow unless
 //! `GRIDCL_SKIP_PYTHON=1` (ADR-0024, item 11).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

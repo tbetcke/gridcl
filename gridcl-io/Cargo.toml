@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+autotests = false
 
 [features]
 # VTKHDF output (ADR-0035, rule 9).
@@ -31,3 +32,9 @@ gridcl-testing = { path = "../gridcl-testing" }
 mshio.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

@@ -1,6 +1,6 @@
 //! M2 acceptance: the primitives against CPU references at the fixed sizes 10^6 and 10^7.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::*;

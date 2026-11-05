@@ -55,7 +55,7 @@ jobs:
       - name: Partitioner tests with METIS
         run: |
           cargo test -p gridcl-partition --features metis
-          cargo test -p gridcl --features metis --test partition_threads
+          cargo test -p gridcl --features metis --test integration partition_threads::
           cargo test -p gridcl --features metis --doc -- partitioner
       - run: cargo doc --workspace --no-deps
         env:
@@ -93,12 +93,7 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
-      # io_threads' global_mesh_identical reads the corpus subset here: the full corpus in f32
-      # and f64 took 55 min of one job (M8 review); it runs locally, on Locust and in the mpi
-      # jobs at 1-4 ranks.
       - run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}
-        env:
-          GRIDCL_IO_THREADS_SUBSET: 1
 
   # Each MPI in two jobs: the MPI tests, and the hdf5 steps (together 25 min in one job, M8
   # review). The hdf5 jobs restore the mpi jobs' cache and save none.
@@ -171,7 +166,7 @@ jobs:
       - if: matrix.part == 'hdf5'
         run: cargo test -p gridcl-io --features hdf5
       - if: matrix.part == 'hdf5'
-        run: cargo test -p gridcl --features hdf5 --test io_threads vtkhdf
+        run: cargo test -p gridcl --features hdf5 --test integration io_threads::vtkhdf
       - if: matrix.part == 'hdf5'
         run: cargo test -p gridcl --features hdf5 --doc vtkhdf
       - if: matrix.part == 'hdf5'

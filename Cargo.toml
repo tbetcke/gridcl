@@ -59,6 +59,13 @@ scotch-sys-bindgen = { package = "bindgen", version = "=0.65.1", default-feature
 bindgen = "=0.72.1"
 build-probe-mpi = "=0.1.6"
 
+# Debug builds keep line tables for the workspace crates (backtraces with file and line) and no
+# debug info for dependencies. Each feature combination is a build of its own, and with full
+# debug info a worktree's target/ had grown to 183 GiB by the end of M8, 45 GB of it object
+# files kept for their debug info. Set CARGO_PROFILE_DEV_DEBUG=true for a debugger session.
+[profile.dev]
+debug = "line-tables-only"
+
 # buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
 # some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback
 # aborts the process (docs/plans/M0.md, Deviations log and Follow-ups). The release profile has no checks already.
@@ -76,3 +83,4 @@ opt-level = 3
 # Workspace crates keep opt-level 0, debug assertions and overflow checks.
 [profile.dev.package."*"]
 opt-level = 2
+debug = false

@@ -2,8 +2,8 @@
 //! the committed corpus reads with Gmsh's node counts, covers every element type, and agrees
 //! with mshio, the test oracle (ADR-0022).
 
-mod common;
-mod encode;
+use crate::common;
+use crate::encode;
 
 use std::collections::{BTreeMap, BTreeSet};
 

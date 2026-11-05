@@ -1,6 +1,6 @@
 //! M2 acceptance: results are bitwise identical across two runs on the same device.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::*;

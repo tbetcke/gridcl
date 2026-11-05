@@ -2,8 +2,8 @@
 //! of `MshIndex` concatenate to what `read_file` parses, in either byte order and `size_t`
 //! width, read only their byte ranges, and malformed headers give `Parse` with the offset.
 
-mod common;
-mod encode;
+use crate::common;
+use crate::encode;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};

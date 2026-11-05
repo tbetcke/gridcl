@@ -1,7 +1,7 @@
 //! M3 acceptance: Jacobians on a mixed triangle–quadrilateral surface mesh use one `QuadRule`
 //! and match a host reference to 1e-12 (and 1e-5 in f32).
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;
