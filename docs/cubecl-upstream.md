@@ -143,4 +143,4 @@ Never put user ids, host names or project codes in an entry (CLAUDE.md).
 - **Evidence:** gridcl's `io_threads` tests (`ThreadComm`, a thread per rank, all submitting to the one CPU-runtime device) on the M6 Mac mini (12 cores): about 37 rank threads at once ran at 1100% CPU for over 30 min with one of eight `global_mesh_identical` tests done. `sample` of the process: 8533 on-CPU samples in `ChannelDeviceHandle::submit_inner`/`submit_blocking` and `swtch_pri` (yield), 3797 in kernel code (2026-11-05).
 - **gridcl workaround:** `ThreadComm::run` (gridcl-testing `comm.rs`) limits the rank threads of a process to half the hardware threads; a run waits until enough others have finished. `io_threads` then took 311 s (808 s with the hardware threads as the limit).
 - **Suggestion:** a short spin, then block on a condition variable or futex that the server signals after swapping buffers; or a backoff that grows per client.
-- **Status:** open.
+- **Status:** reported, [tracel-ai/cubecl#2066](https://github.com/tracel-ai/cubecl/issues/2066) (2026-11-05), with a standalone reproducer: on 12 cores, 4779 launches/s from one thread and 245 from 36.
