@@ -8,7 +8,7 @@
 //! 10^6 + 3 P1 triangles. Factor kernels plan with max_vector = tile, so tile width 1 runs at
 //! size 1 (ADR-0012); each run asserts its size through `record_plans`.
 
-mod common;
+use crate::common;
 
 use common::reference::{self, RefFactor};
 use common::*;

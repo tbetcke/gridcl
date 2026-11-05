@@ -3,7 +3,7 @@
 //! `max_units_per_cube`, `max_cube_dim` or `max_cube_count` (property test)". On CPUs the unit
 //! count follows `VectorPolicy::cpu_units` (ADR-0017).
 
-mod common;
+use crate::common;
 
 use cubecl::ir::DeviceProperties;
 use cubecl::prelude::*;

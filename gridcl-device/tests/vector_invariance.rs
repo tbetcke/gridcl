@@ -3,7 +3,7 @@
 //! 10^6 + 3: integers and data moves bitwise, float reductions and scans within the tolerances.
 //! Each case asserts through `record_plans` that its vectorized phase ran at the forced size.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::*;

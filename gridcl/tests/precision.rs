@@ -2,7 +2,7 @@
 //! K fields as relative max norms per field. Where the test device lacks f64, the f64 run uses
 //! the CPU runtime (docs/plans/M3.md, question 15).
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

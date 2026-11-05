@@ -3,7 +3,7 @@
 //! groups, D_GEO is inferred, duplicate tags are rejected, and read → write → read is the
 //! identity.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

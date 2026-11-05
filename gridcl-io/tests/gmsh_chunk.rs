@@ -4,7 +4,7 @@
 //! `MshIndex`, the others (and serendipity files, after `complete`) in memory, as the rank-0
 //! path does.
 
-mod common;
+use crate::common;
 
 use std::ops::Range;
 

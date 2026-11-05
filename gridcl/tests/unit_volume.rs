@@ -4,7 +4,7 @@
 //! because the pyramid's det J is rational. Quadrature of degree p − 1 in 1D, 2p in 2D and 3p in
 //! 3D integrates det J of these maps exactly (docs/plans/M3.md, question 24).
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

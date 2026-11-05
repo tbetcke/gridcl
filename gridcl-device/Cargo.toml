@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+autotests = false
 
 [features]
 # GPU-aware MPI on CUDA: device pointers of CUDA buffers. The one library feature that enables
@@ -26,3 +27,9 @@ libc.workspace = true
 [dev-dependencies]
 gridcl-testing = { path = "../gridcl-testing" }
 proptest.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

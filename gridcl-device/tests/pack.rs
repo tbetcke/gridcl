@@ -1,7 +1,7 @@
 //! `pack`, `unpack` and `DeviceBuffer::write_host` (docs/plans/M6.md, T4): property tests
 //! against a host reference, bitwise, for f32, f64, i32 and u32 at block sizes 1–4.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::*;

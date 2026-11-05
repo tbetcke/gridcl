@@ -5,7 +5,7 @@
 //! and PermutationInfo read a cell-fastest copy of the connectivity, built by a `Scalar`
 //! transpose launched right before each of their launches (ADR-0015, item 8).
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

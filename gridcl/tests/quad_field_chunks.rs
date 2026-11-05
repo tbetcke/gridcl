@@ -2,7 +2,7 @@
 //! chunks. The mesh and its E-vector are built inside the `with_properties` scope, so the
 //! E-vector is chunked by the same limit.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

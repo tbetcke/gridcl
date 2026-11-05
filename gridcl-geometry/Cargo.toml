@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+autotests = false
 
 [dependencies]
 cubecl.workspace = true
@@ -17,3 +18,9 @@ gridcl-topology = { path = "../gridcl-topology" }
 [dev-dependencies]
 gridcl = { path = "../gridcl" }
 gridcl-testing = { path = "../gridcl-testing" }
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

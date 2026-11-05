@@ -1,7 +1,7 @@
 //! Determinism ("Testing and validation"): two runs on the same device produce bitwise
 //! identical device arrays: entities, connectivity, permutation info, factors and measure.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

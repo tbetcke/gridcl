@@ -5,7 +5,7 @@
 //! path; ids shifted by −2^40 and by 2^33 keep their order and take the (hi, lo) path. Interval
 //! blocks have no permutation info.
 
-mod common;
+use crate::common;
 
 use common::*;
 use cubecl::prelude::Client;

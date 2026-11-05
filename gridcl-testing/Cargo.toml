@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
 
 [features]
 default = ["cpu"]
@@ -38,3 +39,9 @@ name = "gen-gmsh-box"
 
 [dev-dependencies]
 proptest.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

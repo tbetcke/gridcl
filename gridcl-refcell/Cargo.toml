@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+autotests = false
 
 [dependencies]
 gridcl-dims = { path = "../gridcl-dims" }
@@ -12,3 +13,9 @@ gridcl-dims = { path = "../gridcl-dims" }
 [dev-dependencies]
 proptest.workspace = true
 serde_json.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

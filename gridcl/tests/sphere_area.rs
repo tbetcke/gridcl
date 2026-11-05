@@ -2,7 +2,7 @@
 //! (f64): the least-squares slope of log relative area error against log h (docs/plans/M3.md,
 //! question 18), at quadrature degree 4p + 2.
 
-mod common;
+use crate::common;
 
 use common::*;
 use gridcl::prelude::*;

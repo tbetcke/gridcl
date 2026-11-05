@@ -21,19 +21,20 @@ fn global_mesh_identical_on(ranks: usize, coverage: Coverage, partitioners: &[Ch
     });
 }
 
-/// Bullet 1, the full corpus at 1–4 and 8 ranks with the default partitioner (`Block` on
-/// threads, `Metis` with feature `metis`; rule 6), one test per rank count so that hosted CI's
-/// shards can share them out. With `GRIDCL_IO_THREADS_SUBSET=1` the subset instead: hosted
-/// CI's CPU jobs, where the full corpus in both precisions takes about 55 min (the full corpus
-/// runs locally, on Locust and in the MPI jobs).
+/// Bullet 1 at 1–4 and 8 ranks with the default partitioner (`Block` on threads, `Metis` with
+/// feature `metis`; rule 6), one test per rank count so that hosted CI's shards can share them
+/// out. The corpus subset by default, the full corpus with `GRIDCL_IO_THREADS_FULL=1`: in both
+/// precisions the full corpus took 30 of the local CPU suite's 45 min and 55 min in hosted CI.
+/// The MPI target `gmsh_parallel` reads the full corpus at 1–4 and 8 ranks (ADR-0035, "Corpus
+/// and ranks": ranks or threads).
 mod global_mesh_identical {
     use super::*;
 
     fn on(ranks: usize) {
-        let coverage = if std::env::var_os("GRIDCL_IO_THREADS_SUBSET").is_some_and(|v| v == "1") {
-            Coverage::Subset
-        } else {
+        let coverage = if std::env::var_os("GRIDCL_IO_THREADS_FULL").is_some_and(|v| v == "1") {
             Coverage::Full
+        } else {
+            Coverage::Subset
         };
         global_mesh_identical_on(ranks, coverage, &[Choice::Default]);
     }
@@ -64,13 +65,19 @@ mod global_mesh_identical {
     }
 }
 
-/// Bullet 1, the subset at 5–7 ranks, with the default partitioner and `Block`; one test per
-/// rank count.
+/// Bullet 1, the subset at 5–7 ranks, one test per rank count: with the default partitioner,
+/// and with `Block` as well under feature `metis`. Without it the default on threads is `Block`
+/// (rule 6), and a second read with `Block` named would repeat the first.
 mod global_mesh_identical_subset {
     use super::*;
 
     fn on(ranks: usize) {
-        global_mesh_identical_on(ranks, Coverage::Subset, &[Choice::Default, BLOCK]);
+        let partitioners: &[Choice] = if cfg!(feature = "metis") {
+            &[Choice::Default, BLOCK]
+        } else {
+            &[Choice::Default]
+        };
+        global_mesh_identical_on(ranks, Coverage::Subset, partitioners);
     }
 
     #[test]

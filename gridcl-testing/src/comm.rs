@@ -11,7 +11,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard};
 
 use gridcl::{CommDyn, DType, GridError, Neighbourhood, Result};
 use gridcl_device::ReduceOp;
@@ -32,6 +32,55 @@ struct State {
 
 /// The panic message of a rank that gives up because another rank panicked.
 const POISONED: &str = "ThreadComm: another rank panicked";
+
+/// The rank threads that the [`ThreadComm::run`] calls of a process may have at once: half
+/// the hardware threads, at least one. The ranks of every test of a test executable submit to
+/// one CubeCL device thread, and CubeCL 0.11 spins while that device's queue is full
+/// (docs/cubecl-upstream.md, C14). Without a limit `io_threads` on the CPU runtime spent about
+/// 70% of its CPU time spinning and ran for over half an hour; with the hardware threads as the
+/// limit it took 808 s, with half 311 s and with a quarter 287 s (M6 Mac mini, 12 cores).
+struct RankBudget {
+    free: Mutex<usize>,
+    wake: Condvar,
+    total: usize,
+}
+
+static RANK_BUDGET: LazyLock<RankBudget> = LazyLock::new(|| {
+    let total = std::thread::available_parallelism()
+        .map_or(2, |n| n.get() / 2)
+        .max(1);
+    RankBudget {
+        free: Mutex::new(total),
+        wake: Condvar::new(),
+        total,
+    }
+});
+
+/// Rank threads taken from [`RANK_BUDGET`] until dropped.
+struct RankPermit(usize);
+
+impl RankPermit {
+    /// Waits for `n` rank threads, at most the whole budget, so that a run with more ranks than
+    /// hardware threads starts once it has the budget to itself.
+    fn take(n: usize) -> Self {
+        let budget = &*RANK_BUDGET;
+        let n = n.min(budget.total);
+        let mut free = budget.free.lock().unwrap_or_else(|e| e.into_inner());
+        while *free < n {
+            free = budget.wake.wait(free).unwrap_or_else(|e| e.into_inner());
+        }
+        *free -= n;
+        RankPermit(n)
+    }
+}
+
+impl Drop for RankPermit {
+    fn drop(&mut self) {
+        let budget = &*RANK_BUDGET;
+        *budget.free.lock().unwrap_or_else(|e| e.into_inner()) += self.0;
+        budget.wake.notify_all();
+    }
+}
 
 /// One rank of an in-process group of ranks, each on its own thread; made by
 /// [`ThreadComm::run`].
@@ -61,7 +110,10 @@ pub struct ThreadComm {
 }
 
 impl ThreadComm {
-    /// Runs `f` on `n` ranks, one thread each, and returns the results in rank order.
+    /// Runs `f` on `n` ranks, one thread each, and returns the results in rank order. The
+    /// calls of one process together run at most half as many rank threads as there are
+    /// hardware threads: a call waits until enough of the others have finished (a call with
+    /// more ranks than that, until it is the only one). Do not call it from inside `f`.
     ///
     /// # Panics
     ///
@@ -69,6 +121,7 @@ impl ThreadComm {
     /// communication, and the first panic that is not such a stop is resumed here.
     pub fn run<R: Send>(n: usize, f: impl Fn(ThreadComm) -> R + Sync) -> Vec<R> {
         assert!(n > 0, "ThreadComm::run needs at least one rank");
+        let _permit = RankPermit::take(n);
         let shared = Arc::new(Shared {
             size: n,
             state: Mutex::new(State {
