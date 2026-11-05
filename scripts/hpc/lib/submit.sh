@@ -192,14 +192,15 @@ submit_wait() {
     JOB_ENDED=""
     [ "$CFG_SCHEDULER" != direct ] || deadline=$((deadline + 30))
     while :; do
-        state=$(hpc_remote r_poll "$TREE" "$JOB_ID" "$CFG_SCHEDULER")
+        state=$(HPC_REMOTE_LIMIT=$HPC_POLL_LIMIT hpc_remote r_poll "$TREE" "$JOB_ID" "$CFG_SCHEDULER")
         rc=$?
         if [ "$rc" != 0 ]; then
             fails=$((fails + 1))
             if [ "$fails" -ge 5 ]; then
                 JOB_ACTIVE=""
                 hpc_die 125 "lost contact with $CFG_HOST while waiting; job $JOB_ID may still" \
-                    "be queued: check scripts/hpc/status.sh and cancel it with scripts/hpc/cancel.sh $JOB_ID"
+                    "be queued or running: open the connection (ssh $CFG_HOST true), check" \
+                    "scripts/hpc/status.sh and cancel it with scripts/hpc/cancel.sh $JOB_ID"
             fi
         else
             fails=0

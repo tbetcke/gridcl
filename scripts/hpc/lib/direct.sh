@@ -6,15 +6,16 @@
 #      job id is <timestamp>-<pid>: YYYYmmddHHMMSS and the pid of the remote shell.
 #   2. direct_start runs `ssh <host> ... timeout -k 30 <limit> bash results/<id>/job.sh`
 #      detached (nohup) under the wrapper, which writes the pid of timeout to
-#      .gridcl-hpc/run/<id>.pid, waits, writes timeout's exit status to
-#      results/<id>/direct_status and removes the pid file. Output of the wrapper goes to
-#      results/<id>/direct.log.
+#      .gridcl-hpc/run/<id>.pid, waits, kills what is left of timeout's process group,
+#      writes timeout's exit status to results/<id>/direct_status and removes the pid file.
+#      Output of the wrapper goes to results/<id>/direct.log.
 #   3. The runner polls like on SGE (r_poll): the job runs while the pid file names a live
 #      timeout process of this job.
 # <limit> is the smaller of --time and --max-wait in seconds. timeout ends the job on the
 # node itself, so a lost connection cannot leave it running. cancel.sh, and the runner after
 # --max-wait or on a signal, send SIGTERM to timeout, which passes it to the job's process
-# group; SIGKILL follows after 10 s.
+# group; SIGKILL to the group follows once timeout has ended or after 10 s. A process of the
+# job that outlived timeout once kept a GPU busy after a cancel (M8 review).
 
 # direct_submit: writes the job to the remote tree and starts it; sets JOB_ID,
 # JOB_SUBMITTED and JOB_SUBMITTED_LOCAL.
@@ -69,8 +70,9 @@ r_direct_submit() {
 }
 
 # r_direct_wrapper <tree> <job id> <command...>: runs the command (timeout ...) in the
-# background, records its pid while it runs and its exit status when it ends. Written to
-# .gridcl-hpc/run/<id>.wrap and started by direct_start.
+# background, records its pid while it runs and its exit status when it ends, and then ends
+# every process left in timeout's process group. Written to .gridcl-hpc/run/<id>.wrap and
+# started by direct_start.
 r_direct_wrapper() {
     local tree=$1 id=$2 pid rc
     shift 2
@@ -80,6 +82,7 @@ r_direct_wrapper() {
         mv -f "$tree/.gridcl-hpc/run/$id.pid.tmp" "$tree/.gridcl-hpc/run/$id.pid"
     wait "$pid"
     rc=$?
+    kill -KILL -- "-$pid" 2>/dev/null
     echo "$rc" >"$tree/results/$id/direct_status"
     rm -f "$tree/.gridcl-hpc/run/$id.pid"
 }
@@ -142,11 +145,10 @@ r_direct_stop() {
         sleep 0.2
         i=$((i + 1))
     done
-    if kill -0 "$pid" 2>/dev/null; then
-        # timeout leads its own process group: end every process of the job.
-        kill -KILL -- "-$pid" 2>/dev/null
-        kill -KILL "$pid" 2>/dev/null
-    fi
+    # timeout leads its own process group: end every process of the job, also those that
+    # outlived timeout.
+    kill -KILL -- "-$pid" 2>/dev/null
+    kill -KILL "$pid" 2>/dev/null
     rm -f "$pidf" "$tree/.gridcl-hpc/jobs/$id"
 }
 

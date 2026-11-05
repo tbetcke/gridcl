@@ -156,8 +156,11 @@ config_load() {
 # hpc_remote <function> [args...]: runs the remote function r_<...> on $CFG_HOST and returns
 # its status (255: ssh failed). Remote stdout is this function's stdout; remote stderr goes
 # to stderr. The script reaches `bash -s` on stdin; the functions read nothing from it.
+# With HPC_REMOTE_LIMIT=<seconds>, ssh is ended after that time (status 143): a stale shared
+# connection can block ssh without an error, and the runner then never returned after its job
+# had ended (Locust, M8 review).
 hpc_remote() {
-    local fn=$1 script arg
+    local fn=$1 script arg pid watcher rc
     shift
     # shellcheck disable=SC2046 # function names are single words
     script=$(declare -f $(compgen -A function r_))
@@ -165,8 +168,30 @@ hpc_remote() {
     for arg in "$@"; do
         script="$script $(printf '%q' "$arg")"
     done
+    if [ -z "${HPC_REMOTE_LIMIT:-}" ]; then
+        # shellcheck disable=SC2086 # HPC_SSH_OPTS is a list of options
+        ssh $HPC_SSH_OPTS "$CFG_HOST" bash -s <<<"$script"
+        return
+    fi
     # shellcheck disable=SC2086 # HPC_SSH_OPTS is a list of options
-    ssh $HPC_SSH_OPTS "$CFG_HOST" bash -s <<<"$script"
+    ssh $HPC_SSH_OPTS "$CFG_HOST" bash -s <<<"$script" &
+    pid=$!
+    # The watcher holds no output of ours, so a command substitution around this function
+    # ends with ssh; killing it ends its sleep too.
+    (
+        trap 'kill "$s" 2>/dev/null; exit 0' TERM
+        sleep "$HPC_REMOTE_LIMIT" &
+        s=$!
+        wait "$s"
+        kill -TERM "$pid" 2>/dev/null
+    ) </dev/null >/dev/null 2>&1 &
+    watcher=$!
+    wait "$pid"
+    rc=$?
+    kill -TERM "$watcher" 2>/dev/null
+    wait "$watcher" 2>/dev/null
+    [ "$rc" != 143 ] || hpc_msg "no answer from $CFG_HOST within $HPC_REMOTE_LIMIT s ($fn)"
+    return "$rc"
 }
 
 # hpc_remote_check <status> <what>: stops with 125 after a failed remote step.

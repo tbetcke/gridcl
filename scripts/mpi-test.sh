@@ -20,9 +20,12 @@
 #   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default);
 #                            a backend other than cpu also builds with gridcl-testing/<backend>
 #                            (scripts/hpc jobs set cuda)
+#   GRIDCL_MPI_TEST_DIR      directory of the logs and of build.json (default target/mpi-test;
+#                            scripts/hpc jobs set <results>/mpi-test, so that two jobs in one
+#                            tree keep theirs apart)
 #
 # Prints one line per (ranks, target) and exits non-zero if any run failed. The output of each
-# run is kept in target/mpi-test/<target>-<ranks>.log.
+# run is kept in <GRIDCL_MPI_TEST_DIR>/<target>-<ranks>.log.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -130,8 +133,9 @@ esac
 
 # One build; the [[test]] executables come from cargo's JSON messages. Each message is one
 # compact object per line, and a target object holds no nested object, so sed suffices (jq is
-# not installed on the Myriad compute nodes).
-logs=target/mpi-test
+# not installed on the Myriad compute nodes). grep -a: Kathleen's grep took the file for
+# binary (M8 review).
+logs=${GRIDCL_MPI_TEST_DIR:-target/mpi-test}
 mkdir -p "$logs"
 build_json=$logs/build.json
 if ! cargo test -p gridcl-mpi-tests --features "$features" ${profile_flags[@]+"${profile_flags[@]}"} \
@@ -141,8 +145,8 @@ fi
 tests=()
 while IFS= read -r line; do
     tests+=("$line")
-done < <(grep -F '"reason":"compiler-artifact"' "$build_json" |
-    grep -F '"kind":["test"]' |
+done < <(grep -aF '"reason":"compiler-artifact"' "$build_json" |
+    grep -aF '"kind":["test"]' |
     sed -n -E 's/.*"target":\{[^}]*"name":"([^"]*)".*"executable":"([^"]*)".*/\1 \2/p' |
     sort -u)
 [[ ${#tests[@]} -gt 0 ]] || die "no gridcl-mpi-tests targets were built"
