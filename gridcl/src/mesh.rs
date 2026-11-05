@@ -5,14 +5,14 @@ use gridcl_device::{ConnKey, DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{Codim0, Codim1, D1, D2, D3, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{
     BlockFields, DeviceGrid, EVector, FacetQuadRule, FieldShape, Geometry, GeometryBlock, JacShape,
-    NodeFamily, PinvShape, QuadField, QuadRule, ScalarShape, VecShape, detj_block,
-    facet_normals_block, jacobians_block, measure_block, normals_block, physical_points_block,
-    pseudo_inverse_block,
+    NodeFamily, OrientationRule, PinvShape, PullBack, PullBackOptions, QuadField, QuadRule,
+    ScalarShape, VecShape, detj_block, facet_normals_block, jacobians_block, measure_block,
+    normals_block, physical_points_block, pseudo_inverse_block,
 };
 use gridcl_parallel::{Comm, CommDyn, CommExt, IndexMap, Serial};
 use gridcl_topology::{CellBlock, Connectivity, EntityBlock, Topology};
 
-use crate::{EntityMap, TagRegistry};
+use crate::{EntityMap, MeshTags, TagRegistry};
 
 /// A mesh, generic over scalar, dimensions and communicator, not over the backend
 /// (Listing B3). Constructors and methods require `TD: EmbeddedIn<GD>`. Not `Clone`: see
@@ -56,12 +56,12 @@ use crate::{EntityMap, TagRegistry};
 /// Dropping a distributed mesh is collective: it frees the MPI communicators of its index
 /// maps (see [`IndexMap`](crate::IndexMap)), so every rank drops its meshes in the same order.
 pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
-    client: Client,
-    comm: C,
-    topology: Topology<TD>,
-    geometry: Geometry<F, TD, GD>,
+    pub(crate) client: Client,
+    pub(crate) comm: C,
+    pub(crate) topology: Topology<TD>,
+    pub(crate) geometry: Geometry<F, TD, GD>,
     /// Physical and elementary MeshTags per dimension, names (ADR-0012, ADR-0022).
-    tags: TagRegistry,
+    pub(crate) tags: TagRegistry,
 }
 
 /// A curve in 3D.
@@ -524,6 +524,37 @@ where
         self.topology.create_connectivity(&self.comm, from, to)
     }
 
+    /// The tagged cells as a mesh of the same dimensions, and the map to the parent's cells
+    /// (ADR-0039, item 4). Child cells keep their owner, ghost status and origin id; vertices
+    /// and nodes are re-owned among the ranks that hold them in owned child cells. The child
+    /// keeps the parent's origin and has one cell block per parent block with tagged cells on
+    /// some rank. Collective.
+    ///
+    /// # Errors
+    ///
+    /// `DimensionMismatch` if `cells.dim` is not tdim; allocation, device and communication
+    /// errors; `RemoteFailure` if another rank failed.
+    pub fn cell_submesh(&self, cells: &MeshTags) -> Result<(Self, EntityMap)> {
+        crate::submesh::cell_submesh(self, cells)
+    }
+
+    /// The reference points of the absolute physical points `x`, given per cell and point of
+    /// every block as [`physical_points`](Mesh::physical_points) returns them, by Newton
+    /// iteration (Gauss–Newton where TD < GD), with |Δξ|∞ of the last iteration; see
+    /// [`pull_back_block`](crate::pull_back_block) (ADR-0039, item 13).
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` if `x` does not have one field per cell block, with one cell per local
+    /// cell; allocation and device errors.
+    pub fn pull_back(
+        &self,
+        x: &BlockFields<F, VecShape<GD>>,
+        opts: &PullBackOptions,
+    ) -> Result<PullBack<F, TD>> {
+        crate::pull_back::pull_back(self, x, opts)
+    }
+
     /// The bytes this rank holds for the mesh: every device buffer (topology, entities,
     /// connectivity, geometry, tags), padding included, plus the host vectors of its index
     /// maps. The "final mesh size" of the M8 memory acceptance test (ADR-0035, rule 10).
@@ -645,6 +676,20 @@ where
     pub fn normals(&self, rule: &QuadRule<F, TD>) -> Result<BlockFields<F, VecShape<GD>>> {
         self.per_block(|b| normals_block(self, b, rule.get(self.cell(b))?))
     }
+
+    /// Consistent orientation of a manifold mesh (docs/design.md, "Manifold orientation"):
+    /// writes bit 0 of every cell's flags, ignoring the flags it had. Creates the facet entities
+    /// and the (tdim − 1, tdim) connectivity it needs. Collective.
+    ///
+    /// # Errors
+    ///
+    /// `NonManifold` if a facet has more than two cells, `NonOrientable` if a component cannot
+    /// be oriented consistently, `NeedsReferencePoint` for `Outward` on a component with
+    /// boundary facets, all agreed across ranks; allocation, device and communication errors;
+    /// `RemoteFailure` if another rank failed.
+    pub fn orient(&mut self, rule: OrientationRule) -> Result<()> {
+        crate::orient::orient(self, rule)
+    }
 }
 
 impl<F, TD, GD, C> Mesh<F, TD, GD, C>
@@ -655,25 +700,54 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
-    /// All boundary facets as a mesh one dimension lower, oriented outward.
+    /// All boundary facets as a mesh one dimension lower, with the map to the parent's facets;
+    /// facet entities must exist (`EntitiesNotCreated`). Codimension-1 children are oriented
+    /// outward through their flags; codimension-2 children have flags 0 (ADR-0039).
+    ///
+    /// A facet is on the boundary if it has one owned cell over all ranks. Child cells keep
+    /// the facet's owner and ghost status; vertices and nodes are re-owned among the ranks that
+    /// hold them in owned child cells. The child keeps the parent's origin and vertex origin
+    /// ids, and carries the parent's facet tags as cell tags. Collective.
     ///
     /// # Errors
     ///
-    /// Returns `GridError::NotYetImplemented` until M9 (ADR-0012).
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use gridcl::prelude::*;
-    ///
-    /// let client = gridcl_testing::test_client();
-    /// let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?;
-    /// assert!(matches!(mesh.boundary(), Err(GridError::NotYetImplemented(_))));
-    /// # Ok::<(), GridError>(())
-    /// ```
+    /// `EntitiesNotCreated(tdim − 1)` before `create_entities(tdim − 1)`; `NonManifold` if a
+    /// facet has more than two cells (agreed); allocation, device and communication errors;
+    /// `RemoteFailure` if another rank failed.
     #[allow(clippy::type_complexity)] // Listing B4's signature
     pub fn boundary(&self) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)> {
-        Err(GridError::NotYetImplemented("boundary: M9"))
+        crate::submesh::boundary(self)
+    }
+
+    /// The tagged boundary facets as a mesh one dimension lower, as
+    /// [`boundary`](Mesh::boundary) for a subset of its facets.
+    ///
+    /// # Errors
+    ///
+    /// `DimensionMismatch` if `facets.dim` is not tdim − 1; `InteriorFacet` if a tagged facet
+    /// has two cells and `NonManifold` if a facet has more (both agreed); the errors of
+    /// [`boundary`](Mesh::boundary).
+    #[allow(clippy::type_complexity)] // Listing B4's signature
+    pub fn facet_submesh(
+        &self,
+        facets: &MeshTags,
+    ) -> Result<(Mesh<F, TD::Lower, GD, C>, EntityMap)> {
+        crate::submesh::facet_submesh(self, facets)
+    }
+}
+
+impl<F: Real, C: Comm> Mesh<F, D3, D3, C> {
+    /// The tagged edges, interior or boundary, as a curve mesh in 3D with the map to the
+    /// parent's edges; needs `create_entities(1)` and `create_connectivity(1, 3)` (ADR-0039,
+    /// item 3). Child cells take the edges' canonical orientation and have flags 0. Collective.
+    ///
+    /// # Errors
+    ///
+    /// `DimensionMismatch` if `edges.dim` is not 1; `EntitiesNotCreated(1)`,
+    /// `ConnectivityNotCreated`; allocation, device and communication errors; `RemoteFailure`
+    /// if another rank failed.
+    pub fn edge_submesh(&self, edges: &MeshTags) -> Result<(CurveMesh<F, C>, EntityMap)> {
+        crate::submesh::edge_submesh(self, edges)
     }
 }
 

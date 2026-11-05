@@ -90,6 +90,12 @@ impl LagrangeElement {
         &self.points
     }
 
+    /// The expansion coefficients C, row-major N × N: ψ_j = Σ_k C[k · N + j] φ_k over the
+    /// orthonormal basis φ_k of "Tabulation" (ADR-0039, item 15).
+    pub fn coefficients(&self) -> &[f64] {
+        todo!("LagrangeElement::coefficients: M9 T10a")
+    }
+
     /// The basis functions at `points` (flat, node-major): values for `nderivs == 0`, values
     /// and first derivatives for `nderivs == 1`. For the point cell, `points` must be empty and
     /// stands for its one point.

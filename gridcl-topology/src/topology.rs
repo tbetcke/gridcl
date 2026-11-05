@@ -152,6 +152,26 @@ impl<TD: TopoDim> Topology<TD> {
         })
     }
 
+    /// [`new`](Topology::new) with the vertex origin ids already on the device, as interleaved
+    /// (hi ^ 0x8000_0000, lo) words ([`encode_origin_ids`]): submesh creation keeps the
+    /// parent's ids without a host round trip (ADR-0039, item 17). Computes the permutation
+    /// info as `new` does. For gridcl's submeshes; not part of the stable API (test:
+    /// `from_device_ids_equals_new`).
+    ///
+    /// # Errors
+    ///
+    /// As [`new`](Topology::new), with `LengthMismatch` if `vertex_origin_ids` does not have
+    /// two words per local vertex.
+    #[doc(hidden)]
+    pub fn from_device_ids(
+        _client: &Client,
+        _cell_blocks: Vec<CellBlock<TD>>,
+        _vertex_index_map: IndexMap,
+        _vertex_origin_ids: DeviceBuffer<u32>,
+    ) -> Result<Self> {
+        todo!("Topology::from_device_ids: M9 T1")
+    }
+
     /// The client the arrays live on.
     pub fn client(&self) -> &Client {
         &self.client
@@ -284,6 +304,27 @@ impl<TD: TopoDim> Topology<TD> {
         self.vertex_sharers = s;
         self.vertex_shared = Some(flags);
         self.sharing_ranks = ranks;
+    }
+
+    /// The sharer sets stored by [`set_vertex_sharers`](Topology::set_vertex_sharers);
+    /// `None` before. For gridcl's submeshes, which restrict the parent's rows (ADR-0039,
+    /// items 6 and 17); not part of the stable API (test: `vertex_sharers_round_trip`).
+    #[doc(hidden)]
+    pub fn vertex_sharers(&self) -> Option<&VertexSharers> {
+        todo!("Topology::vertex_sharers: M9 T1")
+    }
+
+    /// Replaces the flags of cell block `b`, one word per local cell: bit 0 is the manifold
+    /// orientation (`orient`, submesh creation; ADR-0039, item 17). Not part of the stable
+    /// API (test: `set_cell_flags_checks_its_input`).
+    ///
+    /// # Errors
+    ///
+    /// `IndexOutOfRange` if `b` is not a block index; `LengthMismatch` if `flags` does not
+    /// have one word per local cell of block `b`.
+    #[doc(hidden)]
+    pub fn set_cell_flags(&mut self, _b: usize, _flags: DeviceBuffer<u32>) -> Result<()> {
+        todo!("Topology::set_cell_flags: M9 T1")
     }
 
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
