@@ -4,8 +4,8 @@
 
 use cubecl::prelude::*;
 use gridcl_device::{
-    DeviceBuffer, DeviceStrided, GridError, ReduceOp, Result, SortKeys, debug_assert_bindings,
-    exclusive_scan, gather, radix_sort, reduce,
+    DeviceBuffer, DeviceStrided, GridError, Result, SortKeys, debug_assert_bindings, gather,
+    radix_sort,
 };
 use gridcl_dims::TopoDim;
 use gridcl_parallel::CommDyn;
@@ -15,30 +15,6 @@ use super::numbering::cell_map;
 use super::select::Selected;
 use super::sharers::child_vertices;
 use super::{fit, iota, place, plan};
-
-/// `used[rows[i]] = 1` for i < len, with u32 atomic stores (several rows share a vertex).
-#[cube(launch_unchecked)]
-fn mark_kernel(rows: &[u32], used: &[Atomic<u32>], len: u32, last: u32, items_per_unit: u32) {
-    let first = ABSOLUTE_POS * items_per_unit as usize;
-    for it in 0..items_per_unit as usize {
-        let i = first + it;
-        if i < len as usize {
-            used[min(rows[i], last) as usize].store(1u32);
-        }
-    }
-}
-
-/// `out[pos[v]] = v` where `used[v] = 1`, for v < len.
-#[cube(launch_unchecked)]
-fn compact_kernel(used: &[u32], pos: &[u32], out: &mut [u32], len: u32, items_per_unit: u32) {
-    let first = ABSOLUTE_POS * items_per_unit as usize;
-    for it in 0..items_per_unit as usize {
-        let v = first + it;
-        if v < len as usize && used[v] == 1 {
-            out[pos[v] as usize] = v as u32;
-        }
-    }
-}
 
 /// `out[2i + w] = ids[2 · map[i] + w]` for i < len and w ∈ {0, 1}: interleaved origin ids
 /// through an index map.
@@ -93,10 +69,6 @@ pub(crate) struct ChildTopology<CTD: TopoDim> {
     pub(crate) child_to_parent: DeviceBuffer<u32>,
     pub(crate) parent_to_child: (DeviceBuffer<u32>, DeviceBuffer<u32>),
     pub(crate) vertex_to_parent: DeviceBuffer<u32>,
-    /// The child local vertex of each parent local vertex, meaningful for parent vertices of
-    /// child cells only.
-    #[allow(dead_code)] // for the child nodes (M9 T5b)
-    pub(crate) parent_to_child_vertex: DeviceBuffer<u32>,
     pub(crate) facet_of: Option<(DeviceBuffer<u32>, DeviceBuffer<u32>)>,
     /// Facet children: the parent cells and local facets of each child block (empty
     /// otherwise).
@@ -104,66 +76,6 @@ pub(crate) struct ChildTopology<CTD: TopoDim> {
     /// Facet children: per child block, whether each parent cell block holds a parent cell on
     /// this rank (empty otherwise).
     pub(crate) present: Vec<Vec<bool>>,
-}
-
-/// The parent items (vertices or nodes, `nv` of them) that the rows `rows` use, compacted in
-/// parent local order: the parent item of each child item, and the exclusive scan of the used
-/// flags, whose entry at a used parent item is its child item. One count read.
-pub(crate) fn compact(
-    client: &Client,
-    nv: usize,
-    rows: &[&DeviceStrided<u32>],
-) -> Result<(DeviceBuffer<u32>, DeviceBuffer<u32>)> {
-    let used = DeviceBuffer::<u32>::zeros(client, nv)?;
-    let last = fit(nv)?.saturating_sub(1);
-    for r in rows {
-        let len = r.data.len();
-        if len > 0 && nv > 0 {
-            let launch = plan(client, len)?;
-            debug_assert_bindings(client, 2);
-            // SAFETY: the kernel reads rows[i] for i < len, its length, and stores to
-            // used[min(rows[i], last)] with last < nv = used.len().
-            unsafe {
-                mark_kernel::launch_unchecked(
-                    client,
-                    launch.cube_count,
-                    launch.cube_dim,
-                    r.data.arg(),
-                    used.arg(),
-                    fit(len)?,
-                    last,
-                    launch.items_per_unit,
-                );
-            }
-        }
-    }
-    let pos = exclusive_scan(&used)?;
-    // The count read of the compaction (CLAUDE.md, ADR-0039 item 18).
-    let count = if nv > 0 {
-        reduce(&used, ReduceOp::Sum)?.to_host()?[0] as usize
-    } else {
-        0
-    };
-    let to_parent = DeviceBuffer::<u32>::uninit(client, count)?;
-    if count > 0 {
-        let launch = plan(client, nv)?;
-        debug_assert_bindings(client, 3);
-        // SAFETY: the kernel reads used[v] and pos[v] for v < nv (nv and nv + 1 words) and
-        // writes out[pos[v]] for used v, where pos[v] < pos[nv] = count, its length.
-        unsafe {
-            compact_kernel::launch_unchecked(
-                client,
-                launch.cube_count,
-                launch.cube_dim,
-                used.arg(),
-                pos.arg(),
-                to_parent.arg(),
-                fit(nv)?,
-                launch.items_per_unit,
-            );
-        }
-    }
-    Ok((to_parent, pos))
 }
 
 /// The child topology of `selected` (one entry per child block, in child block order): child
@@ -243,7 +155,6 @@ pub(crate) fn child_topology<TD: TopoDim, CTD: TopoDim>(
         child_to_parent,
         parent_to_child,
         vertex_to_parent: vertices.to_parent,
-        parent_to_child_vertex: vertices.to_child,
         facet_of,
         facet_blocks,
         present: Vec::new(),

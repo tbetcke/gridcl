@@ -53,3 +53,15 @@ fn child_topology_matches_one_rank() {
         });
     }
 }
+
+/// An empty rank, a tag that one or two ranks hold, and child blocks that a rank holds no
+/// cell of (M9 T5b), every ghost mode, 1–4 threads.
+#[test]
+fn corner_cases_match_one_rank() {
+    for n in RANKS {
+        ThreadComm::run(n, |comm| {
+            let client = gridcl_testing::test_client();
+            parallel::submesh_corner_cases(&comm, &client);
+        });
+    }
+}

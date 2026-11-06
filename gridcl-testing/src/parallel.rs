@@ -1724,6 +1724,7 @@ where
             );
         }
     }
+    child_nodes_match(child, want, rank, at)?;
     let sizes =
         |b: &[gridcl::EntityBlock]| b.iter().map(|b| b.index_map.size_global()).sum::<i64>();
     for d in 0..TD::N {
@@ -1749,12 +1750,83 @@ where
     Ok(())
 }
 
-/// The child topology check of one case on `comm`, in scalar `F`: `boundary()` and the
-/// `facet_submesh` of the facets tagged 100 against a one-rank build's.
-fn submesh_topology_case<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+/// The nodes of a child on `comm` against the one-rank child `want`: the node count, each node
+/// owned once (bitwise coordinates; the parent's origin is partition-independent), and every
+/// corner node owned by the owner of its vertex.
+fn child_nodes_match<F, TD, GD, C>(
+    child: &Mesh<F, TD, GD, C>,
+    want: &Mesh<F, TD, GD, Serial>,
+    rank: usize,
+    at: &str,
+) -> Result<()>
 where
     F: Real,
     TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let gd = GD::N;
+    let nodes = child.node_index_map();
+    assert_eq!(
+        nodes.size_global() as usize,
+        want.node_index_map().num_local(),
+        "{at}: child node count"
+    );
+    let bits = |x: &[F]| -> Vec<i64> { x.iter().map(|v| v.widen().to_bits() as i64).collect() };
+    let owned = bits(&child.nodes().to_host()?[..nodes.num_owned() * gd]);
+    let mut got: Vec<&[i64]> = Vec::new();
+    let all = gather_to_root(child.comm(), &owned)?;
+    got.extend(all.chunks_exact(gd));
+    got.sort_unstable();
+    if rank == 0 {
+        let reference = bits(&want.nodes().to_host()?);
+        let mut reference: Vec<&[i64]> = reference.chunks_exact(gd).collect();
+        reference.sort_unstable();
+        assert!(
+            got == reference,
+            "{at}: owned child nodes are not each node once"
+        );
+    }
+    let me = rank as i32;
+    let owner = |m: &IndexMap, i: u32| {
+        let i = i as usize;
+        if i < m.num_owned() {
+            me
+        } else {
+            m.ghost_owners()[i - m.num_owned()]
+        }
+    };
+    let vertices = child.vertex_index_map();
+    for (b, block) in child.cell_blocks().iter().enumerate() {
+        let nvc = block.vertices.stride as usize;
+        let dofmap = &child.geometry_block(b).dofmap;
+        let rows = block.vertices.data.to_host()?;
+        let dofs = dofmap.data.to_host()?;
+        for (v, d) in rows
+            .chunks_exact(nvc)
+            .zip(dofs.chunks_exact(dofmap.stride as usize))
+        {
+            for j in 0..nvc {
+                assert_eq!(
+                    owner(nodes, d[j]),
+                    owner(vertices, v[j]),
+                    "{at}: corner node {} and its vertex {} have different owners",
+                    d[j],
+                    v[j]
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The child topology check of one case on `comm`, in scalar `F`: `boundary()` and the
+/// `facet_submesh` of the facets tagged 100 against a one-rank build's, with their `EntityMap`s,
+/// outward normals and ∮ x·n = gdim · V on the boundary.
+fn submesh_topology_case<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: SubmeshDims<GD>,
     TD::Lower: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
     C: Comm,
@@ -1772,8 +1844,23 @@ where
         &at,
     );
     let degree = 3 * case.degree;
-    let (mut got, _) = ok(mesh.boundary(), &at);
+    let (mut got, map) = ok(mesh.boundary(), &at);
     let (mut want, _) = ok(serial.boundary(), &at);
+    ok(
+        check_entity_map(&mesh, &got, &map, &format!("{at}: boundary")),
+        &at,
+    );
+    if let Some((min, flux)) = ok(TD::child_normals(&got, &bbox_centre(host), degree), &at) {
+        assert!(
+            min > 0.0,
+            "{at}: a boundary normal points inward (n·(x − c) = {min:e})"
+        );
+        let want = GD::N as f64 * ok(mesh.measure(degree), &at);
+        assert!(
+            (flux - want).abs() <= tol * want.abs().max(1.0),
+            "{at}: ∮ x·n = {flux} vs gdim · V = {want}"
+        );
+    }
     ok(
         child_topology_matches(
             client,
@@ -1787,7 +1874,11 @@ where
         &at,
     );
     let tagged = |m: &Mesh<F, TD, GD, _>| m.tags().group(fdim, 100);
-    let (mut got, _) = ok(mesh.facet_submesh(&ok(tagged(&mesh), &at)), &at);
+    let (mut got, map) = ok(mesh.facet_submesh(&ok(tagged(&mesh), &at)), &at);
+    ok(
+        check_entity_map(&mesh, &got, &map, &format!("{at}: facet_submesh")),
+        &at,
+    );
     let (mut want, _) = ok(
         serial.facet_submesh(&ok(serial.tags().group(fdim, 100), &at)),
         &at,
@@ -1806,8 +1897,9 @@ where
     );
 }
 
-/// Runs the child topology check of `case` on `comm` (M9 T5a): the cells, vertices, ownership
-/// and sharers of `boundary()` and `facet_submesh` equal a one-rank build's. [`submesh_cases`]
+/// Runs the child topology check of `case` on `comm` (M9 T5a, T5b): the cells, vertices, nodes,
+/// ownership, sharers, `EntityMap`s, normals and flux of `boundary()` and `facet_submesh` equal a
+/// one-rank build's or hold on their own. [`submesh_cases`]
 /// families only.
 ///
 /// # Panics
@@ -1830,6 +1922,128 @@ pub fn submesh_topology<C: Comm>(comm: &C, client: &Client, case: &Case) {
         Family::Square(_) => run!(D2, D2),
         Family::Sphere => run!(D2, D3),
         other => panic!("{other:?} is not a submesh family"),
+    }
+}
+
+/// The boundary facets of `host` with the smallest sorted vertex origin ids, one per facet
+/// size (number of vertices), as sorted vertex origin ids.
+fn first_boundary_facets(host: &HostMesh) -> Vec<Vec<i64>> {
+    let mut count: BTreeMap<Vec<i64>, usize> = BTreeMap::new();
+    for b in &host.blocks {
+        let k = b.nodes_per_cell();
+        let tdim = gridcl_refcell::tdim(b.cell);
+        for row in b.cells.chunks_exact(k) {
+            for f in gridcl_refcell::sub_entities(b.cell, tdim - 1) {
+                let mut key: Vec<i64> = f.iter().map(|&v| host.node_id(row[v] as usize)).collect();
+                key.sort_unstable();
+                *count.entry(key).or_default() += 1;
+            }
+        }
+    }
+    let mut first: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
+    for (key, _) in count.into_iter().filter(|e| e.1 == 1) {
+        first.entry(key.len()).or_insert(key);
+    }
+    first.into_values().collect()
+}
+
+/// The boundary of `mesh` (`keys = None`), or the facet submesh of its facets whose sorted
+/// vertex origin ids are among `keys`.
+fn facet_child<F, C>(
+    mesh: &Mesh<F, D3, D3, C>,
+    keys: Option<&[Vec<i64>]>,
+) -> Result<(Mesh<F, D2, D3, C>, EntityMap)>
+where
+    F: Real,
+    C: Comm,
+{
+    match keys {
+        None => mesh.boundary(),
+        Some(keys) => {
+            let chosen: Vec<u32> = entity_rows(mesh, 2)?
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| keys.contains(row))
+                .map(|(f, _)| f as u32)
+                .collect();
+            mesh.facet_submesh(&tags_of(mesh.client(), 2, &chosen)?)
+        }
+    }
+}
+
+/// One corner case of [`submesh_corner_cases`] in scalar `F`.
+fn corner_case<F: Real, C: Comm>(
+    comm: &C,
+    client: &Client,
+    case: &Case,
+    host: &HostMesh,
+    keys: Option<&[Vec<i64>]>,
+) {
+    let rank = comm.rank();
+    let at = format!(
+        "{case} (corner case, {:?}), rank {rank}",
+        keys.map(<[_]>::len)
+    );
+    let tol = if size_of::<F>() == 8 { 1e-10 } else { TOL_F32 };
+    let serial = ok(
+        build::<F, D3, D3, _>(Serial, client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let mesh = ok(
+        build::<F, D3, D3, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let (mut got, map) = ok(facet_child(&mesh, keys), &at);
+    ok(check_entity_map(&mesh, &got, &map, &at), &at);
+    let (mut want, _) = ok(facet_child(&serial, keys), &at);
+    if let Some(keys) = keys {
+        let blocks: Vec<i64> = want
+            .cell_blocks()
+            .iter()
+            .map(|b| b.index_map.size_global())
+            .collect();
+        assert_eq!(blocks, vec![1; keys.len()], "{at}: one child per block");
+    }
+    ok(
+        child_topology_matches(client, &mut got, &mut want, 2 * case.degree, rank, tol, &at),
+        &at,
+    );
+}
+
+/// The submesh corner cases of M9 T5b on `comm`, against one-rank builds, in every ghost mode:
+/// the boundary of a single hexahedron of degree 2, so that every rank but one is empty, and
+/// the facet submesh of one triangle and one quadrilateral boundary facet of a prism box of
+/// degree 2: a tag that one or two ranks hold, so that most ranks hold one facet type or none,
+/// while every rank lists both child blocks.
+///
+/// # Panics
+///
+/// If a check fails.
+pub fn submesh_corner_cases<C: Comm>(comm: &C, client: &Client) {
+    let hex = crate::cube_box(Cell3::Hexahedron, 1, 2);
+    let prism = crate::cube_box(Cell3::Prism, 2, 2);
+    let keys = first_boundary_facets(&prism);
+    assert_eq!(keys.len(), 2, "a triangle and a quadrilateral");
+    let double = supports::<f64>(client);
+    for (g, &ghosts) in GHOST_MODES.iter().enumerate() {
+        let case = |cell| Case {
+            family: Family::Cube(cell),
+            degree: 2,
+            ghosts,
+            distribution: DISTRIBUTIONS[g % 3],
+            double: double && g % 2 == 0,
+        };
+        for (cell, host, keys) in [
+            (Cell3::Hexahedron, &hex, None),
+            (Cell3::Prism, &prism, Some(keys.as_slice())),
+        ] {
+            let case = case(cell);
+            if case.double {
+                corner_case::<f64, C>(comm, client, &case, host, keys);
+            } else {
+                corner_case::<f32, C>(comm, client, &case, host, keys);
+            }
+        }
     }
 }
 

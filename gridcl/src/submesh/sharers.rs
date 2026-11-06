@@ -12,6 +12,9 @@
 //! from an exclusive scan, and each owner sends those of its shared vertices to the other
 //! sharers, as entity creation does. Ghosts are ordered by (owner rank, child global index),
 //! and their places go back to the device.
+//!
+//! The device steps and the numbering are shared with the child nodes (`nodes`), which decide
+//! their owners differently.
 
 use std::collections::HashMap;
 
@@ -98,15 +101,15 @@ fn totals_kernel(pos_s: &[u32], pos_u: &[u32], out: &mut [u32], len: u32) {
     }
 }
 
-/// Row `pos_s[v]` of `out` for every used shared vertex v < len: v, its code, its interleaved
-/// origin id and `pos_u[v]`, the number of used unshared vertices before it.
+/// Row `pos_s[v]` of `out` for every used shared item v < len: v, its code, its two words of
+/// `extra` and `pos_u[v]`, the number of used unshared items before it.
 #[cube(launch_unchecked)]
 fn shared_rows_kernel(
     code: &[u32],
     shared: &[u32],
     pos_s: &[u32],
     pos_u: &[u32],
-    ids: &[u32],
+    extra: &[u32],
     out: &mut [u32],
     len: u32,
     items_per_unit: u32,
@@ -118,8 +121,8 @@ fn shared_rows_kernel(
             let row = pos_s[v] as usize * 5;
             out[row] = v as u32;
             out[row + 1] = code[v];
-            out[row + 2] = ids[2 * v];
-            out[row + 3] = ids[2 * v + 1];
+            out[row + 2] = extra[2 * v];
+            out[row + 3] = extra[2 * v + 1];
             out[row + 4] = pos_u[v];
         }
     }
@@ -183,6 +186,17 @@ fn place_vertices_kernel(
     }
 }
 
+/// The items (vertices or nodes) of a child: compaction, owners and numbering.
+pub(crate) struct ChildItems {
+    /// The parent local item of each child item.
+    pub(crate) to_parent: DeviceBuffer<u32>,
+    /// The child item of each parent local item, meaningful for items of child cells.
+    pub(crate) to_child: DeviceBuffer<u32>,
+    pub(crate) index_map: IndexMap,
+    /// The host decisions about the used shared items.
+    pub(crate) decided: Decided,
+}
+
 /// The vertices of a child.
 pub(crate) struct ChildVertices {
     /// The parent local vertex of each child vertex.
@@ -194,36 +208,64 @@ pub(crate) struct ChildVertices {
     pub(crate) sharers: Option<VertexSharers>,
 }
 
-/// A used shared vertex on the host.
-struct Shared {
-    /// Its origin id.
-    id: i64,
+/// A used shared item on the host.
+pub(crate) struct Shared {
+    /// Its parent local index.
+    pub(crate) parent: u32,
     /// Whether an owned child cell holds it here.
-    in_owned: bool,
-    /// The used unshared vertices before it.
-    unshared_before: u32,
-    /// Its parent local vertex.
-    parent: u32,
+    pub(crate) in_owned: bool,
+    /// Its two words of the caller's `extra` array (vertices: the interleaved origin id).
+    pub(crate) extra: [u32; 2],
+    /// The used unshared items before it.
+    pub(crate) unshared_before: u32,
 }
 
-/// The vertices of the child cells whose rows (in parent local vertices) are `rows`, each with
-/// its owned cells first (`num_owned` of them): ADR-0039 item 6. Collective.
+/// The host decisions about the used shared items.
+pub(crate) struct Decided {
+    pub(crate) num_owned: usize,
+    /// The child sharer row of each shared item: (rank, holds it in an owned child cell),
+    /// ascending.
+    pub(crate) rows: Vec<Vec<(i32, bool)>>,
+    /// The child item of each shared item.
+    pub(crate) child: Vec<usize>,
+    /// The ghost place + 1 of each shared item, 0 if owned here.
+    pub(crate) places: Vec<u32>,
+    /// (global index, owner) of each ghost, in ghost order.
+    pub(crate) ghosts: Vec<(i64, i32)>,
+}
+
+impl Decided {
+    /// One rank: every used item is owned.
+    fn serial(num_unshared: usize) -> Self {
+        Decided {
+            num_owned: num_unshared,
+            rows: Vec::new(),
+            child: Vec::new(),
+            places: Vec::new(),
+            ghosts: Vec::new(),
+        }
+    }
+}
+
+/// The items of the parent index map `parent_map` that the child cell rows `rows` use (in
+/// parent local items, each with its owned cells first, `num_owned` of them), with two words of
+/// `extra` per parent item carried to the host for the shared ones. On more than one rank,
+/// `decide` gets the used shared items (parent order) and the number of used unshared ones and
+/// returns the owners' decisions; owned items keep the parent local order, ghosts take the
+/// decided places. Collective.
 ///
 /// # Errors
 ///
-/// `TooLarge`; allocation, device and communication errors; those of `IndexMap::with_ghosts`.
-///
-/// # Panics
-///
-/// If a shared child vertex has no sharer with an owned child cell, or a ghost receives no
-/// number: only with parent vertex sharers that are inconsistent across ranks.
-pub(crate) fn child_vertices<TD: TopoDim>(
+/// `TooLarge`; allocation, device and communication errors; those of `decide` and
+/// `IndexMap::with_ghosts`.
+pub(crate) fn child_items(
     comm: &dyn CommDyn,
-    parent: &Topology<TD>,
+    parent_map: &IndexMap,
     rows: &[(&DeviceStrided<u32>, usize)],
-) -> Result<ChildVertices> {
-    let client = parent.client();
-    let parent_map = parent.vertex_index_map();
+    extra: &DeviceBuffer<u32>,
+    decide: impl FnOnce(&[Shared], usize) -> Result<Decided>,
+) -> Result<ChildItems> {
+    let client = extra.client();
     let nv = parent_map.num_local();
     let parallel = comm.size() > 1;
 
@@ -262,7 +304,7 @@ pub(crate) fn child_vertices<TD: TopoDim>(
         }
     }
 
-    // Shared parent vertices: ghosts, and owned vertices that another rank ghosts.
+    // Shared parent items: ghosts, and owned items that another rank ghosts.
     let shared = if parallel {
         let mut x = DeviceBuffer::<u32>::uninit(client, nv)?;
         if nv > 0 {
@@ -337,7 +379,7 @@ pub(crate) fn child_vertices<TD: TopoDim>(
         (0, 0)
     };
 
-    // The used shared vertices to the host.
+    // The used shared items to the host.
     let shared_rows = DeviceBuffer::<u32>::uninit(
         client,
         num_shared.checked_mul(5).ok_or(GridError::TooLarge)?,
@@ -349,9 +391,9 @@ pub(crate) fn child_vertices<TD: TopoDim>(
         fit(shared_rows.len())?;
         let launch = plan(client, nv)?;
         debug_assert_bindings(client, 6);
-        // SAFETY: vertices v < nv read code, shared, pos_s and pos_u at v (nv or nv + 1 words
-        // each) and ids at 2v and 2v + 1 (two words per vertex); the used shared ones write row
-        // pos_s[v] < pos_s[nv] = num_shared of `out`, 5 words each.
+        // SAFETY: items v < nv read code, shared, pos_s and pos_u at v (nv or nv + 1 words
+        // each) and extra at 2v and 2v + 1 (two words per item, the caller's contract); the
+        // used shared ones write row pos_s[v] < pos_s[nv] = num_shared of `out`, 5 words each.
         unsafe {
             shared_rows_kernel::launch_unchecked(
                 client,
@@ -361,27 +403,27 @@ pub(crate) fn child_vertices<TD: TopoDim>(
                 sh.arg(),
                 pos_s.arg(),
                 pos_u.arg(),
-                parent.vertex_origin_ids().arg(),
+                extra.arg(),
                 shared_rows.arg(),
                 fit(nv)?,
                 launch.items_per_unit,
             );
         }
-        // The child sharer rows of shared vertices to the host (CLAUDE.md, ADR-0039 item 18).
+        // The child sharer rows of shared vertices, or the node-owner candidates of shared
+        // nodes, to the host (CLAUDE.md, ADR-0039 item 18).
         for row in shared_rows.to_host()?.as_chunks::<5>().0 {
             list.push(Shared {
-                id: decode_origin_ids(&row[2..4])[0],
-                in_owned: row[1] == USED_IN_OWNED,
-                unshared_before: row[4],
                 parent: row[0],
+                in_owned: row[1] == USED_IN_OWNED,
+                extra: [row[2], row[3]],
+                unshared_before: row[4],
             });
         }
     }
     drop((pos_s, pos_u));
 
-    let me = comm.rank() as i32;
     let decided = if parallel {
-        decide(comm, parent.vertex_sharers(), &list, num_unshared)?
+        decide(&list, num_unshared)?
     } else {
         Decided::serial(num_unshared)
     };
@@ -396,7 +438,7 @@ pub(crate) fn child_vertices<TD: TopoDim>(
         let launch = plan(client, num_shared)?;
         debug_assert_bindings(client, 3);
         // SAFETY: rows i < num_shared read rows[5i] < 5 · num_shared and place[i]
-        // (num_shared words), and write ghost[rows[5i]], a parent local vertex below nv.
+        // (num_shared words), and write ghost[rows[5i]], a parent local item below nv.
         unsafe {
             ghost_places_kernel::launch_unchecked(
                 client,
@@ -432,9 +474,9 @@ pub(crate) fn child_vertices<TD: TopoDim>(
         }
         let pos_o = exclusive_scan(&owned)?;
         debug_assert_bindings(client, 5);
-        // SAFETY: used vertices v < nv read code, ghost and pos_o at v (nv or nv + 1 words) and
+        // SAFETY: used items v < nv read code, ghost and pos_o at v (nv or nv + 1 words) and
         // write to_child[v] < nv and to_parent[c], where c is pos_o[v] < num_owned for owned
-        // vertices and a ghost place in [num_owned, num_local) otherwise, below num_local, its
+        // items and a ghost place in [num_owned, num_local) otherwise, below num_local, its
         // length.
         unsafe {
             place_vertices_kernel::launch_unchecked(
@@ -453,11 +495,45 @@ pub(crate) fn child_vertices<TD: TopoDim>(
     }
 
     let index_map = if parallel {
-        let (ghosts, owners) = decided.ghosts.into_iter().unzip();
+        let (ghosts, owners) = decided.ghosts.iter().copied().unzip();
         IndexMap::with_ghosts(comm, num_owned, ghosts, owners)?
     } else {
         IndexMap::new(comm, num_local)?
     };
+    Ok(ChildItems {
+        to_parent,
+        to_child,
+        index_map,
+        decided,
+    })
+}
+
+/// The vertices of the child cells whose rows (in parent local vertices) are `rows`, each with
+/// its owned cells first (`num_owned` of them): ADR-0039 item 6. Collective.
+///
+/// # Errors
+///
+/// `TooLarge`; allocation, device and communication errors; those of `IndexMap::with_ghosts`.
+///
+/// # Panics
+///
+/// If a shared child vertex has no sharer with an owned child cell, or a ghost receives no
+/// number: only with parent vertex sharers that are inconsistent across ranks.
+pub(crate) fn child_vertices<TD: TopoDim>(
+    comm: &dyn CommDyn,
+    parent: &Topology<TD>,
+    rows: &[(&DeviceStrided<u32>, usize)],
+) -> Result<ChildVertices> {
+    let items = child_items(
+        comm,
+        parent.vertex_index_map(),
+        rows,
+        parent.vertex_origin_ids(),
+        |list, num_unshared| decide(comm, parent.vertex_sharers(), list, num_unshared),
+    )?;
+    let me = comm.rank() as i32;
+    let num_local = items.index_map.num_local();
+    let decided = &items.decided;
     let sharers = parent.vertex_sharers().map(|_| {
         let mut row_of = vec![usize::MAX; num_local];
         for (i, &c) in decided.child.iter().enumerate() {
@@ -483,37 +559,81 @@ pub(crate) fn child_vertices<TD: TopoDim>(
         s
     });
     Ok(ChildVertices {
-        to_parent,
-        to_child,
-        index_map,
+        to_parent: items.to_parent,
+        to_child: items.to_child,
+        index_map: items.index_map,
         sharers,
     })
 }
 
-/// The host decisions about the used shared vertices.
-struct Decided {
-    num_owned: usize,
-    /// The child sharer row of each shared vertex: (rank, holds it in an owned child cell),
-    /// ascending.
-    rows: Vec<Vec<(i32, bool)>>,
-    /// The child vertex of each shared vertex.
-    child: Vec<usize>,
-    /// The ghost place + 1 of each shared vertex, 0 if owned here.
-    places: Vec<u32>,
-    /// (global index, owner) of each ghost, in ghost order.
-    ghosts: Vec<(i64, i32)>,
+/// The parent's sharing neighbourhood: the other ranks of every row of the parent's vertex
+/// sharers, ascending. Every rank that holds a vertex, node or entity of a local cell also holds
+/// one of its vertices, so the neighbourhood covers the exchanges of submesh creation.
+pub(crate) struct Sharing {
+    neighbours: Vec<usize>,
+    slot: HashMap<usize, usize>,
+    nb: Neighbourhood,
 }
 
-impl Decided {
-    /// One rank: every used vertex is owned.
-    fn serial(num_unshared: usize) -> Self {
-        Decided {
-            num_owned: num_unshared,
-            rows: Vec::new(),
-            child: Vec::new(),
-            places: Vec::new(),
-            ghosts: Vec::new(),
-        }
+impl Sharing {
+    /// The sharing neighbourhood of `sharers` (`None`: no neighbours). Collective.
+    pub(crate) fn new(comm: &dyn CommDyn, sharers: Option<&VertexSharers>) -> Result<Self> {
+        let me = comm.rank() as i32;
+        let mut neighbours: Vec<usize> = sharers
+            .map(|s| {
+                s.ranks
+                    .iter()
+                    .filter(|&&r| r != me)
+                    .map(|&r| r as usize)
+                    .collect()
+            })
+            .unwrap_or_default();
+        neighbours.sort_unstable();
+        neighbours.dedup();
+        let slot = neighbours
+            .iter()
+            .enumerate()
+            .map(|(k, &r)| (r, k))
+            .collect();
+        let nb = Neighbourhood::new(comm, neighbours.clone(), neighbours.clone())?;
+        Ok(Sharing {
+            neighbours,
+            slot,
+            nb,
+        })
+    }
+
+    /// Empty send lists, one per neighbour.
+    pub(crate) fn sends(&self) -> Vec<Vec<i64>> {
+        vec![Vec::new(); self.neighbours.len()]
+    }
+
+    /// The send list of rank `r`, a neighbour.
+    pub(crate) fn to<'a>(&self, sends: &'a mut [Vec<i64>], r: i32) -> &'a mut Vec<i64> {
+        &mut sends[self.slot[&(r as usize)]]
+    }
+
+    /// Sends `sends` (one list per neighbour) and returns what each neighbour sent, as
+    /// (rank, words), by ascending rank. Collective over the neighbourhood.
+    pub(crate) fn exchange(
+        &self,
+        comm: &dyn CommDyn,
+        sends: &[Vec<i64>],
+    ) -> Result<Vec<(i32, Vec<i64>)>> {
+        let counts: Vec<usize> = sends.iter().map(Vec::len).collect();
+        let (received, received_counts) =
+            comm.neighbour_all_to_all_v(&self.nb, &sends.concat(), &counts)?;
+        let mut at = 0;
+        Ok(self
+            .neighbours
+            .iter()
+            .zip(received_counts)
+            .map(|(&r, n)| {
+                let words = received[at..at + n].to_vec();
+                at += n;
+                (r as i32, words)
+            })
+            .collect())
     }
 }
 
@@ -532,61 +652,72 @@ fn decide(
             &s.ranks[s.offsets[v as usize]..s.offsets[v as usize + 1]]
         })
     };
-    let mut neighbours: Vec<usize> = sharers
-        .map(|s| {
-            s.ranks
-                .iter()
-                .filter(|&&r| r != me)
-                .map(|&r| r as usize)
-                .collect()
-        })
-        .unwrap_or_default();
-    neighbours.sort_unstable();
-    neighbours.dedup();
-    let slot: HashMap<usize, usize> = neighbours
+    let sharing = Sharing::new(comm, sharers)?;
+    let ids: Vec<i64> = list
         .iter()
-        .enumerate()
-        .map(|(k, &r)| (r, k))
+        .map(|s| decode_origin_ids(&s.extra)[0])
         .collect();
-    let nb = Neighbourhood::new(comm, neighbours.clone(), neighbours.clone())?;
-    let lookup: HashMap<i64, usize> = list.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
+    let lookup: HashMap<i64, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
 
     // Round 1: (origin id, holds it in an owned child cell) to the parent's other sharers.
-    let mut sends: Vec<Vec<i64>> = vec![Vec::new(); neighbours.len()];
-    for s in list {
+    let mut sends = sharing.sends();
+    for (s, &id) in list.iter().zip(&ids) {
         for &r in parent_row(s.parent).iter().filter(|&&r| r != me) {
-            sends[slot[&(r as usize)]].extend([s.id, i64::from(s.in_owned)]);
+            sharing
+                .to(&mut sends, r)
+                .extend([id, i64::from(s.in_owned)]);
         }
     }
-    let counts: Vec<usize> = sends.iter().map(Vec::len).collect();
-    let (received, received_counts) = comm.neighbour_all_to_all_v(&nb, &sends.concat(), &counts)?;
     let mut rows: Vec<Vec<(i32, bool)>> = list.iter().map(|s| vec![(me, s.in_owned)]).collect();
-    let mut at = 0;
-    for (k, &n) in received_counts.iter().enumerate() {
-        for pair in received[at..at + n].as_chunks::<2>().0 {
+    for (r, words) in sharing.exchange(comm, &sends)? {
+        for pair in words.as_chunks::<2>().0 {
             if let Some(&i) = lookup.get(&pair[0]) {
-                rows[i].push((neighbours[k] as i32, pair[1] == 1));
+                rows[i].push((r, pair[1] == 1));
             }
         }
-        at += n;
     }
     let owners: Vec<i32> = rows
         .iter_mut()
-        .zip(list)
-        .map(|(row, s)| {
+        .zip(&ids)
+        .map(|(row, &id)| {
             row.sort_unstable();
-            let candidates: Vec<i32> = row.iter().filter(|e| e.1).map(|e| e.0).collect();
-            assert!(
-                !candidates.is_empty(),
-                "child vertex {} has no sharer with an owned child cell: inconsistent vertex sharers",
-                s.id
-            );
-            candidates[(owner_hash(&[s.id]) % candidates.len() as u64) as usize]
+            hashed_owner(id, row, "vertex")
         })
         .collect();
+    number(comm, &sharing, list, &ids, owners, rows, num_unshared)
+}
 
-    // Owned vertices in parent order: the unshared ones before each shared one, plus the
-    // shared ones owned here.
+/// The owned-cell sharer of `row` (ascending ranks) at position `owner_hash(&[key]) mod n`, as
+/// at mesh creation.
+///
+/// # Panics
+///
+/// If no sharer holds the item in an owned cell: only with inconsistent parent sharers.
+pub(crate) fn hashed_owner(key: i64, row: &[(i32, bool)], what: &str) -> i32 {
+    let candidates: Vec<i32> = row.iter().filter(|e| e.1).map(|e| e.0).collect();
+    assert!(
+        !candidates.is_empty(),
+        "child {what} {key} has no sharer with an owned child cell: inconsistent sharers"
+    );
+    candidates[(owner_hash(&[key]) % candidates.len() as u64) as usize]
+}
+
+/// The decisions about the used shared items `list` (parent order, unique keys `keys`) with
+/// their `owners` and child sharer `rows`, and `num_unshared` used unshared items: owned items
+/// in parent order, global numbers by an exclusive scan, one exchange of each owner's numbers
+/// to the other child sharers, ghosts by (owner rank, global index). Collective.
+pub(crate) fn number(
+    comm: &dyn CommDyn,
+    sharing: &Sharing,
+    list: &[Shared],
+    keys: &[i64],
+    owners: Vec<i32>,
+    rows: Vec<Vec<(i32, bool)>>,
+    num_unshared: usize,
+) -> Result<Decided> {
+    let me = comm.rank() as i32;
+    // Owned items in parent order: the unshared ones before each shared one, plus the shared
+    // ones owned here.
     let mut child = vec![0usize; list.len()];
     let mut mine = 0usize;
     for (i, s) in list.iter().enumerate() {
@@ -599,23 +730,24 @@ fn decide(
     let begin = comm.exscan_sum(u64::try_from(num_owned).map_err(|_| GridError::TooLarge)?);
     let begin = i64::try_from(begin).map_err(|_| GridError::TooLarge)?;
 
-    // Round 2: (origin id, global number) from each owner to the other child sharers.
-    let mut sends: Vec<Vec<i64>> = vec![Vec::new(); neighbours.len()];
-    for (i, s) in list.iter().enumerate().filter(|&(i, _)| owners[i] == me) {
+    // (key, global number) from each owner to the other child sharers.
+    let mut sends = sharing.sends();
+    for (i, &key) in keys.iter().enumerate().filter(|&(i, _)| owners[i] == me) {
         let global = begin + child[i] as i64;
         for &(r, _) in rows[i].iter().filter(|e| e.0 != me) {
-            sends[slot[&(r as usize)]].extend([s.id, global]);
+            sharing.to(&mut sends, r).extend([key, global]);
         }
     }
-    let counts: Vec<usize> = sends.iter().map(Vec::len).collect();
-    let (received, _) = comm.neighbour_all_to_all_v(&nb, &sends.concat(), &counts)?;
+    let lookup: HashMap<i64, usize> = keys.iter().enumerate().map(|(i, &k)| (k, i)).collect();
     let mut globals = vec![-1_i64; list.len()];
-    for pair in received.as_chunks::<2>().0 {
-        // Only the child sharers receive, so the id is a used shared vertex here.
-        let &i = lookup
-            .get(&pair[0])
-            .expect("a received id is a shared child vertex");
-        globals[i] = pair[1];
+    for (_, words) in sharing.exchange(comm, &sends)? {
+        for pair in words.as_chunks::<2>().0 {
+            // Only the child sharers receive, so the key is a used shared item here.
+            let &i = lookup
+                .get(&pair[0])
+                .expect("a received key is a shared child item");
+            globals[i] = pair[1];
+        }
     }
 
     // Ghosts by (owner rank, global index).
@@ -623,8 +755,8 @@ fn decide(
     for &i in &order {
         assert!(
             globals[i] >= 0,
-            "ghost child vertex {} received no global number: inconsistent vertex sharers",
-            list[i].id
+            "ghost child item {} received no global number: inconsistent sharers",
+            keys[i]
         );
     }
     order.sort_unstable_by_key(|&i| (owners[i], globals[i]));

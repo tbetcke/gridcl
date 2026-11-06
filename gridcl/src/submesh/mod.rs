@@ -8,6 +8,7 @@
 mod closure;
 mod flags;
 mod geometry;
+mod nodes;
 mod numbering;
 mod select;
 mod sharers;
@@ -252,14 +253,24 @@ where
             },
         ));
     }
-    let nodes = mesh.geometry.nodes();
-    geometry::child_geometry(
+    let node_rows: Vec<nodes::NodeRows<'_>> = blocks
+        .iter()
+        .zip(child.topology.cell_blocks())
+        .map(|(b, t)| nodes::NodeRows {
+            vertices: &t.vertices,
+            dofmap: &b.3,
+            num_owned: t.index_map.num_owned(),
+        })
+        .collect();
+    let items = nodes::child_nodes(
         comm,
-        nodes,
-        mesh.geometry.node_index_map().num_local(),
-        mesh.geometry.origin(),
-        blocks,
-    )
+        &mesh.topology,
+        mesh.geometry.node_index_map(),
+        child.topology.vertex_index_map(),
+        &node_rows,
+    )?;
+    drop(node_rows);
+    geometry::child_geometry(mesh.geometry.nodes(), items, mesh.geometry.origin(), blocks)
 }
 
 /// The facet submesh of `mesh` on every boundary facet (`tags = None`) or on the tagged

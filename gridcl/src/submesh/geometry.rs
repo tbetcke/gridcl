@@ -1,6 +1,6 @@
-//! The child geometry of a submesh (ADR-0039, items 8 and 9): child dofmaps through the closure
-//! node maps, node compaction, `node_to_parent`, and the parent's origin, so that child
-//! coordinates are bitwise the parent's.
+//! The child geometry of a submesh (ADR-0039, items 8 and 9): the agreed element of a child
+//! block, the child nodes (numbered by `nodes`) gathered with `node_to_parent`, and the
+//! parent's origin, so that child coordinates are bitwise the parent's.
 
 use cubecl::prelude::*;
 use gridcl_device::{
@@ -8,9 +8,9 @@ use gridcl_device::{
 };
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
-use gridcl_parallel::{CommDyn, CommExt, IndexMap};
+use gridcl_parallel::{CommDyn, CommExt};
 
-use super::topology::compact;
+use super::sharers::ChildItems;
 use super::{fit, plan};
 use crate::builder::cell_name;
 
@@ -91,13 +91,11 @@ pub(crate) fn agreed_element(
 }
 
 /// The child geometry of `blocks` (child cell type, degree, family and dofmap rows in parent
-/// node indices) over the parent nodes `nodes` (`num_nodes` local nodes): compacted nodes in
-/// parent local order, gathered bitwise, with the parent's `origin` and a one-rank node map;
-/// also `node_to_parent`. Collective (index map).
+/// node indices) over the parent nodes `nodes`, whose child nodes `items` gives (`nodes`): the
+/// child nodes gathered bitwise, with the parent's `origin`; also `node_to_parent`.
 pub(crate) fn child_geometry<F, CTD, GD>(
-    comm: &dyn CommDyn,
     nodes: &DeviceBuffer<F>,
-    num_nodes: usize,
+    items: ChildItems,
     origin: GD::Array<f64>,
     blocks: Vec<(CellType, u32, NodeFamily, DeviceStrided<u32>)>,
 ) -> Result<(Geometry<F, CTD, GD>, DeviceBuffer<u32>)>
@@ -107,8 +105,12 @@ where
     GD: Dim,
 {
     let client = nodes.client();
-    let rows: Vec<&DeviceStrided<u32>> = blocks.iter().map(|b| &b.3).collect();
-    let (node_to_parent, parent_to_child) = compact(client, num_nodes, &rows)?;
+    let ChildItems {
+        to_parent: node_to_parent,
+        to_child: parent_to_child,
+        index_map: node_map,
+        ..
+    } = items;
     let n = node_to_parent.len();
     let gd = GD::N;
     let child_nodes =
@@ -154,7 +156,6 @@ where
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let node_map = IndexMap::new(comm, n)?;
     let geometry = Geometry::new(geometry_blocks, child_nodes, node_map, origin)?;
     Ok((geometry, node_to_parent))
 }
