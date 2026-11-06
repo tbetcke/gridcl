@@ -61,7 +61,31 @@ pub(crate) fn facet_closure(
         }
     })?;
     let mapped = gridcl_refcell::facet_points_to_cell(parent, facet, &child_points);
-    Ok(mapped
+    Ok(match_points(
+        parent,
+        &parent_points,
+        &mapped,
+        "facet",
+        facet,
+    ))
+}
+
+/// The parent node at each of the reference points `mapped` (tdim coordinates each) of
+/// `parent`, whose Lagrange points are `parent_points`; `what` and `index` name the
+/// sub-entity in the panic.
+///
+/// # Panics
+///
+/// If a point has no parent node.
+fn match_points(
+    parent: CellType,
+    parent_points: &[f64],
+    mapped: &[f64],
+    what: &str,
+    index: usize,
+) -> Vec<u32> {
+    let tdim = gridcl_refcell::tdim(parent);
+    mapped
         .chunks_exact(tdim)
         .map(|x| {
             parent_points
@@ -73,10 +97,72 @@ pub(crate) fn facet_closure(
                         .fold(0.0, f64::max)
                         < MATCH_TOL
                 })
-                .unwrap_or_else(|| panic!("{parent:?} facet {facet}: no parent node at {x:?}"))
+                .unwrap_or_else(|| panic!("{parent:?} {what} {index}: no parent node at {x:?}"))
                 as u32
         })
-        .collect())
+        .collect()
+}
+
+/// The parent node of each node of edge `edge` of `parent` (degree `degree`, family `family`),
+/// in the reference order of the interval from the edge's first local vertex to its second, or
+/// from the second to the first if `reversed`.
+///
+/// # Errors
+///
+/// `UnsupportedDegree` for degree 0; `UnsupportedNodeFamily` if `parent` has no such element.
+///
+/// # Panics
+///
+/// If an edge node has no parent node, which would be a bug in the reference tables.
+pub(crate) fn edge_closure(
+    parent: CellType,
+    edge: usize,
+    reversed: bool,
+    degree: u32,
+    family: NodeFamily,
+) -> Result<Vec<u32>> {
+    let points =
+        gridcl_refcell::lagrange_points(CellType::Interval, degree, family).map_err(|_| {
+            GridError::UnsupportedDegree {
+                cell: cell_name(CellType::Interval),
+                degree,
+            }
+        })?;
+    let parent_points = gridcl_refcell::lagrange_points(parent, degree, family).map_err(|_| {
+        GridError::UnsupportedNodeFamily {
+            cell: cell_name(parent),
+            family: family_name(family),
+        }
+    })?;
+    let refs = gridcl_refcell::vertices(parent);
+    let verts = &gridcl_refcell::sub_entities(parent, 1)[edge];
+    let (a, b) = if reversed {
+        (&refs[verts[1]], &refs[verts[0]])
+    } else {
+        (&refs[verts[0]], &refs[verts[1]])
+    };
+    let mapped: Vec<f64> = points
+        .iter()
+        .flat_map(|&t| a.iter().zip(b.iter()).map(move |(a, b)| a + t * (b - a)))
+        .collect();
+    Ok(match_points(parent, &parent_points, &mapped, "edge", edge))
+}
+
+/// The edge closure maps of `parent`, k entries per code d · ne + e (direction d, 1 for
+/// reversed; local edge e of ne), the layout `restrict_rows` reads.
+///
+/// # Errors
+///
+/// As [`edge_closure`].
+pub(crate) fn edge_table(parent: CellType, degree: u32, family: NodeFamily) -> Result<Vec<u32>> {
+    let ne = gridcl_refcell::num_sub_entities(parent, 1);
+    let mut table = Vec::new();
+    for reversed in [false, true] {
+        for e in 0..ne {
+            table.extend(edge_closure(parent, e, reversed, degree, family)?);
+        }
+    }
+    Ok(table)
 }
 
 /// The closure maps of every facet of `parent` whose type is `child`, `k` entries each, in
@@ -151,6 +237,39 @@ mod tests {
                         let own =
                             gridcl_refcell::lagrange_entity_nodes(parent, degree, tdim - 1, f);
                         assert!(own.into_iter().all(|n| map.contains(&(n as u32))));
+                    }
+                }
+            }
+        }
+    }
+
+    /// The edge closure maps of degree ≤ 4 (pyramids ≤ 3) start at the edge's vertices in the
+    /// chosen direction, and the reversed map is the forward one read backwards along the
+    /// edge: vertices swapped, interior nodes reversed.
+    #[test]
+    fn edge_closures_follow_the_direction() {
+        use CellType::*;
+        for parent in [Tetrahedron, Hexahedron, Prism, Pyramid] {
+            let max = if parent == Pyramid { 3 } else { 4 };
+            for degree in 1..=max {
+                let families: &[NodeFamily] = match parent {
+                    Hexahedron => &[NodeFamily::Equispaced, NodeFamily::Gll],
+                    _ => &[NodeFamily::Equispaced],
+                };
+                for &family in families {
+                    let table = edge_table(parent, degree, family).expect("edge table");
+                    let ne = gridcl_refcell::num_sub_entities(parent, 1);
+                    let k = degree as usize + 1;
+                    assert_eq!(table.len(), 2 * ne * k);
+                    for (e, verts) in gridcl_refcell::sub_entities(parent, 1).iter().enumerate() {
+                        let fwd = &table[e * k..(e + 1) * k];
+                        let rev = &table[(ne + e) * k..(ne + e + 1) * k];
+                        assert_eq!(fwd[..2], [verts[0] as u32, verts[1] as u32]);
+                        assert_eq!(rev[..2], [verts[1] as u32, verts[0] as u32]);
+                        let back: Vec<u32> = fwd[2..].iter().rev().copied().collect();
+                        assert_eq!(rev[2..], back[..], "{parent:?} p={degree} edge {e}");
+                        let own = gridcl_refcell::lagrange_entity_nodes(parent, degree, 1, e);
+                        assert!(own.into_iter().all(|n| fwd.contains(&(n as u32))));
                     }
                 }
             }

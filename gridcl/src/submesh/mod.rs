@@ -5,7 +5,9 @@
 //! block (`select`), the child topology with the cell and vertex maps (`topology`), then the
 //! child geometry, flags and tags. Kernels plan as `KernelKind::Scalar`.
 
+mod cells;
 mod closure;
+mod edges;
 mod flags;
 mod geometry;
 mod nodes;
@@ -23,7 +25,7 @@ use gridcl_device::{
 use gridcl_dims::{CellType, D3, Dim, EmbeddedIn, TopoDim};
 use gridcl_geometry::{Geometry, NodeFamily};
 use gridcl_parallel::{Comm, CommDyn, CommExt};
-use gridcl_topology::facet_cell_counts;
+use gridcl_topology::{Topology, facet_cell_counts};
 
 use crate::entity_map::EntityMapParts;
 use crate::{CurveMesh, EntityMap, Mesh, MeshTags};
@@ -48,6 +50,30 @@ fn place_kernel(src: &[u32], dst: &mut [u32], len: u32, base: u32, items_per_uni
         let i = first + it;
         if i < len as usize {
             dst[base as usize + i] = src[i];
+        }
+    }
+}
+
+/// `out[i · k + j] = src[(parents[i] − offset) · k + j]` for i < len and j < k.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn rows_kernel(
+    src: &[u32],
+    parents: &[u32],
+    out: &mut [u32],
+    len: u32,
+    k: u32,
+    offset: u32,
+    items_per_unit: u32,
+) {
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let i = first + it;
+        if i < len as usize {
+            let p = (parents[i] - offset) as usize;
+            for j in 0..k as usize {
+                out[i * k as usize + j] = src[p * k as usize + j];
+            }
         }
     }
 }
@@ -100,6 +126,51 @@ pub(super) fn place(
         );
     }
     Ok(())
+}
+
+/// The rows `src[(p − offset) · k..][..k]` of the parents p in `parents`, one row of k words
+/// each: rows, origin ids (k = 2) or flags (k = 1) of the parent entities of child cells.
+///
+/// # Panics
+///
+/// If `src` is not a whole number of rows; the caller guarantees that every p − offset is a
+/// row of `src`.
+pub(super) fn gather_rows(
+    src: &DeviceBuffer<u32>,
+    parents: &DeviceBuffer<u32>,
+    k: usize,
+    offset: usize,
+) -> Result<DeviceBuffer<u32>> {
+    assert!(
+        k > 0 && src.len().is_multiple_of(k),
+        "gather_rows: not whole rows"
+    );
+    let client = src.client();
+    let n = parents.len();
+    let out = DeviceBuffer::<u32>::uninit(client, n.checked_mul(k).ok_or(GridError::TooLarge)?)?;
+    if n > 0 {
+        fit(out.len())?;
+        let launch = plan(client, n)?;
+        debug_assert_bindings(client, 3);
+        // SAFETY: the kernel reads parents[i] for i < n = parents.len() and the row
+        // parents[i] − offset of src, below src.len() / k by the caller's contract; it writes
+        // out[i · k + j] < n · k, its length.
+        unsafe {
+            rows_kernel::launch_unchecked(
+                client,
+                launch.cube_count,
+                launch.cube_dim,
+                src.arg(),
+                parents.arg(),
+                out.arg(),
+                fit(n)?,
+                fit(k)?,
+                fit(offset)?,
+                launch.items_per_unit,
+            );
+        }
+    }
+    Ok(out)
 }
 
 /// The buffer 0, 1, …, len − 1.
@@ -253,9 +324,31 @@ where
             },
         ));
     }
+    child_geometry(mesh, &child.topology, blocks)
+}
+
+/// A child block's geometry before the node numbering: cell type, degree, node family and
+/// dofmap rows in parent local nodes, the corners first in the child's vertex order.
+pub(crate) type ChildBlock = (CellType, u32, NodeFamily, DeviceStrided<u32>);
+
+/// The child geometry of the child cells `topology` of `mesh` with the blocks `blocks`: child
+/// nodes numbered by `nodes`, gathered bitwise with the parent's origin (ADR-0039, items 6 and
+/// 9). Also returns `node_to_parent`. Collective.
+fn child_geometry<F, TD, GD, C, CTD>(
+    mesh: &Mesh<F, TD, GD, C>,
+    topology: &Topology<CTD>,
+    blocks: Vec<ChildBlock>,
+) -> Result<ChildGeometry<F, CTD, GD>>
+where
+    F: Real,
+    GD: Dim,
+    C: Comm,
+    TD: TopoDim + EmbeddedIn<GD>,
+    CTD: TopoDim + EmbeddedIn<GD>,
+{
     let node_rows: Vec<nodes::NodeRows<'_>> = blocks
         .iter()
-        .zip(child.topology.cell_blocks())
+        .zip(topology.cell_blocks())
         .map(|(b, t)| nodes::NodeRows {
             vertices: &t.vertices,
             dofmap: &b.3,
@@ -263,14 +356,71 @@ where
         })
         .collect();
     let items = nodes::child_nodes(
-        comm,
+        &mesh.comm,
         &mesh.topology,
         mesh.geometry.node_index_map(),
-        child.topology.vertex_index_map(),
+        topology.vertex_index_map(),
         &node_rows,
     )?;
     drop(node_rows);
     geometry::child_geometry(mesh.geometry.nodes(), items, mesh.geometry.origin(), blocks)
+}
+
+/// The child mesh of `child` with `geometry` and, where given, the cell flags `flags` (one
+/// buffer per child block), and its `EntityMap` from the parent entities of dimension
+/// `parent_dim`; the child carries the parent's tags of that dimension as cell tags (ADR-0039,
+/// items 1 and 10). Collective.
+fn assemble<F, TD, GD, C, CTD>(
+    mesh: &Mesh<F, TD, GD, C>,
+    child: ChildTopology<CTD>,
+    geometry: ChildGeometry<F, CTD, GD>,
+    flags: Option<Vec<DeviceBuffer<u32>>>,
+    parent_dim: usize,
+) -> Result<(Mesh<F, CTD, GD, C>, EntityMap)>
+where
+    F: Real,
+    GD: Dim,
+    C: Comm,
+    TD: TopoDim + EmbeddedIn<GD>,
+    CTD: TopoDim + EmbeddedIn<GD>,
+{
+    let (geometry, node_to_parent) = geometry;
+    let ChildTopology {
+        mut topology,
+        child_to_parent,
+        parent_to_child,
+        vertex_to_parent,
+        facet_of,
+        ..
+    } = child;
+    for (b, f) in flags.into_iter().flatten().enumerate() {
+        topology.set_cell_flags(b, f)?;
+    }
+    let map = EntityMap::from_parts(EntityMapParts {
+        parent_dim,
+        child_to_parent,
+        parent_to_child,
+        vertex_to_parent,
+        node_to_parent,
+        facet_of,
+    });
+    let num_parents = if parent_dim == TD::N {
+        mesh.topology
+            .cell_blocks()
+            .iter()
+            .map(|b| b.index_map.num_local())
+            .sum()
+    } else {
+        mesh.topology
+            .entity_blocks(parent_dim)?
+            .iter()
+            .map(|b| b.index_map.num_local())
+            .sum()
+    };
+    let tags = tags::child_tags(&mesh.tags, &map, num_parents, CTD::N, &mesh.client)?;
+    let mut child = Mesh::from_parts(mesh.client.clone(), mesh.comm.clone(), topology, geometry);
+    child.set_tags(tags);
+    Ok((child, map))
 }
 
 /// The facet submesh of `mesh` on every boundary facet (`tags = None`) or on the tagged
@@ -287,39 +437,10 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
-    let fdim = TD::N - 1;
     let child = facet_topology(mesh, tags)?;
-    let (geometry, node_to_parent) = facet_geometry(mesh, &child)?;
+    let geometry = facet_geometry(mesh, &child)?;
     let flags = flags::facet_flags(mesh, &child)?;
-    let ChildTopology {
-        mut topology,
-        child_to_parent,
-        parent_to_child,
-        vertex_to_parent,
-        facet_of,
-        ..
-    } = child;
-    for (b, f) in flags.into_iter().enumerate() {
-        topology.set_cell_flags(b, f)?;
-    }
-    let map = EntityMap::from_parts(EntityMapParts {
-        parent_dim: fdim,
-        child_to_parent,
-        parent_to_child,
-        vertex_to_parent,
-        node_to_parent,
-        facet_of,
-    });
-    let num_facets = mesh
-        .topology
-        .entity_blocks(fdim)?
-        .iter()
-        .map(|b| b.index_map.num_local())
-        .sum();
-    let tags = tags::child_tags(&mesh.tags, &map, num_facets, fdim, &mesh.client)?;
-    let mut child = Mesh::from_parts(mesh.client.clone(), mesh.comm.clone(), topology, geometry);
-    child.set_tags(tags);
-    Ok((child, map))
+    assemble(mesh, child, geometry, Some(flags), TD::N - 1)
 }
 
 /// `Mesh::boundary`.
@@ -355,16 +476,18 @@ where
 
 /// `Mesh::edge_submesh`.
 pub(crate) fn edge_submesh<F: Real, C: Comm>(
-    _mesh: &Mesh<F, D3, D3, C>,
-    _edges: &MeshTags,
+    mesh: &Mesh<F, D3, D3, C>,
+    edges: &MeshTags,
 ) -> Result<(CurveMesh<F, C>, EntityMap)> {
-    todo!("edge_submesh: M9 T6")
+    let (child, blocks) = edges::edge_children(mesh, edges)?;
+    let geometry = child_geometry(mesh, &child.topology, blocks)?;
+    assemble(mesh, child, geometry, None, 1)
 }
 
 /// `Mesh::cell_submesh`.
 pub(crate) fn cell_submesh<F, TD, GD, C>(
-    _mesh: &Mesh<F, TD, GD, C>,
-    _cells: &MeshTags,
+    mesh: &Mesh<F, TD, GD, C>,
+    cells: &MeshTags,
 ) -> Result<(Mesh<F, TD, GD, C>, EntityMap)>
 where
     F: Real,
@@ -372,7 +495,9 @@ where
     GD: Dim,
     C: Comm,
 {
-    todo!("cell_submesh: M9 T6")
+    let (child, blocks, flags) = cells::cell_children(mesh, cells)?;
+    let geometry = child_geometry(mesh, &child.topology, blocks)?;
+    assemble(mesh, child, geometry, Some(flags), TD::N)
 }
 
 #[cfg(test)]
@@ -917,5 +1042,150 @@ mod tests {
             "{:?}",
             r.err().map(|e| e.to_string())
         );
+    }
+
+    /// Edge children of a mixed box with shuffled ids: every edge, in canonical orientation
+    /// (ascending vertex origin ids), with the origin id min over its cells of 12 · id + e.
+    #[test]
+    fn edge_origin_ids_are_minima() {
+        let client = gridcl_testing::test_client();
+        let h = gridcl_testing::mixed_box(2, 1).with_shuffled_ids(5);
+        let mut mesh = build::<D3, D3>(&client, &h);
+        mesh.create_connectivity(1, 3).expect("(1, 3)");
+        let parent_cells = cell_rows(&mesh.topology);
+        let mut want: HashMap<Vec<i64>, i64> = HashMap::new();
+        let mut c = 0;
+        for b in mesh.topology.cell_blocks() {
+            let cell: CellType = b.cell.into();
+            for id in decode_origin_ids(&b.origin_ids.to_host().expect("ids")) {
+                for (e, verts) in gridcl_refcell::sub_entities(cell, 1).iter().enumerate() {
+                    let mut key = vec![parent_cells[c][verts[0]], parent_cells[c][verts[1]]];
+                    key.sort_unstable();
+                    let v = 12 * id + e as i64;
+                    want.entry(key)
+                        .and_modify(|m| *m = (*m).min(v))
+                        .or_insert(v);
+                }
+                c += 1;
+            }
+        }
+        let num_edges = mesh.topology.entity_blocks(1).expect("edges")[0]
+            .index_map
+            .num_local();
+        let all: Vec<u32> = (0..num_edges as u32).collect();
+        let (child, _) =
+            super::edges::edge_children(&mesh, &tags(&client, 1, &all)).expect("edge_children");
+        let rows = cell_rows(&child.topology);
+        assert_eq!(rows.len(), want.len());
+        let ids: Vec<i64> = child
+            .topology
+            .cell_blocks()
+            .iter()
+            .flat_map(|b| decode_origin_ids(&b.origin_ids.to_host().expect("ids")))
+            .collect();
+        for (row, id) in rows.iter().zip(&ids) {
+            assert!(row[0] < row[1], "edge {row:?}: canonical orientation");
+            assert_eq!(*id, want[row], "edge {row:?}: origin id");
+        }
+    }
+
+    /// 12 · id + e fits i64 exactly for id in [L − (e ≥ 4), U − (e ≥ 8)], U = −L =
+    /// 0x0AAA_AAAA_AAAA_AAAA: a single hexahedron (local edges 0–11) at the bounds, with one
+    /// tagged edge.
+    #[test]
+    fn edge_origin_id_overflow_is_too_large() {
+        let client = gridcl_testing::test_client();
+        let nodes: Vec<f64> = gridcl_refcell::vertices(CellType::Hexahedron).concat();
+        let hex = CoordinateElement::<D3> {
+            cell: Cell3::Hexahedron,
+            degree: 1,
+            family: NodeFamily::Equispaced,
+        };
+        let edge_of = |id: i64, e: usize| {
+            let mut m: Mesh<f32, D3, D3> = MeshBuilder::new(&client)
+                .nodes(&nodes, None)
+                .cell_block(hex, &(0..8).collect::<Vec<u32>>(), Some(&[id]))
+                .build()
+                .expect("one hexahedron");
+            m.create_connectivity(1, 3).expect("(1, 3)");
+            let Ok(Connectivity::Downward(down)) =
+                m.topology.connectivity(ConnKey { from: 3, to: 1 })
+            else {
+                unreachable!("cell -> edge is downward")
+            };
+            let flat = down[0].data.to_host().expect("(3, 1)")[e];
+            super::edges::edge_children(&m, &tags(&client, 1, &[flat])).map(|(child, _)| {
+                decode_origin_ids(
+                    &child.topology.cell_blocks()[0]
+                        .origin_ids
+                        .to_host()
+                        .expect("ids"),
+                )[0]
+            })
+        };
+        let u = 0x0AAA_AAAA_AAAA_AAAA_i64;
+        for (id, e) in [(u, 0), (u, 7), (u - 1, 11), (-u, 0), (-u, 11), (-u - 1, 4)] {
+            let want = i64::try_from(12 * i128::from(id) + e as i128).expect("fits");
+            assert_eq!(edge_of(id, e).ok(), Some(want), "id {id}, edge {e}");
+        }
+        for (id, e) in [(u, 8), (u + 1, 0), (-u - 1, 3), (-u - 2, 11), (i64::MAX, 0)] {
+            let r = edge_of(id, e);
+            assert!(
+                matches!(r, Err(GridError::TooLarge)),
+                "id {id}, edge {e}: {r:?}"
+            );
+        }
+    }
+
+    /// Cell children of a surface keep their parents' flags, vertex rows and origin ids.
+    #[test]
+    fn cell_children_keep_flags() {
+        let client = gridcl_testing::test_client();
+        let mut mesh = build::<D2, D3>(&client, &gridcl_testing::mixed_surface(1, 2));
+        let mut chosen = Vec::new();
+        let mut base = 0u32;
+        for b in 0..mesh.topology.cell_blocks().len() {
+            let n = mesh.topology.cell_blocks()[b].index_map.num_local() as u32;
+            let flags: Vec<u32> = (0..n).map(|c| (c / 2) % 2).collect();
+            let flags = DeviceBuffer::from_host(&client, &flags).expect("flags");
+            mesh.topology
+                .set_cell_flags(b, flags)
+                .expect("set_cell_flags");
+            chosen.extend((base..base + n).filter(|c| c % 3 != 1));
+            base += n;
+        }
+        let (child, _, flags) =
+            super::cells::cell_children(&mesh, &tags(&client, 2, &chosen)).expect("children");
+        let parent_flags: Vec<u32> = mesh
+            .topology
+            .cell_blocks()
+            .iter()
+            .flat_map(|b| b.flags.to_host().expect("flags"))
+            .collect();
+        let parent_ids: Vec<i64> = mesh
+            .topology
+            .cell_blocks()
+            .iter()
+            .flat_map(|b| decode_origin_ids(&b.origin_ids.to_host().expect("ids")))
+            .collect();
+        let child_flags: Vec<u32> = flags
+            .iter()
+            .flat_map(|f| f.to_host().expect("flags"))
+            .collect();
+        let child_ids: Vec<i64> = child
+            .topology
+            .cell_blocks()
+            .iter()
+            .flat_map(|b| decode_origin_ids(&b.origin_ids.to_host().expect("ids")))
+            .collect();
+        let parent_rows = cell_rows(&mesh.topology);
+        let c2p = child.child_to_parent.to_host().expect("c2p");
+        assert_eq!(c2p, chosen);
+        for (c, row) in cell_rows(&child.topology).iter().enumerate() {
+            let p = c2p[c] as usize;
+            assert_eq!(row, &parent_rows[p], "child cell {c}: vertex row");
+            assert_eq!(child_flags[c], parent_flags[p], "child cell {c}: flags");
+            assert_eq!(child_ids[c], parent_ids[p], "child cell {c}: origin id");
+        }
     }
 }

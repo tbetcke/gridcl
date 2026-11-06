@@ -525,15 +525,36 @@ where
     }
 
     /// The tagged cells as a mesh of the same dimensions, and the map to the parent's cells
-    /// (ADR-0039, item 4). Child cells keep their owner, ghost status and origin id; vertices
-    /// and nodes are re-owned among the ranks that hold them in owned child cells. The child
-    /// keeps the parent's origin and has one cell block per parent block with tagged cells on
-    /// some rank. Collective.
+    /// (ADR-0039, item 4). Child cells keep their owner, ghost status, origin id, flags and
+    /// coordinate element; vertices and nodes are re-owned among the ranks that hold them in
+    /// owned child cells. The child keeps the parent's origin and has one cell block per parent
+    /// block with tagged cells on some rank. The parent's cell tags become the child's.
+    /// Collective.
     ///
     /// # Errors
     ///
-    /// `DimensionMismatch` if `cells.dim` is not tdim; allocation, device and communication
-    /// errors; `RemoteFailure` if another rank failed.
+    /// `DimensionMismatch` if `cells.dim` is not tdim; `TooLarge`; allocation, device and
+    /// communication errors; `RemoteFailure` if another rank failed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: VolumeMesh<f32> =
+    ///     gridcl_testing::cube_box(Cell3::Hexahedron, 2, 1).build(&client)?;
+    /// // Every other cell of the eight.
+    /// let cells = MeshTags {
+    ///     dim: 3,
+    ///     indices: DeviceBuffer::from_host(&client, &[0u32, 2, 4, 6])?,
+    ///     values: DeviceBuffer::from_host(&client, &[1i32; 4])?,
+    /// };
+    /// let (half, map) = mesh.cell_submesh(&cells)?;
+    /// assert_eq!(map.child_to_parent().to_host()?, [0, 2, 4, 6]);
+    /// assert!((half.measure(2)? - 0.5).abs() < 1e-5);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn cell_submesh(&self, cells: &MeshTags) -> Result<(Self, EntityMap)> {
         crate::submesh::cell_submesh(self, cells)
     }
@@ -800,13 +821,41 @@ where
 impl<F: Real, C: Comm> Mesh<F, D3, D3, C> {
     /// The tagged edges, interior or boundary, as a curve mesh in 3D with the map to the
     /// parent's edges; needs `create_entities(1)` and `create_connectivity(1, 3)` (ADR-0039,
-    /// item 3). Child cells take the edges' canonical orientation and have flags 0. Collective.
+    /// item 3). Child cells take the edges' canonical orientation and have flags 0. A child
+    /// cell's origin id is the minimum of 12 · (cell origin id) + (local edge index) over the
+    /// cells containing its edge (item 7); its geometry is the parent's along the edge, with
+    /// the parent's degree and node family. The parent's edge tags become the child's cell
+    /// tags. Collective.
     ///
     /// # Errors
     ///
     /// `DimensionMismatch` if `edges.dim` is not 1; `EntitiesNotCreated(1)`,
-    /// `ConnectivityNotCreated`; allocation, device and communication errors; `RemoteFailure`
-    /// if another rank failed.
+    /// `ConnectivityNotCreated`; agreed: `TooLarge` if a child origin id does not fit i64,
+    /// `UnsupportedDegree` or `UnsupportedNodeFamily` if the cells that give the child nodes
+    /// differ in degree or node family; allocation, device and communication errors;
+    /// `RemoteFailure` if another rank failed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mut mesh: VolumeMesh<f32> =
+    ///     gridcl_testing::cube_box(Cell3::Hexahedron, 1, 2).build(&client)?;
+    /// mesh.create_connectivity(1, 3)?;
+    /// // All twelve edges of the unit cube.
+    /// let edges = MeshTags {
+    ///     dim: 1,
+    ///     indices: DeviceBuffer::from_host(&client, &(0..12).collect::<Vec<u32>>())?,
+    ///     values: DeviceBuffer::from_host(&client, &[1i32; 12])?,
+    /// };
+    /// let (frame, map) = mesh.edge_submesh(&edges)?;
+    /// assert_eq!(map.parent_dim(), 1);
+    /// assert_eq!(frame.vertex_index_map().num_local(), 8);
+    /// assert!((frame.measure(4)? - 12.0).abs() < 1e-4);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn edge_submesh(&self, edges: &MeshTags) -> Result<(CurveMesh<F, C>, EntityMap)> {
         crate::submesh::edge_submesh(self, edges)
     }

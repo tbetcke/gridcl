@@ -10,13 +10,14 @@
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, DeviceStrided, GridError, ReduceOp, Result, debug_assert_bindings,
-    exclusive_scan, gather, reduce,
+    exclusive_scan, gather, histogram, reduce,
 };
 use gridcl_dims::{CellType, TopoDim};
 use gridcl_parallel::{CommDyn, CommExt, IndexMap};
 use gridcl_topology::{FacetCells, Topology};
 
 use super::{fit, plan};
+use crate::MeshTags;
 
 /// The child cells of one child block, before the vertex compaction.
 pub(crate) struct Selected {
@@ -73,6 +74,48 @@ fn facet_mask_kernel(
     }
 }
 
+/// `mask[i] = min(counts[i], 1)` for i < len.
+#[cube(launch_unchecked)]
+fn indicator_kernel(counts: &[u32], mask: &mut [u32], len: u32, items_per_unit: u32) {
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let i = first + it;
+        if i < len as usize {
+            mask[i] = min(counts[i], 1u32);
+        }
+    }
+}
+
+/// The mask over `num_entities` flat entities of `tags`: 1 for an entity with any entry. Tags
+/// of `edge_submesh` and `cell_submesh` (ADR-0039, items 3 and 4).
+///
+/// # Errors
+///
+/// `TooLarge`; allocation and device errors.
+pub(crate) fn tag_mask(tags: &MeshTags, num_entities: usize) -> Result<DeviceBuffer<u32>> {
+    let counts = histogram(&tags.indices, fit(num_entities)?)?;
+    let client = counts.client();
+    let mask = DeviceBuffer::<u32>::uninit(client, num_entities)?;
+    if num_entities > 0 {
+        let launch = plan(client, num_entities)?;
+        debug_assert_bindings(client, 2);
+        // SAFETY: the kernel reads counts[i] and writes mask[i] for i < num_entities, the
+        // length of both.
+        unsafe {
+            indicator_kernel::launch_unchecked(
+                client,
+                launch.cube_count,
+                launch.cube_dim,
+                counts.arg(),
+                mask.arg(),
+                fit(num_entities)?,
+                launch.items_per_unit,
+            );
+        }
+    }
+    Ok(mask)
+}
+
 /// `flags[i] = mask[offset + i]` for i < len.
 #[cube(launch_unchecked)]
 fn block_flags_kernel(mask: &[u32], flags: &mut [u32], len: u32, offset: u32, items_per_unit: u32) {
@@ -114,10 +157,10 @@ fn compact_kernel(
     }
 }
 
-/// The vertex rows of the facet children i < len whose parent cell lies in the parent block
+/// The rows of the children i < len whose parent cell lies in the parent block
 /// `[cell_begin, cell_end)`: `out[i · k + j] = rows[(c − cell_begin) · stride + table[f · k
-/// + j]]`, with c the parent cell, f the local facet and `table` the block's facet vertex
-/// lists (`sub_entities`, k vertices each). Scalar.
+/// + j]]`, with c the parent cell, f the child's sub-entity code (the local facet for facet
+/// children) and `table` the block's k entries per code (e.g. the facet vertex lists). Scalar.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn facet_rows_kernel(
@@ -245,6 +288,8 @@ pub(crate) struct ParentBlock<'a> {
 
 /// The masked entities of one parent block.
 pub(crate) struct Chosen {
+    /// The parent block's position in the list given to [`select`].
+    pub(crate) block: usize,
     pub(crate) cell: CellType,
     /// The flat parent indices, in parent local order.
     pub(crate) parents: DeviceBuffer<u32>,
@@ -266,7 +311,7 @@ pub(crate) fn select(
 ) -> Result<Vec<Chosen>> {
     let client = mask.client();
     let mut out = Vec::new();
-    for block in blocks {
+    for (b, block) in blocks.iter().enumerate() {
         let n = block.index_map.num_local();
         let num_owned = block.index_map.num_owned();
         let (owned, total, parents) = if n == 0 {
@@ -341,6 +386,7 @@ pub(crate) fn select(
         };
         if comm.sum(total as u64) > 0 {
             out.push(Chosen {
+                block: b,
                 cell: block.cell,
                 parents,
                 num_owned: owned,
@@ -358,15 +404,15 @@ pub(super) struct RowSource<'a> {
     pub(super) rows: &'a DeviceStrided<u32>,
     /// The block's local cell count.
     pub(super) num_local: usize,
-    /// k entries per facet of the block's cell type; `None` if no child has a parent cell in
-    /// the block.
+    /// k entries per sub-entity code of the block's cell type (per facet for facet children);
+    /// `None` if no child has a parent cell in the block.
     pub(super) table: Option<&'a [u32]>,
 }
 
-/// The rows of the facet children (parent cells `cells`, local facets `facets`) restricted from
-/// the parent blocks' rows: for the block b holding cell c, entry j of child i is
-/// `rows_b[(c − begin_b) · stride_b + table_b[f · k + j]]`. Children whose block has no table
-/// keep unspecified rows.
+/// The rows of the children with parent cells `cells` and sub-entity codes `facets` (local
+/// facets for facet children) restricted from the parent blocks' rows: for the block b holding
+/// cell c, entry j of child i is `rows_b[(c − begin_b) · stride_b + table_b[f · k + j]]`.
+/// Children whose block has no table keep unspecified rows.
 pub(super) fn restrict_rows(
     cells: &DeviceBuffer<u32>,
     facets: &DeviceBuffer<u32>,
@@ -391,8 +437,8 @@ pub(super) fn restrict_rows(
             // SAFETY: children i < n read cells[i] and facets[i] (n words each); those with a
             // cell c in [cell_begin, cell_end) read the block's row c − cell_begin, at most
             // stride words from (c − cell_begin) · stride < rows.len(), at the positions
-            // table[f · k + j] < stride (f < the block's facet count, the table holds k per
-            // facet), and write out[i · k + j] < n · k, its length.
+            // table[f · k + j] < stride (f below the block's code count, the table holds k per
+            // code), and write out[i · k + j] < n · k, its length.
             unsafe {
                 facet_rows_kernel::launch_unchecked(
                     client,
@@ -434,6 +480,7 @@ pub(crate) fn facet_children<TD: TopoDim>(
         num_owned,
         parent_map,
         parent_offset,
+        ..
     } = chosen;
     let client = topology.client();
     let n = parents.len();
