@@ -17,7 +17,7 @@ use gridcl_device::{
 use gridcl_dims::TopoDim;
 use gridcl_parallel::{CommDyn, ReverseOp};
 
-use crate::{Connectivity, Topology};
+use crate::{CellBlock, Connectivity, EntityBlock, Topology};
 
 /// The cells of every local facet (entities of dimension tdim − 1), in flat facet order over
 /// the facet blocks. For gridcl's submeshes and `orient`; not part of the stable API.
@@ -145,33 +145,78 @@ pub fn facet_cell_counts<TD: TopoDim>(
     let Some(dim) = tdim.checked_sub(1) else {
         return Err(GridError::EntitiesNotCreated(0));
     };
-    let client = topology.client().clone();
     let facet_blocks = topology.entity_blocks(dim)?;
+    let rows = facet_rows(topology.cell_blocks(), |key| topology.connectivity(key))?;
+    facet_cells_of_parts(
+        topology.client(),
+        topology.cell_blocks(),
+        facet_blocks,
+        &rows,
+    )
+}
+
+/// The downward (tdim, tdim − 1) rows of each cell block, or their vertex rows for tdim = 1,
+/// from a connectivity accessor such as `Topology::connectivity` or `DeviceGrid`'s.
+///
+/// # Errors
+///
+/// The accessor's `ConnectivityNotCreated` before the facet entities exist;
+/// `EntitiesNotCreated(0)` for tdim = 0.
+#[doc(hidden)]
+pub fn facet_rows<'a, TD: TopoDim>(
+    cell_blocks: &'a [CellBlock<TD>],
+    connectivity: impl FnOnce(ConnKey) -> Result<&'a Connectivity>,
+) -> Result<Vec<&'a DeviceStrided<u32>>> {
+    let tdim = TD::N;
+    match tdim {
+        0 => Err(GridError::EntitiesNotCreated(0)),
+        1 => Ok(cell_blocks.iter().map(|b| &b.vertices).collect()),
+        _ => {
+            let key = ConnKey {
+                from: tdim as u8,
+                to: (tdim - 1) as u8,
+            };
+            match connectivity(key)? {
+                Connectivity::Downward(rows) => Ok(rows.iter().collect()),
+                Connectivity::Upward(_) => unreachable!("(tdim, tdim - 1) is downward"),
+            }
+        }
+    }
+}
+
+/// [`facet_cell_counts`] from the parts of a topology or a `DeviceGrid`: its client, cell
+/// blocks, facet blocks (entities of dimension tdim − 1) and the cells' facet rows
+/// ([`facet_rows`]). Collective. For gridcl-geometry's `orient`, which sees a mesh as a
+/// `DeviceGrid`; not part of the stable API (ADR-0038; tests: gridcl-topology's
+/// `facet_cells`, through [`facet_cell_counts`], and gridcl's `orient`).
+///
+/// # Errors
+///
+/// As [`facet_cell_counts`]; `LengthMismatch` if `rows` has not one entry per cell block.
+#[doc(hidden)]
+pub fn facet_cells_of_parts<TD: TopoDim>(
+    client: &Client,
+    cell_blocks: &[CellBlock<TD>],
+    facet_blocks: &[EntityBlock],
+    rows: &[&DeviceStrided<u32>],
+) -> Result<FacetCells> {
+    if rows.len() != cell_blocks.len() {
+        return Err(GridError::LengthMismatch {
+            expected: cell_blocks.len(),
+            found: rows.len(),
+        });
+    }
+    let client = client.clone();
     let num_facets = facet_blocks
         .iter()
         .try_fold(0usize, |acc, b| acc.checked_add(b.index_map.num_local()))
         .ok_or(GridError::TooLarge)?;
     let last = fit(num_facets)?.saturating_sub(1);
 
-    // The downward rows of each cell block: (tdim, tdim − 1), or the vertex rows for curves.
-    let rows: Vec<&DeviceStrided<u32>> = if dim == 0 {
-        topology.cell_blocks().iter().map(|b| &b.vertices).collect()
-    } else {
-        let key = ConnKey {
-            from: tdim as u8,
-            to: dim as u8,
-        };
-        match topology.connectivity(key)? {
-            Connectivity::Downward(rows) => rows.iter().collect(),
-            Connectivity::Upward(_) => unreachable!("(tdim, tdim - 1) is downward"),
-        }
-    };
-
     // The flat facet of every (owned cell, local facet) pair.
-    let owned_len = topology
-        .cell_blocks()
+    let owned_len = cell_blocks
         .iter()
-        .zip(&rows)
+        .zip(rows)
         .try_fold(0usize, |acc, (b, r)| {
             b.index_map
                 .num_owned()
@@ -181,7 +226,7 @@ pub fn facet_cell_counts<TD: TopoDim>(
         .ok_or(GridError::TooLarge)?;
     let entries = DeviceBuffer::<u32>::uninit(&client, owned_len)?;
     let mut base = 0usize;
-    for (block, r) in topology.cell_blocks().iter().zip(&rows) {
+    for (block, r) in cell_blocks.iter().zip(rows) {
         let len = block.index_map.num_owned() * r.stride as usize;
         if len > 0 {
             let launch = plan(&client, len)?;
@@ -266,7 +311,7 @@ pub fn facet_cell_counts<TD: TopoDim>(
     gridcl_device::fill(&mut cell, u32::MAX)?;
     gridcl_device::fill(&mut local_facet, u32::MAX)?;
     let mut cell_offset = 0usize;
-    for (block, r) in topology.cell_blocks().iter().zip(&rows) {
+    for (block, r) in cell_blocks.iter().zip(rows) {
         let len = r.data.len();
         if len > 0 && num_facets > 0 {
             let launch = plan(&client, len)?;

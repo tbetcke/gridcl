@@ -30,7 +30,7 @@ mod transpose;
 pub use cell_block::CellBlock;
 pub use entity::{Connectivity, EntityBlock};
 #[doc(hidden)]
-pub use facet_cells::{FacetCells, facet_cell_counts};
+pub use facet_cells::{FacetCells, facet_cell_counts, facet_cells_of_parts, facet_rows};
 pub use gridcl_device::ConnKey;
 pub use origin::{decode_origin_ids, encode_origin_ids, origin_ids_fit_u32};
 pub use sharers::VertexSharers;

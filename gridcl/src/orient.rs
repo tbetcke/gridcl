@@ -11,8 +11,8 @@ use crate::Mesh;
 
 /// `Mesh::orient`.
 pub(crate) fn orient<F, TD, GD, C>(
-    _mesh: &mut Mesh<F, TD, GD, C>,
-    _rule: OrientationRule,
+    mesh: &mut Mesh<F, TD, GD, C>,
+    rule: OrientationRule,
 ) -> Result<()>
 where
     F: Real,
@@ -20,5 +20,12 @@ where
     GD: Dim,
     C: Comm,
 {
-    todo!("orient: M9 T7")
+    let tdim = TD::N;
+    mesh.create_entities(tdim - 1)?;
+    mesh.create_connectivity(tdim - 1, tdim)?;
+    let flags = gridcl_geometry::orientation_flags(&*mesh, rule)?;
+    for (b, f) in flags.into_iter().enumerate() {
+        mesh.topology.set_cell_flags(b, f)?;
+    }
+    Ok(())
 }

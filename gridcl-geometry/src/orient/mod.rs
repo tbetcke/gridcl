@@ -2,10 +2,14 @@
 //! the rule that chooses the direction of each component, and the hook that computes the
 //! orientation flags of a codimension-1 mesh.
 
-use gridcl_device::{DeviceBuffer, Real, Result};
+mod parity;
+
+use gridcl_device::{DeviceBuffer, DeviceStrided, Real, Result};
 use gridcl_dims::{Codim1, Dim, TopoDim};
+use gridcl_topology::{facet_cells_of_parts, facet_rows};
 
 use crate::DeviceGrid;
+use parity::{Neighbours, SideExchange};
 
 /// How `orient` chooses the direction of each connected component of a codimension-1 mesh
 /// (ADR-0039, item 2). Points are absolute coordinates; the first gdim entries are used.
@@ -45,8 +49,8 @@ pub enum OrientationRule {
 /// errors.
 #[doc(hidden)]
 pub fn orientation_flags<F, TD, GD, G>(
-    _g: &G,
-    _rule: OrientationRule,
+    g: &G,
+    rule: OrientationRule,
 ) -> Result<Vec<DeviceBuffer<u32>>>
 where
     F: Real,
@@ -54,5 +58,60 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    todo!("orientation_flags: M9 T7-T9")
+    let neighbours = with_neighbours(g, |_, n| Ok(n))?;
+    let _ = (rule, neighbours);
+    todo!("orientation_flags: label propagation and direction (M9 T8, T9)")
+}
+
+/// The neighbour table of `g` (rule 12): per cell block, per cell and local facet,
+/// `(neighbour << 1) | parity` with the parity of the shared facet (1 where the two cells
+/// induce the same direction on it), or `u32::MAX` where the facet has not two cells
+/// globally. Neighbours below the number of local cells are flat local cells; a neighbour
+/// `num_cells + f` is the remote side of facet f, given for owned cells only. Runs the manifold
+/// check first. Collective. Not part of the stable API (ADR-0038; test: gridcl-geometry's
+/// `orient`).
+///
+/// # Errors
+///
+/// As [`orientation_flags`], up to `NonManifold`.
+#[doc(hidden)]
+pub fn orientation_neighbours<G>(g: &G) -> Result<Vec<DeviceStrided<u32>>>
+where
+    G: DeviceGrid,
+    G::TD: Codim1<G::GD>,
+{
+    with_neighbours(g, |_, n| Ok(n.table))
+}
+
+/// Steps 1 and 2 of `orient` on `g`: the manifold check and the neighbour table, handed to
+/// `then` with the side exchange it was built with.
+fn with_neighbours<G, T>(
+    g: &G,
+    then: impl FnOnce(&SideExchange<'_>, Neighbours) -> Result<T>,
+) -> Result<T>
+where
+    G: DeviceGrid,
+    G::TD: Codim1<G::GD>,
+{
+    let tdim = <G::TD as gridcl_dims::Dim>::N;
+    let client = g.client();
+    let facet_blocks = g.entity_blocks(tdim - 1)?;
+    let up = parity::upward(g.connectivity(parity::facet_to_cell(tdim))?);
+    let rows = facet_rows(g.cell_blocks(), |key| g.connectivity(key))?;
+    let facet_cells = facet_cells_of_parts(client, g.cell_blocks(), facet_blocks, &rows)?;
+    parity::manifold_check(g.comm(), &facet_cells.counts)?;
+    let perms: Vec<_> = (0..g.cell_blocks().len())
+        .map(|b| g.permutation_info(b))
+        .collect();
+    let exchange = SideExchange::new(client, g.comm(), facet_blocks, 1)?;
+    let neighbours = parity::neighbours(
+        client,
+        g.cell_blocks(),
+        &perms,
+        &rows,
+        up,
+        &facet_cells.counts,
+        &exchange,
+    )?;
+    then(&exchange, neighbours)
 }
