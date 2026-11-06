@@ -710,12 +710,36 @@ where
     /// writes bit 0 of every cell's flags, ignoring the flags it had. Creates the facet entities
     /// and the (tdim − 1, tdim) connectivity it needs. Collective.
     ///
+    /// Each component's direction comes from the sign of (1/gdim) ∮ x·n (`Outward`) or of
+    /// ∫ (x − p)·n (`AwayFrom(p)`, `Towards(p)`) by Gauss degree 3p; a sum of exactly 0 flips
+    /// nothing.
+    ///
     /// # Errors
     ///
     /// `NonManifold` if a facet has more than two cells, `NonOrientable` if a component cannot
     /// be oriented consistently, `NeedsReferencePoint` for `Outward` on a component with
     /// boundary facets, all agreed across ranks; allocation, device and communication errors;
     /// `RemoteFailure` if another rank failed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// // A sphere with half of its cells flipped.
+    /// let host = gridcl_testing::sphere(0, 1).with_flipped_cells(1, 0.5);
+    /// let mut mesh: SurfaceMesh<f32> = host.build(&client)?;
+    /// mesh.orient(OrientationRule::Outward)?;
+    /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// let x = mesh.physical_points(&rule)?.blocks[0].to_host_cell_major()?;
+    /// let n = mesh.normals(&rule)?.blocks[0].to_host_cell_major()?;
+    /// // Every normal points away from the centre.
+    /// for (x, n) in x.iter().zip(&n) {
+    ///     assert!(x.iter().zip(n).map(|(a, b)| a * b).sum::<f32>() > 0.0);
+    /// }
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn orient(&mut self, rule: OrientationRule) -> Result<()> {
         crate::orient::orient(self, rule)
     }

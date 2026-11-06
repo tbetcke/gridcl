@@ -3,7 +3,8 @@
 //! records per (cell origin id, local facet) do not depend on the partition or the ghost mode;
 //! label propagation (`orientation_components`) labels each component by its smallest cell
 //! origin id, its signs satisfy every facet constraint on any partition, and pointer jumping
-//! keeps the rounds logarithmic on a strip.
+//! keeps the rounds logarithmic on a strip; with step 4 (T9), each component of a mesh takes
+//! the direction of the rule on any partition.
 
 use std::collections::BTreeMap;
 
@@ -461,5 +462,96 @@ fn rounds_are_logarithmic_on_a_strip() {
         assert!(cells.iter().all(|c| c.1 == 0), "strip {n}: labels");
         let bound = 2 * n.ilog2() as usize + 4;
         assert!(rounds <= bound, "strip {n}: {rounds} rounds > {bound}");
+    }
+}
+
+/// The smallest s · n·(x − centre) over the local cells and the Gauss points of degree 2p of
+/// a mesh of `h` under `case` on `comm` after `orient(rule)`, with the centre of each copy of
+/// [`twice`] (0, or 10 in x) and s = −1 for `Towards`.
+fn oriented_min<TD, GD, C>(
+    comm: C,
+    client: &Client,
+    h: &HostMesh,
+    case: &Case,
+    rule: OrientationRule,
+) -> f64
+where
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let mut mesh: Mesh<f32, TD, GD, C> =
+        parallel::build(comm, client, h, case, CellOrdering::Input).unwrap();
+    mesh.orient(rule).unwrap();
+    let sign = if matches!(rule, OrientationRule::Towards(_)) {
+        -1.0
+    } else {
+        1.0
+    };
+    let quad = QuadRule::for_grid(&mesh, 2 * case.degree).unwrap();
+    let (x, n) = (
+        mesh.physical_points(&quad).unwrap(),
+        mesh.normals(&quad).unwrap(),
+    );
+    let mut min = f64::INFINITY;
+    for (x, n) in x.blocks.iter().zip(&n.blocks) {
+        for (x, n) in x
+            .to_host_cell_major()
+            .unwrap()
+            .iter()
+            .zip(n.to_host_cell_major().unwrap())
+        {
+            let (x, n) = (x.as_ref(), n.as_ref());
+            let centre = if x[0] > 5.0 { 10.0 } else { 0.0 };
+            let xn: f64 = (0..GD::N)
+                .map(|g| {
+                    let c = if g == 0 { centre } else { 0.0 };
+                    (f64::from(x[g]) - c) * f64::from(n[g])
+                })
+                .sum();
+            min = min.min(sign * xn);
+        }
+    }
+    min
+}
+
+/// Two disjoint flipped closed surfaces or curves: each component takes its own direction,
+/// outward under `Outward` and `AwayFrom` (whatever the point), inward under `Towards`, on one
+/// rank and 1–4 threads in every ghost mode (step 4: per-label sums and their rendezvous).
+#[test]
+fn each_component_takes_its_own_direction() {
+    let client = gridcl_testing::test_client();
+    let rules = [
+        OrientationRule::Outward,
+        OrientationRule::AwayFrom([10.0, 0.0, 0.0]),
+        OrientationRule::Towards([0.0; 3]),
+    ];
+    let cases: Vec<Case> = parallel::orient_cases(Coverage::Full)
+        .into_iter()
+        .filter(|c| [Family::Sphere, Family::Circle].contains(&c.family))
+        .collect();
+    for case in &cases {
+        let h = twice(&case.family.host(case.degree).with_flipped_cells(37, 0.5));
+        for rule in rules {
+            macro_rules! run {
+                ($td:ty, $gd:ty) => {{
+                    let one = oriented_min::<$td, $gd, _>(Serial, &client, &h, case, rule);
+                    assert!(one > 0.0, "{case}, {rule:?}, one rank: {one:e}");
+                    for n in 1..=4 {
+                        let mins = ThreadComm::run(n, |comm| {
+                            let client = gridcl_testing::test_client();
+                            oriented_min::<$td, $gd, _>(comm, &client, &h, case, rule)
+                        });
+                        for (r, min) in mins.into_iter().enumerate() {
+                            assert!(min > 0.0, "{case}, {rule:?}, rank {r} of {n}: {min:e}");
+                        }
+                    }
+                }};
+            }
+            match case.family {
+                Family::Circle => run!(D1, D2),
+                _ => run!(D2, D3),
+            }
+        }
     }
 }

@@ -2,6 +2,7 @@
 //! the rule that chooses the direction of each component, and the hook that computes the
 //! orientation flags of a codimension-1 mesh.
 
+mod direction;
 mod parity;
 mod propagate;
 
@@ -60,9 +61,11 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let components = orientation_components(g)?;
-    let _ = (rule, components);
-    todo!("orientation_flags: direction (M9 T9)")
+    with_neighbours(g, |exchange, counts, n| {
+        let components =
+            propagate::propagate(g.client(), g.comm(), g.cell_blocks(), &n, counts, exchange)?;
+        direction::flags(g, rule, &components, &n)
+    })
 }
 
 /// The neighbour table of `g` (rule 12): per cell block, per cell and local facet,
