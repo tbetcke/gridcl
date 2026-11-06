@@ -38,7 +38,9 @@ pub use layout::GeomLayout;
 pub use measure::measure_block;
 pub use orient::OrientationRule;
 #[doc(hidden)]
-pub use orient::{orientation_flags, orientation_neighbours};
+pub use orient::{
+    OrientationComponents, orientation_components, orientation_flags, orientation_neighbours,
+};
 pub use point_set::PointSet;
 pub use points_jac::{jacobians_block, physical_points_block};
 pub use pull_back::{PullBack, PullBackOptions, pull_back_block};

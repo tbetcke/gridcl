@@ -1,13 +1,16 @@
-//! `orient`, steps 1 and 2 (M9 T7): the neighbour table of `orientation_neighbours` has
+//! `orient`, steps 1 to 3 (M9 T7, T8): the neighbour table of `orientation_neighbours` has
 //! parity 0 between consistently oriented cells and 1 across every flipped cell, and its
-//! records per (cell origin id, local facet) do not depend on the partition or the ghost mode.
+//! records per (cell origin id, local facet) do not depend on the partition or the ghost mode;
+//! label propagation (`orientation_components`) labels each component by its smallest cell
+//! origin id, its signs satisfy every facet constraint on any partition, and pointer jumping
+//! keeps the rounds logarithmic on a strip.
 
 use std::collections::BTreeMap;
 
 use cubecl::prelude::Client;
 use gridcl::prelude::*;
 use gridcl_device::DeviceStrided;
-use gridcl_geometry::orientation_neighbours;
+use gridcl_geometry::{OrientationComponents, orientation_components, orientation_neighbours};
 use gridcl_parallel::Comm;
 use gridcl_testing::parallel::{self, Case, Coverage, Family};
 use gridcl_testing::{HostMesh, ThreadComm};
@@ -225,5 +228,238 @@ fn parities_match_one_rank() {
             Family::Circle => run!(D1, D2),
             _ => run!(D2, D3),
         }
+    }
+}
+
+/// (label, sign) of every local cell, flat, and the sign of every slot (cells, then remote
+/// slots) of a propagation state.
+fn decode(c: &OrientationComponents, num_cells: usize) -> (Vec<(i64, bool)>, Vec<u32>) {
+    let state = c.state.to_host().unwrap();
+    let words = state.as_chunks::<4>().0;
+    let cells = words[..num_cells]
+        .iter()
+        .map(|[hi, lo, s, _]| {
+            let id = ((u64::from(hi ^ 0x8000_0000) << 32) | u64::from(*lo)) as i64;
+            (id, s & 1 == 1)
+        })
+        .collect();
+    (cells, words.iter().map(|w| w[2] & 1).collect())
+}
+
+/// Checks that the signs of the owned cells of `mesh` satisfy every facet constraint of the
+/// neighbour table, remote slots included, and returns (origin id, label, sign) per owned cell
+/// and the number of rounds.
+fn owned_components<TD, GD, C>(
+    mesh: &Mesh<f32, TD, GD, C>,
+    what: &str,
+) -> (Vec<(i64, i64, bool)>, usize)
+where
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let ids = cell_ids(mesh);
+    let table = orientation_neighbours(mesh).unwrap();
+    let components = orientation_components(mesh).unwrap();
+    let (cells, slot_signs) = decode(&components, ids.len());
+    let mut owned = vec![false; ids.len()];
+    let mut offset = 0;
+    for b in mesh.cell_blocks() {
+        owned[offset..offset + b.index_map.num_owned()].fill(true);
+        offset += b.index_map.num_local();
+    }
+    for (cell, e, r) in records(&table) {
+        if owned[cell] && r != NONE {
+            let other = (r >> 1) as usize;
+            assert_eq!(
+                u32::from(cells[cell].1) ^ slot_signs[other],
+                r & 1,
+                "{what}: cell {} facet {e}: s_a ⊕ s_b ≠ parity",
+                ids[cell]
+            );
+        }
+    }
+    let out = (0..ids.len())
+        .filter(|&c| owned[c])
+        .map(|c| (ids[c], cells[c].0, cells[c].1))
+        .collect();
+    (out, components.rounds)
+}
+
+/// The offset of the second copy's ids in [`twice`].
+const OFFSET: i64 = 1 << 40;
+
+/// Two copies of `h`, the second shifted by 10 in x, with distinct node and cell ids (the
+/// second copy's are offset by [`OFFSET`]).
+fn twice(h: &HostMesh) -> HostMesh {
+    let n = h.num_nodes();
+    let gd = h.gdim;
+    let mut nodes = h.nodes.clone();
+    nodes.extend(h.nodes.chunks_exact(gd).flat_map(|x| {
+        let mut x = x.to_vec();
+        x[0] += 10.0;
+        x
+    }));
+    let ids: Vec<i64> = h
+        .node_ids
+        .clone()
+        .unwrap_or_else(|| (0..n as i64).collect());
+    let node_ids = ids
+        .iter()
+        .copied()
+        .chain(ids.iter().map(|i| i + OFFSET))
+        .collect();
+    let blocks = h
+        .blocks
+        .iter()
+        .map(|b| {
+            let mut b = b.clone();
+            let count = b.cells.len() / b.nodes_per_cell();
+            let ids = b
+                .cell_ids
+                .clone()
+                .unwrap_or_else(|| (0..count as i64).collect());
+            let shifted: Vec<u32> = b.cells.iter().map(|&v| v + n as u32).collect();
+            b.cells.extend(shifted);
+            b.cell_ids = Some(
+                ids.iter()
+                    .copied()
+                    .chain(ids.iter().map(|i| i + OFFSET))
+                    .collect(),
+            );
+            b
+        })
+        .collect();
+    HostMesh {
+        gdim: gd,
+        nodes,
+        node_ids: Some(node_ids),
+        blocks,
+    }
+}
+
+/// One rank: every cell of each closed surface or curve carries the smallest cell origin id
+/// of its component as label, and its sign is its flip relative to that cell: consistent with
+/// the geometric orientation of the cells.
+fn check_labels<TD, GD>(client: &Client, h: &HostMesh, what: &str)
+where
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+{
+    // One component.
+    let mesh = build::<TD, GD>(client, h);
+    let s = signs(&mesh);
+    let (cells, _) = owned_components(&mesh, what);
+    let min = cells.iter().map(|c| c.0).min().unwrap();
+    let root = cells.iter().position(|c| c.0 == min).unwrap();
+    for (c, &(id, label, sign)) in cells.iter().enumerate() {
+        assert_eq!(label, min, "{what}: label of cell {id}");
+        assert_eq!(sign, s[c] != s[root], "{what}: sign of cell {id}");
+    }
+    // Two components.
+    let mesh = build::<TD, GD>(client, &twice(h));
+    let (cells, _) = owned_components(&mesh, what);
+    let min = |second: bool| {
+        cells
+            .iter()
+            .filter(|c| (c.0 >= OFFSET) == second)
+            .map(|c| c.0)
+            .min()
+            .unwrap()
+    };
+    let (first, second) = (min(false), min(true));
+    for &(id, label, _) in &cells {
+        let want = if id >= OFFSET { second } else { first };
+        assert_eq!(label, want, "{what}, twice: label of cell {id}");
+    }
+}
+
+#[test]
+fn labels_are_the_smallest_origin_id_of_each_component() {
+    let client = gridcl_testing::test_client();
+    for p in 1..=3 {
+        let surfaces = [
+            ("sphere", gridcl_testing::sphere(1, p)),
+            ("mixed surface", gridcl_testing::mixed_surface(1, p)),
+        ];
+        for (what, h) in surfaces {
+            let f = h.with_flipped_cells(7 + u64::from(p), 0.5);
+            check_labels::<D2, D3>(&client, &f, &format!("flipped {what} p={p}"));
+        }
+        let f = gridcl_testing::circle(12, p).with_flipped_cells(9, 0.5);
+        check_labels::<D1, D2>(&client, &f, &format!("flipped circle p={p}"));
+    }
+}
+
+/// (origin id, label, sign) of the owned cells of a mesh of `h` under `case` on `comm`.
+fn case_components<TD, GD, C>(
+    comm: C,
+    client: &Client,
+    h: &HostMesh,
+    case: &Case,
+) -> Vec<(i64, i64, bool)>
+where
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let mut mesh: Mesh<f32, TD, GD, C> =
+        parallel::build(comm, client, h, case, CellOrdering::Input).unwrap();
+    mesh.create_connectivity(TD::N - 1, TD::N).unwrap();
+    owned_components(&mesh, &format!("{case}")).0
+}
+
+/// Labels and signs per cell origin id on 1–4 threads, in every ghost mode, equal one
+/// rank's, and the signs of every rank satisfy its facet constraints.
+#[test]
+fn signs_satisfy_every_facet_constraint_on_threads() {
+    let client = gridcl_testing::test_client();
+    let cases: Vec<Case> = parallel::orient_cases(Coverage::Full)
+        .into_iter()
+        .filter(|c| [Family::Sphere, Family::MixedSurface, Family::Circle].contains(&c.family))
+        .collect();
+    for case in &cases {
+        let h = case.family.host(case.degree).with_flipped_cells(29, 0.5);
+        macro_rules! run {
+            ($td:ty, $gd:ty) => {{
+                let one: BTreeMap<i64, (i64, bool)> =
+                    case_components::<$td, $gd, _>(Serial, &client, &h, case)
+                        .into_iter()
+                        .map(|(id, l, s)| (id, (l, s)))
+                        .collect();
+                for n in 1..=4 {
+                    let parts = ThreadComm::run(n, |comm| {
+                        let client = gridcl_testing::test_client();
+                        case_components::<$td, $gd, _>(comm, &client, &h, case)
+                    });
+                    let mut all = BTreeMap::new();
+                    for (id, l, s) in parts.into_iter().flatten() {
+                        assert!(all.insert(id, (l, s)).is_none(), "{case}: cell {id} twice");
+                    }
+                    assert_eq!(all, one, "{case}, {n} ranks");
+                }
+            }};
+        }
+        match case.family {
+            Family::Circle => run!(D1, D2),
+            _ => run!(D2, D3),
+        }
+    }
+}
+
+/// On a strip whose cell ids increase along it, pointer jumping needs O(log n) rounds, not
+/// O(n).
+#[test]
+fn rounds_are_logarithmic_on_a_strip() {
+    let client = gridcl_testing::test_client();
+    for n in [64usize, 1024] {
+        let h = gridcl_testing::triangle_strip(n)
+            .mapped(3, |x| vec![x[0], x[1], 0.0])
+            .with_flipped_cells(31, 0.5);
+        let mesh = build::<D2, D3>(&client, &h);
+        let (cells, rounds) = owned_components(&mesh, &format!("strip {n}"));
+        assert!(cells.iter().all(|c| c.1 == 0), "strip {n}: labels");
+        let bound = 2 * n.ilog2() as usize + 4;
+        assert!(rounds <= bound, "strip {n}: {rounds} rounds > {bound}");
     }
 }

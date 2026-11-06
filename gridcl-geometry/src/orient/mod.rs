@@ -3,6 +3,7 @@
 //! orientation flags of a codimension-1 mesh.
 
 mod parity;
+mod propagate;
 
 use gridcl_device::{DeviceBuffer, DeviceStrided, Real, Result};
 use gridcl_dims::{Codim1, Dim, TopoDim};
@@ -10,6 +11,7 @@ use gridcl_topology::{facet_cells_of_parts, facet_rows};
 
 use crate::DeviceGrid;
 use parity::{Neighbours, SideExchange};
+pub use propagate::OrientationComponents;
 
 /// How `orient` chooses the direction of each connected component of a codimension-1 mesh
 /// (ADR-0039, item 2). Points are absolute coordinates; the first gdim entries are used.
@@ -58,9 +60,9 @@ where
     GD: Dim,
     G: DeviceGrid<F = F, TD = TD, GD = GD>,
 {
-    let neighbours = with_neighbours(g, |_, n| Ok(n))?;
-    let _ = (rule, neighbours);
-    todo!("orientation_flags: label propagation and direction (M9 T8, T9)")
+    let components = orientation_components(g)?;
+    let _ = (rule, components);
+    todo!("orientation_flags: direction (M9 T9)")
 }
 
 /// The neighbour table of `g` (rule 12): per cell block, per cell and local facet,
@@ -80,14 +82,33 @@ where
     G: DeviceGrid,
     G::TD: Codim1<G::GD>,
 {
-    with_neighbours(g, |_, n| Ok(n.table))
+    with_neighbours(g, |_, _, n| Ok(n.table))
+}
+
+/// Steps 1 to 3 of `orient` on `g`: the manifold check, the neighbour table and label
+/// propagation, giving each local cell the smallest cell origin id of its component and its
+/// flip relative to that cell. Collective. Not part of the stable API (ADR-0038; test:
+/// gridcl-geometry's `orient`).
+///
+/// # Errors
+///
+/// As [`orientation_flags`], up to `NonOrientable`.
+#[doc(hidden)]
+pub fn orientation_components<G>(g: &G) -> Result<OrientationComponents>
+where
+    G: DeviceGrid,
+    G::TD: Codim1<G::GD>,
+{
+    with_neighbours(g, |exchange, counts, n| {
+        propagate::propagate(g.client(), g.comm(), g.cell_blocks(), &n, counts, exchange)
+    })
 }
 
 /// Steps 1 and 2 of `orient` on `g`: the manifold check and the neighbour table, handed to
-/// `then` with the side exchange it was built with.
+/// `then` with the side exchange it was built with and the owned cells per facet.
 fn with_neighbours<G, T>(
     g: &G,
-    then: impl FnOnce(&SideExchange<'_>, Neighbours) -> Result<T>,
+    then: impl FnOnce(&SideExchange<'_>, &DeviceBuffer<u32>, Neighbours) -> Result<T>,
 ) -> Result<T>
 where
     G: DeviceGrid,
@@ -113,5 +134,5 @@ where
         &facet_cells.counts,
         &exchange,
     )?;
-    then(&exchange, neighbours)
+    then(&exchange, &facet_cells.counts, neighbours)
 }

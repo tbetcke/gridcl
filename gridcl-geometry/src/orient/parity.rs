@@ -34,12 +34,12 @@ use gridcl_topology::{CellBlock, Connectivity, EntityBlock};
 pub(crate) const NONE: u32 = u32::MAX;
 
 /// u32 of `x`, or `TooLarge`.
-fn fit(x: usize) -> Result<u32> {
+pub(crate) fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
 /// A scalar launch over `len` items.
-fn plan(client: &Client, len: usize) -> Result<LaunchPlan> {
+pub(crate) fn plan(client: &Client, len: usize) -> Result<LaunchPlan> {
     LaunchPlan::elementwise(client, KernelKind::Scalar, len, 4, 1, 1)
 }
 
@@ -302,6 +302,11 @@ impl<'a> SideExchange<'a> {
         })
     }
 
+    /// The same exchange with `w` words per side. Collective on more than one rank.
+    pub(crate) fn with_width(&self, comm: &dyn CommDyn, w: usize) -> Result<SideExchange<'a>> {
+        SideExchange::new(&self.client, comm, self.blocks, w)
+    }
+
     /// The other side's `w` words per facet, `[facet][w]`, from the words of each local side
     /// (`values`, `[facet][2][w]`, non-zero where present): defined where a facet has two
     /// cells globally and the other one is owned by another rank than an owned local cell at
@@ -377,7 +382,6 @@ impl<'a> SideExchange<'a> {
 }
 
 /// The neighbour table of rule 12 and the facet sides it was built from.
-#[allow(dead_code)] // `sides` and `num_cells` are read by label propagation (M9 T8)
 pub(crate) struct Neighbours {
     /// Per cell block, per cell and local facet: `(neighbour << 1) | parity`, or [`NONE`].
     /// Neighbours below `num_cells` are flat local cells; `num_cells + f` is the remote side
