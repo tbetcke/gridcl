@@ -48,8 +48,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      # `cargo test --workspace` in two jobs: gridcl's suite runs in cpu-gridcl.
-      - run: cargo test --workspace --exclude gridcl
+      # `cargo test --workspace` in two jobs: gridcl's suite and gridcl-geometry's integration
+      # tests (8 min, M9's orient tests) run in cpu-gridcl.
+      - run: cargo test --workspace --exclude gridcl --exclude gridcl-geometry
+      - run: cargo test -p gridcl-geometry --lib
+      - run: cargo test -p gridcl-geometry --doc
       # Partition-quality tests with vendored METIS, the design's CI default (M7 T3): only what
       # the feature changes; the rest of gridcl's suite ran above.
       - name: Partitioner tests with METIS
@@ -67,15 +70,16 @@ jobs:
           scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
 
-  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the six
-  # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review).
+  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the eight
+  # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review). Shard 1,
+  # the shortest (6 min), also runs gridcl-geometry's integration tests.
   cpu-gridcl:
     name: cpu-gridcl-${{ matrix.shard }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust toolchain from rust-toolchain.toml
@@ -94,6 +98,8 @@ jobs:
           .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
       - run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}
+      - if: matrix.shard == 1
+        run: cargo test -p gridcl-geometry --test integration
 
   # Each MPI in two jobs: the MPI tests, and the hdf5 steps (together 25 min in one job, M8
   # review). The hdf5 jobs restore the mpi jobs' cache and save none.
@@ -176,14 +182,14 @@ jobs:
           GRIDCL_MPI_TESTS: vtkhdf_parallel
 
   # In five jobs (33 min in one, M8 review): gridcl's shards of scripts/ci-gridcl-shard.sh, two
-  # to a job where they are short, and the other crates, whose job saves the cache.
+  # or more to a job where they are short, and the other crates, whose job saves the cache.
   vulkan:
     name: vulkan-${{ matrix.shard }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1", "2", "3,4", "5,6", other]
+        shard: ["1", "2", "3,4", "5,6,7,8", other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)
