@@ -54,3 +54,17 @@ fn mobius_strip_is_non_orientable() {
 fn outward_on_open_surface_needs_reference_point() {
     run(&cases(Coverage::Full, &[Family::Hemisphere]));
 }
+
+/// The circle (12 cells) on 16 ranks, so that some ranks own no cells: every rank must take
+/// part in each collective (ranks without owned cells skipped the agreed Gauss degree of the
+/// direction step, and MPI runs at 16 ranks hung).
+#[test]
+fn ranks_without_cells_take_part() {
+    let all = cases(Coverage::Quick, &[Family::Circle]);
+    ThreadComm::run(16, |comm| {
+        let client = gridcl_testing::test_client();
+        for case in &all {
+            parallel::orient(&comm, &client, case);
+        }
+    });
+}

@@ -286,8 +286,16 @@ where
         }
     };
 
+    // The Gauss degree, 3 · max p over the blocks of every rank: collective, so it is agreed
+    // here, where ranks without owned cells take part too.
+    let degree = (0..blocks.len())
+        .map(|b| g.geometry_block(b).element.degree)
+        .max()
+        .unwrap_or(1);
+    let degree = comm.max(3 * degree);
+
     let (records, sorted) = if owned > 0 {
-        let parts = parts::<F, TD, GD, G>(g, state, num_cells)?;
+        let parts = parts::<F, TD, GD, G>(g, state, num_cells, degree)?;
         let (mut records, sorted) = per_label(client, blocks, state, neighbours, &parts, owned)?;
         // A + (origin − p)·B, in f64.
         records.sums = records
@@ -369,11 +377,13 @@ where
     Ok(out)
 }
 
-/// The signed parts `[slot][gdim + 1]` of every owned cell (ghost slots unset).
+/// The signed parts `[slot][gdim + 1]` of every owned cell (ghost slots unset), with the
+/// Gauss rule of `degree`. Not collective.
 fn parts<F, TD, GD, G>(
     g: &G,
     state: &DeviceBuffer<u32>,
     num_cells: usize,
+    degree: u32,
 ) -> Result<DeviceBuffer<F>>
 where
     F: Real,
@@ -384,11 +394,6 @@ where
     let client = g.client();
     let blocks = g.cell_blocks();
     let width = GD::N + 1;
-    let degree = (0..blocks.len())
-        .map(|b| g.geometry_block(b).element.degree)
-        .max()
-        .unwrap_or(1);
-    let degree = g.comm().max(3 * degree);
     let rule = QuadRule::<F, TD>::for_grid(g, degree)?;
     let len = num_cells.checked_mul(width).ok_or(GridError::TooLarge)?;
     let out = DeviceBuffer::<F>::uninit(client, len)?;
