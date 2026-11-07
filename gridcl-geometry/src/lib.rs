@@ -5,6 +5,7 @@
 //! Factor kernels read the cached E-vector of a geometry block ([`DeviceGrid::evector`]) and
 //! write tiled [`QuadField`]s, with the lanes of a vector over consecutive cells of a tile.
 
+mod basis_eval;
 mod detj_pinv;
 mod element;
 mod equispaced;

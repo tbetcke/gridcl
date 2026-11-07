@@ -147,10 +147,10 @@ where
         Ok(cache.get_or_init(|| xe))
     }
 
-    /// The allocated bytes of every device array (dofmaps, nodes, the uploaded origin and the
-    /// E-vectors built so far) plus the [`footprint_bytes`](IndexMap::footprint_bytes) of the
-    /// node index map. For memory accounting in tests (`Mesh::footprint_bytes`, ADR-0035);
-    /// not part of the stable API.
+    /// The allocated bytes of every device array (dofmaps, nodes, the uploaded origin, the
+    /// E-vectors built so far and their cached basis coefficients) plus the
+    /// [`footprint_bytes`](IndexMap::footprint_bytes) of the node index map. For memory
+    /// accounting in tests (`Mesh::footprint_bytes`, ADR-0035); not part of the stable API.
     ///
     /// # Example
     ///
@@ -187,8 +187,10 @@ where
             .evectors
             .iter()
             .filter_map(OnceCell::get)
-            .flat_map(EVector::chunks)
-            .map(|c| c.data.footprint_bytes())
+            .map(|xe| {
+                let chunks: usize = xe.chunks().iter().map(|c| c.data.footprint_bytes()).sum();
+                chunks + xe.coefficients_bytes()
+            })
             .sum();
         dofmaps
             + evectors
