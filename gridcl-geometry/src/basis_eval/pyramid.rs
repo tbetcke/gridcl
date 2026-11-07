@@ -8,7 +8,7 @@
 
 use cubecl::prelude::*;
 
-use super::{cst, int, scaled_jacobi};
+use super::{cst, emit, int, scaled_jacobi};
 
 /// The index of the first triple with this (i, j).
 fn pyramid_row(p: usize, i: usize, j: usize) -> usize {
@@ -19,14 +19,16 @@ fn pyramid_row(p: usize, i: usize, j: usize) -> usize {
         .sum()
 }
 
-/// The pyramid set: (value, ∂x, ∂y, ∂z) at 4k.
+/// The pyramid set.
 #[cube]
 pub(crate) fn pyramid<F: Float, N: Size>(
     xi: &Array<Vector<F, N>>,
-    phi: &mut Array<Vector<F, N>>,
+    a: &Array<Vector<F, N>>,
+    acc: &mut Array<Vector<F, N>>,
     one: Vector<F, N>,
     zero: Vector<F, N>,
     #[comptime] p: usize,
+    #[comptime] g: usize,
 ) {
     let two = cst::<F, N>(2i64);
     // 1 − 2^−10 (the f32 nearest to the literal), exact in f32 and f64.
@@ -40,21 +42,21 @@ pub(crate) fn pyramid<F: Float, N: Size>(
     for t in 1..p + 2 {
         pw[t] = pw[t - 1] * inv;
     }
-    let a = scaled_jacobi::<F, N>(two * xi[0] - s, s, one, zero, p, 0i64, 0i64, true);
-    let b = scaled_jacobi::<F, N>(two * xi[1] - s, s, one, zero, p, 0i64, 0i64, true);
+    let qa = scaled_jacobi::<F, N>(two * xi[0] - s, s, one, zero, p, 0i64, 0i64, true);
+    let qb = scaled_jacobi::<F, N>(two * xi[1] - s, s, one, zero, p, 0i64, 0i64, true);
     #[unroll]
     for i in 0..p + 1 {
-        let ai = a[3 * i];
-        let aix = a[3 * i + 1];
+        let ai = qa[3 * i];
+        let aix = qa[3 * i + 1];
         // ∂(2x − s)/∂z = 1 and ∂s/∂z = −1.
-        let az = aix - a[3 * i + 2];
+        let az = aix - qa[3 * i + 2];
         #[unroll]
         for j in 0..p + 1 {
             let m = comptime!(i.max(j));
             let n = comptime!(i.min(j));
-            let bj = b[3 * j];
-            let bjx = b[3 * j + 1];
-            let bz = bjx - b[3 * j + 2];
+            let bj = qb[3 * j];
+            let bjx = qb[3 * j + 1];
+            let bz = bjx - qb[3 * j + 2];
             // F = Q_i Q_j / s^n and its derivatives; ∂(s^−n)/∂z = n s^−n−1.
             let r = pw[n];
             let f0 = ai * bj * r;
@@ -77,13 +79,20 @@ pub(crate) fn pyramid<F: Float, N: Size>(
             );
             #[unroll]
             for k in 0..p - m + 1 {
-                let o = comptime!(4 * (pyramid_row(p, i, j) + k));
+                let o = comptime!(pyramid_row(p, i, j) + k);
                 let ck = c[3 * k];
                 let ckx = c[3 * k + 1];
-                phi[o] = f0 * ck;
-                phi[o + 1] = f1 * ck;
-                phi[o + 2] = f2 * ck;
-                phi[o + 3] = f3 * ck + f0 * (two * ckx);
+                emit::<F, N>(
+                    acc,
+                    a,
+                    o,
+                    f0 * ck,
+                    f1 * ck,
+                    f2 * ck,
+                    f3 * ck + f0 * (two * ckx),
+                    3usize,
+                    g,
+                );
             }
         }
     }

@@ -166,48 +166,91 @@ pub(crate) fn legendre<F: Float, N: Size>(
     out
 }
 
-/// The unnormalised orthogonal set φ̃_k of degree `degree` on `cell` and its first derivatives
-/// at the reference point `xi` (tdim entries): entry k (1 + tdim) the value of φ̃_k and
-/// k (1 + tdim) + 1 + d the derivative along ξ_d, k in the order of gridcl-refcell's
-/// `orthonormal_at`. `zero` and `one` are the runtime constants of the module docs. The
-/// pyramid clamps ζ to at most 1 − 2^−10 first (ADR-0039, item 15).
+/// Adds basis function k to the sums: `acc[c (1 + td) + d] += a[k g + c] · v_d` for each of
+/// the `g` columns c of `a`, with v_0 the value of φ̃_k and v_{1+d} its derivative along ξ_d
+/// (the v beyond `td` are unused). Each sum adds a product of runtime values, so the fusion
+/// is the same at every vector size.
 #[cube]
-pub(crate) fn orthogonal_basis<F: Float, N: Size>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit<F: Float, N: Size>(
+    acc: &mut Array<Vector<F, N>>,
+    a: &Array<Vector<F, N>>,
+    #[comptime] k: usize,
+    v0: Vector<F, N>,
+    v1: Vector<F, N>,
+    v2: Vector<F, N>,
+    v3: Vector<F, N>,
+    #[comptime] td: usize,
+    #[comptime] g: usize,
+) {
+    #[unroll]
+    for c in 0..g {
+        let w = a[k * g + c];
+        let o = c * (td + 1);
+        acc[o] += w * v0;
+        acc[o + 1] += w * v1;
+        if comptime!(td >= 2) {
+            acc[o + 2] += w * v2;
+        }
+        if comptime!(td >= 3) {
+            acc[o + 3] += w * v3;
+        }
+    }
+}
+
+/// Σ_k a_k φ̃_k(ξ) and its first derivatives, for `g` columns of expansion coefficients:
+/// `a[k g + c]` is a_k of column c, k in the order of gridcl-refcell's `orthonormal_at`
+/// (the unnormalised orthogonal set of degree `degree` on `cell`, module docs). Entry
+/// c (1 + tdim) of the result is the sum of column c and c (1 + tdim) + 1 + d its derivative
+/// along ξ_d. The set is never stored: each φ̃_k is added to the sums as the recurrences
+/// produce it, so a kernel keeps g (1 + tdim) sums live rather than a table of every basis
+/// function, which slowed the CUDA compiler by minutes at p = 4 and broke the launch of the
+/// f64 hexahedron at vector size 2 (M9 T10a). With a_k = C'[k N + j] (`device_coefficients`)
+/// the result is the Lagrange function ψ_j; with a_k = Σ_j C'[k N + j] x_j it is the
+/// coordinate map. `zero` and `one` are the runtime constants of the module docs. The pyramid
+/// clamps ζ to at most 1 − 2^−10 first (ADR-0039, item 15).
+#[cube]
+pub(crate) fn expansion<F: Float, N: Size>(
     xi: &Array<Vector<F, N>>,
+    a: &Array<Vector<F, N>>,
     one: Vector<F, N>,
     zero: Vector<F, N>,
     #[comptime] cell: CellType,
     #[comptime] degree: usize,
+    #[comptime] g: usize,
 ) -> Array<Vector<F, N>> {
-    let mut phi = Array::<Vector<F, N>>::new(comptime!(basis_len(cell, degree)));
-    if comptime!(cell == CellType::Interval) {
-        tensor::interval::<F, N>(xi, &mut phi, one, zero, degree);
-    } else if comptime!(cell == CellType::Quadrilateral) {
-        tensor::quadrilateral::<F, N>(xi, &mut phi, one, zero, degree);
-    } else if comptime!(cell == CellType::Hexahedron) {
-        tensor::hexahedron::<F, N>(xi, &mut phi, one, zero, degree);
-    } else if comptime!(cell == CellType::Triangle) {
-        simplex::triangle::<F, N>(xi, &mut phi, one, zero, degree);
-    } else if comptime!(cell == CellType::Tetrahedron) {
-        simplex::tetrahedron::<F, N>(xi, &mut phi, one, zero, degree);
-    } else if comptime!(cell == CellType::Prism) {
-        simplex::prism::<F, N>(xi, &mut phi, one, zero, degree);
-    } else if comptime!(cell == CellType::Pyramid) {
-        pyramid::pyramid::<F, N>(xi, &mut phi, one, zero, degree);
-    } else {
-        // The point cell: one basis function, the constant.
-        phi[0] = one;
+    let td = comptime!(gridcl_refcell::tdim(cell));
+    let mut acc = Array::<Vector<F, N>>::new(comptime!(g * (td + 1)));
+    #[unroll]
+    for c in 0..g * (td + 1) {
+        acc[c] = zero;
     }
-    phi
-}
-
-/// Entries of [`orthogonal_basis`]'s array: (1 + tdim) per basis function.
-pub(crate) fn basis_len(cell: CellType, degree: usize) -> usize {
-    num_lagrange_nodes(cell, degree as u32) * (1 + gridcl_refcell::tdim(cell))
+    if comptime!(cell == CellType::Interval) {
+        tensor::interval::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else if comptime!(cell == CellType::Quadrilateral) {
+        tensor::quadrilateral::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else if comptime!(cell == CellType::Hexahedron) {
+        tensor::hexahedron::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else if comptime!(cell == CellType::Triangle) {
+        simplex::triangle::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else if comptime!(cell == CellType::Tetrahedron) {
+        simplex::tetrahedron::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else if comptime!(cell == CellType::Prism) {
+        simplex::prism::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else if comptime!(cell == CellType::Pyramid) {
+        pyramid::pyramid::<F, N>(xi, a, &mut acc, one, zero, degree, g);
+    } else {
+        // The point cell: one basis function, the constant 1.
+        #[unroll]
+        for c in 0..g {
+            acc[c] = a[c];
+        }
+    }
+    acc
 }
 
 /// The normalisation c_k of every basis function, φ_k = c_k φ̃_k, in the order of
-/// [`orthogonal_basis`].
+/// [`expansion`].
 fn normalisation(cell: CellType, p: usize) -> Vec<f64> {
     let sqrt = |n: usize| (n as f64).sqrt();
     let triangle = |out: &mut Vec<f64>, scale: f64| {
@@ -269,7 +312,7 @@ fn normalisation(cell: CellType, p: usize) -> Vec<f64> {
 }
 
 /// C' of the module docs, row-major N × N, in f64: the coefficients of the Lagrange basis of
-/// (cell, degree, family) over [`orthogonal_basis`], followed by the runtime zero and one
+/// (cell, degree, family) over [`expansion`], followed by the runtime zero and one
 /// (N² + 2 entries).
 ///
 /// # Errors

@@ -4,7 +4,7 @@
 
 use cubecl::prelude::*;
 
-use super::{cst, legendre, scaled_jacobi};
+use super::{cst, emit, legendre, scaled_jacobi};
 
 /// The index of the first (i, j) pair of row i in the triangle order (i outer, j ≤ p − i
 /// inner).
@@ -18,7 +18,8 @@ fn tetrahedron_row(p: usize, i: usize, j: usize) -> usize {
     planes + (0..j).map(|r| p - i - r + 1).sum::<usize>()
 }
 
-/// The triangle set at (x, y): (value, ∂x, ∂y) at 3k, k in the triangle order.
+/// The triangle set at (x, y): (value, ∂x, ∂y) at 3k, k in the triangle order. Small: at most
+/// 45 entries for p = 4.
 #[cube]
 fn dubiner<F: Float, N: Size>(
     x: Vector<F, N>,
@@ -60,38 +61,52 @@ fn dubiner<F: Float, N: Size>(
     out
 }
 
-/// The triangle set: (value, ∂x, ∂y) at 3k.
+/// The triangle set, k in the triangle order.
 #[cube]
 pub(crate) fn triangle<F: Float, N: Size>(
     xi: &Array<Vector<F, N>>,
-    phi: &mut Array<Vector<F, N>>,
+    a: &Array<Vector<F, N>>,
+    acc: &mut Array<Vector<F, N>>,
     one: Vector<F, N>,
     zero: Vector<F, N>,
     #[comptime] p: usize,
+    #[comptime] g: usize,
 ) {
     let t = dubiner::<F, N>(xi[0], xi[1], one, zero, p);
     #[unroll]
-    for k in 0..3 * (p + 1) * (p + 2) / 2 {
-        phi[k] = t[k];
+    for k in 0..(p + 1) * (p + 2) / 2 {
+        emit::<F, N>(
+            acc,
+            a,
+            k,
+            t[3 * k],
+            t[3 * k + 1],
+            t[3 * k + 2],
+            zero,
+            2usize,
+            g,
+        );
     }
 }
 
-/// The tetrahedron set: (value, ∂x, ∂y, ∂z) at 4k, k with i outer, then j, then k.
+/// The tetrahedron set, k with i outer, then j, then k.
 #[cube]
 pub(crate) fn tetrahedron<F: Float, N: Size>(
     xi: &Array<Vector<F, N>>,
-    phi: &mut Array<Vector<F, N>>,
+    a: &Array<Vector<F, N>>,
+    acc: &mut Array<Vector<F, N>>,
     one: Vector<F, N>,
     zero: Vector<F, N>,
     #[comptime] p: usize,
+    #[comptime] g: usize,
 ) {
     let two = cst::<F, N>(2i64);
     let s1 = one - xi[1] - xi[2];
     let s2 = one - xi[2];
-    let a = scaled_jacobi::<F, N>(two * xi[0] - s1, s1, one, zero, p, 0i64, 0i64, true);
+    let qa = scaled_jacobi::<F, N>(two * xi[0] - s1, s1, one, zero, p, 0i64, 0i64, true);
     #[unroll]
     for i in 0..p + 1 {
-        let b = scaled_jacobi::<F, N>(
+        let qb = scaled_jacobi::<F, N>(
             two * xi[1] - s2,
             s2,
             one,
@@ -101,13 +116,13 @@ pub(crate) fn tetrahedron<F: Float, N: Size>(
             0i64,
             true,
         );
-        let ai = a[3 * i];
-        let aix = a[3 * i + 1];
+        let ai = qa[3 * i];
+        let aix = qa[3 * i + 1];
         // ∂/∂y and ∂/∂z of Q_i(2x − s1, s1): both move s1 by −1.
-        let ayz = aix - a[3 * i + 2];
+        let ayz = aix - qa[3 * i + 2];
         #[unroll]
         for j in 0..p - i + 1 {
-            let c = scaled_jacobi::<F, N>(
+            let qc = scaled_jacobi::<F, N>(
                 two * xi[2] - one,
                 one,
                 one,
@@ -117,32 +132,45 @@ pub(crate) fn tetrahedron<F: Float, N: Size>(
                 0i64,
                 false,
             );
-            let bj = b[3 * j];
-            let bjx = b[3 * j + 1];
+            let bj = qb[3 * j];
+            let bjx = qb[3 * j + 1];
             // ∂/∂z of Q_j(2y − s2, s2): s2 moves by −1.
-            let bz = bjx - b[3 * j + 2];
+            let bz = bjx - qb[3 * j + 2];
+            let ab = ai * bj;
+            let dxab = two * aix * bj;
+            let dyab = ayz * bj + ai * (two * bjx);
+            let dzab = ayz * bj + ai * bz;
             #[unroll]
             for k in 0..p - i - j + 1 {
-                let o = comptime!(4 * (tetrahedron_row(p, i, j) + k));
-                let ck = c[3 * k];
-                let ckx = c[3 * k + 1];
-                phi[o] = ai * bj * ck;
-                phi[o + 1] = two * aix * bj * ck;
-                phi[o + 2] = (ayz * bj + ai * (two * bjx)) * ck;
-                phi[o + 3] = ayz * bj * ck + ai * bz * ck + ai * bj * (two * ckx);
+                let ck = qc[3 * k];
+                let ckx = qc[3 * k + 1];
+                let o = comptime!(tetrahedron_row(p, i, j) + k);
+                emit::<F, N>(
+                    acc,
+                    a,
+                    o,
+                    ab * ck,
+                    dxab * ck,
+                    dyab * ck,
+                    dzab * ck + ab * (two * ckx),
+                    3usize,
+                    g,
+                );
             }
         }
     }
 }
 
-/// The prism set, triangle times Legendre in z with z outer: (value, ∂x, ∂y, ∂z) at 4k.
+/// The prism set, triangle times Legendre in z with z outer.
 #[cube]
 pub(crate) fn prism<F: Float, N: Size>(
     xi: &Array<Vector<F, N>>,
-    phi: &mut Array<Vector<F, N>>,
+    a: &Array<Vector<F, N>>,
+    acc: &mut Array<Vector<F, N>>,
     one: Vector<F, N>,
     zero: Vector<F, N>,
     #[comptime] p: usize,
+    #[comptime] g: usize,
 ) {
     let t = dubiner::<F, N>(xi[0], xi[1], one, zero, p);
     let lz = legendre::<F, N>(xi[2], one, zero, p);
@@ -153,12 +181,18 @@ pub(crate) fn prism<F: Float, N: Size>(
         let dz = lz[2 * iz + 1];
         #[unroll]
         for k in 0..nt {
-            let o = 4 * (iz * nt + k);
             let v = t[3 * k];
-            phi[o] = v * vz;
-            phi[o + 1] = t[3 * k + 1] * vz;
-            phi[o + 2] = t[3 * k + 2] * vz;
-            phi[o + 3] = v * dz;
+            emit::<F, N>(
+                acc,
+                a,
+                comptime!(iz * nt + k),
+                v * vz,
+                t[3 * k + 1] * vz,
+                t[3 * k + 2] * vz,
+                v * dz,
+                3usize,
+                g,
+            );
         }
     }
 }

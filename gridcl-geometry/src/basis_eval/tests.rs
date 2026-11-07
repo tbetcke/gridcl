@@ -9,7 +9,7 @@ use gridcl_device::{
 use gridcl_dims::CellType::{self, *};
 use gridcl_refcell::{LagrangeElement, NodeFamily, num_lagrange_nodes, tdim, vertices};
 
-use super::{device_coefficients, normalisation, orthogonal_basis};
+use super::{device_coefficients, expansion, normalisation};
 
 /// ψ_j and ∂_d ψ_j of the Lagrange basis at each lane's point:
 ///   points        `[d][point]`, rows of `stride` vectors
@@ -40,16 +40,17 @@ fn lagrange_kernel<F: Float, N: Size>(
             }
             let zero = Vector::<F, N>::broadcast(coefficients[nb * nb]);
             let one = Vector::<F, N>::broadcast(coefficients[nb * nb + 1]);
-            let phi = orthogonal_basis::<F, N>(&xi, one, zero, cell, degree);
             for j in 0..nb {
+                // Column j of C': ψ_j = Σ_k C'[k N + j] φ̃_k.
+                let mut a = Array::<Vector<F, N>>::new(comptime!(nb));
+                #[unroll]
+                for k in 0..nb {
+                    a[k] = Vector::<F, N>::broadcast(coefficients[k * nb + j]);
+                }
+                let psi = expansion::<F, N>(&xi, &a, one, zero, cell, degree, 1usize);
                 #[unroll]
                 for d in 0..td + 1 {
-                    let mut acc = phi[d] * Vector::<F, N>::broadcast(coefficients[j]);
-                    for k in 1..nb {
-                        acc += phi[k * (td + 1) + d]
-                            * Vector::<F, N>::broadcast(coefficients[k * nb + j]);
-                    }
-                    out[(d * nb + j) * stride as usize + v] = acc;
+                    out[(d * nb + j) * stride as usize + v] = psi[d];
                 }
             }
         }
