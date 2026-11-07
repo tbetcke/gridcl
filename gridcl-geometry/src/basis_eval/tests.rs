@@ -362,12 +362,18 @@ fn coefficients_are_cached_per_block() {
     let before = geometry.footprint_bytes();
     let xe = geometry.evector(0).unwrap();
     let with_evector = geometry.footprint_bytes();
-    let first = xe.coefficients(Interval, 2, NodeFamily::Gll).unwrap();
-    let second = xe.coefficients(Interval, 2, NodeFamily::Gll).unwrap();
+    let first = xe
+        .coefficients(Interval, 2, NodeFamily::Gll, &[0.25, -1.5])
+        .unwrap();
+    let second = xe
+        .coefficients(Interval, 2, NodeFamily::Gll, &[0.25, -1.5])
+        .unwrap();
     assert!(core::ptr::eq(first, second));
+    // C', the runtime zero and one, then the origin.
     let want: Vec<f32> = device_coefficients(Interval, 2, NodeFamily::Gll)
         .unwrap()
         .into_iter()
+        .chain([0.25, -1.5])
         .map(f32::narrow)
         .collect();
     assert_eq!(first.to_host().unwrap(), want);

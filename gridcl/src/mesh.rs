@@ -567,7 +567,28 @@ where
     /// # Errors
     ///
     /// `LengthMismatch` if `x` does not have one field per cell block, with one cell per local
-    /// cell; allocation and device errors.
+    /// cell; the element errors of a block's coordinate element; allocation and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl::prelude::*;
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// let mesh: SurfaceMesh<f32> = gridcl_testing::sphere(1, 2).build(&client)?;
+    /// let rule = QuadRule::for_grid(&mesh, 4)?;
+    /// let x = mesh.physical_points(&rule)?;
+    /// let pb = mesh.pull_back(&x, &PullBackOptions::default())?;
+    /// // The Gauss points come back on the curved triangles.
+    /// let pts = rule.get(Cell2::Triangle)?;
+    /// let xi = pb.reference.blocks[0].to_host_cell_major()?;
+    /// for (i, p) in xi.iter().enumerate() {
+    ///     let q = i % pts.len();
+    ///     assert!((f64::from(p[0]) - pts.points()[2 * q]).abs() < 1e-5);
+    ///     assert!((f64::from(p[1]) - pts.points()[2 * q + 1]).abs() < 1e-5);
+    /// }
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn pull_back(
         &self,
         x: &BlockFields<F, VecShape<GD>>,

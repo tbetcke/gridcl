@@ -88,25 +88,28 @@ impl<F: Real> EVector<F> {
     }
 
     /// The coefficients C' of the block's coordinate element (cell, degree, family) over the
-    /// device's orthogonal sets, row-major N × N and narrowed to `F` (`basis_eval`): computed
-    /// in f64 and uploaded on first use, then cached with the E-vector, once per geometry
-    /// block (ADR-0039, item 15). Every call for one block passes the block's element.
+    /// device's orthogonal sets, row-major N × N and narrowed to `F`, then the runtime zero and
+    /// one (`basis_eval::device_coefficients`) and the grid's `origin` narrowed to `F` (gdim
+    /// entries, read by the pull-back kernel): computed in f64 and uploaded on first use, then
+    /// cached with the E-vector, once per geometry block (ADR-0039, item 15). Every call for
+    /// one block passes the block's element and the grid's origin.
     ///
     /// # Errors
     ///
     /// The element errors of `LagrangeElement::new`; allocation and device errors.
-    #[allow(dead_code)] // the pull-back (M9 T10b) calls it
     pub(crate) fn coefficients(
         &self,
         cell: CellType,
         degree: u32,
         family: NodeFamily,
+        origin: &[f64],
     ) -> Result<&DeviceBuffer<F>> {
         if let Some(c) = self.coefficients.get() {
             return Ok(c);
         }
         let host: Vec<F> = crate::basis_eval::device_coefficients(cell, degree, family)?
             .into_iter()
+            .chain(origin.iter().copied())
             .map(F::narrow)
             .collect();
         let c = DeviceBuffer::from_host(self.origin.client(), &host)?;
