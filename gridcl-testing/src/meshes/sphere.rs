@@ -490,6 +490,9 @@ mod tests {
         assert!(cells.contains(&Cell2::Triangle) && cells.contains(&Cell2::Quadrilateral));
         let b = ball(0, 2).build::<F, D3, D3>(client).expect("ball");
         assert_eq!((b.tdim(), b.gdim()), (3, 3));
+        // Nothing above reads the device: wait for the builds' launches, so that no kernel
+        // compile is still running when the process exits (docs/cubecl-upstream.md C17).
+        cubecl::future::block_on(client.sync()).expect("sync");
     }
 
     #[test]
