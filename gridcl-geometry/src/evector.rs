@@ -1,10 +1,15 @@
 //! `EVector` and the EVector kernel (ADR-0012), generic over the vector size.
 
+use core::cell::OnceCell;
+
 use cubecl::prelude::*;
 use gridcl_device::{
     DeviceBuffer, GridError, KernelKind, LaunchPlan, Real, Result, VECTOR_PAD,
     debug_assert_bindings,
 };
+
+use gridcl_dims::CellType;
+use gridcl_refcell::NodeFamily;
 
 use crate::QuadChunk;
 use crate::field::{alloc_chunks, chunk_cells};
@@ -33,6 +38,9 @@ pub struct EVector<F: Real> {
     num_cells: usize,
     /// The grid's origin narrowed to `F`, [gdim]; the physical-points kernel adds it back.
     origin: DeviceBuffer<F>,
+    /// The expansion coefficients of the block's coordinate element for the device basis
+    /// evaluation (`basis_eval`), uploaded on first use (ADR-0039, item 15).
+    coefficients: OnceCell<DeviceBuffer<F>>,
 }
 
 impl<F: Real> EVector<F> {
@@ -77,6 +85,42 @@ impl<F: Real> EVector<F> {
     /// The grid's origin narrowed to `F`.
     pub(crate) fn origin(&self) -> &DeviceBuffer<F> {
         &self.origin
+    }
+
+    /// The coefficients C' of the block's coordinate element (cell, degree, family) over the
+    /// device's orthogonal sets, row-major N × N and narrowed to `F`, then the runtime zero and
+    /// one (`basis_eval::device_coefficients`) and the grid's `origin` narrowed to `F` (gdim
+    /// entries, read by the pull-back kernel): computed in f64 and uploaded on first use, then
+    /// cached with the E-vector, once per geometry block (ADR-0039, item 15). Every call for
+    /// one block passes the block's element and the grid's origin.
+    ///
+    /// # Errors
+    ///
+    /// The element errors of `LagrangeElement::new`; allocation and device errors.
+    pub(crate) fn coefficients(
+        &self,
+        cell: CellType,
+        degree: u32,
+        family: NodeFamily,
+        origin: &[f64],
+    ) -> Result<&DeviceBuffer<F>> {
+        if let Some(c) = self.coefficients.get() {
+            return Ok(c);
+        }
+        let host: Vec<F> = crate::basis_eval::device_coefficients(cell, degree, family)?
+            .into_iter()
+            .chain(origin.iter().copied())
+            .map(F::narrow)
+            .collect();
+        let c = DeviceBuffer::from_host(self.origin.client(), &host)?;
+        Ok(self.coefficients.get_or_init(|| c))
+    }
+
+    /// The allocated bytes of the cached coefficients, 0 before their first use.
+    pub(crate) fn coefficients_bytes(&self) -> usize {
+        self.coefficients
+            .get()
+            .map_or(0, DeviceBuffer::footprint_bytes)
     }
 }
 
@@ -204,6 +248,7 @@ pub(crate) fn build<F: Real>(
         chunks,
         num_cells,
         origin,
+        coefficients: OnceCell::new(),
     })
 }
 

@@ -141,6 +141,17 @@ pub enum GridError {
     /// A distributed partitioner was asked for more than one part on a communicator without an
     /// MPI handle (`CommDyn::raw` is `None`), on any number of ranks (ADR-0029, item 6).
     NeedsMpiCommunicator(&'static str),
+    /// A facet has more than two cells, counting owned cells on all ranks: the mesh is not a
+    /// manifold (`orient`, `boundary`, `facet_submesh`; ADR-0039).
+    NonManifold,
+    /// A tagged facet of `facet_submesh` has two cells: facet submeshes take boundary facets
+    /// only (ADR-0039).
+    InteriorFacet,
+    /// `OrientationRule::Outward` on a component with boundary facets, which encloses no
+    /// volume: orient it with `AwayFrom` or `Towards` (ADR-0039).
+    NeedsReferencePoint,
+    /// The manifold cannot be oriented consistently, as a Möbius strip (ADR-0039).
+    NonOrientable,
 }
 
 impl fmt::Display for GridError {
@@ -229,6 +240,14 @@ impl fmt::Display for GridError {
                 f,
                 "the {name} partitioner needs an MPI communicator for more than one part"
             ),
+            GridError::NonManifold => f.write_str("a facet has more than two cells"),
+            GridError::InteriorFacet => {
+                f.write_str("a tagged facet is an interior facet, not a boundary facet")
+            }
+            GridError::NeedsReferencePoint => {
+                f.write_str("outward orientation of an open component needs a reference point")
+            }
+            GridError::NonOrientable => f.write_str("the manifold is not orientable"),
         }
     }
 }
@@ -251,6 +270,26 @@ impl From<ServerError> for GridError {
 #[cfg(test)]
 mod tests {
     use super::GridError;
+
+    /// The `Display` lines of the M9 variants (ADR-0039).
+    #[test]
+    fn m9_variants_display() {
+        let cases = [
+            (GridError::NonManifold, "a facet has more than two cells"),
+            (
+                GridError::InteriorFacet,
+                "a tagged facet is an interior facet, not a boundary facet",
+            ),
+            (
+                GridError::NeedsReferencePoint,
+                "outward orientation of an open component needs a reference point",
+            ),
+            (GridError::NonOrientable, "the manifold is not orientable"),
+        ];
+        for (e, want) in cases {
+            assert_eq!(e.to_string(), want);
+        }
+    }
 
     /// The `Display` lines of the M7 variants (ADR-0029).
     #[test]

@@ -12,15 +12,20 @@
 //! - [`determinism`]: two builds, with entities and scatters, give bitwise equal arrays.
 //! - [`locality`]: Hilbert ordering at least halves the mean node-index spread of the cells of a
 //!   shuffled box.
+//! - [`submesh`] (M9): boundary, facet, cell and edge submeshes equal a one-rank build's, with a
+//!   consistent `EntityMap`, outward normals and agreed errors.
+//! - [`orient`] (M9): `orient` gives the flags of a one-rank build, the requested direction and
+//!   agreed errors.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
 use cubecl::prelude::Client;
 use gridcl::{
-    Cell2, Cell3, CellOrdering, Comm, CommDyn, CommExt, CommScalar, ConnKey, Connectivity, D1, D2,
-    D3, DeviceBuffer, DeviceGrid, Dim, DistGraph, EmbeddedIn, GhostMode, IndexMap, Mesh,
-    Partitioner, Real, Result, ReverseOp, Serial, TopoDim,
+    Cell2, Cell3, CellOrdering, Codim1, Comm, CommDyn, CommExt, CommScalar, ConnKey, Connectivity,
+    D1, D2, D3, DeviceBuffer, DeviceGrid, Dim, DistGraph, EmbeddedIn, EntityMap, GhostMode,
+    GridError, IndexMap, Mesh, MeshTags, OrientationRule, Partitioner, QuadRule, Real, Result,
+    ReverseOp, Serial, TopoDim,
 };
 use gridcl_dims::CellType;
 
@@ -39,6 +44,20 @@ pub enum Family {
     Interval,
     /// `sphere`, one refinement.
     Sphere,
+    /// `mixed_surface`, one refinement (M9).
+    MixedSurface,
+    /// `circle` of 12 intervals (M9).
+    Circle,
+    /// `hemisphere`, one refinement: an open surface (M9).
+    Hemisphere,
+    /// `mobius_strip` of 12 squares, P1 at every degree: non-orientable (M9).
+    Mobius,
+    /// `book(3)`, P1 at every degree: non-manifold (M9).
+    Book,
+    /// `y_junction`: a non-manifold curve (M9).
+    YJunction,
+    /// `ball`, one refinement: a curved volume centred at the origin (M9).
+    Ball,
 }
 
 /// Every family: `cube_box` of every `Cell3`, `mixed_box`, `square_box` of both `Cell2`,
@@ -65,6 +84,13 @@ impl Family {
             Family::Square(cell) => crate::square_box(cell, 3, p),
             Family::Interval => crate::interval_box(12, p),
             Family::Sphere => crate::sphere(1, p),
+            Family::MixedSurface => crate::mixed_surface(1, p),
+            Family::Circle => crate::circle(12, p),
+            Family::Hemisphere => crate::hemisphere(1, p),
+            Family::Mobius => crate::mobius_strip(12),
+            Family::Book => crate::book(3),
+            Family::YJunction => crate::y_junction(p),
+            Family::Ball => crate::ball(1, p),
         }
     }
 }
@@ -221,6 +247,65 @@ pub fn determinism_cases() -> Vec<Case> {
     ]
 }
 
+/// The cases of the M9 submesh checks: every family with facets of a lower `TopoDim` (the
+/// boxes, the mixed box, both squares, `sphere`, whose boundary is empty, and `ball`), at p = 1
+/// and 2. `Full` runs every ghost mode; `Quick` one per case, cycling, with distributions
+/// cycling and every other case in f32.
+pub fn submesh_cases(coverage: Coverage) -> Vec<Case> {
+    const SUBMESH_FAMILIES: [Family; 9] = [
+        Family::Cube(Cell3::Tetrahedron),
+        Family::Cube(Cell3::Hexahedron),
+        Family::Cube(Cell3::Prism),
+        Family::Cube(Cell3::Pyramid),
+        Family::Mixed,
+        Family::Square(Cell2::Triangle),
+        Family::Square(Cell2::Quadrilateral),
+        Family::Sphere,
+        Family::Ball,
+    ];
+    m9_cases(&SUBMESH_FAMILIES, coverage)
+}
+
+/// The cases of the M9 `orient` checks: the orientable closed families (`sphere`,
+/// `mixed_surface`, `circle`; the checks flip a random subset of their cells), the open
+/// `hemisphere`, and the error families `mobius_strip`, `book` and `y_junction`, at p = 1 and 2
+/// (as [`submesh_cases`]).
+pub fn orient_cases(coverage: Coverage) -> Vec<Case> {
+    const ORIENT_FAMILIES: [Family; 7] = [
+        Family::Sphere,
+        Family::MixedSurface,
+        Family::Circle,
+        Family::Hemisphere,
+        Family::Mobius,
+        Family::Book,
+        Family::YJunction,
+    ];
+    m9_cases(&ORIENT_FAMILIES, coverage)
+}
+
+/// The cases of `families` at p = 1 and 2: every ghost mode (`Full`) or one, cycling (`Quick`);
+/// distributions cycle, and every other case runs in f32.
+fn m9_cases(families: &[Family], coverage: Coverage) -> Vec<Case> {
+    let mut out = Vec::new();
+    for (f, &family) in families.iter().enumerate() {
+        for degree in 1..=2 {
+            for (g, &ghosts) in GHOST_MODES.iter().enumerate() {
+                let k = f + degree as usize;
+                if coverage == Coverage::Full || g == k % GHOST_MODES.len() {
+                    out.push(Case {
+                        family,
+                        degree,
+                        ghosts,
+                        distribution: DISTRIBUTIONS[(k + g) % 3],
+                        double: (k + g).is_multiple_of(2),
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 /// A test-only partitioner that sends global graph vertex i to rank i mod nparts, so almost
 /// every cell migrates.
 #[derive(Clone, Copy, Debug, Default)]
@@ -328,10 +413,15 @@ pub fn dispatch<K: MeshCheck>(client: &Client, case: &Case, check: &mut K) {
         };
     }
     match case.family {
-        Family::Cube(_) | Family::Mixed => run!(D3, D3),
+        Family::Cube(_) | Family::Mixed | Family::Ball => run!(D3, D3),
         Family::Square(_) => run!(D2, D2),
         Family::Interval => run!(D1, D1),
-        Family::Sphere => run!(D2, D3),
+        Family::Circle | Family::YJunction => run!(D1, D2),
+        Family::Sphere
+        | Family::MixedSurface
+        | Family::Hemisphere
+        | Family::Mobius
+        | Family::Book => run!(D2, D3),
     }
 }
 
@@ -912,5 +1002,1255 @@ pub fn locality<C: Comm>(comm: &C, client: &Client) {
                  than half the input spread {input}"
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// M9: submeshes and orientation (docs/plans/M9.md, T0b; ADR-0039).
+
+/// The sorted vertex origin ids of every local entity of dimension `dim` of `m`, by flat index:
+/// the cells over the cell blocks for dim = tdim, else the entity blocks.
+///
+/// # Errors
+///
+/// `EntitiesNotCreated(dim)`; device errors.
+pub fn entity_rows<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>, dim: usize) -> Result<Vec<Vec<i64>>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let ids = decode_ids(&m.vertex_origin_ids().to_host()?);
+    let rows = |data: &DeviceBuffer<u32>, stride: u32| -> Result<Vec<Vec<i64>>> {
+        Ok(data
+            .to_host()?
+            .chunks_exact(stride as usize)
+            .map(|r| {
+                let mut t: Vec<i64> = r.iter().map(|&v| ids[v as usize]).collect();
+                t.sort_unstable();
+                t
+            })
+            .collect())
+    };
+    let mut out = Vec::new();
+    if dim == TD::N {
+        for b in m.cell_blocks() {
+            out.extend(rows(&b.vertices.data, b.vertices.stride)?);
+        }
+    } else {
+        for b in m.entity_blocks(dim)? {
+            out.extend(rows(&b.vertices.data, b.vertices.stride)?);
+        }
+    }
+    Ok(out)
+}
+
+/// The origin id of every local cell of `m`, flat over the cell blocks.
+fn cell_ids<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>) -> Result<Vec<i64>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let mut out = Vec::new();
+    for b in m.cell_blocks() {
+        out.extend(decode_ids(&b.origin_ids.to_host()?));
+    }
+    Ok(out)
+}
+
+/// Whether each local cell of `m`, flat over the cell blocks, is owned.
+fn owned_cells<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>) -> Vec<bool>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    m.cell_blocks()
+        .iter()
+        .flat_map(|b| (0..b.index_map.num_local()).map(|c| c < b.index_map.num_owned()))
+        .collect()
+}
+
+/// The physical tag values of every local entity of dimension `dim`, by flat index.
+fn tag_values<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>, dim: usize) -> Result<HashMap<u32, Vec<i32>>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let mut out: HashMap<u32, Vec<i32>> = HashMap::new();
+    if let Some(t) = m.tags().physical(dim) {
+        for (i, v) in t.indices.to_host()?.into_iter().zip(t.values.to_host()?) {
+            out.entry(i).or_default().push(v);
+        }
+    }
+    Ok(out)
+}
+
+/// The vertex centroid of every local cell of `m` (absolute coordinates), flat over the
+/// cell blocks.
+///
+/// # Errors
+///
+/// Device errors.
+pub fn cell_centroids<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>) -> Result<Vec<Vec<f64>>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let gd = GD::N;
+    let nodes = m.nodes().to_host()?;
+    let origin = m.origin();
+    let mut out = Vec::new();
+    for (b, block) in m.cell_blocks().iter().enumerate() {
+        let nv = gridcl_refcell::vertices(block.cell.into()).len();
+        let dofmap = &m.geometry_block(b).dofmap;
+        for row in dofmap.data.to_host()?.chunks_exact(dofmap.stride as usize) {
+            out.push(
+                (0..gd)
+                    .map(|g| {
+                        row[..nv]
+                            .iter()
+                            .map(|&n| nodes[n as usize * gd + g].widen())
+                            .sum::<f64>()
+                            / nv as f64
+                            + origin.as_ref()[g]
+                    })
+                    .collect(),
+            );
+        }
+    }
+    Ok(out)
+}
+
+/// Device tags of dimension `dim` with value 1 on the local entities `indices` (ascending).
+fn tags_of(client: &Client, dim: usize, indices: &[u32]) -> Result<MeshTags> {
+    Ok(MeshTags {
+        dim,
+        indices: DeviceBuffer::from_host(client, indices)?,
+        values: DeviceBuffer::from_host(client, &vec![1_i32; indices.len()])?,
+    })
+}
+
+/// What a partition must not change on a submesh.
+#[derive(Debug, Default, PartialEq)]
+pub struct ChildSummary {
+    /// (cell type, global count) of every child cell block, in order.
+    pub blocks: Vec<(CellType, i64)>,
+    /// The child's measure.
+    pub measure: f64,
+    /// Rank 0: (origin id, sorted vertex origin ids) of the owned child cells of all ranks,
+    /// sorted.
+    pub cells: Vec<Vec<i64>>,
+    /// This rank: (origin id, sorted vertex origin ids) of every local child cell.
+    pub local: Vec<Vec<i64>>,
+}
+
+/// The [`ChildSummary`] of `child`, with Gauss degree `degree` for the measure.
+///
+/// # Errors
+///
+/// Device and communication errors.
+pub fn child_summary<F, TD, GD, C>(child: &Mesh<F, TD, GD, C>, degree: u32) -> Result<ChildSummary>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rows = entity_rows(child, TD::N)?;
+    let ids = cell_ids(child)?;
+    let owned = owned_cells(child);
+    let mut s = ChildSummary {
+        blocks: child
+            .cell_blocks()
+            .iter()
+            .map(|b| (b.cell.into(), b.index_map.size_global()))
+            .collect(),
+        measure: child.measure(degree)?,
+        ..ChildSummary::default()
+    };
+    let mut flat = Vec::new();
+    for ((id, row), owned) in ids.iter().zip(&rows).zip(owned) {
+        let entry: Vec<i64> = std::iter::once(*id).chain(row.iter().copied()).collect();
+        if owned {
+            push_row(&mut flat, &entry);
+        }
+        s.local.push(entry);
+    }
+    s.cells = split_rows(&gather_to_root(child.comm(), &flat)?);
+    s.cells.sort_unstable();
+    Ok(s)
+}
+
+/// Asserts that the parallel child summary `got` equals the one-rank `want`.
+fn assert_same_child(got: &ChildSummary, want: &ChildSummary, rank: usize, tol: f64, at: &str) {
+    assert_eq!(got.blocks, want.blocks, "{at}: child blocks");
+    let scale = want.measure.abs().max(1.0);
+    assert!(
+        (got.measure - want.measure).abs() <= tol * scale,
+        "{at}: child measure {} vs {}",
+        got.measure,
+        want.measure
+    );
+    if rank == 0 {
+        assert!(got.cells == want.cells, "{at}: owned child cells differ");
+    }
+    let known: HashSet<&Vec<i64>> = want.local.iter().collect();
+    if let Some(c) = got.local.iter().find(|c| !known.contains(c)) {
+        panic!("{at}: child cell {c:?} (origin id, vertices) is not the one-rank build's");
+    }
+}
+
+/// Asserts that `map` is consistent between `parent` and `child`: child cells have the vertices
+/// of their parent entities, the sparse inverse inverts `child_to_parent`, child vertices and
+/// nodes are their parents', and the child keeps the parent's origin.
+///
+/// # Errors
+///
+/// Device errors.
+pub fn check_entity_map<F, TD, GD, CTD, C>(
+    parent: &Mesh<F, TD, GD, C>,
+    child: &Mesh<F, CTD, GD, C>,
+    map: &EntityMap,
+    at: &str,
+) -> Result<()>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    CTD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let parent_rows = entity_rows(parent, map.parent_dim())?;
+    let child_rows = entity_rows(child, CTD::N)?;
+    let c2p = map.child_to_parent().to_host()?;
+    assert_eq!(c2p.len(), child_rows.len(), "{at}: child_to_parent length");
+    for (c, &p) in c2p.iter().enumerate() {
+        assert_eq!(
+            child_rows[c], parent_rows[p as usize],
+            "{at}: child cell {c} and parent entity {p}"
+        );
+    }
+    let (parents, children) = map.parent_to_child();
+    let (parents, children) = (parents.to_host()?, children.to_host()?);
+    assert_eq!(parents.len(), c2p.len(), "{at}: parent_to_child length");
+    assert!(
+        parents.windows(2).all(|w| w[0] < w[1]),
+        "{at}: parent_to_child indices not ascending"
+    );
+    for (&p, &c) in parents.iter().zip(&children) {
+        assert_eq!(c2p[c as usize], p, "{at}: parent_to_child of {p}");
+    }
+    let parent_ids = decode_ids(&parent.vertex_origin_ids().to_host()?);
+    let child_ids = decode_ids(&child.vertex_origin_ids().to_host()?);
+    let v2p = map.vertex_to_parent().to_host()?;
+    assert_eq!(v2p.len(), child_ids.len(), "{at}: vertex_to_parent length");
+    for (v, &p) in v2p.iter().enumerate() {
+        assert_eq!(
+            child_ids[v], parent_ids[p as usize],
+            "{at}: child vertex {v}"
+        );
+    }
+    let gd = GD::N;
+    let parent_nodes = parent.nodes().to_host()?;
+    let child_nodes = child.nodes().to_host()?;
+    let n2p = map.node_to_parent().to_host()?;
+    assert_eq!(
+        n2p.len() * gd,
+        child_nodes.len(),
+        "{at}: node_to_parent length"
+    );
+    for (n, &p) in n2p.iter().enumerate() {
+        for g in 0..gd {
+            assert!(
+                child_nodes[n * gd + g].widen().to_bits()
+                    == parent_nodes[p as usize * gd + g].widen().to_bits(),
+                "{at}: child node {n} is not bitwise parent node {p}"
+            );
+        }
+    }
+    let bits = |o: GD::Array<f64>| o.as_ref().iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(
+        bits(child.origin()),
+        bits(parent.origin()),
+        "{at}: child origin"
+    );
+    Ok(())
+}
+
+/// The smallest n·(x − centre) over every local cell and Gauss point of degree `degree` of the
+/// codimension-1 mesh `m`, and ∮ x·n over its owned cells on all ranks, finished in f64.
+///
+/// # Errors
+///
+/// Device and communication errors.
+pub fn normals_and_flux<F, TD, GD, C>(
+    m: &Mesh<F, TD, GD, C>,
+    centre: &[f64],
+    degree: u32,
+) -> Result<(f64, f64)>
+where
+    F: Real,
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rule = QuadRule::for_grid(m, degree)?;
+    let (x, n, detj) = (m.physical_points(&rule)?, m.normals(&rule)?, m.detj(&rule)?);
+    let (mut min, mut flux) = (f64::INFINITY, 0.0);
+    for (b, block) in m.cell_blocks().iter().enumerate() {
+        let weights = rule.get(block.cell)?.weights();
+        let nq = weights.len();
+        let x = x.blocks[b].to_host_cell_major()?;
+        let n = n.blocks[b].to_host_cell_major()?;
+        let detj = detj.blocks[b].to_host_cell_major()?;
+        for c in 0..block.index_map.num_local() {
+            for (q, w) in weights.iter().enumerate() {
+                let i = c * nq + q;
+                let (xi, ni) = (x[i].as_ref(), n[i].as_ref());
+                let mut away = 0.0;
+                let mut xn = 0.0;
+                for g in 0..GD::N {
+                    away += (xi[g].widen() - centre[g]) * ni[g].widen();
+                    xn += xi[g].widen() * ni[g].widen();
+                }
+                min = min.min(away);
+                if c < block.index_map.num_owned() {
+                    flux += w * detj[i].widen() * xn;
+                }
+            }
+        }
+    }
+    Ok((min, m.comm().sum(flux)))
+}
+
+/// The (TD, GD) pairs of the submesh families, with what only some of them have: normals on
+/// the codimension-1 children of codimension-0 meshes, and edge submeshes of volume meshes.
+pub trait SubmeshDims<GD: Dim>: TopoDim + EmbeddedIn<GD> {
+    /// [`normals_and_flux`] of `child` if it has normals.
+    ///
+    /// # Errors
+    ///
+    /// As [`normals_and_flux`].
+    fn child_normals<F: Real, C: Comm>(
+        child: &Mesh<F, Self::Lower, GD, C>,
+        centre: &[f64],
+        degree: u32,
+    ) -> Result<Option<(f64, f64)>>
+    where
+        Self::Lower: TopoDim + EmbeddedIn<GD>;
+
+    /// On a volume mesh: creates the (1, 3) connectivity and returns the edge submesh of the
+    /// edges whose smallest vertex origin id is even, checked against its `EntityMap`, as a
+    /// [`ChildSummary`]; `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Errors of `create_connectivity`, `edge_submesh` and [`child_summary`].
+    fn edges<F: Real, C: Comm>(
+        mesh: &mut Mesh<F, Self, GD, C>,
+        degree: u32,
+        at: &str,
+    ) -> Result<Option<ChildSummary>>;
+}
+
+impl SubmeshDims<D3> for D3 {
+    fn child_normals<F: Real, C: Comm>(
+        child: &Mesh<F, D2, D3, C>,
+        centre: &[f64],
+        degree: u32,
+    ) -> Result<Option<(f64, f64)>> {
+        normals_and_flux(child, centre, degree).map(Some)
+    }
+
+    fn edges<F: Real, C: Comm>(
+        mesh: &mut Mesh<F, D3, D3, C>,
+        degree: u32,
+        at: &str,
+    ) -> Result<Option<ChildSummary>> {
+        mesh.create_connectivity(1, 3)?;
+        let even: Vec<u32> = entity_rows(mesh, 1)?
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row[0] % 2 == 0)
+            .map(|(e, _)| e as u32)
+            .collect();
+        let (child, map) = mesh.edge_submesh(&tags_of(mesh.client(), 1, &even)?)?;
+        check_entity_map(mesh, &child, &map, &format!("{at}: edge submesh"))?;
+        assert!(
+            child
+                .cell_blocks()
+                .iter()
+                .all(|b| b.flags.to_host().is_ok_and(|f| f.iter().all(|&f| f == 0))),
+            "{at}: edge submesh flags are not 0"
+        );
+        child_summary(&child, degree).map(Some)
+    }
+}
+
+impl SubmeshDims<D2> for D2 {
+    fn child_normals<F: Real, C: Comm>(
+        child: &Mesh<F, D1, D2, C>,
+        centre: &[f64],
+        degree: u32,
+    ) -> Result<Option<(f64, f64)>> {
+        normals_and_flux(child, centre, degree).map(Some)
+    }
+
+    fn edges<F: Real, C: Comm>(
+        _mesh: &mut Mesh<F, D2, D2, C>,
+        _degree: u32,
+        _at: &str,
+    ) -> Result<Option<ChildSummary>> {
+        Ok(None)
+    }
+}
+
+impl SubmeshDims<D3> for D2 {
+    fn child_normals<F: Real, C: Comm>(
+        _child: &Mesh<F, D1, D3, C>,
+        _centre: &[f64],
+        _degree: u32,
+    ) -> Result<Option<(f64, f64)>> {
+        Ok(None)
+    }
+
+    fn edges<F: Real, C: Comm>(
+        _mesh: &mut Mesh<F, D2, D3, C>,
+        _degree: u32,
+        _at: &str,
+    ) -> Result<Option<ChildSummary>> {
+        Ok(None)
+    }
+}
+
+/// The midpoint of the bounding box of `host`'s nodes.
+fn bbox_centre(host: &HostMesh) -> Vec<f64> {
+    (0..host.gdim)
+        .map(|g| {
+            let (lo, hi) = host
+                .nodes
+                .iter()
+                .skip(g)
+                .step_by(host.gdim)
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| {
+                    (lo.min(x), hi.max(x))
+                });
+            0.5 * (lo + hi)
+        })
+        .collect()
+}
+
+/// The submeshes of one mesh: boundary, the facets tagged 100, the cells left of the centre,
+/// and (volume meshes) the edges of [`SubmeshDims::edges`].
+struct Submeshes {
+    boundary: ChildSummary,
+    normals: Option<(f64, f64)>,
+    tagged: ChildSummary,
+    cells: ChildSummary,
+    edges: Option<ChildSummary>,
+}
+
+/// The submeshes of `mesh` with every check that needs no one-rank reference: the `EntityMap`s,
+/// child tags, flags of codimension-2 children, a forward scatter of global ids over every child
+/// map, entity creation on the boundary child, and `InteriorFacet` (agreed) when every facet is
+/// tagged.
+fn submeshes<F, TD, GD, C>(
+    client: &Client,
+    mesh: &mut Mesh<F, TD, GD, C>,
+    centre: &[f64],
+    degree: u32,
+    at: &str,
+) -> Result<Submeshes>
+where
+    F: Real,
+    TD: SubmeshDims<GD>,
+    TD::Lower: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let fdim = TD::N - 1;
+
+    // boundary(): the EntityMap, tags carried as cell tags, flags 0 in codimension 2.
+    let (mut child, map) = mesh.boundary()?;
+    check_entity_map(mesh, &child, &map, &format!("{at}: boundary"))?;
+    let parent_tags = tag_values(mesh, fdim)?;
+    let child_tags = tag_values(&child, fdim)?;
+    for (c, p) in map.child_to_parent().to_host()?.into_iter().enumerate() {
+        assert_eq!(
+            child_tags.get(&(c as u32)),
+            parent_tags.get(&p),
+            "{at}: boundary: tags of child cell {c} (parent facet {p})"
+        );
+    }
+    if GD::N - TD::N == 1 {
+        for b in child.cell_blocks() {
+            assert!(
+                b.flags.to_host()?.iter().all(|&f| f == 0),
+                "{at}: boundary of a codimension-1 mesh has flags"
+            );
+        }
+    }
+    let normals = TD::child_normals(&child, centre, 3 * degree)?;
+    let boundary = child_summary(&child, 3 * degree)?;
+    for d in 0..TD::N - 1 {
+        child.create_entities(d)?;
+    }
+    for (name, map) in index_maps(&child)? {
+        let x = forward_global_ids(client, map, 1)?;
+        let owned = map.num_owned();
+        for (k, &g) in map.ghosts().iter().enumerate() {
+            assert_eq!(
+                i64::from(x[owned + k]),
+                g,
+                "{at}: boundary child {name}: forward of ghost {k}"
+            );
+        }
+    }
+
+    // facet_submesh of the facets tagged 100: every child cell carries 100.
+    let (child, map) = mesh.facet_submesh(&mesh.tags().group(fdim, 100)?)?;
+    check_entity_map(mesh, &child, &map, &format!("{at}: facet_submesh"))?;
+    let child_tags = tag_values(&child, fdim)?;
+    for c in 0..map.child_to_parent().len() {
+        assert!(
+            child_tags
+                .get(&(c as u32))
+                .is_some_and(|v| v.contains(&100)),
+            "{at}: facet_submesh: child cell {c} lacks tag 100"
+        );
+    }
+    let tagged = child_summary(&child, 3 * degree)?;
+
+    // Every facet tagged: InteriorFacet on every rank.
+    let num_facets: usize = mesh
+        .entity_blocks(fdim)?
+        .iter()
+        .map(|b| b.index_map.num_local())
+        .sum();
+    let all: Vec<u32> = (0..num_facets as u32).collect();
+    match mesh.facet_submesh(&tags_of(client, fdim, &all)?) {
+        Err(GridError::InteriorFacet) => {}
+        Err(e) => panic!("{at}: every facet tagged: {e}, not InteriorFacet"),
+        Ok(_) => panic!("{at}: every facet tagged: no error, not InteriorFacet"),
+    }
+
+    // cell_submesh of the cells whose centroid lies left of the centre.
+    let left: Vec<u32> = cell_centroids(mesh)?
+        .iter()
+        .enumerate()
+        .filter(|(_, x)| x[0] < centre[0])
+        .map(|(c, _)| c as u32)
+        .collect();
+    let (child, map) = mesh.cell_submesh(&tags_of(client, TD::N, &left)?)?;
+    check_entity_map(mesh, &child, &map, &format!("{at}: cell_submesh"))?;
+    let cells = child_summary(&child, 3 * degree)?;
+
+    let edges = TD::edges(mesh, 3 * degree, at)?;
+    Ok(Submeshes {
+        boundary,
+        normals,
+        tagged,
+        cells,
+        edges,
+    })
+}
+
+/// The submesh check of one case on `comm`, in scalar `F`.
+fn submesh_case<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: SubmeshDims<GD>,
+    TD::Lower: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rank = comm.rank();
+    let at = format!("{case}, rank {rank}");
+    let centre = bbox_centre(host);
+    let tol = if size_of::<F>() == 8 { 1e-10 } else { TOL_F32 };
+    let mut serial = ok(
+        build::<F, TD, GD, _>(Serial, client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let want = ok(
+        submeshes(
+            client,
+            &mut serial,
+            &centre,
+            case.degree,
+            &format!("{at} (one rank)"),
+        ),
+        &at,
+    );
+    let mut mesh = ok(
+        build::<F, TD, GD, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let got = ok(submeshes(client, &mut mesh, &centre, case.degree, &at), &at);
+
+    assert_same_child(
+        &got.boundary,
+        &want.boundary,
+        rank,
+        tol,
+        &format!("{at}: boundary"),
+    );
+    assert_same_child(
+        &got.tagged,
+        &want.tagged,
+        rank,
+        tol,
+        &format!("{at}: facet_submesh"),
+    );
+    assert_same_child(
+        &got.cells,
+        &want.cells,
+        rank,
+        tol,
+        &format!("{at}: cell_submesh"),
+    );
+    match (&got.edges, &want.edges) {
+        (Some(g), Some(w)) => assert_same_child(g, w, rank, tol, &format!("{at}: edge_submesh")),
+        (None, None) => {}
+        _ => panic!("{at}: edge submeshes on one side only"),
+    }
+    if let Some((min, flux)) = got.normals {
+        assert!(
+            min > 0.0,
+            "{at}: a boundary normal points inward (n·(x − c) = {min:e})"
+        );
+        let volume = ok(mesh.measure(3 * case.degree), &at);
+        let want = GD::N as f64 * volume;
+        assert!(
+            (flux - want).abs() <= tol * want.abs().max(1.0),
+            "{at}: ∮ x·n = {flux} vs gdim · V = {want}"
+        );
+    }
+}
+
+/// The owned vertex origin ids of `m` on all ranks, sorted, on rank 0 (empty elsewhere).
+fn owned_vertex_ids<F, TD, GD, C>(m: &Mesh<F, TD, GD, C>) -> Result<Vec<i64>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let ids = decode_ids(&m.vertex_origin_ids().to_host()?);
+    let owned = &ids[..m.vertex_index_map().num_owned()];
+    let mut all = gather_to_root(m.comm(), owned)?;
+    all.sort_unstable();
+    Ok(all)
+}
+
+/// The topology of a child on `comm` against the one-rank child `want`: the cell summary, the
+/// vertex count, each vertex owned once, ghosts that receive their global ids by a forward
+/// scatter over every map, vertex sharer rows that list the holders with an owned-cell holder
+/// as owner, and the entities of every lower dimension.
+#[allow(clippy::too_many_arguments)]
+fn child_topology_matches<F, TD, GD, C>(
+    client: &Client,
+    child: &mut Mesh<F, TD, GD, C>,
+    want: &mut Mesh<F, TD, GD, Serial>,
+    degree: u32,
+    rank: usize,
+    tol: f64,
+    at: &str,
+) -> Result<()>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    assert_same_child(
+        &child_summary(child, degree)?,
+        &child_summary(want, degree)?,
+        rank,
+        tol,
+        at,
+    );
+    let map = child.vertex_index_map();
+    assert_eq!(
+        map.size_global() as usize,
+        want.vertex_index_map().num_local(),
+        "{at}: child vertex count"
+    );
+    let owned = owned_vertex_ids(child)?;
+    if rank == 0 {
+        let mut all = decode_ids(&want.vertex_origin_ids().to_host()?);
+        all.sort_unstable();
+        assert!(
+            owned == all,
+            "{at}: owned child vertices are not each vertex once"
+        );
+    }
+    let me = rank as i32;
+    let held = holders(child.comm(), map)?;
+    let s = child
+        .topology()
+        .vertex_sharers()
+        .expect("a child has vertex sharers");
+    for v in 0..map.num_local() {
+        let row = &s.ranks[s.offsets[v]..s.offsets[v + 1]];
+        let owner = if v < map.num_owned() {
+            me
+        } else {
+            map.ghost_owners()[v - map.num_owned()]
+        };
+        let k = row.iter().position(|&r| r == owner);
+        assert!(
+            k.is_some_and(|k| s.owned_cell[s.offsets[v] + k]),
+            "{at}: child vertex {v}: owner {owner} is not an owned-cell sharer in {row:?}"
+        );
+        assert!(
+            row.contains(&me),
+            "{at}: child vertex {v}: row {row:?} lacks this rank"
+        );
+        if let Some(&h) = held.get(v) {
+            assert_eq!(
+                row.len(),
+                h as usize,
+                "{at}: child vertex {v}: sharer row {row:?} vs holders"
+            );
+        }
+    }
+    child_nodes_match(child, want, rank, at)?;
+    let sizes =
+        |b: &[gridcl::EntityBlock]| b.iter().map(|b| b.index_map.size_global()).sum::<i64>();
+    for d in 0..TD::N {
+        child.create_entities(d)?;
+        want.create_entities(d)?;
+        assert_eq!(
+            sizes(child.entity_blocks(d)?),
+            sizes(want.entity_blocks(d)?),
+            "{at}: child entities of dimension {d}"
+        );
+    }
+    for (name, map) in index_maps(child)? {
+        let x = forward_global_ids(client, map, 1)?;
+        let owned = map.num_owned();
+        for (k, &g) in map.ghosts().iter().enumerate() {
+            assert_eq!(
+                i64::from(x[owned + k]),
+                g,
+                "{at}: {name}: forward of ghost {k}"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The nodes of a child on `comm` against the one-rank child `want`: the node count, each node
+/// owned once (bitwise coordinates; the parent's origin is partition-independent), and every
+/// corner node owned by the owner of its vertex.
+fn child_nodes_match<F, TD, GD, C>(
+    child: &Mesh<F, TD, GD, C>,
+    want: &Mesh<F, TD, GD, Serial>,
+    rank: usize,
+    at: &str,
+) -> Result<()>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let gd = GD::N;
+    let nodes = child.node_index_map();
+    assert_eq!(
+        nodes.size_global() as usize,
+        want.node_index_map().num_local(),
+        "{at}: child node count"
+    );
+    let bits = |x: &[F]| -> Vec<i64> { x.iter().map(|v| v.widen().to_bits() as i64).collect() };
+    let owned = bits(&child.nodes().to_host()?[..nodes.num_owned() * gd]);
+    let mut got: Vec<&[i64]> = Vec::new();
+    let all = gather_to_root(child.comm(), &owned)?;
+    got.extend(all.chunks_exact(gd));
+    got.sort_unstable();
+    if rank == 0 {
+        let reference = bits(&want.nodes().to_host()?);
+        let mut reference: Vec<&[i64]> = reference.chunks_exact(gd).collect();
+        reference.sort_unstable();
+        assert!(
+            got == reference,
+            "{at}: owned child nodes are not each node once"
+        );
+    }
+    let me = rank as i32;
+    let owner = |m: &IndexMap, i: u32| {
+        let i = i as usize;
+        if i < m.num_owned() {
+            me
+        } else {
+            m.ghost_owners()[i - m.num_owned()]
+        }
+    };
+    let vertices = child.vertex_index_map();
+    for (b, block) in child.cell_blocks().iter().enumerate() {
+        let nvc = block.vertices.stride as usize;
+        let dofmap = &child.geometry_block(b).dofmap;
+        let rows = block.vertices.data.to_host()?;
+        let dofs = dofmap.data.to_host()?;
+        for (v, d) in rows
+            .chunks_exact(nvc)
+            .zip(dofs.chunks_exact(dofmap.stride as usize))
+        {
+            for j in 0..nvc {
+                assert_eq!(
+                    owner(nodes, d[j]),
+                    owner(vertices, v[j]),
+                    "{at}: corner node {} and its vertex {} have different owners",
+                    d[j],
+                    v[j]
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The child topology check of one case on `comm`, in scalar `F`: `boundary()` and the
+/// `facet_submesh` of the facets tagged 100 against a one-rank build's, with their `EntityMap`s,
+/// outward normals and ∮ x·n = gdim · V on the boundary.
+fn submesh_topology_case<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: SubmeshDims<GD>,
+    TD::Lower: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rank = comm.rank();
+    let at = format!("{case}, rank {rank}");
+    let tol = if size_of::<F>() == 8 { 1e-10 } else { TOL_F32 };
+    let fdim = TD::N - 1;
+    let serial = ok(
+        build::<F, TD, GD, _>(Serial, client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let mesh = ok(
+        build::<F, TD, GD, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let degree = 3 * case.degree;
+    let (mut got, map) = ok(mesh.boundary(), &at);
+    let (mut want, _) = ok(serial.boundary(), &at);
+    ok(
+        check_entity_map(&mesh, &got, &map, &format!("{at}: boundary")),
+        &at,
+    );
+    if let Some((min, flux)) = ok(TD::child_normals(&got, &bbox_centre(host), degree), &at) {
+        assert!(
+            min > 0.0,
+            "{at}: a boundary normal points inward (n·(x − c) = {min:e})"
+        );
+        let want = GD::N as f64 * ok(mesh.measure(degree), &at);
+        assert!(
+            (flux - want).abs() <= tol * want.abs().max(1.0),
+            "{at}: ∮ x·n = {flux} vs gdim · V = {want}"
+        );
+    }
+    ok(
+        child_topology_matches(
+            client,
+            &mut got,
+            &mut want,
+            degree,
+            rank,
+            tol,
+            &format!("{at}: boundary"),
+        ),
+        &at,
+    );
+    let tagged = |m: &Mesh<F, TD, GD, _>| m.tags().group(fdim, 100);
+    let (mut got, map) = ok(mesh.facet_submesh(&ok(tagged(&mesh), &at)), &at);
+    ok(
+        check_entity_map(&mesh, &got, &map, &format!("{at}: facet_submesh")),
+        &at,
+    );
+    let (mut want, _) = ok(
+        serial.facet_submesh(&ok(serial.tags().group(fdim, 100), &at)),
+        &at,
+    );
+    ok(
+        child_topology_matches(
+            client,
+            &mut got,
+            &mut want,
+            degree,
+            rank,
+            tol,
+            &format!("{at}: facet_submesh"),
+        ),
+        &at,
+    );
+}
+
+/// Runs the child topology check of `case` on `comm` (M9 T5a, T5b): the cells, vertices, nodes,
+/// ownership, sharers, `EntityMap`s, normals and flux of `boundary()` and `facet_submesh` equal a
+/// one-rank build's or hold on their own. [`submesh_cases`]
+/// families only.
+///
+/// # Panics
+///
+/// If a check fails, or `case` is not a submesh family.
+pub fn submesh_topology<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    let host = case.family.host(case.degree);
+    let double = case.double && supports::<f64>(client);
+    macro_rules! run {
+        ($td:ty, $gd:ty) => {
+            if double {
+                submesh_topology_case::<f64, $td, $gd, C>(comm, client, case, &host)
+            } else {
+                submesh_topology_case::<f32, $td, $gd, C>(comm, client, case, &host)
+            }
+        };
+    }
+    match case.family {
+        Family::Cube(_) | Family::Mixed | Family::Ball => run!(D3, D3),
+        Family::Square(_) => run!(D2, D2),
+        Family::Sphere => run!(D2, D3),
+        other => panic!("{other:?} is not a submesh family"),
+    }
+}
+
+/// The boundary facets of `host` with the smallest sorted vertex origin ids, one per facet
+/// size (number of vertices), as sorted vertex origin ids.
+fn first_boundary_facets(host: &HostMesh) -> Vec<Vec<i64>> {
+    let mut count: BTreeMap<Vec<i64>, usize> = BTreeMap::new();
+    for b in &host.blocks {
+        let k = b.nodes_per_cell();
+        let tdim = gridcl_refcell::tdim(b.cell);
+        for row in b.cells.chunks_exact(k) {
+            for f in gridcl_refcell::sub_entities(b.cell, tdim - 1) {
+                let mut key: Vec<i64> = f.iter().map(|&v| host.node_id(row[v] as usize)).collect();
+                key.sort_unstable();
+                *count.entry(key).or_default() += 1;
+            }
+        }
+    }
+    let mut first: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
+    for (key, _) in count.into_iter().filter(|e| e.1 == 1) {
+        first.entry(key.len()).or_insert(key);
+    }
+    first.into_values().collect()
+}
+
+/// The boundary of `mesh` (`keys = None`), or the facet submesh of its facets whose sorted
+/// vertex origin ids are among `keys`.
+fn facet_child<F, C>(
+    mesh: &Mesh<F, D3, D3, C>,
+    keys: Option<&[Vec<i64>]>,
+) -> Result<(Mesh<F, D2, D3, C>, EntityMap)>
+where
+    F: Real,
+    C: Comm,
+{
+    match keys {
+        None => mesh.boundary(),
+        Some(keys) => {
+            let chosen: Vec<u32> = entity_rows(mesh, 2)?
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| keys.contains(row))
+                .map(|(f, _)| f as u32)
+                .collect();
+            mesh.facet_submesh(&tags_of(mesh.client(), 2, &chosen)?)
+        }
+    }
+}
+
+/// One corner case of [`submesh_corner_cases`] in scalar `F`.
+fn corner_case<F: Real, C: Comm>(
+    comm: &C,
+    client: &Client,
+    case: &Case,
+    host: &HostMesh,
+    keys: Option<&[Vec<i64>]>,
+) {
+    let rank = comm.rank();
+    let at = format!(
+        "{case} (corner case, {:?}), rank {rank}",
+        keys.map(<[_]>::len)
+    );
+    let tol = if size_of::<F>() == 8 { 1e-10 } else { TOL_F32 };
+    let serial = ok(
+        build::<F, D3, D3, _>(Serial, client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let mesh = ok(
+        build::<F, D3, D3, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let (mut got, map) = ok(facet_child(&mesh, keys), &at);
+    ok(check_entity_map(&mesh, &got, &map, &at), &at);
+    let (mut want, _) = ok(facet_child(&serial, keys), &at);
+    if let Some(keys) = keys {
+        let blocks: Vec<i64> = want
+            .cell_blocks()
+            .iter()
+            .map(|b| b.index_map.size_global())
+            .collect();
+        assert_eq!(blocks, vec![1; keys.len()], "{at}: one child per block");
+    }
+    ok(
+        child_topology_matches(client, &mut got, &mut want, 2 * case.degree, rank, tol, &at),
+        &at,
+    );
+}
+
+/// The submesh corner cases of M9 T5b on `comm`, against one-rank builds, in every ghost mode:
+/// the boundary of a single hexahedron of degree 2, so that every rank but one is empty, and
+/// the facet submesh of one triangle and one quadrilateral boundary facet of a prism box of
+/// degree 2: a tag that one or two ranks hold, so that most ranks hold one facet type or none,
+/// while every rank lists both child blocks.
+///
+/// # Panics
+///
+/// If a check fails.
+pub fn submesh_corner_cases<C: Comm>(comm: &C, client: &Client) {
+    let hex = crate::cube_box(Cell3::Hexahedron, 1, 2);
+    let prism = crate::cube_box(Cell3::Prism, 2, 2);
+    let keys = first_boundary_facets(&prism);
+    assert_eq!(keys.len(), 2, "a triangle and a quadrilateral");
+    let double = supports::<f64>(client);
+    for (g, &ghosts) in GHOST_MODES.iter().enumerate() {
+        let case = |cell| Case {
+            family: Family::Cube(cell),
+            degree: 2,
+            ghosts,
+            distribution: DISTRIBUTIONS[g % 3],
+            double: double && g % 2 == 0,
+        };
+        for (cell, host, keys) in [
+            (Cell3::Hexahedron, &hex, None),
+            (Cell3::Prism, &prism, Some(keys.as_slice())),
+        ] {
+            let case = case(cell);
+            if case.double {
+                corner_case::<f64, C>(comm, client, &case, host, keys);
+            } else {
+                corner_case::<f32, C>(comm, client, &case, host, keys);
+            }
+        }
+    }
+}
+
+/// Runs the M9 submesh check of `case` on `comm`: [`submesh_cases`] families only.
+///
+/// # Panics
+///
+/// If a check fails, or `case` is not a submesh family.
+pub fn submesh<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    let host = case.family.host(case.degree);
+    let double = case.double && supports::<f64>(client);
+    macro_rules! run {
+        ($td:ty, $gd:ty) => {
+            if double {
+                submesh_case::<f64, $td, $gd, C>(comm, client, case, &host)
+            } else {
+                submesh_case::<f32, $td, $gd, C>(comm, client, case, &host)
+            }
+        };
+    }
+    match case.family {
+        Family::Cube(_) | Family::Mixed | Family::Ball => run!(D3, D3),
+        Family::Square(_) => run!(D2, D2),
+        Family::Sphere => run!(D2, D3),
+        other => panic!("{other:?} is not a submesh family"),
+    }
+}
+
+/// Runs the M9 non-manifold submesh check of `case` on `comm`: `boundary()` and
+/// `facet_submesh` of every facet give the agreed `NonManifold` (ADR-0039, item 11) on every
+/// rank. `book` only (an edge with three cells).
+///
+/// # Panics
+///
+/// If a call does not give `NonManifold`, or `case` is not `book`.
+pub fn submesh_non_manifold<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    assert_eq!(
+        case.family,
+        Family::Book,
+        "{case}: not a non-manifold family"
+    );
+    let host = case.family.host(case.degree);
+    if case.double && supports::<f64>(client) {
+        non_manifold::<f64, C>(comm, client, case, &host);
+    } else {
+        non_manifold::<f32, C>(comm, client, case, &host);
+    }
+}
+
+/// [`submesh_non_manifold`] in `F`.
+fn non_manifold<F: Real, C: Comm>(comm: &C, client: &Client, case: &Case, host: &HostMesh) {
+    let at = format!("{case}, rank {}", comm.rank());
+    let mesh = ok(
+        build::<F, D2, D3, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    match mesh.boundary() {
+        Err(GridError::NonManifold) => {}
+        Err(e) => panic!("{at}: boundary: {e}, not NonManifold"),
+        Ok(_) => panic!("{at}: boundary: no error, not NonManifold"),
+    }
+    let num_edges: usize = ok(mesh.entity_blocks(1), &at)
+        .iter()
+        .map(|b| b.index_map.num_local())
+        .sum();
+    let all: Vec<u32> = (0..num_edges as u32).collect();
+    match mesh.facet_submesh(&ok(tags_of(client, 1, &all), &at)) {
+        Err(GridError::NonManifold) => {}
+        Err(e) => panic!("{at}: facet_submesh of every edge: {e}, not NonManifold"),
+        Ok(_) => panic!("{at}: facet_submesh of every edge: no error, not NonManifold"),
+    }
+}
+
+/// What `orient` must give for a family: per rule, success or the agreed error.
+fn orient_expectations(family: Family) -> Vec<(OrientationRule, Option<GridError>)> {
+    use OrientationRule::{AwayFrom, Outward, Towards};
+    let origin = [0.0; 3];
+    match family {
+        Family::Sphere | Family::MixedSurface | Family::Circle => vec![(Outward, None)],
+        Family::Hemisphere => vec![
+            (Outward, Some(GridError::NeedsReferencePoint)),
+            (AwayFrom(origin), None),
+            (Towards(origin), None),
+        ],
+        Family::Mobius => vec![
+            (Outward, Some(GridError::NonOrientable)),
+            (AwayFrom(origin), Some(GridError::NonOrientable)),
+        ],
+        Family::Book | Family::YJunction => vec![(Outward, Some(GridError::NonManifold))],
+        other => panic!("{other:?} is not an orient family"),
+    }
+}
+
+/// `orient(rule)` on `mesh`; on success, (cell origin id, flag bit 0) of every local cell and
+/// the smallest s · n·x over every local cell and Gauss point of degree 2p, with s = −1 for
+/// `Towards`.
+fn oriented<F, TD, GD, C>(
+    mesh: &mut Mesh<F, TD, GD, C>,
+    rule: OrientationRule,
+    degree: u32,
+) -> Result<(HashMap<i64, u32>, f64)>
+where
+    F: Real,
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    mesh.orient(rule)?;
+    let mut flags = HashMap::new();
+    for b in mesh.cell_blocks() {
+        let ids = decode_ids(&b.origin_ids.to_host()?);
+        flags.extend(
+            ids.into_iter()
+                .zip(b.flags.to_host()?.into_iter().map(|f| f & 1)),
+        );
+    }
+    let sign = if matches!(rule, OrientationRule::Towards(_)) {
+        -1.0
+    } else {
+        1.0
+    };
+    let rule = QuadRule::for_grid(mesh, 2 * degree)?;
+    let (x, n) = (mesh.physical_points(&rule)?, mesh.normals(&rule)?);
+    let mut min = f64::INFINITY;
+    for (x, n) in x.blocks.iter().zip(&n.blocks) {
+        for (x, n) in x.to_host_cell_major()?.iter().zip(n.to_host_cell_major()?) {
+            let xn: f64 = (0..GD::N)
+                .map(|g| x.as_ref()[g].widen() * n.as_ref()[g].widen())
+                .sum();
+            min = min.min(sign * xn);
+        }
+    }
+    Ok((flags, min))
+}
+
+/// The orient check of one case on `comm`, in scalar `F`.
+fn orient_case<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rank = comm.rank();
+    let host = host.with_flipped_cells(17 + u64::from(case.degree), 0.5);
+    for (rule, error) in orient_expectations(case.family) {
+        let at = format!("{case}, {rule:?}, rank {rank}");
+        let mut serial = ok(
+            build::<F, TD, GD, _>(Serial, client, &host, case, CellOrdering::Input),
+            &at,
+        );
+        let mut mesh = ok(
+            build::<F, TD, GD, _>(comm.clone(), client, &host, case, CellOrdering::Input),
+            &at,
+        );
+        let want = oriented(&mut serial, rule, case.degree);
+        let got = oriented(&mut mesh, rule, case.degree);
+        match (error, want, got) {
+            (None, Ok((want, _)), Ok((got, min))) => {
+                for (id, flag) in &got {
+                    assert_eq!(Some(flag), want.get(id), "{at}: flag of cell {id}");
+                }
+                assert!(
+                    min > 0.0,
+                    "{at}: a normal has the wrong direction ({min:e})"
+                );
+            }
+            (Some(e), Err(w), Err(g)) => {
+                let same = |x: &GridError| std::mem::discriminant(x) == std::mem::discriminant(&e);
+                assert!(same(&w), "{at}: one rank: {w}, not {e}");
+                assert!(same(&g), "{at}: {g}, not {e}");
+            }
+            (e, w, g) => panic!(
+                "{at}: expected {e:?}; one rank gave {:?}, this build {:?}",
+                w.err(),
+                g.err()
+            ),
+        }
+    }
+}
+
+/// Runs the M9 orient check of `case` on `comm`: random cells of the host mesh are flipped,
+/// `orient` gives the flags of a one-rank build on every local cell and the requested
+/// direction, or the agreed error ([`orient_cases`] families only).
+///
+/// # Panics
+///
+/// If a check fails, or `case` is not an orient family.
+pub fn orient<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    let host = case.family.host(case.degree);
+    let double = case.double && supports::<f64>(client);
+    macro_rules! run {
+        ($td:ty, $gd:ty) => {
+            if double {
+                orient_case::<f64, $td, $gd, C>(comm, client, case, &host)
+            } else {
+                orient_case::<f32, $td, $gd, C>(comm, client, case, &host)
+            }
+        };
+    }
+    match case.family {
+        Family::Circle | Family::YJunction => run!(D1, D2),
+        Family::Sphere
+        | Family::MixedSurface
+        | Family::Hemisphere
+        | Family::Mobius
+        | Family::Book => run!(D2, D3),
+        other => panic!("{other:?} is not an orient family"),
     }
 }

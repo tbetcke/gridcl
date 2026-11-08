@@ -677,7 +677,7 @@ mod tests {
                 }
                 s.offsets.push(s.ranks.len());
             }
-            t.set_vertex_sharers(s);
+            t.set_vertex_sharers(s).unwrap();
             (t, vertex_ids)
         }
 

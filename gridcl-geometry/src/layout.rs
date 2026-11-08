@@ -168,7 +168,7 @@ fn detj_of<F: Float, N: Size>(j: &Array<Vector<F, N>>, #[comptime] l: GeomLayout
 /// 1 / det in codimension 0; J(g, 0) · (1/a) for TD = 1 < GD; Ginv · Jᵀ with
 /// Ginv = (c·inv, −b·inv; −b·inv, a·inv), inv = 1/(a·c − b·b), for TD = 2, GD = 3.
 #[cube]
-fn pinv_of<F: Float, N: Size>(
+pub(crate) fn pinv_of<F: Float, N: Size>(
     j: &Array<Vector<F, N>>,
     #[comptime] l: GeomLayout,
 ) -> Array<Vector<F, N>> {

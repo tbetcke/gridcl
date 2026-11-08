@@ -91,3 +91,13 @@ required-features = ["mpi", "hdf5"]
 name = "read_memory"
 harness = false
 required-features = ["mpi"]
+
+[[test]]
+name = "submesh_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "orient_parallel"
+harness = false
+required-features = ["mpi"]

@@ -90,6 +90,26 @@ impl LagrangeElement {
         &self.points
     }
 
+    /// The expansion coefficients C, row-major N × N: ψ_j = Σ_k C[k · N + j] φ_k over the
+    /// orthonormal basis φ_k of "Tabulation" (ADR-0039, item 15).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_dims::CellType;
+    /// use gridcl_refcell::{LagrangeElement, NodeFamily};
+    ///
+    /// // On [0, 1], φ_0 = 1 and φ_1 = √3 (2x − 1), so ψ_0 = 1 − x = φ_0 / 2 − φ_1 / (2√3).
+    /// let element = LagrangeElement::new(CellType::Interval, 1, NodeFamily::Equispaced).unwrap();
+    /// let c = element.coefficients();
+    /// assert_eq!(c.len(), 4);
+    /// assert!((c[0] - 0.5).abs() < 1e-15);
+    /// assert!((c[2] + 0.5 / 3f64.sqrt()).abs() < 1e-15);
+    /// ```
+    pub fn coefficients(&self) -> &[f64] {
+        &self.coefficients
+    }
+
     /// The basis functions at `points` (flat, node-major): values for `nderivs == 0`, values
     /// and first derivatives for `nderivs == 1`. For the point cell, `points` must be empty and
     /// stands for its one point.
@@ -303,6 +323,30 @@ mod tests {
                                 "{cell:?} {family:?} p = {p}, {exps:?}/{r}, d = {d}: {got} vs {want}"
                             );
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `coefficients` inverts the Vandermonde matrix: V C = I.
+    #[test]
+    fn coefficients_invert_the_vandermonde() {
+        for (cell, family) in elements() {
+            for p in 1..=4 {
+                let e = LagrangeElement::new(cell, p, family).unwrap();
+                let n = e.dim();
+                let c = e.coefficients();
+                assert_eq!(c.len(), n * n);
+                let v = polynomials::tabulate(cell, p as usize, e.points(), 0);
+                for i in 0..n {
+                    for j in 0..n {
+                        let vc: f64 = (0..n).map(|k| v[i * n + k] * c[k * n + j]).sum();
+                        let want = if i == j { 1.0 } else { 0.0 };
+                        assert!(
+                            (vc - want).abs() < 1e-12,
+                            "{cell:?} {family:?} p = {p}: ({i}, {j})"
+                        );
                     }
                 }
             }

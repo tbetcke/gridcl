@@ -5,6 +5,7 @@
 //! Factor kernels read the cached E-vector of a geometry block ([`DeviceGrid::evector`]) and
 //! write tiled [`QuadField`]s, with the lanes of a vector over consecutive cells of a tile.
 
+mod basis_eval;
 mod detj_pinv;
 mod element;
 mod equispaced;
@@ -17,8 +18,10 @@ mod grid;
 mod layout;
 mod measure;
 mod names;
+mod orient;
 mod point_set;
 mod points_jac;
+mod pull_back;
 mod rule;
 mod shape;
 
@@ -34,7 +37,13 @@ pub use grid::DeviceGrid;
 pub use gridcl_refcell::NodeFamily;
 pub use layout::GeomLayout;
 pub use measure::measure_block;
+pub use orient::OrientationRule;
+#[doc(hidden)]
+pub use orient::{
+    OrientationComponents, orientation_components, orientation_flags, orientation_neighbours,
+};
 pub use point_set::PointSet;
 pub use points_jac::{jacobians_block, physical_points_block};
+pub use pull_back::{PullBack, PullBackOptions, pull_back_block};
 pub use rule::QuadRule;
 pub use shape::{FieldShape, JacShape, PinvShape, ScalarShape, VecShape};

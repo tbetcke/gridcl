@@ -21,8 +21,11 @@ mod entity_map;
 pub mod gmsh;
 mod io_download;
 mod mesh;
+mod orient;
 mod pipeline;
 pub mod prelude;
+mod pull_back;
+mod submesh;
 mod tags;
 pub mod vtk;
 
@@ -42,9 +45,10 @@ pub use gridcl_dims::{
 };
 pub use gridcl_geometry::{
     BlockFields, CoordinateElement, DeviceGrid, EVector, FacetPointSet, FacetQuadRule, FieldShape,
-    GeomLayout, GeometryBlock, JacShape, NodeFamily, PinvShape, PointSet, QuadChunk, QuadField,
-    QuadRule, ScalarShape, VecShape, detj_block, facet_normals_block, jacobians_block,
-    measure_block, normals_block, physical_points_block, pseudo_inverse_block,
+    GeomLayout, GeometryBlock, JacShape, NodeFamily, OrientationRule, PinvShape, PointSet,
+    PullBack, PullBackOptions, QuadChunk, QuadField, QuadRule, ScalarShape, VecShape, detj_block,
+    facet_normals_block, jacobians_block, measure_block, normals_block, physical_points_block,
+    pseudo_inverse_block, pull_back_block,
 };
 #[cfg(feature = "mpi")]
 pub use gridcl_parallel::Mpi;

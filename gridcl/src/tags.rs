@@ -210,6 +210,15 @@ impl TagRegistry {
         self.physical[dim] = Some(tags);
     }
 
+    /// The values of the physical groups of dimension `dim` with a recorded size.
+    pub(crate) fn group_values(&self, dim: usize) -> Vec<i32> {
+        self.sizes
+            .keys()
+            .filter(|&&(d, _)| d == dim)
+            .map(|&(_, v)| v)
+            .collect()
+    }
+
     /// Sets the elementary tags of their dimension.
     ///
     /// # Panics

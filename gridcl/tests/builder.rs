@@ -319,13 +319,15 @@ fn empty_mesh_and_dimensions() {
     assert_eq!(mesh.permutation_info(0).unwrap().len(), 0);
 }
 
+/// `boundary` creates no topology: it needs the facet entities, the edges of this surface
+/// (ADR-0039, item 5).
 #[test]
-fn boundary_is_not_yet_implemented() {
+fn boundary_needs_facet_entities() {
     let c = client();
     let (mesh, _, _) = mixed::<f32>(&c);
     assert!(matches!(
         mesh.boundary(),
-        Err(GridError::NotYetImplemented("boundary: M9"))
+        Err(GridError::EntitiesNotCreated(1))
     ));
     assert!(matches!(
         mesh.entity_blocks(2),

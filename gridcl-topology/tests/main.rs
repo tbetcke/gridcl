@@ -3,6 +3,8 @@
 mod bounds;
 mod connectivity;
 mod entities;
+mod facet_cells;
+mod hooks;
 mod matching;
 mod permutation;
 mod renumber;

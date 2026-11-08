@@ -300,3 +300,5 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 ## Decision record
 
 Accepted by the maintainer on 2026-10-28, as proposed (option 2, items 1–17), without conditions. Applied to docs/design.md and CLAUDE.md in `adr: 0026 apply`.
+
+Amended by ADR-0039 (M9), accepted 2026-11-05: "submeshes inherit ghosts through cloned `IndexMap`s" holds only where a child keeps every parent entity; other children inherit cell ownership and re-own vertices and nodes (ADR-0039 item 6).
