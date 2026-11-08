@@ -1,6 +1,6 @@
 # ADR-0042: M9h public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-08
 - **Raised in:** M9h planning (docs/plans/M9h.md, "Planned public API and rules" and questions 1–12)
 - **Design sections affected:**
@@ -189,7 +189,7 @@ Option 2, item by item.
     - **Vector-size invariance** gains item 8's case for p = 3–8.
   - **"Cargo features":** "Test-support feature" adds gridcl-geometry's `testing` (the hidden `gridcl_geometry::testing`, enabled by gridcl-testing). "Benchmark-support feature" adds gridcl-geometry's `bench` (enabled by gridcl-bench).
   - **"Handing this design to Claude Code"**, the copy list (and CLAUDE.md): "and of quadrature points and tabulations when a rule is created or a tabulation is first cached" becomes "… first cached, including the 1D tabulations and lexicographic node permutations of sum-factorised kernels". "the upload of a geometry block's expansion coefficients" becomes "… expansion coefficients, or of the 1D nodes, barycentric weights and coefficient factors of a sum-factorised pull-back".
-  - **Roadmap M9h:** the acceptance gains "(read as in ADR-0042: bullet 1 items 2 and 9, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 8 and 9)".
+  - **Roadmap M9h:** the acceptance gains "(read as in ADR-0042: bullet 1 item 2, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 2, 8 and 9, bullet 6 item 12)".
   - **"Development environment and test targets":** no change (Locust, Kathleen and the local Mac as for M3s).
 - **Public API changes:**
   - gridcl-device: `LaunchPlan::per_group` and the public field `LaunchPlan::units_per_group`. A struct-literal construction of `LaunchPlan` outside gridcl-device would break; there is none in the workspace.
@@ -202,4 +202,4 @@ Option 2, item by item.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-08, as proposed (option 2, items 1–13), including item 2's scaling of the f64 tolerance. Applied to docs/design.md and CLAUDE.md in `adr: 0042 apply`. When applied, one slip in Consequences was corrected: the roadmap's reading note names item 9 under bullet 5 (parallel invariance), not bullet 1, adds item 2 to bullet 5 (GPU tolerances) and item 12 to bullet 6 (the decision rule behind `high-order.md`).

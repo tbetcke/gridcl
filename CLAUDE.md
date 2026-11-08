@@ -37,23 +37,26 @@
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
 - Host<->device copies in library code only for I/O (including the upload of input arrays
   at mesh creation, and of quadrature points and tabulations when a rule is created or a
-  tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
-  and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
-  checks of gather and scatter, the host-staged halo exchange, the boundary-entity
-  ownership exchange of entity creation (the candidate count, keys and the local indices of
-  owned candidates to the host; owners, global numbers and ghost placements back), the
-  upload of an IndexMap's send and receive index lists when its first scatterer is created,
-  and of a scatterer's reverse lists when it is created, and the vertex shared flags at
-  mesh creation (ADR-0026, ADR-0028); in submesh creation, the per-block count reads of
-  compaction (and of each physical group of the child's tags), the agreed TooLarge,
-  NonManifold and InteriorFacet flags (with the parent blocks that hold a child's parent
-  cell, read in the same transfer), the child ghost lists for IndexMap::with_ghosts, the
-  child sharer rows of shared vertices and the node-owner candidates of shared nodes to
-  the host, their owners, child global numbers and ghost placements back, the upload of
-  the closure node maps and the child's vertex shared flags; in orient, the per-round
-  change flag, the agreed error flags, the per-component (label, sum, open) records and
-  the flip decisions back; and the upload of a geometry block's expansion coefficients
-  when the pull-back first uses it (ADR-0039, ADR-0040).
+  tabulation is first cached, including the 1D tabulations and lexicographic node
+  permutations of sum-factorised kernels), explicit to_host()/read_node(), the count read
+  of run-length and unique-by-key, the per-block read that finishes measure in f64, the
+  debug-build index checks of gather and scatter, the host-staged halo exchange, the
+  boundary-entity ownership exchange of entity creation (the candidate count, keys and the
+  local indices of owned candidates to the host; owners, global numbers and ghost
+  placements back), the upload of an IndexMap's send and receive index lists when its first
+  scatterer is created, and of a scatterer's reverse lists when it is created, and the
+  vertex shared flags at mesh creation (ADR-0026, ADR-0028); in submesh creation, the
+  per-block count reads of compaction (and of each physical group of the child's tags), the
+  agreed TooLarge, NonManifold and InteriorFacet flags (with the parent blocks that hold a
+  child's parent cell, read in the same transfer), the child ghost lists for
+  IndexMap::with_ghosts, the child sharer rows of shared vertices and the node-owner
+  candidates of shared nodes to the host, their owners, child global numbers and ghost
+  placements back, the upload of the closure node maps and the child's vertex shared flags;
+  in orient, the per-round change flag, the agreed error flags, the per-component (label,
+  sum, open) records and the flip decisions back; and the upload of a geometry block's
+  expansion coefficients, or of the 1D nodes, barycentric weights and coefficient factors
+  of a sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
+  ADR-0042).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests

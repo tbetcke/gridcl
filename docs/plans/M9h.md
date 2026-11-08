@@ -1,6 +1,6 @@
 # M9h High-order performance — plan
 
-- **Status:** draft
+- **Status:** approved
 - **Branch:** tbetcke/tbetcke-m9h-high-order-performance (user prefix, as for M3–M9)
 - **Issue:** #37
 - **Base commit:** d90f90ecb80faedf19f651a9bd39f49fdeb6aa4b
@@ -22,7 +22,7 @@
   - ADR-0024: remote runs set `GRIDCL_SKIP_PYTHON=1`.
   - ADR-0038: hidden cross-crate hooks.
   - ADR-0039: pull-back (items 13–15), device basis evaluator, coefficient cache; the copy-list clause for expansion coefficients.
-- **ADR before approval:** [ADR-0042](../adr/0042-m9h-public-items-and-rules-the-design-leaves-open.md) (Proposed) "M9h public items and rules the design leaves open" (rules 1–13 below; rows 1–4 already decided by the maintainer).
+  - ADR-0042 (accepted 2026-11-08, applied in `adr: 0042 apply`): [M9h public items and rules](../adr/0042-m9h-public-items-and-rules-the-design-leaves-open.md), items 1–13 = the plan's rules 1–13 and questions 1–12.
 
 <!--
 Rules for this file (do not delete):
@@ -70,7 +70,7 @@ Read against main at d90f90e.
 10. **CI and run times.** New gridcl integration modules land in shard 6. Hosted CI must stay under 20 min; shard 7 took 17.7 min after M9, and shards 2 (4.6) and 3 (6.6) have headroom. A full debug gridcl suite takes about 25 min locally. M3s: tests adding over about 2 min in debug become release-only.
 11. **Local benchmarks run outside the sandbox** (sysctl, Metal). The committed vectorization data is from the M3 Max, so the M9 baseline is measured again on the Mac mini.
 
-## Planned public API and rules (ADR-0042, to draft)
+## Planned public API and rules (ADR-0042, accepted: "M9h public items and rules the design leaves open")
 
 ```rust
 // gridcl-device — Listing S2 (maintainer, 2026-11-08: plan the cooperative strategy up front)
@@ -115,7 +115,7 @@ Rules (each an ADR-0042 item):
    - Time per point = time per call / (cells × points per cell), with the Gauss rule of degree 2p, at 10^6 and 10^7 points. Newton step = (t(9 iterations) − t(1 iteration)) / 8; set-up = t(1) − one step.
    - Device classes use ADR-0015 item 5's geometric mean; per-device ratios are reported.
 2. **Tolerances at high degree** (maintainer, 2026-11-08: Lebesgue-scaled).
-   - f64: 10^−12 · max(1, A / A_ref), the same factor (proposed in ADR-0042 beyond the planning answer: the worst-case f64 bound for J on an equispaced hexahedron at p = 8 is about 2 · 10^−12; the factor is at most 1.01 for p ≤ 4).
+   - f64: 10^−12 · max(1, A / A_ref), the same factor (ADR-0042, accepted beyond the planning answer: the worst-case f64 bound for J on an equispaced hexahedron at p = 8 is about 2 · 10^−12; the factor is at most 1.01 for p ≤ 4).
    - f32: 10^−5 · max(1, A / A_ref). A is an amplification factor computed on the host in f64 at the test case's own points:
      - X: Λ = max Σ_i |ψ_i|;
      - J and derived quantities: Σ_i |∇ψ_i| scaled by the reference cell size; this grows like p² even for GLL;
@@ -430,19 +430,19 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 
 | # | Question or conflict | Design section | Proposed resolution | Status |
 | --- | --- | --- | --- | --- |
-| 1 | A pull-back Newton step at an arbitrary point grows as (9/5)^d from p = 4 to 8, so bullet 3's pull-back clause cannot hold (hexahedra 5.8, quadrilaterals 3.2). | Roadmap M9h, bullet 3 | Rule 1. | answered (maintainer, 2026-11-08: amend via ADR); ADR-0042 |
-| 2 | f32 cannot meet 10^−5 at p = 8 on equispaced nodes; the pull-back amplifies through C'. | Testing and validation; ADR-0041 open point | Rule 2. | answered (maintainer, 2026-11-08: Lebesgue-scaled; pull-back factor and per-block relative error added after design review); ADR-0042 |
-| 3 | Degree policy: public item or not; override. | Listing S2; ADR-0041 open point | Rule 3. | answered (maintainer, 2026-11-08: crate-private); ADR-0042 |
-| 4 | The cooperative strategy needs a launch shape and group size that `elementwise` cannot give. | Listing S2; CLAUDE.md | Rule 4: `per_group`, `units_per_group`. | answered (maintainer, 2026-11-08: plan up front); ADR-0042 |
-| 5 | Sum factorisation and the tensor pull-back upload data the copy list does not name. | CLAUDE.md copy list; Tabulation and quadrature | Rule 5. | ADR-0042 (Proposed) |
-| 6 | Reading CUDA kernel attributes within the FFI rules. | CLAUDE.md FFI; ADR-0041 open point | Rule 6: ncu/ptxas, compute-sanitizer; no FFI. | ADR-0042 (Proposed) |
-| 7 | "Every kernel variant" in bullet 2 across strategies. | Roadmap M9h, bullet 2 | Rule 7. | ADR-0042 (Proposed) |
-| 8 | The 10^6 + 3-cell vector-size case does not fit at p = 8. | Testing and validation | Rule 8. | ADR-0042 (Proposed) |
-| 9 | Parallel invariance at p = 1–8: quantities, ghost modes, MPI cost. | Testing and validation | Rule 9. | ADR-0042 (Proposed) |
-| 10 | Throughput target for simplices. | ADR-0041 open point | Rule 10: none; reported. | ADR-0042 (Proposed) |
-| 11 | "Than in M9": which data; noise of a 5% bound across weeks on open nodes. | Roadmap M9h, bullet 4; ADR-0034 | Rule 11: paired comparison against bitwise-M9 `direct`. | ADR-0042 (Proposed) |
-| 12 | The degree sweep uses the vector policy's sizes, tiles and blocks rather than sweeping them; decision rule for strategies. | Benchmarks | Rule 12. | ADR-0042 (Proposed) |
-| 13 | The upstream C18 report is outward-facing. | CLAUDE.md (cubecl-upstream) | Ask the maintainer at T2 before filing. | open |
+| 1 | A pull-back Newton step at an arbitrary point grows as (9/5)^d from p = 4 to 8, so bullet 3's pull-back clause cannot hold (hexahedra 5.8, quadrilaterals 3.2). | Roadmap M9h, bullet 3 | Rule 1. | answered (maintainer, 2026-11-08: amend via ADR); ADR-0042 (accepted, applied) |
+| 2 | f32 cannot meet 10^−5 at p = 8 on equispaced nodes; the pull-back amplifies through C'. | Testing and validation; ADR-0041 open point | Rule 2. | answered (maintainer, 2026-11-08: Lebesgue-scaled; pull-back factor and per-block relative error added after design review); ADR-0042 (accepted, applied) |
+| 3 | Degree policy: public item or not; override. | Listing S2; ADR-0041 open point | Rule 3. | answered (maintainer, 2026-11-08: crate-private); ADR-0042 (accepted, applied) |
+| 4 | The cooperative strategy needs a launch shape and group size that `elementwise` cannot give. | Listing S2; CLAUDE.md | Rule 4: `per_group`, `units_per_group`. | answered (maintainer, 2026-11-08: plan up front); ADR-0042 (accepted, applied) |
+| 5 | Sum factorisation and the tensor pull-back upload data the copy list does not name. | CLAUDE.md copy list; Tabulation and quadrature | Rule 5. | ADR-0042 (accepted, applied) |
+| 6 | Reading CUDA kernel attributes within the FFI rules. | CLAUDE.md FFI; ADR-0041 open point | Rule 6: ncu/ptxas, compute-sanitizer; no FFI. | ADR-0042 (accepted, applied) |
+| 7 | "Every kernel variant" in bullet 2 across strategies. | Roadmap M9h, bullet 2 | Rule 7. | ADR-0042 (accepted, applied) |
+| 8 | The 10^6 + 3-cell vector-size case does not fit at p = 8. | Testing and validation | Rule 8. | ADR-0042 (accepted, applied) |
+| 9 | Parallel invariance at p = 1–8: quantities, ghost modes, MPI cost. | Testing and validation | Rule 9. | ADR-0042 (accepted, applied) |
+| 10 | Throughput target for simplices. | ADR-0041 open point | Rule 10: none; reported. | ADR-0042 (accepted, applied) |
+| 11 | "Than in M9": which data; noise of a 5% bound across weeks on open nodes. | Roadmap M9h, bullet 4; ADR-0034 | Rule 11: paired comparison against bitwise-M9 `direct`. | ADR-0042 (accepted, applied) |
+| 12 | The degree sweep uses the vector policy's sizes, tiles and blocks rather than sweeping them; decision rule for strategies. | Benchmarks | Rule 12. | ADR-0042 (accepted, applied) |
+| 13 | The upstream C18 report is outward-facing. | CLAUDE.md (cubecl-upstream) | Ask the maintainer at T2 before filing. | answered (procedure: the maintainer decides at T2) |
 | 14 | M9 question 22 (`set_vertex_sharers` wording) waits for an ADR touching "Ownership of vertices and entities". | Ownership of vertices and entities | Not touched by ADR-0042. | carried |
 
 ## Deviations log

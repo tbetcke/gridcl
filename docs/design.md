@@ -1117,6 +1117,8 @@ pub struct LaunchPlan {
     pub items_per_unit: u32,
     /// Vectors covered, padding included.
     pub num_vectors: u32,
+    /// Units that cooperate on one group; 1 for `elementwise` (ADR-0042).
+    pub units_per_group: u32,
 }
 
 impl LaunchPlan {
@@ -1124,6 +1126,14 @@ impl LaunchPlan {
     /// VECTOR_PAD); `live` the vectors the kernel keeps live, for the register budget.
     pub fn elementwise(client: &Client, kind: KernelKind, items: usize, elem_bytes: usize,
                        max_vector: usize, live: usize) -> Result<Self>;
+    /// `groups` independent work groups (a cell or a tile of cells), each run by
+    /// `units_per_group` units: the largest power of two ≤ min(units, max_units_per_cube).
+    /// GPUs: a cube holds units_per_group × (groups per cube) units, at most 256; CPUs:
+    /// cube_dim = units_per_group, and each cube visits blocks of consecutive groups.
+    /// `shared_bytes` per cube is checked against the device's shared-memory limit (ADR-0042).
+    pub fn per_group(client: &Client, kind: KernelKind, groups: usize, units: usize,
+                     elem_bytes: usize, max_vector: usize, live: usize, shared_bytes: usize)
+        -> Result<Self>;
 }
 
 /// Test hooks, only with gridcl-device's Cargo feature `testing` (off by default, not stable
@@ -1157,6 +1167,7 @@ pub mod testing {
 - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
 - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), or the performance-core count (macOS: every `hw.perflevel` except the last, ADR-0034) where `VectorPolicy::cpu_units` says `Performance` and the device reports a smaller count; one unit per thread (ADR-0017). The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
+- **Groups:** `per_group` plans cubes of cooperating units; reductions inside a group are pairwise trees over a fixed leaf count, so results do not depend on the group size or the plane size; `sync_cube` is called only in uniform control flow (ADR-0042).
 
 ### Padding and tiles
 
@@ -1200,6 +1211,7 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
 - **Conditions:** on Myriad, CPU benchmarks request every core of the node (`--cores 36`) so that no other job shares it. Locust has no scheduler and is shared with other users: a benchmark there counts only if the runner's node-load snapshots before and after the run both show the node idle; otherwise it is repeated. On the local Mac they run on mains power with other applications closed, and the report records every performance level by name with its core counts (`hw.nperflevels`, `hw.perflevel<i>.{name,physicalcpu}`; ADR-0034). With static blocks, the cores of the last (efficiency) level can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy chooses between the two per kind and element size (ADR-0017). On a node with several sockets, CPU benchmarks bind to one socket and its memory, one thread per physical core, because the CPU runtime's unpinned threads across sockets make a configuration's time depend on their placement (up to 4×; ADR-0020).
 - **Decision rule:** for each kernel family, device class and scalar type, a vector size above 1 is adopted only if it is at least 10% faster than size 1 at both 10^6 and 10^7 items. Among the configurations within 3% of the fastest, the smallest vector size is chosen, because it pads less and keeps fewer registers live. Tile width, CPU block size and CPU units follow the same rule; ties in units go to all hardware threads (ADR-0017). With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015), and for such an entry the 3% rule measures each type against the fastest configuration at a size both admit (ADR-0019). If no admitted configuration is within 3% of the fastest at both sizes, the one with the smallest worst-case ratio is chosen if that ratio is at most 1.10, or at most 1.25 for a 4-byte entry shared by types that admit different sizes or prefer different configurations (ADR-0021), and the report marks it (ADR-0018).
 - **Record:** the choices — vector sizes, QuadField tiles per element size, CPU block sizes per kind and element size in units of 4 KiB, and CPU units per kind and element size — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run in M10 for every kernel family and after any CubeCL pin bump.
+- **Degree sweep (M9h):** the degree-dependent families (EVector, the geometric factors, the pull-back and the device basis evaluator) are measured at p = 1–8 for each strategy of "Geometric factors", with the protocol and conditions above, except that vector size, tile and CPU block come from `vector-policy.toml`. Sizes are 10^5, 10^6 and 10^7 quadrature points (Gauss degree 2p); a CPU run over 600 s or a compile over 300 s is recorded as too slow. Each record carries the time per cell and per point and the first-use compile and load time (one new kernel per warm-up, `CUDA_CACHE_DISABLE=1`); on CUDA, registers, spill and local memory per thread come from `ncu` or `ptxas -v` of the driver's CUDA version, and failing driver calls are named by `compute-sanitizer`, without FFI. A strategy is adopted over the baseline (`direct`, or `loops` where `direct` is not selectable) only if it is at least 10% faster at 10^6 and 10^7 points; among those within 3% of the fastest the simplest wins (direct < loops < sum-factorised < shared < cooperative); classes with several devices use the geometric mean; degree ranges are maximal runs of equal choices. A strategy that fails or takes over 30 s to compile and load on Locust is not selectable for the Gpu class. The choices go to `gridcl-geometry/degree-policy.toml`, and the costs, choices and reasons to `docs/perf/high-order.md`, with the raw JSON under `docs/perf/data/` (ADR-0042).
 
 ## Topology construction on the device
 
@@ -1278,6 +1290,7 @@ Geometry is a vector-valued Lagrange field of arbitrary degree, evaluated by dev
     - Equispaced points are well conditioned up to about p = 10; above that, GLL points (tensor cells) are recommended.
     - Values and reference derivatives are uploaded once per (element, point set) and narrowed to `F`.
     - The pull-back evaluates the same orthonormal bases on the device by recurrence, with `LagrangeElement::coefficients` uploaded once per geometry block; pyramid ζ is clamped to at most 1 − 2^−10 (ADR-0039).
+    - Tensor rules (Gauss on quadrilaterals and hexahedra, triangle × Gauss on prisms) keep their 1D (or triangle × 1D) factors; sum-factorised kernels use 1D tabulations and a lexicographic node permutation, uploaded with the tabulation (ADR-0042).
 - **Quadrature:** collapsed Gauss–Jacobi rules on triangles, tetrahedra and pyramids. Quadrilaterals and hexahedra use tensor Gauss rules; prisms use a triangle rule times a Gauss interval rule.
 - **Rules for mixed meshes:** a `QuadRule<F, TD>` holds one point set per cell type, and a `FacetQuadRule<F, TD>` holds point sets on each reference facet type.
 
@@ -1293,6 +1306,8 @@ Factors are computed on the device, following MFEM's GeometricFactors. Caching b
     - D2 in D3: n = s (J0 × J1) / |J0 × J1|;
     - D1 in D2: n = s (J0_y, −J0_x) / |J0|, which points outward for counter-clockwise closed curves.
 - **Facet normals** of codimension-0 cells, at facet quadrature points: n = K^T n_ref / |K^T n_ref|, using the reference facet normals from gridcl-refcell. The points are facet-major, so a cell has Σ_f n_f points (`FacetPointSet`, Listing B4b; ADR-0012).
+
+Each factor family runs one of the strategies direct (M9's fully unrolled kernels), loops (runtime loops over nodes), sum-factorised (quadrilaterals, hexahedra and prisms on tensor rules), shared (tabulations or coefficients in shared memory) or cooperative (a group of units per cell, planned by `LaunchPlan::per_group`). gridcl-geometry's degree policy (`degree-policy.toml`, crate-private) chooses one per family, cell type, degree range and device class from the measurements in `docs/perf/high-order.md`; its last range is open-ended and resolves to a strategy known to compile at p = 9–10. `GRIDCL_GEOM_STRATEGY` (`policy | direct | loops | sumfact | shared | cooperative`, or `<family>=<strategy>,…`) and the hidden `gridcl_geometry::testing::with_strategy` override it for tests and benchmarks; a strategy that does not apply falls back to loops (ADR-0042).
 
 ### Manifold orientation
 
@@ -1319,6 +1334,7 @@ Physical-to-reference mapping by Newton iteration, for point location and interp
 - The input is a `BlockFields` of absolute physical points per cell and point, as `physical_points` returns; lanes are consecutive cells of a tile reading the E-vector, and plans use `KernelKind::PullBack` with `max_vector` equal to the tile.
 - Iteration starts at the reference cell's vertex centroid with Δ = K(ξ)(x − X(ξ)), K the pseudo-inverse (Newton in codimension 0, Gauss–Newton otherwise). A lane freezes through a lane select once |Δ|∞ ≤ tolerance. The loop always runs `max_iterations`, with no early exit; non-convergence shows in `last_step`.
 - Results are bitwise identical across vector sizes on the CPU runtime and agree to 10^−12 (f64) and 10^−5 (f32) on GPUs (ADR-0039).
+- The pull-back runs the same strategies. On quadrilaterals and hexahedra, the sum-factorised pull-back evaluates the 1D Lagrange bases at ξ (barycentric form) and contracts the E-vector one dimension at a time, with no expansion coefficients; prisms combine the triangle's coefficients with the 1D interval basis (ADR-0042).
 
 ## Distributed mesh model
 
@@ -1657,6 +1673,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 | Myriad node with a CUDA-aware MPI | GPU-aware halo exchange | from M10 |
 
 - **Tolerances.** Quantities that are exact in exact arithmetic (unit volume, polynomial reproduction) are checked to 10^−12 relative in f64 and 10^−5 in f32. f32 results are also compared with f64 results to 10^−5 relative. Convergence rates are tested in f64 only.
+    - Above degree 4 both tolerances scale by max(1, A / A_ref), where A is the element's amplification factor at the test's points, computed on the host in f64 (Σ_j |ψ_j| for physical points; max_d Σ_j |∂_d ψ_j| for J and the quantities derived from it; Σ_k |φ_k| Σ_j |C_kj| times κ(J) for a pull-back through coefficients), and A_ref the same factor of the p = 4 equispaced element of that cell type at the same points. The factor is at most 1.01 for p ≤ 4. Relative errors of geometric factors are taken against the largest value of each component over the block (ADR-0042).
 - **Topology invariants:**
     - closed-form entity counts for structured boxes of every cell type and for the mixed box;
     - Euler characteristic V − E + F − C = 1 for boxes;
@@ -1670,9 +1687,10 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
     - global entity counts, total volume and tag counts;
     - canonical entity vertex lists, as origin ids;
     - permutation bits, keyed by cell origin id;
-    - output files, after sorting by origin id.
+    - output files, after sorting by origin id;
+    - from M9h, geometric factors and pull-back results per (cell origin id, point): bitwise on the CPU runtime, within the tolerances on GPUs; thread ranks at p = 1–8 (every ghost mode at p ≤ 2), MPI at p = 1, 4 and 8 (ADR-0042).
 - **Determinism.** Two runs on the same device and rank count produce bitwise identical device arrays.
-- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012). A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013).
+- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012). A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013). At geometry degrees 3–8 the 10^6 + 3 case is replaced by 16k + 3 cells with a Gauss rule of degree 1, whose factor and pull-back calls run with `max_page_size` lowered (`testing::with_properties`, mesh built outside it) so that the E-vector and fields span at least three chunks and several cubes (ADR-0042).
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
@@ -1774,8 +1792,8 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 
 - **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
-- **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it.
-- **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on.
+- **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it. gridcl-geometry has a `testing` feature too, for the hidden `gridcl_geometry::testing` (strategy overrides; ADR-0042), also turned on by gridcl-testing.
+- **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on. gridcl-geometry's `bench` feature enables the hidden `gridcl_geometry::bench` (basis-evaluator and pull-back timing hooks; ADR-0042), also turned on by gridcl-bench.
 
 ### CI matrix
 
@@ -2050,7 +2068,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `GRIDCL_VECTOR_SIZE` is for vector sizes);
 - C18 closed: its cause isolated with the CUDA kernel attributes, and reported upstream if it is CubeCL's.
 
-**Acceptance:**
+**Acceptance** (read as in ADR-0042: bullet 1 item 2, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 2, 8 and 9, bullet 6 item 12):
 
 - every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (gridcl-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
 - every kernel variant up to p = 8 compiles, loads and launches on each backend, and the first-use compile and load time of each is at most 30 s on Locust;
@@ -2148,23 +2166,26 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures.
 - Host<->device copies in library code only for I/O (including the upload of input arrays
   at mesh creation, and of quadrature points and tabulations when a rule is created or a
-  tabulation is first cached), explicit to_host()/read_node(), the count read of run-length
-  and unique-by-key, the per-block read that finishes measure in f64, the debug-build index
-  checks of gather and scatter, the host-staged halo exchange, the boundary-entity
-  ownership exchange of entity creation (the candidate count, keys and the local indices of
-  owned candidates to the host; owners, global numbers and ghost placements back), the
-  upload of an IndexMap's send and receive index lists when its first scatterer is created,
-  and of a scatterer's reverse lists when it is created, and the vertex shared flags at
-  mesh creation (ADR-0026, ADR-0028); in submesh creation, the per-block count reads of
-  compaction (and of each physical group of the child's tags), the agreed TooLarge,
-  NonManifold and InteriorFacet flags (with the parent blocks that hold a child's parent
-  cell, read in the same transfer), the child ghost lists for IndexMap::with_ghosts, the
-  child sharer rows of shared vertices and the node-owner candidates of shared nodes to
-  the host, their owners, child global numbers and ghost placements back, the upload of
-  the closure node maps and the child's vertex shared flags; in orient, the per-round
-  change flag, the agreed error flags, the per-component (label, sum, open) records and
-  the flip decisions back; and the upload of a geometry block's expansion coefficients
-  when the pull-back first uses it (ADR-0039, ADR-0040).
+  tabulation is first cached, including the 1D tabulations and lexicographic node
+  permutations of sum-factorised kernels), explicit to_host()/read_node(), the count read
+  of run-length and unique-by-key, the per-block read that finishes measure in f64, the
+  debug-build index checks of gather and scatter, the host-staged halo exchange, the
+  boundary-entity ownership exchange of entity creation (the candidate count, keys and the
+  local indices of owned candidates to the host; owners, global numbers and ghost
+  placements back), the upload of an IndexMap's send and receive index lists when its first
+  scatterer is created, and of a scatterer's reverse lists when it is created, and the
+  vertex shared flags at mesh creation (ADR-0026, ADR-0028); in submesh creation, the
+  per-block count reads of compaction (and of each physical group of the child's tags), the
+  agreed TooLarge, NonManifold and InteriorFacet flags (with the parent blocks that hold a
+  child's parent cell, read in the same transfer), the child ghost lists for
+  IndexMap::with_ghosts, the child sharer rows of shared vertices and the node-owner
+  candidates of shared nodes to the host, their owners, child global numbers and ghost
+  placements back, the upload of the closure node maps and the child's vertex shared flags;
+  in orient, the per-round change flag, the agreed error flags, the per-component (label,
+  sum, open) records and the flip decisions back; and the upload of a geometry block's
+  expansion coefficients, or of the 1D nodes, barycentric weights and coefficient factors
+  of a sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
+  ADR-0042).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
