@@ -148,6 +148,7 @@ Claude may do these steps when you ask.
 | M7 Partitioners | M6 |
 | M8 Parallel I/O | M4, M5, M7 |
 | M9 Submeshes and manifolds | M6 |
+| M9h High-order performance | M9 |
 | M10 Hardening | all |
 
 M1a and M2 can run side by side after M0, M4, M5 and M6 after M3, and M7 and M9 after M6. Give each milestone its own git worktree and its own Claude Code session:

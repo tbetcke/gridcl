@@ -6,7 +6,7 @@ As of 17 October 2026. Markdown export of the revised design document; this file
 
 gridcl is a GPU-resident mesh library in Rust built on CubeCL 0.11. It serves as the foundation for strongly typed FEM and BEM crates. It encodes the topological and geometric dimensions in the type system as `Mesh<F, TD, GD, C>`, and keeps cell types and geometry degree as runtime values stored per block. Methods that make sense only for some embeddings (normals, inverse Jacobians, boundaries) exist only where their trait bounds hold, so misuse is a compile error. CubeCL comptime parameters then recover full kernel specialisation from the runtime values.
 
-- **Scope:** 1D–3D meshes with D_TOP ≤ D_GEO ≤ 3, all standard cells including hybrid meshes, arbitrary geometry degree, and device residency on CUDA, HIP, Vulkan, Metal and the CubeCL CPU runtime. It also covers MPI distribution with partitioning, Gmsh MSH 4.1 import and export, and VTK export.
+- **Scope:** 1D–3D meshes with D_TOP ≤ D_GEO ≤ 3, all standard cells including hybrid meshes, arbitrary geometry degree (device kernels verified and optimised for p ≤ 8; pyramids p ≤ 3; ADR-0041), and device residency on CUDA, HIP, Vulkan, Metal and the CubeCL CPU runtime. It also covers MPI distribution with partitioning, Gmsh MSH 4.1 import and export, and VTK export.
 - **Audience:** library architects and the implementation agent (Claude Code). Convert this document to `docs/design.md`.
 - **Status:** revised design, 17 October 2026. It supersedes the draft "gridcl Design B — Typed dimensions, runtime cells" of October 2026 and incorporates the consolidated design review of the same date. The last section maps every review finding to the place where it is fixed. Revision 2 of the same date adds the development environment: the development and test targets and milestone E0. Revision 3 adds SIMD vectorization of kernels through CubeCL vectors, with a benchmark milestone (M3s) that decides where vectors are used.
 - **Name:** gridcl is a placeholder.
@@ -1796,7 +1796,7 @@ The hosted CI provider is not fixed. Without one, the local Mac covers the cpu, 
 
 ## Implementation roadmap
 
-Each milestone is one Claude Code work package. Every acceptance test is automated and runs on the targets of "Testing and validation", and later milestones depend only on the public interfaces of earlier ones. E0 sets up and checks the development environment before any library code exists. M1a (type layer) precedes M1b (reference cells), because gridcl-refcell builds on gridcl-dims. M3s measures where SIMD vectors pay off once the primitives and mesh kernels exist.
+Each milestone is one Claude Code work package. Every acceptance test is automated and runs on the targets of "Testing and validation", and later milestones depend only on the public interfaces of earlier ones. E0 sets up and checks the development environment before any library code exists. M1a (type layer) precedes M1b (reference cells), because gridcl-refcell builds on gridcl-dims. M3s measures where SIMD vectors pay off once the primitives and mesh kernels exist. M9h studies the degree-dependent kernels up to p = 8 before M10 benchmarks the final kernels (ADR-0041).
 
 | Milestone | Depends on |
 | --- | --- |
@@ -1813,6 +1813,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 | M7 Partitioners | M6 |
 | M8 Parallel I/O | M4, M5, M7 |
 | M9 Submeshes and manifolds | M6 |
+| M9h High-order performance | M9 |
 | M10 Hardening | all |
 
 ### E0 Development environment
@@ -2040,6 +2041,24 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - pull-back recovers reference points to 10^−12 for p = 1–3;
 - pull-back gives the same reference points at vector size 1 and at the widest size the device offers, to 10^−12 (read as in ADR-0039 item 14: bitwise on the CPU runtime).
 
+### M9h High-order performance
+
+**Scope (ADR-0041):**
+
+- degree sweeps (p = 1–8) in gridcl-bench, with the protocol of "Vectorization and CPU execution", for every degree-dependent kernel family: EVector, GeomFactors (points, Jacobian, det J, pseudo-inverse, normals, facet normals), PullBack and the device basis evaluator; with, per kernel and device, the time per cell and per quadrature point, the first-use compile and load time, and on CUDA the registers and local memory per thread;
+- strategies, each compared with M9's direct evaluation: runtime loops instead of full unrolling (bounding code size and JIT time); sum factorisation for quadrilaterals, hexahedra and prisms; tabulations or coefficients in shared memory; a workgroup cooperating on one cell only where these fall short, with fixed-order reductions that do not depend on the plane size;
+- a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `GRIDCL_VECTOR_SIZE` is for vector sizes);
+- C18 closed: its cause isolated with the CUDA kernel attributes, and reported upstream if it is CubeCL's.
+
+**Acceptance:**
+
+- every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (gridcl-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
+- every kernel variant up to p = 8 compiles, loads and launches on each backend, and the first-use compile and load time of each is at most 30 s on Locust;
+- for quadrilaterals and hexahedra, the time per quadrature point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every device class (direct evaluation: about 5.8 times);
+- no family is more than 5% slower than in M9 at p ≤ 4 on any device class;
+- the determinism, vector-size invariance and parallel invariance tests pass at p = 1–8: bitwise on the CPU runtime, to 10^−12 (f64) and 10^−5 (f32) on GPUs;
+- `docs/perf/high-order.md` lists, for every family, device class and degree range, the measured cost of each strategy, the chosen one and the reason, with benchmark JSON under `docs/perf/data/` from the targets of M3s.
+
 ### M10 Hardening
 
 **Scope:** the GPU-aware transport (CUDA) and `local_gpu_index` (ADR-0026), benchmarks (including a re-run of the M3s vectorization study for every kernel family), documentation and examples.
@@ -2047,8 +2066,8 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Acceptance:**
 
 - on a Myriad node with a CUDA-aware MPI, the GPU-aware halo exchange is bitwise identical to the host-staged one on 2 ranks (V100 node) and 4 ranks (A100 node);
-- benchmarks (entities created per second, geometric factors per second) are recorded on the local Mac (CPU runtime, Metal), Locust and one socket of a whole Kathleen node (AVX-512; ADR-0020), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
-- the M3s study covers every candidate `KernelKind`, including Pack and PullBack; `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
+- benchmarks (entities created per second, geometric factors per second at p = 1, 4 and 8; ADR-0041) are recorded on the local Mac (CPU runtime, Metal), Locust and one socket of a whole Kathleen node (AVX-512; ADR-0020), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
+- the M3s study covers every candidate `KernelKind`, including Pack, PullBack and any kernel family M9h adds (ADR-0041); `vector-policy.toml` and `docs/perf/vectorization.md` are updated from a re-run on every device class;
 - every example runs on the CPU runtime and on at least one GPU backend;
 - rustdoc builds without warnings, and every public item is documented.
 
@@ -2061,6 +2080,7 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | CubeCL API churn (alpha, breaking minor releases) | Pin `=0.11.0`. Keep runtime types in gridcl-device. Upgrade as a dedicated milestone, with the kernel test suite as safety net. |
 | Backend capability gaps: no f64 on Metal; f64 and u64 adapter-dependent on Vulkan and WGSL; no 64-bit or float min/max atomics on Metal | f32 is first-class; sort keys are u32 words; kernels use no 64-bit or float atomics; capabilities are checked at mesh creation; CI runs on Vulkan and Metal. |
 | Device limits: allocation size, buffers per kernel, workgroups per dimension, shared memory | Query `Client::properties`; chunk fields by cells; check per-rank array sizes at creation; use `LaunchPlan`; keep kernels to six buffers. |
+| High-degree kernels: register pressure, code size and driver JIT time (C18); (p + 1)^6 cost per cell of direct evaluation | M9h: degree sweeps, runtime loops, sum factorisation, a degree policy from benchmarks (ADR-0041). |
 | No device-wide sort or scan in CubeCL; no forward-progress guarantee on Vulkan and Metal | Implement reduce-then-scan and LSD radix sort in gridcl-device; check CubeK first; benchmark in M2, because topology creation depends on them. |
 | f32 accuracy for curved high-order geometry | Tabulate in f64 on the host; store coordinates relative to the global origin; finish reductions in f64; test f32 against f64. |
 | GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Host-staged transport stays the default. GPU-aware path behind a feature, with an integration test on a CUDA-aware MPI runner. Keep `CudaAllocator::Sync`. Re-check on every CubeCL upgrade. |
