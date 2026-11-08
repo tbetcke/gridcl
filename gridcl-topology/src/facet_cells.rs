@@ -156,7 +156,9 @@ pub fn facet_cell_counts<TD: TopoDim>(
 }
 
 /// The downward (tdim, tdim − 1) rows of each cell block, or their vertex rows for tdim = 1,
-/// from a connectivity accessor such as `Topology::connectivity` or `DeviceGrid`'s.
+/// from a connectivity accessor such as `Topology::connectivity` or `DeviceGrid`'s. For
+/// gridcl-geometry's `orient`; not part of the stable API (ADR-0038; tests: gridcl-topology's
+/// `facet_cells`, through [`facet_cell_counts`], and gridcl's `orient`).
 ///
 /// # Errors
 ///
