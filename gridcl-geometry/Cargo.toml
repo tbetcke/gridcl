@@ -11,6 +11,9 @@ autotests = false
 # Test support, not part of the stable API: the hidden `gridcl_geometry::testing` (strategy
 # overrides; ADR-0042, item 3). gridcl-testing turns it on for every workspace test.
 testing = []
+# Benchmark hooks, not part of the stable API: the hidden `gridcl_geometry::bench` (the device
+# basis evaluator on its own; ADR-0038, ADR-0042). gridcl-bench turns it on.
+bench = []
 
 [dependencies]
 cubecl.workspace = true

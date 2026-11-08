@@ -2008,6 +2008,8 @@ dependencies = [
  "cubecl",
  "gridcl",
  "gridcl-device",
+ "gridcl-dims",
+ "gridcl-geometry",
  "gridcl-refcell",
  "gridcl-testing",
  "gridcl-topology",

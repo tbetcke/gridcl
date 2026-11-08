@@ -22,6 +22,9 @@ wgpu = ["cubecl/wgpu", "gridcl-testing/wgpu"]
 cubecl.workspace = true
 gridcl = { path = "../gridcl" }
 gridcl-device = { path = "../gridcl-device", features = ["testing"] }
+# The hidden bench hooks of the degree sweep (ADR-0038, ADR-0042).
+gridcl-geometry = { path = "../gridcl-geometry", features = ["bench"] }
+gridcl-dims = { path = "../gridcl-dims" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 gridcl-testing = { path = "../gridcl-testing", default-features = false }
 # The hidden bench hooks of TopologyKeys and PermutationInfo (ADR-0015, item 4).

@@ -6,6 +6,9 @@
 //! write tiled [`QuadField`]s, with the lanes of a vector over consecutive cells of a tile.
 
 mod basis_eval;
+#[doc(hidden)]
+#[cfg(feature = "bench")]
+pub mod bench;
 mod detj_pinv;
 mod element;
 mod equispaced;

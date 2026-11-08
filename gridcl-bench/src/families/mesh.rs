@@ -90,7 +90,7 @@ pub fn factor_cells(n: usize) -> usize {
 }
 
 /// The smallest s ≥ 1 whose count is nearest to `cells`; ties go to the smaller box.
-fn nearest_side(cells: usize, count: impl Fn(usize) -> usize) -> usize {
+pub(crate) fn nearest_side(cells: usize, count: impl Fn(usize) -> usize) -> usize {
     let mut s = 1;
     while count(s + 1) <= cells {
         s += 1;
