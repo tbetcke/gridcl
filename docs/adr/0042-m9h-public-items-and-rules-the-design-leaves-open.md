@@ -203,3 +203,5 @@ Option 2, item by item.
 ## Decision record
 
 Accepted by the maintainer on 2026-11-08, as proposed (option 2, items 1–13), including item 2's scaling of the f64 tolerance. Applied to docs/design.md and CLAUDE.md in `adr: 0042 apply`. When applied, one slip in Consequences was corrected: the roadmap's reading note names item 9 under bullet 5 (parallel invariance), not bullet 1, adds item 2 to bullet 5 (GPU tolerances) and item 12 to bullet 6 (the decision rule behind `high-order.md`).
+
+Clarified by the maintainer on 2026-11-08 (M9h T0a): in item 2, "per component" means per quantity. The relative error of X, J, det J, K, normals and ξ is each taken against the largest |want| of that quantity over the block, so det J ~ h³ stays relative, while the entries of one matrix share its largest value (rounding errors scale with the matrix, not with each entry; strictly per entry, f32 J fails at p = 3 with no kernel defect). docs/design.md's "largest value of each component" is read the same way.

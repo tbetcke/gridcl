@@ -196,7 +196,7 @@ Every kernel task writes a SAFETY comment on each `launch_unchecked` and `from_r
 
 Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchmarks follow "Benchmarks" (conditions; node load idle before and after on Locust). On the Mac they run outside the sandbox.
 
-- [ ] **T0a Test inputs at p ≤ 8 (gridcl-testing)**
+- [x] **T0a Test inputs at p ≤ 8 (gridcl-testing)**
   - Goal: the acceptance inputs, implemented:
     - `HostMesh::with_node_family(NodeFamily::Gll)` for tensor cells;
     - generators validated to p = 8 (det J > 0 at Gauss points of degree 2p for `perturbed`, `ball`, `sphere`, `mixed_surface`, every box);
@@ -449,6 +449,9 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 
 | Date | Task | Deviation from plan or design | Reason | ADR |
 | --- | --- | --- | --- | --- |
+| 2026-11-08 | T0a | Rule 2's "per component" is read per quantity: the relative error of X, J, det J, K, normals and ξ is each measured against the largest \|want\| of that quantity over the block (`reference::rel_err`), not per matrix entry. | Strictly per entry, f32 J on a GLL hexahedron box at p = 3 fails (1.7e-5 > 1e-5) with no kernel defect: rounding errors are about 5e-7 on every entry, while off-diagonal entries are 18× smaller than diagonal ones (M9's p = 2 box was already at 8e-6). Maintainer, 2026-11-08: per quantity. | ADR-0042 item 2 (clarification noted in its decision record) |
+| 2026-11-08 | T0a | Files beyond the task's list: `gridcl-testing/src/meshes/{chunk.rs, boxes.rs, manifold.rs, lattice.rs}` and `gridcl/tests/permutation_info.rs` (struct literals gain `HostBlock::family`; `HostChunkBlock` carries the family too); `gridcl-testing/tests/{main.rs, reference.rs}` for the "`reference` agrees with M9's device factors at p = 2" test (plus a GLL hexahedron box at p = 3). | `with_node_family` needs a per-block family that `HostMesh::build` and `HostChunk::builder` pass to `MeshBuilder`. | – |
+| 2026-11-08 | T0a | The "GLL meshes reproduce their equispaced geometry" test uses rule 2's scaled f64 tolerance, not a flat 1e-12; `perturbed(0.05)` keeps det J > 0 to p = 8 on every box, so its amplitude is not scaled by 4/p. Boxes with pyramids are checked to p = 3; the self-tests above p = 4 (p = 5 for GLL) run in release builds only. | f64 J on an equispaced hexahedron box at p = 6 differs from the GLL mesh by 1.4e-12, within rule 2's scale. | – |
 
 ## Review
 

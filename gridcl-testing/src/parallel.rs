@@ -74,7 +74,39 @@ pub const FAMILIES: [Family; 9] = [
     Family::Sphere,
 ];
 
+/// The families of the M9h parallel invariance of geometric factors and the pull-back
+/// ([`high_order_cases`]): [`FAMILIES`], the curved `ball` and `mixed_surface`, and `circle`
+/// (normals of a curve in 2D).
+pub const HIGH_ORDER_FAMILIES: [Family; 12] = [
+    Family::Cube(Cell3::Tetrahedron),
+    Family::Cube(Cell3::Hexahedron),
+    Family::Cube(Cell3::Prism),
+    Family::Cube(Cell3::Pyramid),
+    Family::Mixed,
+    Family::Square(Cell2::Triangle),
+    Family::Square(Cell2::Quadrilateral),
+    Family::Interval,
+    Family::Sphere,
+    Family::Ball,
+    Family::MixedSurface,
+    Family::Circle,
+];
+
+/// The degrees of the M9h thread-rank parallel checks: p = 1–8 (ADR-0042, item 9).
+pub const HIGH_ORDER_DEGREES: [u32; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/// The degrees of the M9h MPI parallel checks: p ∈ {1, 4, 8} (ADR-0042, item 9).
+pub const HIGH_ORDER_MPI_DEGREES: [u32; 3] = [1, 4, 8];
+
+/// The highest degree at which families with pyramid cells are tested (ADR-0041).
+pub const PYRAMID_MAX_DEGREE: u32 = 3;
+
 impl Family {
+    /// Whether the family has pyramid cells (`cube_box` of pyramids and `mixed_box`).
+    pub fn has_pyramids(self) -> bool {
+        matches!(self, Family::Cube(Cell3::Pyramid) | Family::Mixed)
+    }
+
     /// The host mesh at degree `p`.
     pub fn host(self, p: u32) -> HostMesh {
         match self {
@@ -173,6 +205,44 @@ pub fn cases(coverage: Coverage) -> Vec<Case> {
                         ghosts,
                         distribution: DISTRIBUTIONS[(f + degree as usize + g) % 3],
                         double: g % 2 == 0,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The cases of the M9h parallel invariance of geometric factors and pull-back results
+/// (ADR-0042, item 9): [`HIGH_ORDER_FAMILIES`] at each degree of `degrees`, families with
+/// pyramids only up to [`PYRAMID_MAX_DEGREE`]; every ghost mode at p ≤ 2 and one per case above,
+/// cycling. Distributions cycle, and every other case runs in f32.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_testing::parallel::{HIGH_ORDER_MPI_DEGREES, high_order_cases};
+///
+/// let cases = high_order_cases(&HIGH_ORDER_MPI_DEGREES);
+/// assert!(cases.iter().all(|c| c.degree <= 3 || !c.family.has_pyramids()));
+/// assert!(cases.iter().any(|c| c.degree == 8));
+/// ```
+pub fn high_order_cases(degrees: &[u32]) -> Vec<Case> {
+    let mut out = Vec::new();
+    for (f, &family) in HIGH_ORDER_FAMILIES.iter().enumerate() {
+        for &degree in degrees {
+            if family.has_pyramids() && degree > PYRAMID_MAX_DEGREE {
+                continue;
+            }
+            for (g, &ghosts) in GHOST_MODES.iter().enumerate() {
+                let k = f + degree as usize;
+                if degree <= 2 || g == k % GHOST_MODES.len() {
+                    out.push(Case {
+                        family,
+                        degree,
+                        ghosts,
+                        distribution: DISTRIBUTIONS[(k + g) % 3],
+                        double: ((k + g) / 2).is_multiple_of(2),
                     });
                 }
             }
@@ -2252,5 +2322,48 @@ pub fn orient<C: Comm>(comm: &C, client: &Client, case: &Case) {
         | Family::Mobius
         | Family::Book => run!(D2, D3),
         other => panic!("{other:?} is not an orient family"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn high_order_cases_follow_rule_nine() {
+        let cases = high_order_cases(&HIGH_ORDER_DEGREES);
+        for &family in &HIGH_ORDER_FAMILIES {
+            for p in HIGH_ORDER_DEGREES {
+                let modes: Vec<GhostMode> = cases
+                    .iter()
+                    .filter(|c| c.family == family && c.degree == p)
+                    .map(|c| c.ghosts)
+                    .collect();
+                let want = match (family.has_pyramids() && p > PYRAMID_MAX_DEGREE, p <= 2) {
+                    (true, _) => 0,
+                    (false, true) => GHOST_MODES.len(),
+                    (false, false) => 1,
+                };
+                assert_eq!(modes.len(), want, "{family:?} p = {p}");
+            }
+        }
+        // Every ghost mode, distribution and precision occurs above p = 2 too.
+        let high: Vec<&Case> = cases.iter().filter(|c| c.degree > 2).collect();
+        for mode in GHOST_MODES {
+            assert!(high.iter().any(|c| c.ghosts == mode), "{mode:?}");
+        }
+        for d in DISTRIBUTIONS {
+            assert!(high.iter().any(|c| c.distribution == d), "{d:?}");
+        }
+        assert!(high.iter().any(|c| c.double) && high.iter().any(|c| !c.double));
+        let mpi = high_order_cases(&HIGH_ORDER_MPI_DEGREES);
+        assert!(mpi.iter().all(|c| [1, 4, 8].contains(&c.degree)));
+        for p in [4, 8] {
+            let at = || mpi.iter().filter(move |c| c.degree == p);
+            assert!(
+                at().any(|c| c.double) && at().any(|c| !c.double),
+                "MPI p = {p}"
+            );
+        }
     }
 }

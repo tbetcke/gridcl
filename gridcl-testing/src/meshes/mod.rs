@@ -9,6 +9,7 @@
 mod ball;
 mod boxes;
 mod chunk;
+mod family;
 mod lattice;
 mod manifold;
 mod sphere;
@@ -47,13 +48,16 @@ pub struct HostMesh {
     pub blocks: Vec<HostBlock>,
 }
 
-/// One cell block of a [`HostMesh`]: equispaced Lagrange cells of one type and degree.
+/// One cell block of a [`HostMesh`]: Lagrange cells of one type, degree and node family.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostBlock {
     /// The cell type.
     pub cell: CellType,
     /// The degree p ≥ 1.
     pub degree: u32,
+    /// The node family of the coordinate element: `Equispaced` from every generator,
+    /// `Gll` after [`HostMesh::with_node_family`].
+    pub family: NodeFamily,
     /// Cell → node lists in A.5 order, one row of `num_lagrange_nodes(cell, degree)` per cell.
     pub cells: Vec<u32>,
     /// Cell origin ids; `None` means the cell index in the block.
@@ -88,7 +92,7 @@ impl HostMesh {
         self.node_ids.as_ref().map_or(i as i64, |ids| ids[i])
     }
 
-    /// The mesh on `client`, through `MeshBuilder`, with equispaced coordinate elements.
+    /// The mesh on `client`, through `MeshBuilder`, with each block's coordinate element.
     ///
     /// # Errors
     ///
@@ -133,7 +137,7 @@ impl HostMesh {
                 Ok(CoordinateElement {
                     cell: td_cell::<TD>(block.cell)?,
                     degree: block.degree,
-                    family: NodeFamily::Equispaced,
+                    family: block.family,
                 })
             })
             .collect()
@@ -149,7 +153,7 @@ impl HostMesh {
     /// pinned pyramid nodes with a gradient bounded independently of the cell size; without it,
     /// the hexahedra of the mixed box, whose faces are all pinned, fold at fine n and high p.
     /// Nodes on the boundary of the unit box are not moved at all. Amplitude 0.05 keeps
-    /// det J > 0 on every box at p ≤ 4.
+    /// det J > 0 on every box at p ≤ 8 (boxes with pyramids checked to p = 3).
     ///
     /// # Example
     ///
@@ -410,5 +414,69 @@ fn cell_name(cell: CellType) -> &'static str {
         CellType::Hexahedron => "Hexahedron",
         CellType::Prism => "Prism",
         CellType::Pyramid => "Pyramid",
+    }
+}
+
+#[cfg(test)]
+mod high_order_tests {
+    use gridcl_dims::{Cell2, Cell3, CellType};
+
+    use crate::HostMesh;
+    use crate::reference::host;
+
+    /// The smallest det J (signed in codimension 0, the pseudo-determinant otherwise) over the
+    /// Gauss points of degree 2p of every cell, relative to the largest |det J| of its block.
+    fn min_relative_detj(h: &HostMesh) -> f64 {
+        let mut min = f64::INFINITY;
+        for (b, block) in h.blocks.iter().enumerate() {
+            let rule = gridcl_refcell::gauss_rule(block.cell, 2 * block.degree);
+            let dets = host::detj(h, b, &rule.points);
+            let scale = dets.iter().fold(0.0f64, |m, d| m.max(d.abs()));
+            min = dets.iter().fold(min, |m, d| m.min(d / scale));
+        }
+        min
+    }
+
+    /// Every generator at p = 1–8 (pyramid cells to p = 3, the degrees M9h tests them at; release
+    /// builds only above p = 4): det J > 0 at the Gauss points of degree 2p, plain and with
+    /// `perturbed(0.05)` for the boxes (docs/plans/M9h.md, T0a).
+    #[test]
+    fn det_j_is_positive_to_degree_eight() {
+        let top = if cfg!(debug_assertions) { 4 } else { 8 };
+        for p in 1..=top {
+            let mut meshes: Vec<(String, HostMesh)> = vec![
+                ("interval box".into(), crate::interval_box(4, p)),
+                ("ball".into(), crate::ball(1, p)),
+                ("sphere".into(), crate::sphere(1, p)),
+                ("mixed surface".into(), crate::mixed_surface(1, p)),
+            ];
+            for cell in [Cell2::Triangle, Cell2::Quadrilateral] {
+                meshes.push((format!("{cell:?} box"), crate::square_box(cell, 3, p)));
+            }
+            for cell in [Cell3::Tetrahedron, Cell3::Hexahedron, Cell3::Prism] {
+                meshes.push((format!("{cell:?} box"), crate::cube_box(cell, 2, p)));
+            }
+            if p <= 3 {
+                meshes.push(("pyramid box".into(), crate::cube_box(Cell3::Pyramid, 2, p)));
+                meshes.push(("mixed box".into(), crate::mixed_box(2, p)));
+                meshes.push((
+                    "hex-prism-pyramid box".into(),
+                    crate::hex_prism_pyramid_box(2, p),
+                ));
+            }
+            let boxes: Vec<(String, HostMesh)> = meshes
+                .iter()
+                .filter(|(what, _)| what.ends_with("box"))
+                .map(|(what, h)| (format!("perturbed {what}"), h.perturbed(0.05)))
+                .collect();
+            meshes.extend(boxes);
+            for (what, h) in &meshes {
+                let min = min_relative_detj(h);
+                eprintln!("{what}, p = {p}: min det J / max |det J| = {min:.3}");
+                assert!(min > 0.0, "{what}, p = {p}: det J / max |det J| = {min}");
+                let cells: Vec<CellType> = h.blocks.iter().map(|b| b.cell).collect();
+                assert!(p <= 3 || !cells.contains(&CellType::Pyramid));
+            }
+        }
     }
 }

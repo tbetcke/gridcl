@@ -331,6 +331,7 @@ pub fn triangle_strip(num_cells: usize) -> HostMesh {
         blocks: vec![super::HostBlock {
             cell: CellType::Triangle,
             degree: 1,
+            family: gridcl_refcell::NodeFamily::Equispaced,
             cells,
             cell_ids: None,
         }],
