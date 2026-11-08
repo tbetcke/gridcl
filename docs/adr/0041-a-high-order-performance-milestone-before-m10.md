@@ -1,6 +1,6 @@
 # ADR-0041: A high-order performance milestone before M10
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-08
 - **Raised in:** after the M9 review (docs/plans/M9.md, Review; docs/cubecl-upstream.md C18), maintainer discussion of 2026-11-08
 - **Design sections affected:**
@@ -72,4 +72,4 @@ Open points for the M9h plan, to be settled there or in an ADR of their own: whe
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-08, as proposed.
