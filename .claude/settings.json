@@ -49,7 +49,6 @@
       "Bash(git push *--mirror*)",
       "Bash(git push *--delete*)",
       "Bash(git push * -d *)",
-      "Bash(git push * :*)",
       "Bash(git reset --hard *)",
       "Bash(git rebase *)",
       "Bash(cargo publish *)"
