@@ -7,8 +7,8 @@
 //! J^−T n_ref = cof(J) n_ref / det J. Both t and n_ref are normal to the reference facet, so
 //! t = λ n_ref, and the dot product of the two normals is λ |cof(J) n_ref|² / det J: its sign
 //! is sign(λ) · sign(det J). The kernel therefore reads det J of the parent at the facet
-//! midpoint (one Gauss point per facet) and a per-(cell type, facet) table of sign(λ); this
-//! is the sign of the dot product of rule 8, without its rounding.
+//! midpoint (one Gauss point per facet) and a comptime per-(cell type, facet) table of
+//! sign(λ); this is the sign of the dot product of rule 8, without its rounding.
 
 use cubecl::prelude::*;
 use gridcl_device::{DeviceBuffer, Real, Result, debug_assert_bindings};
@@ -20,17 +20,22 @@ use super::topology::ChildTopology;
 use super::{fit, plan};
 use crate::Mesh;
 
-/// `flags[i] = (table[f] & 1) ^ (det J < 0)` for the children i < len whose parent cell c lies
-/// in the chunk's cells `[cell_begin, cell_begin + chunk_cells)`, f being the local facet:
-/// det J is read at the chunk's tiled point q = table[f] >> 1 of local cell c − cell_begin.
-/// Scalar.
+/// The comptime table of the flags kernel for one parent cell type: per local facet f, the
+/// first point of f in the facet rule and whether λ_f < 0 (module docs).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct FacetTable {
+    facets: Vec<(u32, bool)>,
+}
+
+/// `flags[i] = (λ_f < 0) ^ (det J < 0)` for the children i < len whose parent cell c lies in
+/// the chunk's cells `[cell_begin, cell_begin + chunk_cells)`, f being the local facet: det J
+/// is read at the chunk's tiled point q of f (`t`) of local cell c − cell_begin. Scalar.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn flags_kernel<F: Float>(
     cells: &[u32],
     facets: &[u32],
     detj: &[F],
-    table: &[u32],
     flags: &mut [u32],
     len: u32,
     cell_begin: u32,
@@ -38,6 +43,7 @@ fn flags_kernel<F: Float>(
     num_points: u32,
     tile: u32,
     items_per_unit: u32,
+    #[comptime] t: FacetTable,
 ) {
     let first = ABSOLUTE_POS * items_per_unit as usize;
     for it in 0..items_per_unit as usize {
@@ -46,24 +52,30 @@ fn flags_kernel<F: Float>(
             let c = cells[i];
             if c >= cell_begin && c - cell_begin < chunk_cells {
                 let lc = c - cell_begin;
-                let t = table[facets[i] as usize];
-                let q = t >> 1u32;
                 let tl = lc / tile;
                 let lane = lc - tl * tile;
-                let d = detj[((tl * num_points + q) * tile + lane) as usize];
-                flags[i] = (t & 1u32) ^ u32::cast_from(d < F::from_int(0));
+                let f = facets[i];
+                #[unroll]
+                for g in 0..comptime!(t.facets.len()) {
+                    if f == comptime!(g as u32) {
+                        let q = comptime!(t.facets[g].0);
+                        let flip = comptime!(u32::from(t.facets[g].1));
+                        let d = detj[((tl * num_points + q) * tile + lane) as usize];
+                        flags[i] = flip ^ u32::cast_from(d < F::from_int(0));
+                    }
+                }
             }
         }
     }
 }
 
-/// Per facet f of `cell`: (first point of f in the facet rule) << 1 | (λ_f < 0), where λ_f is
-/// the sign of t · n_ref (module docs).
-fn facet_table(cell: CellType, offsets: &[usize]) -> Vec<u32> {
+/// Per facet f of `cell`: the first point of f in the facet rule, and whether λ_f < 0, λ_f
+/// being the sign of t · n_ref (module docs).
+fn facet_table(cell: CellType, offsets: &[usize]) -> Result<FacetTable> {
     let tdim = gridcl_refcell::tdim(cell);
     let refs = gridcl_refcell::vertices(cell);
     let normals = gridcl_refcell::reference_facet_normals(cell);
-    gridcl_refcell::sub_entities(cell, tdim - 1)
+    let facets = gridcl_refcell::sub_entities(cell, tdim - 1)
         .iter()
         .enumerate()
         .map(|(f, verts)| {
@@ -88,9 +100,10 @@ fn facet_table(cell: CellType, offsets: &[usize]) -> Vec<u32> {
                 .zip(&normals[f * tdim..(f + 1) * tdim])
                 .map(|(x, n)| x * n)
                 .sum();
-            ((offsets[f] as u32) << 1) | u32::from(dot < 0.0)
+            Ok((fit(offsets[f])?, dot < 0.0))
         })
-        .collect()
+        .collect::<Result<_>>()?;
+    Ok(FacetTable { facets })
 }
 
 /// The flags of every child block of the facet children `child` of `mesh`: bit 0 as in the
@@ -124,26 +137,23 @@ where
         let present = child.present.iter().any(|p| p[b]);
         if num_local > 0 && present {
             let set = rule.get(block.cell)?;
-            let table = DeviceBuffer::from_host(
-                client,
-                &facet_table(block.cell.into(), set.facet_offsets()),
-            )?;
+            let table = facet_table(block.cell.into(), set.facet_offsets())?;
             let detj = detj_block(mesh, b, set.points())?;
             let (num_points, tile) = (detj.num_points(), detj.tile());
             for chunk in detj.chunks() {
+                fit(chunk.data.len())?;
                 for ((cells, facets), flags) in child.facet_blocks.iter().zip(&out) {
                     let n = cells.len();
                     if n == 0 {
                         continue;
                     }
                     let launch = plan(client, n)?;
-                    debug_assert_bindings(client, 5);
+                    debug_assert_bindings(client, 4);
                     // SAFETY: children i < n read cells[i] and facets[i] (n words each) and
-                    // write flags[i] (n words). Those with c in the chunk's cells read
-                    // table[f] for f below the cell's facet count (the table has one entry
-                    // per facet) and det J at ((tl · num_points + q) · tile + lane) with
-                    // tl · tile + lane = c − first < chunk cells and q < num_points, inside
-                    // the chunk's padded tiles.
+                    // write flags[i] (n words). Those with c in the chunk's cells and a local
+                    // facet in the table read det J at ((tl · num_points + q) · tile + lane)
+                    // with tl · tile + lane = c − first < chunk cells and q < num_points,
+                    // inside the chunk's padded tiles, whose length fits u32 (checked above).
                     unsafe {
                         flags_kernel::launch_unchecked::<F>(
                             client,
@@ -152,7 +162,6 @@ where
                             cells.arg(),
                             facets.arg(),
                             chunk.data.arg(),
-                            table.arg(),
                             flags.arg(),
                             fit(n)?,
                             fit(cell_begin + chunk.first_cell)?,
@@ -160,6 +169,7 @@ where
                             fit(num_points)?,
                             fit(tile)?,
                             launch.items_per_unit,
+                            table.clone(),
                         );
                     }
                 }

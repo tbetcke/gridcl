@@ -313,7 +313,7 @@ where
                 table: table.as_deref(),
             })
             .collect();
-        let dofmap = select::restrict_rows(cells, facets, &rows, k)?;
+        let dofmap = select::restrict_rows(cells, facets, &rows, k, select::Tables::Upload)?;
         blocks.push((
             cell,
             degree,

@@ -160,7 +160,8 @@ fn compact_kernel(
 /// The rows of the children i < len whose parent cell lies in the parent block
 /// `[cell_begin, cell_end)`: `out[i · k + j] = rows[(c − cell_begin) · stride + table[f · k
 /// + j]]`, with c the parent cell, f the child's sub-entity code (the local facet for facet
-/// children) and `table` the block's k entries per code (e.g. the facet vertex lists). Scalar.
+/// children) and `table` the block's k entries per code (an uploaded closure node map).
+/// Scalar.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn facet_rows_kernel(
@@ -186,6 +187,53 @@ fn facet_rows_kernel(
                 let f = facets[i] as usize;
                 for j in 0..k as usize {
                     out[i * k as usize + j] = rows[base + table[f * k as usize + j] as usize];
+                }
+            }
+        }
+    }
+}
+
+/// The comptime table of [`facet_rows_comptime_kernel`]: k entries per sub-entity code.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct RowTable {
+    k: usize,
+    entries: Vec<usize>,
+}
+
+/// [`facet_rows_kernel`] with the table `t` at comptime, for the reference-cell tables (the
+/// facet vertex lists), which are not uploaded. Children whose code has no entry leave their
+/// rows unwritten (unspecified). Scalar.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn facet_rows_comptime_kernel(
+    cells: &[u32],
+    facets: &[u32],
+    rows: &[u32],
+    out: &mut [u32],
+    len: u32,
+    stride: u32,
+    cell_begin: u32,
+    cell_end: u32,
+    items_per_unit: u32,
+    #[comptime] t: RowTable,
+) {
+    let k = t.k;
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let i = first + it;
+        if i < len as usize {
+            let c = cells[i];
+            if c >= cell_begin && c < cell_end {
+                let base = (c - cell_begin) as usize * stride as usize;
+                let f = facets[i];
+                #[unroll]
+                for g in 0..comptime!(t.entries.len() / t.k) {
+                    if f == comptime!(g as u32) {
+                        #[unroll]
+                        for j in 0..k {
+                            out[i * k + j] = rows[base + comptime!(t.entries[g * t.k + j])];
+                        }
+                    }
                 }
             }
         }
@@ -409,6 +457,15 @@ pub(super) struct RowSource<'a> {
     pub(super) table: Option<&'a [u32]>,
 }
 
+/// How [`restrict_rows`] gives the tables to its kernel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Tables {
+    /// Uploaded: the closure node maps (CLAUDE.md, ADR-0039 item 18).
+    Upload,
+    /// At comptime: the reference-cell tables, such as the facet vertex lists.
+    Comptime,
+}
+
 /// The rows of the children with parent cells `cells` and sub-entity codes `facets` (local
 /// facets for facet children) restricted from the parent blocks' rows: for the block b holding
 /// cell c, entry j of child i is `rows_b[(c − begin_b) · stride_b + table_b[f · k + j]]`.
@@ -418,6 +475,7 @@ pub(super) fn restrict_rows(
     facets: &DeviceBuffer<u32>,
     blocks: &[RowSource<'_>],
     k: usize,
+    tables: Tables,
 ) -> Result<DeviceBuffer<u32>> {
     let client = cells.client();
     let n = cells.len();
@@ -431,31 +489,66 @@ pub(super) fn restrict_rows(
             && n > 0
             && num_local > 0
         {
-            let table = DeviceBuffer::from_host(client, table)?;
             let launch = plan(client, n)?;
-            debug_assert_bindings(client, 5);
-            // SAFETY: children i < n read cells[i] and facets[i] (n words each); those with a
-            // cell c in [cell_begin, cell_end) read the block's row c − cell_begin, at most
-            // stride words from (c − cell_begin) · stride < rows.len(), at the positions
-            // table[f · k + j] < stride (f below the block's code count, the table holds k per
-            // code), and write out[i · k + j] < n · k, its length.
-            unsafe {
-                facet_rows_kernel::launch_unchecked(
-                    client,
-                    launch.cube_count,
-                    launch.cube_dim,
-                    cells.arg(),
-                    facets.arg(),
-                    rows.data.arg(),
-                    table.arg(),
-                    out.arg(),
-                    fit(n)?,
-                    fit(k)?,
-                    rows.stride,
-                    fit(cell_begin)?,
-                    fit(cell_end)?,
-                    launch.items_per_unit,
-                );
+            match tables {
+                Tables::Upload => {
+                    // The upload of a closure node map (CLAUDE.md, ADR-0039 item 18).
+                    let table = DeviceBuffer::from_host(client, table)?;
+                    debug_assert_bindings(client, 5);
+                    // SAFETY: children i < n read cells[i] and facets[i] (n words each);
+                    // those with a cell c in [cell_begin, cell_end) read the block's row
+                    // c − cell_begin, at most stride words from (c − cell_begin) · stride <
+                    // rows.len(), at the positions table[f · k + j] < stride (f below the
+                    // block's code count, the table holds k per code), and write
+                    // out[i · k + j] < n · k, its length.
+                    unsafe {
+                        facet_rows_kernel::launch_unchecked(
+                            client,
+                            launch.cube_count,
+                            launch.cube_dim,
+                            cells.arg(),
+                            facets.arg(),
+                            rows.data.arg(),
+                            table.arg(),
+                            out.arg(),
+                            fit(n)?,
+                            fit(k)?,
+                            rows.stride,
+                            fit(cell_begin)?,
+                            fit(cell_end)?,
+                            launch.items_per_unit,
+                        );
+                    }
+                }
+                Tables::Comptime => {
+                    let t = RowTable {
+                        k,
+                        entries: table.iter().map(|&e| e as usize).collect(),
+                    };
+                    debug_assert_bindings(client, 4);
+                    // SAFETY: children i < n read cells[i] and facets[i] (n words each);
+                    // those with a cell c in [cell_begin, cell_end) and a code f in the table
+                    // read the block's row c − cell_begin, at most stride words from
+                    // (c − cell_begin) · stride < rows.len(), at the positions
+                    // t[f · k + j] < stride, and write out[i · k + j] < n · k, its length.
+                    unsafe {
+                        facet_rows_comptime_kernel::launch_unchecked(
+                            client,
+                            launch.cube_count,
+                            launch.cube_dim,
+                            cells.arg(),
+                            facets.arg(),
+                            rows.data.arg(),
+                            out.arg(),
+                            fit(n)?,
+                            rows.stride,
+                            fit(cell_begin)?,
+                            fit(cell_end)?,
+                            launch.items_per_unit,
+                            t,
+                        );
+                    }
+                }
             }
         }
         cell_begin = cell_end;
@@ -502,7 +595,7 @@ pub(crate) fn facet_children<TD: TopoDim>(
             table: Some(&t[..]),
         })
         .collect();
-    let rows = restrict_rows(&cells, &facets, &blocks, k)?;
+    let rows = restrict_rows(&cells, &facets, &blocks, k, Tables::Comptime)?;
     let origin_ids =
         DeviceBuffer::<u32>::uninit(client, n.checked_mul(2).ok_or(GridError::TooLarge)?)?;
     fit(origin_ids.len())?;

@@ -167,38 +167,49 @@ fn first_cell_kernel(
     }
 }
 
+/// The comptime table of the direction kernel for one parent cell type: the first vertex of
+/// each local edge.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct EdgeStarts {
+    starts: Vec<usize>,
+}
+
 /// For the children i < len whose first cell c = `first[i]` lies in the cell block
 /// `[cell_begin, cell_end)`, with local edge e = `code[i]`: `code[i] = d · ne + e`, where d = 1
-/// if the cell's local edge starts elsewhere than the child's first vertex `rows[2i]`
-/// (`table` holds the block's two vertices per local edge, `vertices` its rows of nvc), and
-/// `status[present] = 1`. Scalar.
+/// if the cell's local edge starts (`t`) elsewhere than the child's first vertex `rows[2i]`
+/// (`vertices` holds the block's rows of nvc), and `status[present] = 1`. Scalar.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn direction_kernel(
     first: &[u32],
     code: &mut [u32],
     vertices: &[u32],
-    table: &[u32],
     rows: &[u32],
     status: &[Atomic<u32>],
     len: u32,
     nvc: u32,
-    ne: u32,
     cell_begin: u32,
     cell_end: u32,
     present: u32,
     items_per_unit: u32,
+    #[comptime] t: EdgeStarts,
 ) {
+    let ne = comptime!(t.starts.len() as u32);
     let start = ABSOLUTE_POS * items_per_unit as usize;
     for it in 0..items_per_unit as usize {
         let i = start + it;
         if i < len as usize {
             let c = first[i];
             if c >= cell_begin && c < cell_end {
-                let lc = (c - cell_begin) as usize;
+                let row = (c - cell_begin) as usize * nvc as usize;
                 let e = code[i];
-                let a = vertices[lc * nvc as usize + table[2 * e as usize] as usize];
-                code[i] = u32::cast_from(a != rows[2 * i]) * ne + e;
+                #[unroll]
+                for g in 0..comptime!(t.starts.len()) {
+                    if e == comptime!(g as u32) {
+                        let a = vertices[row + comptime!(t.starts[g])];
+                        code[i] = u32::cast_from(a != rows[2 * i]) * ne + e;
+                    }
+                }
                 status[present as usize].store(1u32);
             }
         }
@@ -392,21 +403,20 @@ fn children(
             cell_begin = cell_end;
         }
         let mut cell_begin = 0usize;
-        for (b, (block, down)) in parent.cell_blocks().iter().zip(down).enumerate() {
+        for (b, block) in parent.cell_blocks().iter().enumerate() {
             let cell_end = cell_begin + block.index_map.num_local();
             if cell_end > cell_begin {
                 let cell: CellType = block.cell.into();
-                let table: Vec<u32> = gridcl_refcell::sub_entities(cell, 1)
+                let starts = gridcl_refcell::sub_entities(cell, 1)
                     .iter()
-                    .flat_map(|e| [e[0] as u32, e[1] as u32])
+                    .map(|e| e[0])
                     .collect();
-                let table = DeviceBuffer::from_host(client, &table)?;
-                debug_assert_bindings(client, 6);
+                debug_assert_bindings(client, 5);
                 // SAFETY: children i < n read first[i] and code[i] (n words, all written
                 // above); those with c in [cell_begin, cell_end) have e = code[i] < ne, read
-                // table[2e] < 2 · ne (two words per edge), the vertex (c − cell_begin) · nvc +
-                // table[2e] < vertices.len() (table entries < nvc) and rows[2i] < 2n, and write
-                // code[i] and status[1 + b] < 1 + num_blocks.
+                // the vertex (c − cell_begin) · nvc + start(e) < vertices.len() (edge starts
+                // are local vertices, < nvc) and rows[2i] < 2n, and write code[i] and
+                // status[1 + b] < 1 + num_blocks.
                 unsafe {
                     direction_kernel::launch_unchecked(
                         client,
@@ -415,16 +425,15 @@ fn children(
                         first.arg(),
                         code.arg(),
                         block.vertices.data.arg(),
-                        table.arg(),
                         rows.arg(),
                         status.arg(),
                         fit(n)?,
                         block.vertices.stride,
-                        down.stride,
                         fit(cell_begin)?,
                         fit(cell_end)?,
                         fit(1 + b)?,
                         launch.items_per_unit,
+                        EdgeStarts { starts },
                     );
                 }
             }
@@ -552,7 +561,7 @@ pub(crate) fn edge_children<F: Real, C: Comm>(
                 table: table.as_deref(),
             })
             .collect();
-        let dofmap = select::restrict_rows(&e.first, &e.code, &sources, k)?;
+        let dofmap = select::restrict_rows(&e.first, &e.code, &sources, k, select::Tables::Upload)?;
         geometry_blocks.push((
             CellType::Interval,
             degree,
