@@ -24,6 +24,10 @@ mod points_jac;
 mod pull_back;
 mod rule;
 mod shape;
+mod strategy;
+#[doc(hidden)]
+#[cfg(feature = "testing")]
+pub mod testing;
 
 pub use detj_pinv::{detj_block, pseudo_inverse_block};
 pub use element::{CoordinateElement, GeometryBlock};

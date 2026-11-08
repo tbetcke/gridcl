@@ -47,6 +47,9 @@ pub struct LaunchPlan {
     pub items_per_unit: u32,
     /// Vectors covered, padding included.
     pub num_vectors: u32,
+    /// Units that cooperate on one group; 1 for [`elementwise`](Self::elementwise)
+    /// (ADR-0042).
+    pub units_per_group: u32,
 }
 
 impl LaunchPlan {
@@ -107,6 +110,43 @@ impl LaunchPlan {
         )?;
         testing::record(kind, &plan);
         Ok(plan)
+    }
+
+    /// `groups` independent work groups (a cell or a tile of cells), each run by
+    /// `units_per_group` units: the largest power of two ≤ min(`units`, `max_units_per_cube`).
+    ///
+    /// - **GPUs:** a cube holds `units_per_group` × (groups per cube) units, at most 256.
+    /// - **CPUs:** `cube_dim` = `units_per_group`, and each cube visits blocks of consecutive
+    ///   groups.
+    /// - `shared_bytes` per cube is checked against the device's shared-memory limit, along
+    ///   with `max_cube_dim`, `max_units_per_cube` and `max_cube_count`, with usize overflow
+    ///   checks (ADR-0042, item 4).
+    ///
+    /// # Errors
+    ///
+    /// `TooLarge` if a count overflows or no plan fits the device's limits.
+    #[allow(clippy::too_many_arguments)] // The signature of Listing S2 (ADR-0042).
+    pub fn per_group(
+        client: &Client,
+        kind: KernelKind,
+        groups: usize,
+        units: usize,
+        elem_bytes: usize,
+        max_vector: usize,
+        live: usize,
+        shared_bytes: usize,
+    ) -> Result<Self> {
+        let _ = (
+            client,
+            kind,
+            groups,
+            units,
+            elem_bytes,
+            max_vector,
+            live,
+            shared_bytes,
+        );
+        todo!("LaunchPlan::per_group (docs/plans/M9h.md, T5)")
     }
 
     /// The number of cubes launched: the product of the cube count's axes.
@@ -179,6 +219,7 @@ fn plan_for(
         vector_size: n,
         items_per_unit: u32::try_from(items_per_unit).map_err(|_| GridError::TooLarge)?,
         num_vectors: num_vectors_u32,
+        units_per_group: 1,
     })
 }
 

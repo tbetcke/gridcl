@@ -617,6 +617,138 @@ fn as_u32(v: &Value) -> Option<u32> {
     u32::try_from(v.as_u64()?).ok()
 }
 
+// ---------------------------------------------------------------------------------------------
+// M9h degree sweep (docs/plans/M9h.md, T1; ADR-0042, items 1, 6, 7, 11 and 12).
+
+/// One measured (or launched) configuration of the degree sweep.
+///
+/// Names are those of `degree_sweep`: `family` one of [`DEGREE_FAMILIES`], `cell` a
+/// `CellType` name (`Hexahedron`), `node_family` `equispaced` or `gll`, `strategy` one of
+/// [`STRATEGIES`] or `policy`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DegreeRecord {
+    pub backend: String,
+    pub device: String,
+    pub device_class: DeviceClass,
+    /// The machine: `macmini` (the local Mac, ADR-0034) or a target of
+    /// scripts/hpc/remote-test.sh.
+    pub target: String,
+    /// The job (or local run) that wrote the record: the paired policy-against-`direct` runs of
+    /// rule 11 share it.
+    pub run_id: String,
+    pub family: String,
+    pub cell: String,
+    /// gdim of the mesh: tdim, or tdim + 1 for `Normals`.
+    pub gdim: usize,
+    pub degree: u32,
+    pub node_family: String,
+    pub scalar: Scalar,
+    /// The requested strategy, or `policy`.
+    pub strategy: String,
+    /// The strategy that ran (`record_strategies`): the requested one or its fallback `loops`.
+    pub strategy_ran: String,
+    /// Quadrature points of the protocol: 10^5, 10^6 or 10^7 (Gauss degree 2p).
+    pub nominal_points: usize,
+    pub cells: usize,
+    pub points_per_cell: usize,
+    /// Newton iterations of a `PullBack` record (1 or 9; rule 1); `None` elsewhere.
+    pub iterations: Option<u32>,
+    pub vector_size: usize,
+    /// The vector size the vector policy gives the family's kind on this device.
+    pub policy_vector_size: usize,
+    pub tile: usize,
+    /// CPU block target in bytes (CPU classes only).
+    pub block_bytes: Option<usize>,
+    pub units_per_group: u32,
+    /// `ok`, `too slow` (over 600 s per timed run on a CPU), `too slow to compile` (over 300 s)
+    /// or `failed: <message>`.
+    pub status: String,
+    /// A `degree_sweep --launch-only` record: one call, no timing (rule 7).
+    pub launch_only: bool,
+    /// Every timed run, as seconds per call (empty for launch-only and failed records).
+    pub times_s: Vec<f64>,
+    pub median_s: f64,
+    pub calls_per_run: usize,
+    pub calibration_s: f64,
+    /// First-use compile and load time: the warm-up of a call that launches exactly one new
+    /// kernel, minus the median (rule 6).
+    pub compile_s: f64,
+    /// `disabled` where `CUDA_CACHE_DISABLE=1` was set (CUDA), else the cache state.
+    pub kernel_cache: String,
+    pub commit: String,
+    pub profile: String,
+    pub cores: Cores,
+    pub fallback_reason: Option<String>,
+    pub node_load: Option<NodeLoad>,
+}
+
+impl DegreeRecord {
+    /// Seconds per quadrature point: the median per call over cells × points per cell.
+    pub fn time_per_point(&self) -> f64 {
+        self.median_s / (self.cells * self.points_per_cell) as f64
+    }
+}
+
+/// Registers, spill and local memory per thread of one CUDA kernel, from `ncu` or `ptxas -v`
+/// (rule 6), joined to the degree records by kernel name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CudaResources {
+    pub target: String,
+    pub kernel: String,
+    pub family: String,
+    pub cell: String,
+    pub degree: u32,
+    pub scalar: Scalar,
+    pub strategy: String,
+    pub vector_size: usize,
+    pub registers: u32,
+    pub spill_bytes: u64,
+    pub local_bytes: u64,
+    /// Derived from the register count.
+    pub max_threads_per_block: u32,
+    /// `ncu` or `ptxas`.
+    pub source: String,
+}
+
+/// Every M9h record of a directory.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HighOrderData {
+    /// `m9h-baseline-*.json`: `direct` at the pinned commit of T3 (rule 11).
+    pub baseline: Vec<DegreeRecord>,
+    /// `m9h-degree-*.json`: the strategy sweeps and the paired policy runs.
+    pub degree: Vec<DegreeRecord>,
+    /// `m9h-launch-*.json`: `degree_sweep --launch-only` (rule 7).
+    pub launch: Vec<DegreeRecord>,
+    /// `m9h-cuda-resources-*.json`.
+    pub resources: Vec<CudaResources>,
+}
+
+/// The bench families of the degree sweep.
+pub const DEGREE_FAMILIES: [&str; 9] = [
+    "EVector",
+    "Points",
+    "Jacobian",
+    "DetJ",
+    "Pinv",
+    "Normals",
+    "FacetNormals",
+    "PullBack",
+    "BasisEval",
+];
+
+/// The strategies, simplest first (rule 12's tie order).
+pub const STRATEGIES: [&str; 5] = ["direct", "loops", "sumfact", "shared", "cooperative"];
+
+/// The records of every `m9h-*.json` file in `dir`.
+///
+/// # Errors
+///
+/// A message naming the file, for unreadable files and malformed records.
+pub fn load_high_order_dir(dir: &Path) -> Result<HighOrderData, String> {
+    let _ = dir;
+    todo!("the m9h-* record loader (docs/plans/M9h.md, T1)")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

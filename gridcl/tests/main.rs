@@ -9,6 +9,8 @@ mod compile;
 mod determinism;
 mod factor_invariance;
 mod gmsh;
+mod high_order;
+mod high_order_invariance;
 mod index_map_threads;
 mod io_threads;
 mod kernel_invariance;

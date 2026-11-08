@@ -2118,6 +2118,7 @@ dependencies = [
  "gridcl",
  "gridcl-device",
  "gridcl-dims",
+ "gridcl-geometry",
  "gridcl-refcell",
  "mpi",
  "proptest",

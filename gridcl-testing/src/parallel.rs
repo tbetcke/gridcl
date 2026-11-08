@@ -2325,6 +2325,326 @@ pub fn orient<C: Comm>(comm: &C, client: &Client, case: &Case) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// M9h: parallel invariance of geometric factors and the pull-back (ADR-0042, item 9).
+
+/// Per-cell values of one quantity of one block: `values[i]` belongs to local cell `i`.
+struct CellValues {
+    name: &'static str,
+    values: Vec<Vec<f64>>,
+    /// The tolerance scale on GPUs (ADR-0042, item 2).
+    scale: f64,
+}
+
+/// The local cells of one block: origin ids and quantities.
+struct BlockValues {
+    cell: CellType,
+    ids: Vec<i64>,
+    quantities: Vec<CellValues>,
+}
+
+/// A field split into per-cell rows of `nq · LEN` values.
+fn per_cell<F: Real, S: gridcl::FieldShape>(
+    field: &gridcl::QuadField<F, S>,
+    cells: usize,
+) -> Result<Vec<Vec<f64>>> {
+    let flat = crate::reference::field_f64(field)?;
+    let row = flat.len().checked_div(cells).unwrap_or(0);
+    Ok(flat.chunks(row.max(1)).map(<[f64]>::to_vec).collect())
+}
+
+/// X, J, det J, K and the pull-back ξ of X per local cell of every block of `mesh`, with the
+/// Gauss rule of degree `degree`, under the degree policy; then `extra`'s quantities. Asserts
+/// that the launches went through the strategy dispatch (`record_strategies`).
+fn high_order_values<F, TD, GD, C>(
+    mesh: &Mesh<F, TD, GD, C>,
+    degree: u32,
+    gpu_scales: bool,
+    extra: impl Fn(&Mesh<F, TD, GD, C>, usize) -> Result<Vec<CellValues>>,
+) -> Result<Vec<BlockValues>>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    use crate::reference::{Amplification, pull_back_scale, tolerance_scale};
+    use gridcl::{
+        PullBackOptions, detj_block, jacobians_block, physical_points_block, pseudo_inverse_block,
+    };
+    let (out, ran) = gridcl_geometry::testing::record_strategies(|| -> Result<Vec<BlockValues>> {
+        let rule = QuadRule::for_grid(mesh, degree)?;
+        let x_all = mesh.physical_points(&rule)?;
+        let pb = mesh.pull_back(&x_all, &PullBackOptions::default())?;
+        let mut out = Vec::new();
+        for (b, block) in mesh.cell_blocks().iter().enumerate() {
+            let cell: CellType = block.cell.into();
+            let pts = rule.get(block.cell)?;
+            let n = block.index_map.num_local();
+            let ids = decode_ids(&block.origin_ids.to_host()?);
+            let element = &mesh.geometry_block(b).element;
+            let scale = |kind| {
+                if gpu_scales {
+                    tolerance_scale(cell, element.degree, element.family, pts.points(), kind)
+                } else {
+                    1.0
+                }
+            };
+            let (sx, sj) = (
+                scale(Amplification::Values),
+                scale(Amplification::Derivatives),
+            );
+            let spb = if gpu_scales {
+                pull_back_scale(mesh, b, pts.points())?
+            } else {
+                1.0
+            };
+            let mut quantities = vec![
+                CellValues {
+                    name: "X",
+                    values: per_cell(&physical_points_block(mesh, b, pts)?, n)?,
+                    scale: sx,
+                },
+                CellValues {
+                    name: "J",
+                    values: per_cell(&jacobians_block(mesh, b, pts)?, n)?,
+                    scale: sj,
+                },
+                CellValues {
+                    name: "det J",
+                    values: per_cell(&detj_block(mesh, b, pts)?, n)?,
+                    scale: sj,
+                },
+                CellValues {
+                    name: "K",
+                    values: per_cell(&pseudo_inverse_block(mesh, b, pts)?, n)?,
+                    scale: sj,
+                },
+                CellValues {
+                    name: "ξ",
+                    values: per_cell(&pb.reference.blocks[b], n)?,
+                    scale: spb,
+                },
+            ];
+            quantities.extend(extra(mesh, b)?.into_iter().map(|mut q| {
+                q.scale = if gpu_scales { sj } else { 1.0 };
+                q
+            }));
+            out.push(BlockValues {
+                cell,
+                ids,
+                quantities,
+            });
+        }
+        Ok(out)
+    });
+    let local: usize = mesh
+        .cell_blocks()
+        .iter()
+        .map(|b| b.index_map.num_local())
+        .sum();
+    assert!(
+        local == 0 || !ran.is_empty(),
+        "no factor launch went through the strategy dispatch"
+    );
+    out
+}
+
+/// Asserts that every local cell of `got` has the values of the cell with its origin id in
+/// `want`: bitwise on the CPU runtime, else within the tolerance of `F` times each quantity's
+/// scale, relative per quantity and block (ADR-0042, items 2 and 9).
+fn compare_per_cell<F: Real>(got: &[BlockValues], want: &[BlockValues], at: &str) {
+    for g in got {
+        let w = want
+            .iter()
+            .find(|w| w.cell == g.cell)
+            .unwrap_or_else(|| panic!("{at}: no {:?} block in the one-rank mesh", g.cell));
+        let index: HashMap<i64, usize> = w.ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+        for (qg, qw) in g.quantities.iter().zip(&w.quantities) {
+            assert_eq!(qg.name, qw.name, "{at}: quantity order");
+            let what = format!("{at}: {} of {:?} cells", qg.name, g.cell);
+            let mut have = Vec::new();
+            let mut expect = Vec::new();
+            for (i, id) in g.ids.iter().enumerate() {
+                let j = *index
+                    .get(id)
+                    .unwrap_or_else(|| panic!("{what}: cell {id} is not in the one-rank mesh"));
+                assert_eq!(
+                    qg.values[i].len(),
+                    qw.values[j].len(),
+                    "{what}: values of cell {id}"
+                );
+                if crate::bitwise_device() {
+                    for (k, (a, b)) in qg.values[i].iter().zip(&qw.values[j]).enumerate() {
+                        assert!(
+                            a.to_bits() == b.to_bits(),
+                            "{what}: cell {id}, entry {k}: {a} vs {b} (bitwise)"
+                        );
+                    }
+                }
+                have.extend_from_slice(&qg.values[i]);
+                expect.extend_from_slice(&qw.values[j]);
+            }
+            let err = crate::reference::rel_err(&have, &expect);
+            let tol = crate::reference::tolerance::<F>(qw.scale);
+            assert!(err <= tol, "{what}: relative error {err:e} > {tol:e}");
+        }
+    }
+}
+
+/// The parallel and one-rank meshes of `case` on `comm`, their values by `values`, compared.
+fn high_order_case<F, TD, GD, C>(
+    comm: &C,
+    client: &Client,
+    case: &Case,
+    host: &HostMesh,
+    values: impl Fn(&Mesh<F, TD, GD, Serial>, bool) -> Result<Vec<BlockValues>>,
+    values_on: impl Fn(&Mesh<F, TD, GD, C>, bool) -> Result<Vec<BlockValues>>,
+) where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let at = format!("{case}, rank {}", comm.rank());
+    let gpu = !crate::bitwise_device();
+    let serial = ok(
+        build::<F, TD, GD, _>(Serial, client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let want = ok(values(&serial, gpu), &at);
+    let mesh = ok(
+        build::<F, TD, GD, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    let got = ok(values_on(&mesh, false), &at);
+    compare_per_cell::<F>(&got, &want, &at);
+}
+
+/// Facet normals per local cell of block `b` of the codimension-0 `mesh`, at the facet rule of
+/// degree `degree`.
+fn facet_normal_values<F, TD, C>(
+    mesh: &Mesh<F, TD, TD, C>,
+    b: usize,
+    degree: u32,
+) -> Result<Vec<CellValues>>
+where
+    F: Real,
+    TD: TopoDim + gridcl::Codim0<TD>,
+    C: Comm,
+{
+    let rule = gridcl::FacetQuadRule::for_grid(mesh, degree)?;
+    let block = &mesh.cell_blocks()[b];
+    let n = gridcl::facet_normals_block(mesh, b, rule.get(block.cell)?)?;
+    Ok(vec![CellValues {
+        name: "facet normals",
+        values: per_cell(&n, block.index_map.num_local())?,
+        scale: 1.0,
+    }])
+}
+
+/// Normals per local cell of block `b` of the codimension-1 `mesh`, at the rule of degree
+/// `degree`.
+fn normal_values<F, TD, GD, C>(
+    mesh: &Mesh<F, TD, GD, C>,
+    b: usize,
+    degree: u32,
+) -> Result<Vec<CellValues>>
+where
+    F: Real,
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let rule = QuadRule::for_grid(mesh, degree)?;
+    let block = &mesh.cell_blocks()[b];
+    let n = gridcl::normals_block(mesh, b, rule.get(block.cell)?)?;
+    Ok(vec![CellValues {
+        name: "normals",
+        values: per_cell(&n, block.index_map.num_local())?,
+        scale: 1.0,
+    }])
+}
+
+fn high_order_codim0<F, TD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: TopoDim + gridcl::Codim0<TD>,
+    C: Comm,
+{
+    let degree = 2 * case.degree;
+    high_order_case::<F, TD, TD, C>(
+        comm,
+        client,
+        case,
+        host,
+        |m, gpu| high_order_values(m, degree, gpu, |m, b| facet_normal_values(m, b, degree)),
+        |m, gpu| high_order_values(m, degree, gpu, |m, b| facet_normal_values(m, b, degree)),
+    );
+}
+
+fn high_order_codim1<F, TD, GD, C>(comm: &C, client: &Client, case: &Case, host: &HostMesh)
+where
+    F: Real,
+    TD: TopoDim + Codim1<GD>,
+    GD: Dim,
+    C: Comm,
+{
+    let degree = 2 * case.degree;
+    high_order_case::<F, TD, GD, C>(
+        comm,
+        client,
+        case,
+        host,
+        |m, gpu| high_order_values(m, degree, gpu, |m, b| normal_values(m, b, degree)),
+        |m, gpu| high_order_values(m, degree, gpu, |m, b| normal_values(m, b, degree)),
+    );
+}
+
+/// The M9h parallel-invariance check of `case` on `comm` (ADR-0042, item 9): X, J, det J, K,
+/// facet normals (codimension 0) or normals (codimension 1) at the Gauss points of degree 2p,
+/// and the pull-back ξ of X, per (cell origin id, point) of every local cell, owned or ghost,
+/// equal those of a one-rank build: bitwise on the CPU runtime, and within the tolerance of the
+/// precision scaled by max(1, A / A_ref) on GPUs. The factors run under the degree policy
+/// (or `GRIDCL_GEOM_STRATEGY`).
+///
+/// # Panics
+///
+/// If a check fails.
+pub fn high_order_invariance<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    let host = case.family.host(case.degree);
+    let double = case.double && supports::<f64>(client);
+    macro_rules! codim0 {
+        ($td:ty) => {
+            if double {
+                high_order_codim0::<f64, $td, C>(comm, client, case, &host)
+            } else {
+                high_order_codim0::<f32, $td, C>(comm, client, case, &host)
+            }
+        };
+    }
+    macro_rules! codim1 {
+        ($td:ty, $gd:ty) => {
+            if double {
+                high_order_codim1::<f64, $td, $gd, C>(comm, client, case, &host)
+            } else {
+                high_order_codim1::<f32, $td, $gd, C>(comm, client, case, &host)
+            }
+        };
+    }
+    match case.family {
+        Family::Cube(_) | Family::Mixed | Family::Ball => codim0!(D3),
+        Family::Square(_) => codim0!(D2),
+        Family::Interval => codim0!(D1),
+        Family::Circle | Family::YJunction => codim1!(D1, D2),
+        Family::Sphere
+        | Family::MixedSurface
+        | Family::Hemisphere
+        | Family::Mobius
+        | Family::Book => codim1!(D2, D3),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
