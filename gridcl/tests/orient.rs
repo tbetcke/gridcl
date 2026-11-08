@@ -70,18 +70,17 @@ fn outward_recovers_flipped_sphere() {
 }
 
 /// The error of `orient(rule)` on `h`.
-fn orient_error<TD, GD>(client: &Client, h: &HostMesh, rule: OrientationRule) -> GridError
+fn orient_error<F, TD, GD>(client: &Client, h: &HostMesh, rule: OrientationRule) -> GridError
 where
+    F: Real,
     TD: TopoDim + Codim1<GD>,
     GD: Dim,
 {
-    let mut mesh = build::<f32, TD, GD>(h, client);
+    let mut mesh = build::<F, TD, GD>(h, client);
     mesh.orient(rule).expect_err("orient must fail")
 }
 
-#[test]
-fn outward_on_open_surface_needs_reference_point() {
-    let client = client();
+fn open_surface<F: Real>(client: &Client) {
     let strip =
         gridcl_testing::triangle_strip(12).mapped(3, |x| vec![x[0], x[1], 0.1 * x[0] * x[1]]);
     for (what, h) in [
@@ -89,21 +88,32 @@ fn outward_on_open_surface_needs_reference_point() {
         ("hemisphere p=2", gridcl_testing::hemisphere(1, 2)),
         ("triangle strip in 3D", strip),
     ] {
-        let e = orient_error::<D2, D3>(&client, &flipped(&h, 3), OrientationRule::Outward);
-        assert!(matches!(e, GridError::NeedsReferencePoint), "{what}: {e}");
+        let e = orient_error::<F, D2, D3>(client, &flipped(&h, 3), OrientationRule::Outward);
+        assert!(
+            matches!(e, GridError::NeedsReferencePoint),
+            "{what} ({}): {e}",
+            name::<F>()
+        );
     }
 }
 
-/// `AwayFrom` and `Towards` the centre of the sphere orient its open cap (T9).
 #[test]
-fn away_from_and_towards_on_hemisphere() {
-    let client = client();
+fn outward_on_open_surface_needs_reference_point() {
+    for_each_precision!(client(), open_surface);
+}
+
+/// `AwayFrom` and `Towards` the centre of the sphere orient its open cap (T9).
+fn reference_point<F: Real>(client: &Client) {
     for p in 1..=2 {
         let h = flipped(&gridcl_testing::hemisphere(1, p), 11);
         let (min, _) =
-            orient_and_measure::<f32, D2, D3>(&client, &h, OrientationRule::AwayFrom([0.0; 3]), p);
-        assert!(min > 0.0, "AwayFrom, p={p}: n·x ≥ {min:e}");
-        let mut mesh = build::<f32, D2, D3>(&h, &client);
+            orient_and_measure::<F, D2, D3>(client, &h, OrientationRule::AwayFrom([0.0; 3]), p);
+        assert!(
+            min > 0.0,
+            "AwayFrom, p={p} ({}): n·x ≥ {min:e}",
+            name::<F>()
+        );
+        let mut mesh = build::<F, D2, D3>(&h, client);
         mesh.orient(OrientationRule::Towards([0.0; 3]))
             .expect("orient");
         let rule = QuadRule::for_grid(&mesh, 2 * p).expect("rule");
@@ -114,36 +124,50 @@ fn away_from_and_towards_on_hemisphere() {
         for (x, n) in flat_f64(&x).iter().zip(flat_f64(&n)) {
             for (x, n) in x.as_chunks::<3>().0.iter().zip(n.as_chunks::<3>().0) {
                 let xn: f64 = x.iter().zip(n).map(|(a, b)| a * b).sum();
-                assert!(xn < 0.0, "Towards, p={p}: n·x = {xn:e}");
+                assert!(xn < 0.0, "Towards, p={p} ({}): n·x = {xn:e}", name::<F>());
             }
         }
     }
 }
 
 #[test]
-fn three_cells_on_an_edge_is_non_manifold() {
-    let client = client();
+fn away_from_and_towards_on_hemisphere() {
+    for_each_precision!(client(), reference_point);
+}
+
+fn non_manifold<F: Real>(client: &Client) {
     for pages in [3, 4] {
-        let e = orient_error::<D2, D3>(
-            &client,
+        let e = orient_error::<F, D2, D3>(
+            client,
             &gridcl_testing::book(pages),
             OrientationRule::Outward,
         );
-        assert!(matches!(e, GridError::NonManifold), "book({pages}): {e}");
+        assert!(
+            matches!(e, GridError::NonManifold),
+            "book({pages}) ({}): {e}",
+            name::<F>()
+        );
     }
     for p in 1..=2 {
-        let e = orient_error::<D1, D2>(
-            &client,
+        let e = orient_error::<F, D1, D2>(
+            client,
             &gridcl_testing::y_junction(p),
             OrientationRule::AwayFrom([0.0; 3]),
         );
-        assert!(matches!(e, GridError::NonManifold), "y_junction({p}): {e}");
+        assert!(
+            matches!(e, GridError::NonManifold),
+            "y_junction({p}) ({}): {e}",
+            name::<F>()
+        );
     }
 }
 
 #[test]
-fn mobius_strip_is_non_orientable() {
-    let client = client();
+fn three_cells_on_an_edge_is_non_manifold() {
+    for_each_precision!(client(), non_manifold);
+}
+
+fn mobius<F: Real>(client: &Client) {
     let strip = gridcl_testing::mobius_strip(12);
     for (what, h) in [
         ("as built", strip.clone()),
@@ -153,11 +177,17 @@ fn mobius_strip_is_non_orientable() {
             OrientationRule::Outward,
             OrientationRule::AwayFrom([0.0; 3]),
         ] {
-            let e = orient_error::<D2, D3>(&client, &h, rule);
+            let e = orient_error::<F, D2, D3>(client, &h, rule);
             assert!(
                 matches!(e, GridError::NonOrientable),
-                "{what}, {rule:?}: {e}"
+                "{what}, {rule:?} ({}): {e}",
+                name::<F>()
             );
         }
     }
+}
+
+#[test]
+fn mobius_strip_is_non_orientable() {
+    for_each_precision!(client(), mobius);
 }

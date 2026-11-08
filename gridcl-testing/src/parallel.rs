@@ -2072,6 +2072,51 @@ pub fn submesh<C: Comm>(comm: &C, client: &Client, case: &Case) {
     }
 }
 
+/// Runs the M9 non-manifold submesh check of `case` on `comm`: `boundary()` and
+/// `facet_submesh` of every facet give the agreed `NonManifold` (ADR-0039, item 11) on every
+/// rank. `book` only (an edge with three cells).
+///
+/// # Panics
+///
+/// If a call does not give `NonManifold`, or `case` is not `book`.
+pub fn submesh_non_manifold<C: Comm>(comm: &C, client: &Client, case: &Case) {
+    assert_eq!(
+        case.family,
+        Family::Book,
+        "{case}: not a non-manifold family"
+    );
+    let host = case.family.host(case.degree);
+    if case.double && supports::<f64>(client) {
+        non_manifold::<f64, C>(comm, client, case, &host);
+    } else {
+        non_manifold::<f32, C>(comm, client, case, &host);
+    }
+}
+
+/// [`submesh_non_manifold`] in `F`.
+fn non_manifold<F: Real, C: Comm>(comm: &C, client: &Client, case: &Case, host: &HostMesh) {
+    let at = format!("{case}, rank {}", comm.rank());
+    let mesh = ok(
+        build::<F, D2, D3, _>(comm.clone(), client, host, case, CellOrdering::Input),
+        &at,
+    );
+    match mesh.boundary() {
+        Err(GridError::NonManifold) => {}
+        Err(e) => panic!("{at}: boundary: {e}, not NonManifold"),
+        Ok(_) => panic!("{at}: boundary: no error, not NonManifold"),
+    }
+    let num_edges: usize = ok(mesh.entity_blocks(1), &at)
+        .iter()
+        .map(|b| b.index_map.num_local())
+        .sum();
+    let all: Vec<u32> = (0..num_edges as u32).collect();
+    match mesh.facet_submesh(&ok(tags_of(client, 1, &all), &at)) {
+        Err(GridError::NonManifold) => {}
+        Err(e) => panic!("{at}: facet_submesh of every edge: {e}, not NonManifold"),
+        Ok(_) => panic!("{at}: facet_submesh of every edge: no error, not NonManifold"),
+    }
+}
+
 /// What `orient` must give for a family: per rule, success or the agreed error.
 fn orient_expectations(family: Family) -> Vec<(OrientationRule, Option<GridError>)> {
     use OrientationRule::{AwayFrom, Outward, Towards};

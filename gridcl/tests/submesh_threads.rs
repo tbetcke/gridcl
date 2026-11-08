@@ -1,7 +1,9 @@
 //! M9 submeshes on `ThreadComm` with 1–4 ranks (docs/plans/M9.md, acceptance coverage): the
 //! boundary, facet, cell and edge submeshes equal a one-rank build's, with outward normals,
 //! ∮ x·n = gdim · V, a consistent `EntityMap` and an agreed `InteriorFacet`
-//! (`gridcl_testing::parallel::submesh`). The MPI version is gridcl-mpi-tests' `submesh_parallel`.
+//! (`gridcl_testing::parallel::submesh`), and an agreed `NonManifold` on a book
+//! (`gridcl_testing::parallel::submesh_non_manifold`). The MPI version is gridcl-mpi-tests'
+//! `submesh_parallel`.
 
 use gridcl_testing::ThreadComm;
 use gridcl_testing::parallel::{self, Coverage, Family};
@@ -35,6 +37,22 @@ fn submeshes_match_one_rank() {
                 .filter(|c| c.family != Family::Ball)
             {
                 parallel::submesh(&comm, &client, &case);
+            }
+        });
+    }
+}
+
+/// `boundary()` and `facet_submesh` of a book give the agreed `NonManifold`, every ghost mode.
+#[test]
+fn non_manifold_is_agreed() {
+    for n in RANKS {
+        ThreadComm::run(n, |comm| {
+            let client = gridcl_testing::test_client();
+            for case in parallel::orient_cases(Coverage::Full)
+                .into_iter()
+                .filter(|c| c.family == Family::Book)
+            {
+                parallel::submesh_non_manifold(&comm, &client, &case);
             }
         });
     }

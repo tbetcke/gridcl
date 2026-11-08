@@ -1,7 +1,7 @@
 //! M9 acceptance on one rank (docs/plans/M9.md, acceptance coverage): normals on the boundary
 //! of a centred ball point outward, ∮ x·n = gdim · V on closed boundaries, and tagged interior
-//! facets give `InteriorFacet`; with the `EntityMap` property test (T3) and the edge and cell
-//! submeshes (T6).
+//! facets give `InteriorFacet` (facets with three cells `NonManifold`); with the `EntityMap`
+//! property test (T3) and the edge and cell submeshes (T6).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -141,12 +141,14 @@ fn divergence_identity_on_closed_boundaries() {
 
 /// Every facet, and the boundary facets plus one interior facet, give `InteriorFacet`; the
 /// boundary facets alone give no error; tags of another dimension give `DimensionMismatch`.
-fn rejects_interior<TD>(client: &Client, what: &str, h: &HostMesh)
+fn rejects_interior<F, TD>(client: &Client, what: &str, h: &HostMesh)
 where
+    F: Real,
     TD: TopoDim + Codim0<TD>,
     TD::Lower: TopoDim + EmbeddedIn<TD>,
 {
-    let mesh = build_tagged::<f32, TD, TD>(h, client);
+    let what = format!("{what} ({})", name::<F>());
+    let mesh = build_tagged::<F, TD, TD>(h, client);
     let fdim = TD::N - 1;
     let num_facets: u32 = mesh
         .entity_blocks(fdim)
@@ -187,35 +189,72 @@ where
     );
 }
 
-#[test]
-fn interior_facet_is_rejected() {
-    let client = client();
-    rejects_interior::<D3>(
-        &client,
+fn interior<F: Real>(client: &Client) {
+    rejects_interior::<F, D3>(
+        client,
         "tetrahedra",
         &gridcl_testing::cube_box(Cell3::Tetrahedron, 2, 1),
     );
-    rejects_interior::<D3>(&client, "mixed box", &gridcl_testing::mixed_box(2, 2));
-    rejects_interior::<D2>(
-        &client,
+    rejects_interior::<F, D3>(client, "mixed box", &gridcl_testing::mixed_box(2, 2));
+    rejects_interior::<F, D2>(
+        client,
         "quadrilaterals",
         &gridcl_testing::square_box(Cell2::Quadrilateral, 3, 1),
     );
+}
+
+#[test]
+fn interior_facet_is_rejected() {
+    for_each_precision!(client(), interior);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Error case: a facet with three cells.
+
+/// `boundary()` and `facet_submesh` of every edge of a book of 3 and 4 pages give
+/// `NonManifold` (ADR-0039, item 11).
+fn non_manifold<F: Real>(client: &Client) {
+    for pages in [3, 4] {
+        let what = format!("book({pages}) ({})", name::<F>());
+        let mesh = build_tagged::<F, D2, D3>(&gridcl_testing::book(pages), client);
+        let r = mesh.boundary();
+        assert!(
+            matches!(r, Err(GridError::NonManifold)),
+            "{what}: boundary: {:?}",
+            r.err()
+        );
+        let num_edges: u32 = mesh
+            .entity_blocks(1)
+            .expect("edges")
+            .iter()
+            .map(|b| b.index_map.num_local() as u32)
+            .sum();
+        let all: Vec<u32> = (0..num_edges).collect();
+        let r = mesh.facet_submesh(&tags(client, 1, &all));
+        assert!(
+            matches!(r, Err(GridError::NonManifold)),
+            "{what}: facet_submesh of every edge: {:?}",
+            r.err()
+        );
+    }
+}
+
+#[test]
+fn facet_with_three_cells_is_non_manifold() {
+    for_each_precision!(client(), non_manifold);
 }
 
 // ---------------------------------------------------------------------------------------------
 // T4b: empty boundaries and child tags.
 
 /// The boundary of a closed boundary is a valid empty mesh.
-#[test]
-fn boundary_of_a_boundary_is_empty() {
-    let client = client();
+fn empty_boundary<F: Real>(client: &Client) {
     for h in [
         gridcl_testing::mixed_box(2, 2),
         gridcl_testing::ball(1, 2),
         gridcl_testing::hex_prism_pyramid_box(1, 1),
     ] {
-        let mesh = build_tagged::<f32, D3, D3>(&h, &client);
+        let mesh = build_tagged::<F, D3, D3>(&h, client);
         let (mut surface, _) = mesh.boundary().expect("boundary");
         surface.create_entities(1).expect("edges");
         let (curve, map) = surface.boundary().expect("boundary of the boundary");
@@ -224,6 +263,11 @@ fn boundary_of_a_boundary_is_empty() {
         assert_eq!(curve.measure(1).expect("measure"), 0.0);
         assert_eq!(map.child_to_parent().len(), 0);
     }
+}
+
+#[test]
+fn boundary_of_a_boundary_is_empty() {
+    for_each_precision!(client(), empty_boundary);
 }
 
 /// The physical tags of `m` of dimension `dim`, keyed by the sorted vertex origin ids of each
@@ -258,14 +302,13 @@ where
 /// The child of `boundary` and of `facet_submesh` carries the parent's facet tags of its
 /// cells as cell tags, keyed by origin ids, with the facet rows of the name table and their
 /// group sizes; the parent's cell tags and names are not carried.
-#[test]
-fn child_tags_equal_parent_facet_tags() {
-    let client = client();
+fn child_tags<F: Real>(client: &Client) {
     for (what, h) in [
         ("mixed box", gridcl_testing::mixed_box(2, 1)),
         ("prism box", BoxKind::Prism.host(2, 2)),
     ] {
-        let mesh = build_tagged::<f32, D3, D3>(&h, &client);
+        let what = format!("{what} ({})", name::<F>());
+        let mesh = build_tagged::<F, D3, D3>(&h, client);
         let parent = tags_by_key(&mesh, 2);
         assert!(!parent.is_empty(), "{what}: parent facet tags");
         let (child, _) = mesh.boundary().expect("boundary");
@@ -284,6 +327,11 @@ fn child_tags_equal_parent_facet_tags() {
         assert_eq!(tags_by_key(&sub, 2), want, "{what}: facet_submesh tags");
         assert_eq!(sub.tags().group_size(2, 100), Some(0));
     }
+}
+
+#[test]
+fn child_tags_equal_parent_facet_tags() {
+    for_each_precision!(client(), child_tags);
 }
 
 // ---------------------------------------------------------------------------------------------
