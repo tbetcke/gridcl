@@ -168,9 +168,10 @@ r_direct_cancel() {
     return 4
 }
 
-# r_direct_status <base>...: one line per running direct job: id, tree, command.
+# r_direct_status <base>...: one line per running direct job: id, tree, command; then, as
+# progress, the last line so far of its output.log (at most 160 characters), if any.
 r_direct_status() {
-    local b f id tree cmd
+    local b f id tree cmd last
     for b in "$@"; do
         for f in "$b"/*/.gridcl-hpc/run/*.pid; do
             [ -f "$f" ] || continue
@@ -180,6 +181,8 @@ r_direct_status() {
             r_direct_alive "$tree" "$id" || continue
             cmd=$(sed -n 's/^command=//p' "$tree/results/$id/submit.env" 2>/dev/null | head -n 1)
             printf '%s  running  %s  %s\n' "$id" "${tree##*/}" "$cmd"
+            last=$(grep -v '^[[:space:]]*$' "$tree/results/$id/output.log" 2>/dev/null | tail -n 1 | cut -c 1-160)
+            [ -z "$last" ] || printf '    last: %s\n' "$last"
         done
     done
 }

@@ -548,7 +548,7 @@ case_status_lists_jobs() {
     FAKE_SGE_HOLD=1 bg_rt held myriad-v100 --max-wait 00:01:00 -- true
     local sge_bg=$BG id
     id=$(wait_for_sge_job) || { fail "held job never queued"; return; }
-    bg_rt direct locust --max-wait 00:01:00 -- 'sleep 47'
+    bg_rt direct locust --max-wait 00:01:00 -- 'echo progress-line; sleep 47'
     local direct_bg=$BG pidfile did
     pidfile=$(wait_for_pid_file) || { fail "direct job never started"; return; }
     did=$(basename "$pidfile" .pid)
@@ -558,6 +558,14 @@ case_status_lists_jobs() {
     expect_status 0 "status with jobs"
     expect_grep "$T/status" "(^|[^0-9])$id([^0-9]|$)" "SGE job listed"
     expect_grep "$T/status" "$did" "direct job listed"
+    # The job's output.log fills after the pid file appears.
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        grep -q "^    last: progress-line$" "$T/status" && break
+        sleep 1
+        "$STATUS" >"$T/status" 2>"$T/status.err"
+    done
+    expect_grep "$T/status" "^    last: progress-line$" "direct job's last output line listed"
 
     "$CANCEL" "$id" >/dev/null 2>&1
     "$CANCEL" "$did" >/dev/null 2>&1

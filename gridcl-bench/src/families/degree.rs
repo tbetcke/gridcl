@@ -234,8 +234,26 @@ pub struct DegreeOptions {
     /// Strategy names: `direct` or `policy` until T4.
     pub strategies: Vec<String>,
     pub launch_only: bool,
+    /// The vector sizes of a launch-only run.
+    pub launch_vector_sizes: LaunchVectorSizes,
     pub runs: usize,
     pub fallback_reason: Option<String>,
+}
+
+/// The vector sizes a launch-only run launches each configuration at.
+///
+/// `scripts/bench/cuda-resources.sh` runs one at a time: cubecl-cuda names each dumped PTX file
+/// by the tail of its kernel id, which kernels that differ only in comptime settings share
+/// (docs/cubecl-upstream.md, C19).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LaunchVectorSizes {
+    /// 1 and the policy's (once if the policy's is 1).
+    #[default]
+    Both,
+    /// 1 only.
+    Scalar,
+    /// The policy's only.
+    Policy,
 }
 
 /// The strategies the sweep can run (until T4 wires gridcl-geometry's hooks).
@@ -356,12 +374,10 @@ impl PointSweep<'_> {
             let bytes = p.scalar.bytes();
             let policy = VectorPolicy::for_client(self.client);
             let policy_v = policy.vector_size(kind, bytes);
-            let vector_sizes = if options.launch_only && policy_v != 1 {
-                vec![1, policy_v]
-            } else if options.launch_only {
-                vec![1]
-            } else {
-                vec![policy_v]
+            let vector_sizes = match (options.launch_only, options.launch_vector_sizes) {
+                (false, _) | (true, LaunchVectorSizes::Policy) => vec![policy_v],
+                (true, LaunchVectorSizes::Both) if policy_v != 1 => vec![1, policy_v],
+                (true, _) => vec![1],
             };
             for iterations in family.iterations() {
                 // Built on the first configuration that runs, then shared.
@@ -1426,6 +1442,7 @@ mod tests {
             sizes: vec![10_000],
             strategies: vec!["direct".to_owned()],
             launch_only,
+            launch_vector_sizes: LaunchVectorSizes::Both,
             runs: 2,
             fallback_reason: None,
         }

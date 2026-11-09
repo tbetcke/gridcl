@@ -5,8 +5,8 @@
 //! cargo run --release -p gridcl-bench --bin degree_sweep -- [--target NAME] [--run-id ID]
 //!     [--families evector,points,...] [--cells hexahedron,...] [--degrees 1,2,...]
 //!     [--node-families equispaced,gll] [--types f32,f64] [--sizes 100000,...]
-//!     [--strategies direct,policy,...] [--launch-only] [--runs R] [--fallback-reason TEXT]
-//!     [--out FILE]
+//!     [--strategies direct,policy,...] [--launch-only] [--vector-sizes both|scalar|policy]
+//!     [--runs R] [--fallback-reason TEXT] [--out FILE]
 //! degree_sweep annotate --node-load RESULTS_DIR FILE...
 //! ```
 //!
@@ -22,6 +22,9 @@
 //!   run.
 //! - `--launch-only` (rule 7): the warm-up with its check and one more call, at vector size 1
 //!   and at the policy's, no timed runs; by default equispaced nodes and 10^4 points.
+//! - `--vector-sizes` (launch-only): `both` (default), `scalar` (1 only) or `policy` (the
+//!   policy's only), so that a process compiles one kernel per configuration
+//!   (`scripts/bench/cuda-resources.sh`).
 //! - `--out`: rewritten after every record, so an interrupted sweep keeps what it measured;
 //!   default stdout at the end. Committed files are `m9h-baseline-*`, `m9h-degree-*` and
 //!   `m9h-launch-<backend>-<target>.json`.
@@ -38,7 +41,8 @@ use std::process::ExitCode;
 use gridcl::NodeFamily;
 use gridcl_bench::families::Machine;
 use gridcl_bench::families::degree::{
-    CELLS, DEGREE_SIZES, DegreeFamily, DegreeOptions, LAUNCH_SIZE, degree_sweep, node_family_named,
+    CELLS, DEGREE_SIZES, DegreeFamily, DegreeOptions, LAUNCH_SIZE, LaunchVectorSizes, degree_sweep,
+    node_family_named,
 };
 use gridcl_bench::protocol::RUNS;
 use gridcl_bench::record::{NodeLoad, STRATEGIES, Scalar, annotate_node_load, write_records};
@@ -47,7 +51,8 @@ use serde_json::Value;
 
 const USAGE: &str = "usage: degree_sweep [--target NAME] [--run-id ID] [--families LIST] \
     [--cells LIST] [--degrees LIST] [--node-families LIST] [--types LIST] [--sizes LIST] \
-    [--strategies LIST] [--launch-only] [--runs R] [--fallback-reason TEXT] [--out FILE]\n       \
+    [--strategies LIST] [--launch-only] [--vector-sizes both|scalar|policy] [--runs R] \
+    [--fallback-reason TEXT] [--out FILE]\n       \
     degree_sweep annotate --node-load RESULTS_DIR FILE...";
 
 fn main() -> ExitCode {
@@ -101,6 +106,7 @@ struct Args {
     sizes: Option<Vec<usize>>,
     strategies: Vec<String>,
     launch_only: bool,
+    launch_vector_sizes: Option<LaunchVectorSizes>,
     runs: usize,
     fallback_reason: Option<String>,
     out: Option<PathBuf>,
@@ -130,6 +136,7 @@ impl Args {
             sizes: None,
             strategies: vec!["direct".to_owned()],
             launch_only: false,
+            launch_vector_sizes: None,
             runs: RUNS,
             fallback_reason: None,
             out: None,
@@ -178,6 +185,14 @@ impl Args {
                         (STRATEGIES.contains(&v.as_str()) || v == "policy").then_some(v)
                     })?
                 }
+                "--vector-sizes" => {
+                    parsed.launch_vector_sizes = Some(match value()?.to_lowercase().as_str() {
+                        "both" => LaunchVectorSizes::Both,
+                        "scalar" => LaunchVectorSizes::Scalar,
+                        "policy" => LaunchVectorSizes::Policy,
+                        v => return Err(format!("--vector-sizes: cannot read '{v}'").into()),
+                    })
+                }
                 "--runs" => {
                     parsed.runs = positive(&value()?).ok_or("--runs needs a positive integer")?
                 }
@@ -185,6 +200,9 @@ impl Args {
                 "--out" => parsed.out = Some(PathBuf::from(value()?)),
                 _ => return Err(format!("unknown option {flag}").into()),
             }
+        }
+        if parsed.launch_vector_sizes.is_some() && !parsed.launch_only {
+            return Err("--vector-sizes needs --launch-only".into());
         }
         Ok(parsed)
     }
@@ -248,6 +266,7 @@ fn run(args: Args) -> Result<(), Failure> {
         scalars: args.scalars,
         strategies: args.strategies,
         launch_only: args.launch_only,
+        launch_vector_sizes: args.launch_vector_sizes.unwrap_or_default(),
         runs: args.runs,
         fallback_reason: args.fallback_reason,
     };
@@ -378,6 +397,8 @@ mod tests {
             "--strategies",
             "policy,direct",
             "--launch-only",
+            "--vector-sizes",
+            "Scalar",
         ])
         .ok()
         .unwrap();
@@ -399,6 +420,7 @@ mod tests {
         assert_eq!(parsed.sizes(), [1_000_000, 10_000_000]);
         assert_eq!(parsed.strategies, ["policy", "direct"]);
         assert!(parsed.launch_only);
+        assert_eq!(parsed.launch_vector_sizes, Some(LaunchVectorSizes::Scalar));
     }
 
     #[test]
@@ -413,6 +435,8 @@ mod tests {
             &["--node-families", "gauss"],
             &["--types", "u32"],
             &["--strategies", "fast"],
+            &["--launch-only", "--vector-sizes", "2"],
+            &["--vector-sizes", "policy"],
             &["--fast"],
         ] {
             assert!(matches!(args(list), Err(Failure::Usage(_))), "{list:?}");
