@@ -6,7 +6,7 @@
 //!     [--families evector,points,...] [--cells hexahedron,...] [--degrees 1,2,...]
 //!     [--node-families equispaced,gll] [--types f32,f64] [--sizes 100000,...]
 //!     [--strategies direct,policy,...] [--launch-only] [--vector-sizes both|scalar|policy]
-//!     [--runs R] [--fallback-reason TEXT] [--out FILE]
+//!     [--runs R] [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]
 //! degree_sweep annotate --node-load RESULTS_DIR FILE...
 //! ```
 //!
@@ -28,6 +28,13 @@
 //! - `--out`: rewritten after every record, so an interrupted sweep keeps what it measured;
 //!   default stdout at the end. Committed files are `m9h-baseline-*`, `m9h-degree-*` and
 //!   `m9h-launch-<backend>-<target>.json`.
+//! - `--resume`: keep the records already in `--out` (of any configuration) and run only the
+//!   configurations without one; their outcomes carry over to larger sizes as in one run.
+//! - `--stopped-after S` (implies `--resume`): run nothing, and record each configuration of
+//!   the filters without a record as stopped by a process time limit of S seconds:
+//!   `too slow to compile` if its kernel has no record at a smaller size, else `too slow`
+//!   (`scripts/bench/degree-sweep.sh`, which runs each (family, cell, degree, type) as its own
+//!   process under such a limit).
 //!
 //! `annotate` adds the runner's node-load snapshots (`node-load-before.txt`,
 //! `node-load-after.txt` in `results/<job id>/`) to every record of each file.
@@ -45,14 +52,16 @@ use gridcl_bench::families::degree::{
     node_family_named,
 };
 use gridcl_bench::protocol::RUNS;
-use gridcl_bench::record::{NodeLoad, STRATEGIES, Scalar, annotate_node_load, write_records};
+use gridcl_bench::record::{
+    DegreeRecord, NodeLoad, STRATEGIES, Scalar, annotate_node_load, read_records, write_records,
+};
 use gridcl_dims::CellType;
 use serde_json::Value;
 
 const USAGE: &str = "usage: degree_sweep [--target NAME] [--run-id ID] [--families LIST] \
     [--cells LIST] [--degrees LIST] [--node-families LIST] [--types LIST] [--sizes LIST] \
     [--strategies LIST] [--launch-only] [--vector-sizes both|scalar|policy] [--runs R] \
-    [--fallback-reason TEXT] [--out FILE]\n       \
+    [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]\n       \
     degree_sweep annotate --node-load RESULTS_DIR FILE...";
 
 fn main() -> ExitCode {
@@ -110,6 +119,8 @@ struct Args {
     runs: usize,
     fallback_reason: Option<String>,
     out: Option<PathBuf>,
+    resume: bool,
+    stopped_after: Option<f64>,
 }
 
 /// The first non-empty value of the environment variables `vars`.
@@ -140,10 +151,15 @@ impl Args {
             runs: RUNS,
             fallback_reason: None,
             out: None,
+            resume: false,
+            stopped_after: None,
         };
         while let Some(flag) = args.next() {
-            if flag == "--launch-only" {
-                parsed.launch_only = true;
+            if flag == "--launch-only" || flag == "--resume" {
+                match flag.as_str() {
+                    "--resume" => parsed.resume = true,
+                    _ => parsed.launch_only = true,
+                }
                 continue;
             }
             let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -198,11 +214,19 @@ impl Args {
                 }
                 "--fallback-reason" => parsed.fallback_reason = Some(value()?),
                 "--out" => parsed.out = Some(PathBuf::from(value()?)),
+                "--stopped-after" => {
+                    let limit = positive(&value()?).ok_or("--stopped-after needs seconds")?;
+                    parsed.stopped_after = Some(limit as f64);
+                    parsed.resume = true;
+                }
                 _ => return Err(format!("unknown option {flag}").into()),
             }
         }
         if parsed.launch_vector_sizes.is_some() && !parsed.launch_only {
             return Err("--vector-sizes needs --launch-only".into());
+        }
+        if parsed.resume && parsed.out.is_none() {
+            return Err("--resume and --stopped-after need --out".into());
         }
         Ok(parsed)
     }
@@ -242,6 +266,13 @@ fn run(args: Args) -> Result<(), Failure> {
     if cfg!(debug_assertions) {
         eprintln!("degree_sweep: debug build; record only release builds (--release)");
     }
+    // The records of an earlier run, as written (kept verbatim) and parsed (to skip).
+    let mut written: Vec<Value> = Vec::new();
+    let mut done = Vec::new();
+    if let Some(path) = args.out.as_deref().filter(|p| args.resume && p.exists()) {
+        written = read_records(path, |v| Ok(v.clone())).map_err(Failure::Run)?;
+        done = read_records(path, DegreeRecord::from_json).map_err(Failure::Run)?;
+    }
     let client = gridcl_testing::test_client();
     let machine = Machine::new(&client);
     eprintln!(
@@ -269,9 +300,10 @@ fn run(args: Args) -> Result<(), Failure> {
         launch_vector_sizes: args.launch_vector_sizes.unwrap_or_default(),
         runs: args.runs,
         fallback_reason: args.fallback_reason,
+        done,
+        stopped_after: args.stopped_after,
     };
 
-    let mut written: Vec<Value> = Vec::new();
     let mut write_error = None;
     let out = args.out.as_deref();
     let records = degree_sweep(&client, &machine, &options, &mut |r| {
@@ -311,6 +343,10 @@ fn run(args: Args) -> Result<(), Failure> {
     .map_err(Failure::Usage)?;
     if let Some(error) = write_error {
         return Err(Failure::Run(error));
+    }
+    if let Some(path) = out {
+        // A resumed run that measured nothing still leaves the file it read.
+        write_records(path, &written).map_err(Failure::Run)?;
     }
     if out.is_none() {
         let values: Vec<Value> = records.iter().map(|r| r.to_json()).collect();
@@ -421,6 +457,11 @@ mod tests {
         assert_eq!(parsed.strategies, ["policy", "direct"]);
         assert!(parsed.launch_only);
         assert_eq!(parsed.launch_vector_sizes, Some(LaunchVectorSizes::Scalar));
+        let stopped = args(&["--out", "x.json", "--stopped-after", "600"])
+            .ok()
+            .unwrap();
+        assert!(stopped.resume);
+        assert_eq!(stopped.stopped_after, Some(600.0));
     }
 
     #[test]
@@ -437,6 +478,8 @@ mod tests {
             &["--strategies", "fast"],
             &["--launch-only", "--vector-sizes", "2"],
             &["--vector-sizes", "policy"],
+            &["--resume"],
+            &["--stopped-after", "0", "--out", "x.json"],
             &["--fast"],
         ] {
             assert!(matches!(args(list), Err(Failure::Usage(_))), "{list:?}");

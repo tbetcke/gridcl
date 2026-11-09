@@ -31,7 +31,9 @@
 //!   more than 300 s; on a CPU `too slow` where one call takes over 600 s, measured or
 //!   extrapolated linearly from the previous size; `too slow` and `too slow to compile` carry
 //!   over to the larger sizes without running; `failed: <message>` for errors, failed checks
-//!   and panics.
+//!   and panics. A compile that never finishes cannot be timed in-process, so
+//!   `scripts/bench/degree-sweep.sh` runs each (family, cell, degree, type) as its own process
+//!   under a time limit and records what a stopped process left as [`stopped_status`].
 //! - **Launch-only** (rule 7): the warm-up, its check and one more call, at vector size 1 and at
 //!   the policy's; no timed runs.
 //!
@@ -238,6 +240,25 @@ pub struct DegreeOptions {
     pub launch_vector_sizes: LaunchVectorSizes,
     pub runs: usize,
     pub fallback_reason: Option<String>,
+    /// Records of an earlier run of the sweep (`degree_sweep --resume`): their configurations
+    /// are not run again, and their outcomes carry over to larger sizes as measured ones do.
+    pub done: Vec<DegreeRecord>,
+    /// `degree_sweep --stopped-after S`: run nothing, and record each configuration without a
+    /// record in `done` as stopped by a process time limit of S seconds (see
+    /// [`stopped_status`]).
+    pub stopped_after: Option<f64>,
+}
+
+/// The status of a configuration whose process was stopped after `limit` seconds: `too slow to
+/// compile` if its kernel has no record at a smaller size (it was still compiling, or never
+/// started), else `too slow`; both with the limit, and carried over to larger sizes.
+pub fn stopped_status(compiled: bool, limit: f64) -> String {
+    let what = if compiled {
+        "too slow"
+    } else {
+        "too slow to compile"
+    };
+    format!("{what} (process stopped after {limit:.0} s)")
 }
 
 /// The vector sizes a launch-only run launches each configuration at.
@@ -385,7 +406,19 @@ impl PointSweep<'_> {
                 for strategy in &options.strategies {
                     for &v in &vector_sizes {
                         let key = (family, strategy.clone(), iterations, v);
-                        let carried = self.carried(&key, is_cpu(self.machine.class));
+                        if let Some(r) = self.done(family, strategy, iterations, v) {
+                            let time = if r.status == "ok" {
+                                r.median_s
+                            } else {
+                                r.calibration_s
+                            };
+                            self.history
+                                .insert(key, (p.nominal, time, r.status.clone()));
+                            continue;
+                        }
+                        let carried = self
+                            .carried(&key, is_cpu(self.machine.class))
+                            .or_else(|| self.stopped(&key));
                         let (outcome, ran, shape) = match carried {
                             Some(outcome) => (outcome, "direct", None),
                             None => {
@@ -448,6 +481,41 @@ impl PointSweep<'_> {
         } else {
             None
         }
+    }
+
+    /// The record of `options.done` with this configuration, if any.
+    fn done(
+        &self,
+        family: DegreeFamily,
+        strategy: &str,
+        iterations: Option<u32>,
+        vector_size: usize,
+    ) -> Option<&DegreeRecord> {
+        let p = self.point;
+        let cell = format!("{:?}", p.cell);
+        self.options.done.iter().find(|r| {
+            r.family == family.name()
+                && r.cell == cell
+                && r.gdim == family.gdim(p.cell)
+                && r.degree == p.degree
+                && r.node_family == node_family_name(p.node_family)
+                && r.scalar == p.scalar
+                && r.strategy == strategy
+                && r.nominal_points == p.nominal
+                && r.iterations == iterations
+                && r.vector_size == vector_size
+                && r.launch_only == self.options.launch_only
+        })
+    }
+
+    /// The outcome of a configuration that is not run because its process was stopped
+    /// (`options.stopped_after`); `None` in a normal run.
+    fn stopped(&self, key: &(DegreeFamily, String, Option<u32>, usize)) -> Option<Outcome> {
+        let limit = self.options.stopped_after?;
+        let mut o = Outcome::failed(String::new());
+        o.status = stopped_status(self.history.contains_key(key), limit);
+        o.calibration_s = limit;
+        Some(o)
     }
 
     /// The cells and points of a configuration that was not built.
@@ -1445,6 +1513,8 @@ mod tests {
             launch_vector_sizes: LaunchVectorSizes::Both,
             runs: 2,
             fallback_reason: None,
+            done: Vec::new(),
+            stopped_after: None,
         }
     }
 
@@ -1544,6 +1614,42 @@ mod tests {
         }
         // Nine iterations take longer than one.
         assert!(first[2].median_s > first[1].median_s);
+    }
+
+    /// A resumed run skips the configurations it has records of; a stopped process's
+    /// configurations become `too slow to compile` before their kernel's first record and
+    /// `too slow` after it, without running.
+    #[test]
+    fn resumed_and_stopped_runs() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        let mut o = options(&[DegreeFamily::Points], &[CellType::Interval], true);
+        o.degrees = vec![1];
+        o.node_families = vec![NodeFamily::Equispaced];
+        o.scalars = vec![Scalar::F32];
+        o.sizes = vec![10_000, 20_000];
+        o.launch_vector_sizes = LaunchVectorSizes::Scalar;
+        let first = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        assert_eq!(first.len(), 2);
+        o.done = first.clone();
+        assert!(
+            degree_sweep(&client, &machine, &o, &mut |_| ())
+                .unwrap()
+                .is_empty()
+        );
+
+        o.stopped_after = Some(60.0);
+        o.done = first[..1].to_vec();
+        let rest = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest[0].nominal_points, 20_000);
+        assert_eq!(rest[0].status, "too slow (process stopped after 60 s)");
+        o.done.clear();
+        let none = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        let statuses: Vec<&str> = none.iter().map(|r| r.status.as_str()).collect();
+        let want = "too slow to compile (process stopped after 60 s)";
+        assert_eq!(statuses, [want, want]);
+        assert!(none.iter().all(|r| r.cells >= 1 && r.times_s.is_empty()));
     }
 
     #[test]

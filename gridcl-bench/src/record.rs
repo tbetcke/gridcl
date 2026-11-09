@@ -5,7 +5,7 @@
 //! the M9h degree sweep writes `m9h-*.json` files of [`DegreeRecord`]s and [`CudaResources`]
 //! ([`load_high_order_dir`]).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gridcl_device::{DeviceClass, KernelKind};
 use serde_json::{Map, Value, json};
@@ -232,7 +232,14 @@ pub fn read_records<T>(
 /// A message naming the file if it cannot be written.
 pub fn write_records(path: &Path, records: &[Value]) -> Result<(), String> {
     let text = serde_json::to_string_pretty(records).expect("JSON of records");
-    std::fs::write(path, format!("{text}\n")).map_err(|e| format!("{}: {e}", path.display()))
+    // Through a temporary file and a rename, so a process stopped while writing leaves the
+    // previous file whole (`degree_sweep --resume`).
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, format!("{text}\n"))
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Sets `node_load` to `load` in every record of the JSON array in `path`: the runner's
@@ -690,7 +697,8 @@ pub struct DegreeRecord {
     pub block_bytes: Option<usize>,
     pub units_per_group: u32,
     /// `ok`, `too slow` (over 600 s per timed run on a CPU), `too slow to compile` (over 300 s)
-    /// or `failed: <message>`.
+    /// or `failed: <message>`; the two `too slow` statuses end in `(process stopped after S s)`
+    /// where `scripts/bench/degree-sweep.sh` stopped the process at its time limit.
     pub status: String,
     /// A `degree_sweep --launch-only` record: one call, no timing (rule 7).
     pub launch_only: bool,
