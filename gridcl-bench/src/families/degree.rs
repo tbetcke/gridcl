@@ -26,7 +26,8 @@
 //!   compared bitwise. Records keep the error and the tolerance (T3's error survey).
 //! - **Compile time** (rule 6): the warm-up minus the median. Sizes run in ascending order with
 //!   the same kernels, so the smallest size's records carry the first-use time; the warm-up
-//!   launches exactly one new kernel (the family's), everything else is made beforehand.
+//!   launches exactly one new kernel (the family's), everything else is made beforehand. The
+//!   mesh's E-vector is made only for the families that read it, after the E-vector family.
 //! - **Status:** `ok`; `too slow to compile` where the warm-up exceeds the calibration call by
 //!   more than 300 s; on a CPU `too slow` where one call takes over 600 s, measured or
 //!   extrapolated linearly from the previous size; `too slow` and `too slow to compile` carry
@@ -673,29 +674,45 @@ impl PointSweep<'_> {
             .clone()
     }
 
-    /// The device mesh of this point at `side` with its E-vector and host data, built once.
+    /// The device mesh of this point at `side` with its host data, built once, and with its
+    /// E-vector (made at vector size 1) if `evector`.
+    ///
+    /// The E-vector family asks without: its warm-up then launches the E-vector kernel first,
+    /// so its records carry that kernel's compile time (`EVector` runs first in a point).
     fn mesh<F, TD, GD>(
         &mut self,
         lifted: bool,
         side: usize,
+        evector: bool,
     ) -> Result<Rc<MeshData<F, TD, GD>>, String>
     where
         F: Real,
         TD: TopoDim + EmbeddedIn<GD>,
         GD: Dim,
     {
-        if let Some(m) = self.meshes.get(&(lifted, side)) {
-            return m
+        let data = match self.meshes.get(&(lifted, side)) {
+            Some(m) => m
                 .clone()
                 .downcast::<MeshData<F, TD, GD>>()
-                .map_err(|_| "a cached mesh of other dimensions".to_owned());
+                .map_err(|_| "a cached mesh of other dimensions".to_owned())?,
+            None => {
+                let h = self.host(lifted, side);
+                let mesh: Mesh<F, TD, GD> = h.build(self.client).map_err(error)?;
+                let host = HostCells::new(&mesh)?;
+                let data = Rc::new(MeshData { mesh, side, host });
+                self.meshes.insert((lifted, side), data.clone());
+                data
+            }
+        };
+        if evector {
+            // At vector size 1: a gather, so the same values at every size, and its kernel
+            // compiles in seconds where the policy's size can take minutes at high degree
+            // (docs/cubecl-upstream.md, C20).
+            with_kind_vector_size(KernelKind::EVector, VectorSizeOverride::Fixed(1), || {
+                data.mesh.evector(0)
+            })
+            .map_err(error)?;
         }
-        let h = self.host(lifted, side);
-        let mesh: Mesh<F, TD, GD> = h.build(self.client).map_err(error)?;
-        mesh.evector(0).map_err(error)?;
-        let host = HostCells::new(&mesh)?;
-        let data = Rc::new(MeshData { mesh, side, host });
-        self.meshes.insert((lifted, side), data.clone());
         Ok(data)
     }
 
@@ -707,7 +724,7 @@ impl PointSweep<'_> {
     ) -> Result<Work, String> {
         let p = self.point;
         let q = points_per_cell(p.cell, p.degree);
-        let data = self.mesh::<F, TD, TD>(false, self.side(q))?;
+        let data = self.mesh::<F, TD, TD>(false, self.side(q), family != DegreeFamily::EVector)?;
         let rule = Rc::new(QuadRule::for_grid(&data.mesh, 2 * p.degree).map_err(error)?);
         let cell = data.mesh.cell_blocks()[0].cell;
         let shape = Shape {
@@ -854,7 +871,7 @@ impl PointSweep<'_> {
     {
         let p = self.point;
         let q = points_per_cell(p.cell, p.degree);
-        let data = self.mesh::<F, TD, GD>(true, self.side(q))?;
+        let data = self.mesh::<F, TD, GD>(true, self.side(q), true)?;
         let rule = Rc::new(QuadRule::for_grid(&data.mesh, 2 * p.degree).map_err(error)?);
         let cell = data.mesh.cell_blocks()[0].cell;
         let refs = References::new(p, rule.get(cell).map_err(error)?.points());
@@ -904,7 +921,7 @@ impl PointSweep<'_> {
         let normals: Vec<f64> = (0..q)
             .flat_map(|i| fps.reference_normal(i).to_vec())
             .collect();
-        let data = self.mesh::<F, TD, TD>(false, self.side(q))?;
+        let data = self.mesh::<F, TD, TD>(false, self.side(q), true)?;
         let shape = Shape {
             cells: data.host.cells,
             points_per_cell: q,
