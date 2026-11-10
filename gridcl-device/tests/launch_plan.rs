@@ -11,7 +11,8 @@ use gridcl_device::testing::{
     with_cpu_block_bytes, with_cpu_units, with_performance_cores, with_properties, with_vector_size,
 };
 use gridcl_device::{
-    CpuUnits, GridError, KernelKind, LaunchPlan, VECTOR_PAD, VectorPolicy, VectorSizeOverride,
+    CpuUnits, DeviceBuffer, GridError, KernelKind, LaunchPlan, VECTOR_PAD, VectorPolicy,
+    VectorSizeOverride,
 };
 use gridcl_testing::test_client;
 use proptest::prelude::*;
@@ -308,5 +309,341 @@ proptest! {
             }
             Err(other) => prop_assert!(false, "unexpected error {other}"),
         }
+    }
+}
+
+// `LaunchPlan::per_group` (ADR-0042, item 4; docs/plans/M9h.md, T5).
+
+/// The checks every `per_group` plan must pass under `props`: those of `elementwise` plans,
+/// plus whole groups per cube, group slots that cover the vectors, and `units_per_group` the
+/// largest power of two within `units` and the limits (at most 256 on GPUs).
+fn check_group_plan(
+    plan: &LaunchPlan,
+    props: &DeviceProperties,
+    groups: usize,
+    units: usize,
+    max_vector: usize,
+) {
+    check_plan(plan, props, groups, max_vector);
+    let hw = &props.hardware;
+    let limit = hw.max_units_per_cube.min(hw.max_cube_dim.0).max(1);
+    let gpu = hw.num_cpu_cores.is_none();
+    let cap = if gpu { limit.min(256) } else { limit };
+    let within = units.min(cap as usize);
+    let upg = plan.units_per_group;
+    assert_eq!(
+        upg as usize,
+        1 << within.ilog2(),
+        "{upg} units per group for {units} wanted within {cap}"
+    );
+    let dim = plan.cube_dim.num_elems();
+    assert_eq!(dim % upg, 0, "cube_dim {dim} is not whole groups of {upg}");
+    if gpu {
+        assert_eq!(
+            dim,
+            cap / upg * upg,
+            "a GPU cube holds as many groups as fit"
+        );
+        assert_eq!(plan.items_per_unit, 1);
+    } else {
+        assert_eq!(dim, upg, "a CPU cube is one group");
+    }
+    let (x, y, z) = cube_count(plan);
+    let slots = [x, y, z, dim / upg, plan.items_per_unit]
+        .into_iter()
+        .map(u128::from)
+        .product::<u128>();
+    assert!(
+        slots >= u128::from(plan.num_vectors),
+        "the group slots cover {slots} vectors, fewer than {}",
+        plan.num_vectors
+    );
+}
+
+proptest! {
+    #![proptest_config(common::prop_config())]
+
+    #[test]
+    fn prop_per_group_respects_injected_limits(
+        cpu in any::<bool>(),
+        units_limit in prop_oneof![1u32..=16, 1u32..=1024],
+        dim in (1u32..=1024, 1u32..=1024, 1u32..=64),
+        count in (limit(), limit(), limit()),
+        shared_limit in prop_oneof![Just(0usize), 1usize..=(64 << 10), Just(usize::MAX)],
+        groups in prop_oneof![0usize..=10_000, 0usize..=100_000_000, 0usize..=(1usize << 34)],
+        units in prop_oneof![1usize..=8, 1usize..=2048, Just(usize::MAX)],
+        shared_bytes in prop_oneof![Just(0usize), 0usize..=(64 << 10)],
+        elem_bytes in prop::sample::select(vec![4usize, 8]),
+        max_vector in prop::sample::select(vec![1usize, 2, 4, 8, 16]),
+        vector in override_value(),
+        block in prop::option::of(prop::sample::select(vec![4usize << 10, 16 << 10, 64 << 10])),
+    ) {
+        let client = test_client();
+        let mut props = injected(client.properties(), cpu, units_limit, dim, count, 128);
+        props.hardware.max_shared_memory_size = shared_limit;
+        let plan = with_properties(props.clone(), || {
+            let make = || {
+                LaunchPlan::per_group(
+                    &client,
+                    KernelKind::GeomFactors,
+                    groups,
+                    units,
+                    elem_bytes,
+                    max_vector,
+                    2,
+                    shared_bytes,
+                )
+            };
+            let make = || match vector {
+                Some(v) => with_vector_size(v, make),
+                None => make(),
+            };
+            match block {
+                Some(b) => with_cpu_block_bytes(b, make),
+                None => make(),
+            }
+        });
+        match plan {
+            Ok(plan) => {
+                prop_assert!(shared_bytes <= shared_limit);
+                check_group_plan(&plan, &props, groups, units, max_vector);
+            }
+            Err(GridError::TooLarge) => {
+                // A plan must exist when the shared memory fits, even one vector of groups per
+                // cube fits, and the launched units fit u32: at most a cube's units per
+                // vector, plus one block of at most 64 KiB / 4 bytes per unit on CPUs.
+                let padded = groups.max(1).next_multiple_of(VECTOR_PAD) as u128;
+                let cubes = u128::from(count.0) * u128::from(count.1) * u128::from(count.2);
+                let cube = u128::from(units_limit.min(dim.0).max(1));
+                let launched = (padded + (16 << 10)) * cube;
+                prop_assert!(
+                    shared_bytes > shared_limit
+                        || padded > 1u128 << 30
+                        || padded > cubes
+                        || launched > u128::from(u32::MAX),
+                    "TooLarge for {groups} groups with max_cube_count {count:?}"
+                );
+            }
+            Err(other) => prop_assert!(false, "unexpected error {other}"),
+        }
+    }
+}
+
+/// Leaves per group of the tree kernel (rule 4's comptime L).
+const LEAVES: u32 = 64;
+
+/// Rule 4's tree: out[v] sums, lane by lane, the `leaves` leaves of the vector of groups v,
+/// leaf l at x[v · leaves + l]. Each unit of a group reduces its consecutive leaves
+/// pairwise, then the units combine pairwise in shared memory (at strides t = 1, 2, …, unit
+/// u with u mod 2t = 0 adds unit u + t's partial), so the sum is the pairwise tree over the
+/// leaves for every `units` dividing `leaves`. Two buffers.
+#[cube(launch_unchecked)]
+fn group_tree_kernel<F: Float, N: Size>(
+    x: &[Vector<F, N>],
+    out: &mut [Vector<F, N>],
+    num_vectors: u32,
+    items_per_unit: u32,
+    #[comptime] units: u32,
+    #[comptime] cube_dim: u32,
+    #[comptime] leaves: u32,
+) {
+    let per_unit = comptime!((leaves / units) as usize);
+    let slots = comptime!((cube_dim / units) as usize);
+    let slot = UNIT_POS / units;
+    // Not UNIT_POS % units: a remainder by a comptime 1 folds wrongly on the CPU runtime (C3).
+    let u = UNIT_POS - slot * units;
+    let last = num_vectors as usize - 1;
+    let first = (CUBE_POS * slots + slot as usize) * items_per_unit as usize;
+    let mut shared = Shared::<[Vector<F, N>]>::new_slice(cube_dim as usize);
+    let p = UNIT_POS as usize;
+    for i in 0..items_per_unit as usize {
+        let v = first + i;
+        // Slots past the last vector read the last one and write nothing, so every unit
+        // reaches every sync_cube.
+        let base = min(v, last) * leaves as usize + u as usize * per_unit;
+        let mut a = Array::<Vector<F, N>>::new(per_unit);
+        for j in 0..per_unit {
+            a[j] = x[base + j];
+        }
+        let mut s = 1usize;
+        while s < per_unit {
+            let mut j = 0usize;
+            while j < per_unit {
+                a[j] = a[j] + a[j + s];
+                j += 2 * s;
+            }
+            s *= 2;
+        }
+        // The previous vector's reads of `shared` are done.
+        sync_cube();
+        shared[p] = a[0];
+        sync_cube();
+        let mut t = 1u32;
+        while t < units {
+            if (u & (2 * t - 1)) == 0 {
+                shared[p] = shared[p] + shared[p + t as usize];
+            }
+            sync_cube();
+            t *= 2;
+        }
+        if u == 0 && v < num_vectors as usize {
+            out[v] = shared[p];
+        }
+    }
+}
+
+/// The pairwise tree over `leaves` on the host, adjacent pairs first, each sum rounded to `T`
+/// (through f64, which rounds f32 sums correctly).
+fn host_tree<T: common::TestScalar>(leaves: &[T]) -> T {
+    let mut a = leaves.to_vec();
+    let mut s = 1;
+    while s < a.len() {
+        for j in (0..a.len()).step_by(2 * s) {
+            a[j] = T::of_f64(a[j].host_f64() + a[j + s].host_f64());
+        }
+        s *= 2;
+    }
+    a[0]
+}
+
+/// The tree kernel's sums of `groups` groups of `LEAVES` leaves (`leaf(g, l)`) under a
+/// `per_group` plan for `units` units at the vector size of `vector`, and the plan.
+fn run_group_tree<T: common::TestScalar + Float>(
+    client: &Client,
+    groups: usize,
+    units: usize,
+    vector: VectorSizeOverride,
+    leaf: &impl Fn(usize, usize) -> T,
+) -> (Vec<T>, LaunchPlan) {
+    const MAX_VECTOR: usize = 4;
+    let leaves = LEAVES as usize;
+    // One vector per unit of a cube of at most 256 units.
+    let shared_bytes = 256 * MAX_VECTOR * size_of::<T>();
+    let plan = with_vector_size(vector, || {
+        LaunchPlan::per_group(
+            client,
+            KernelKind::GeomFactors,
+            groups,
+            units,
+            size_of::<T>(),
+            MAX_VECTOR,
+            2,
+            shared_bytes,
+        )
+    })
+    .unwrap();
+    let n = plan.vector_size;
+    let vectors = plan.num_vectors as usize;
+    // Lane k of vector v is group v · n + k; padding groups get leaves too.
+    let mut host = vec![T::of_f64(0.0); vectors * leaves * n];
+    for v in 0..vectors {
+        for l in 0..leaves {
+            for k in 0..n {
+                host[(v * leaves + l) * n + k] = leaf(v * n + k, l);
+            }
+        }
+    }
+    let x = DeviceBuffer::from_host(client, &host).unwrap();
+    let out = DeviceBuffer::<T>::uninit(client, vectors * n).unwrap();
+    gridcl_device::debug_assert_bindings(client, 2);
+    // SAFETY: `x` holds num_vectors · LEAVES vectors of n lanes, and the kernel reads vector
+    // min(v, num_vectors − 1) · LEAVES + l with l < LEAVES; `out` holds num_vectors vectors,
+    // and the kernel writes only v < num_vectors. The shared array has cube_dim entries,
+    // indexed by UNIT_POS and by UNIT_POS + t within the unit's group.
+    unsafe {
+        group_tree_kernel::launch_unchecked::<T>(
+            client,
+            plan.cube_count.clone(),
+            plan.cube_dim,
+            n,
+            x.vector_arg(n),
+            out.vector_arg(n),
+            plan.num_vectors,
+            plan.items_per_unit,
+            plan.units_per_group,
+            plan.cube_dim.num_elems(),
+            LEAVES,
+        );
+    }
+    let mut sums = out.to_host().unwrap();
+    sums.truncate(groups);
+    (sums, plan)
+}
+
+/// Rule 4's tree over L = 64 leaves gives the same sums at units_per_group 1, 2 and
+/// min(64, limit) and at vector sizes 1 and the policy's (at most 4): bitwise, and bitwise
+/// equal to the host's tree, on the CPU runtime; within tolerance elsewhere. GPU cubes hold
+/// several groups; CPU cubes visit blocks of groups (4 KiB blocks, so 3000 groups take
+/// several cubes).
+fn group_tree_case<T: common::TestScalar + Float>(client: &Client) {
+    let groups = 3000;
+    let leaves = LEAVES as usize;
+    // Leaves of random sign and magnitudes up to 2^24, so the order of the sums matters.
+    let mut rng = common::SplitMix::new(0x5eed_0042);
+    let values: Vec<T> = (0..groups * leaves)
+        .map(|_| {
+            let scale = (1u64 << rng.below(25)) as f64;
+            T::of_f64((rng.unit() - 0.5) * scale)
+        })
+        .collect();
+    // Padding groups repeat the first ones.
+    let leaf = |g: usize, l: usize| values[(g % groups) * leaves + l];
+    let want: Vec<T> = (0..groups)
+        .map(|g| host_tree(&values[g * leaves..(g + 1) * leaves]))
+        .collect();
+    let scale: Vec<f64> = (0..groups)
+        .map(|g| (0..leaves).map(|l| leaf(g, l).host_f64().abs()).sum())
+        .collect();
+    // A sequential sum differs from the tree somewhere, so the test tells orders apart.
+    let differs = (0..groups).any(|g| {
+        let s = (0..leaves).fold(T::of_f64(0.0), |acc, l| {
+            T::of_f64(acc.host_f64() + leaf(g, l).host_f64())
+        });
+        s.bits() != want[g].bits()
+    });
+    assert!(
+        differs,
+        "{}: the leaves do not tell summation orders apart",
+        T::NAME
+    );
+
+    let limit = run_group_tree(client, 1, 64, VectorSizeOverride::Scalar, &leaf)
+        .1
+        .units_per_group;
+    assert!(limit.is_power_of_two() && limit <= 64, "{limit}");
+    let bitwise = gridcl_testing::bitwise_device();
+    for vector in [VectorSizeOverride::Scalar, VectorSizeOverride::Policy] {
+        for units in [1usize, 2, 64] {
+            let (have, plan) = with_cpu_block_bytes(4 << 10, || {
+                run_group_tree(client, groups, units, vector, &leaf)
+            });
+            let what = format!(
+                "{}, {units} units ({} per group), vector size {}, cube count {:?}",
+                T::NAME,
+                plan.units_per_group,
+                plan.vector_size,
+                cube_count(&plan)
+            );
+            assert_eq!(plan.units_per_group, (units as u32).min(limit), "{what}");
+            for g in 0..groups {
+                if bitwise {
+                    assert_eq!(have[g].bits(), want[g].bits(), "{what}: group {g}");
+                } else {
+                    let err = (have[g].host_f64() - want[g].host_f64()).abs();
+                    assert!(err <= T::TOL * scale[g], "{what}: group {g}: error {err:e}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn group_tree_is_independent_of_units_per_group() {
+    let client = test_client();
+    group_tree_case::<f32>(&client);
+    if gridcl_testing::supports::<f64>(&client) {
+        group_tree_case::<f64>(&client);
+    } else {
+        println!("{}: no f64", client.name());
     }
 }

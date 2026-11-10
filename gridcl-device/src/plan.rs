@@ -115,16 +115,60 @@ impl LaunchPlan {
     /// `groups` independent work groups (a cell or a tile of cells), each run by
     /// `units_per_group` units: the largest power of two ≤ min(`units`, `max_units_per_cube`).
     ///
-    /// - **GPUs:** a cube holds `units_per_group` × (groups per cube) units, at most 256.
-    /// - **CPUs:** `cube_dim` = `units_per_group`, and each cube visits blocks of consecutive
-    ///   groups.
-    /// - `shared_bytes` per cube is checked against the device's shared-memory limit, along
-    ///   with `max_cube_dim`, `max_units_per_cube` and `max_cube_count`, with usize overflow
-    ///   checks (ADR-0042, item 4).
+    /// Groups are items as in [`elementwise`](Self::elementwise): the vector size follows
+    /// the same rule and overrides, lanes are independent groups, and `num_vectors` counts
+    /// the vectors of groups, padding included. A cube runs `cube_dim / units_per_group`
+    /// group slots. Slot `s = UNIT_POS / units_per_group` of cube `c` takes the vectors
+    /// `(c · slots + s) · items_per_unit + i` for `i < items_per_unit`, and its units
+    /// `UNIT_POS − s · units_per_group` cooperate on each of them in turn; vectors at or past
+    /// `num_vectors` are padding of the launch.
+    ///
+    /// - **GPUs:** a cube holds `units_per_group` × (groups per cube) units, at most 256 (or
+    ///   `max_units_per_cube`, at most `max_cube_dim.0`, if that is smaller), so
+    ///   `units_per_group` is at most that too; `items_per_unit` is 1.
+    /// - **CPUs:** `cube_dim` = `units_per_group` (at most `max_units_per_cube` and
+    ///   `max_cube_dim.0`), and each cube visits blocks of `items_per_unit` consecutive
+    ///   vectors of groups, sized as `elementwise`'s blocks (whole 128-byte lines of about
+    ///   `VectorPolicy::cpu_block_bytes`). The CPU runtime runs one thread per unit of a cube,
+    ///   and each thread visits every cube in turn, so a CPU plan runs `units_per_group`
+    ///   threads.
+    /// - `shared_bytes` per cube is checked against the device's shared-memory limit
+    ///   (`hardware.max_shared_memory_size`), along with `max_cube_dim`,
+    ///   `max_units_per_cube` and `max_cube_count`, with usize overflow checks (ADR-0042,
+    ///   item 4).
+    ///
+    /// Reductions over a group's units are pairwise trees over a fixed comptime leaf count
+    /// L: each unit reduces its L / `units_per_group` consecutive leaves pairwise, then the
+    /// units combine pairwise (at strides s = 1, 2, 4, …, unit u with u mod 2s = 0 adds unit
+    /// u + s's partial). The result is then the same for every power-of-two
+    /// `units_per_group` dividing L, including 1, and does not depend on the plane size.
+    /// `sync_cube` is called only in uniform control flow.
     ///
     /// # Errors
     ///
-    /// `TooLarge` if a count overflows or no plan fits the device's limits.
+    /// `TooLarge` if `shared_bytes` exceeds the shared-memory limit, if the padded group
+    /// count, the vector count or the launched units overflow u32, or if no cube count within
+    /// `max_cube_count` covers the vectors.
+    ///
+    /// # Panics
+    ///
+    /// If `units` or `elem_bytes` is 0, or `max_vector` is not a power of two dividing
+    /// `VECTOR_PAD`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gridcl_device::{KernelKind, LaunchPlan};
+    ///
+    /// let client = gridcl_testing::test_client();
+    /// // 1000 cells, up to 48 units per cell, 1 KiB of shared memory per cube.
+    /// let plan = LaunchPlan::per_group(&client, KernelKind::GeomFactors, 1000, 48, 4, 16, 2, 1024)
+    ///     .unwrap();
+    /// let upg = plan.units_per_group;
+    /// assert!(upg.is_power_of_two() && upg <= 32);
+    /// assert_eq!(plan.cube_dim.num_elems() % upg, 0);
+    /// assert!(plan.num_vectors as usize * plan.vector_size >= 1000);
+    /// ```
     #[allow(clippy::too_many_arguments)] // The signature of Listing S2 (ADR-0042).
     pub fn per_group(
         client: &Client,
@@ -136,17 +180,23 @@ impl LaunchPlan {
         live: usize,
         shared_bytes: usize,
     ) -> Result<Self> {
-        let _ = (
-            client,
-            kind,
+        let props = testing::properties(client);
+        let g = Groups {
             groups,
             units,
+            shared_bytes,
+        };
+        let plan = per_group_for(
+            &props,
+            kind,
+            g,
             elem_bytes,
             max_vector,
             live,
-            shared_bytes,
-        );
-        todo!("LaunchPlan::per_group (docs/plans/M9h.md, T5)")
+            VectorSizeOverride::current(kind),
+        )?;
+        testing::record(kind, &plan);
+        Ok(plan)
     }
 
     /// The number of cubes launched: the product of the cube count's axes.
@@ -169,17 +219,11 @@ fn plan_for(
     live: usize,
     vector: VectorSizeOverride,
 ) -> Result<LaunchPlan> {
-    assert!(
-        is_vector_size(max_vector),
-        "max_vector {max_vector} is not a power of two dividing VECTOR_PAD"
-    );
-    assert!(elem_bytes > 0, "elem_bytes is 0");
     let hw = &props.hardware;
     let class = DeviceClass::from_properties(props);
-    let n = vector_size(props, class, kind, elem_bytes, max_vector, live, vector);
-
-    let num_vectors = pad_len(items)? / n;
-    let num_vectors_u32 = u32::try_from(num_vectors).map_err(|_| GridError::TooLarge)?;
+    let (n, num_vectors) = vectors(
+        props, class, kind, items, elem_bytes, max_vector, live, vector,
+    )?;
 
     let policy = VectorPolicy::for_class(class);
     let cpu_block = policy.cpu_block_bytes(kind, elem_bytes);
@@ -205,22 +249,128 @@ fn plan_for(
     let per_cube = (cube_dim as usize)
         .checked_mul(items_per_unit)
         .ok_or(GridError::TooLarge)?;
-    let cubes = num_vectors.div_ceil(per_cube);
-    let (x, y, z) = spread_cubes(cubes, hw.max_cube_count)?;
-
-    let covered = [x as usize, y as usize, z as usize, per_cube]
-        .into_iter()
-        .try_fold(1usize, |acc, f| acc.checked_mul(f))
-        .ok_or(GridError::TooLarge)?;
-    u32::try_from(covered).map_err(|_| GridError::TooLarge)?;
-    Ok(LaunchPlan {
-        cube_count: CubeCount::Static(x, y, z),
-        cube_dim: CubeDim::new_1d(cube_dim),
-        vector_size: n,
-        items_per_unit: u32::try_from(items_per_unit).map_err(|_| GridError::TooLarge)?,
-        num_vectors: num_vectors_u32,
+    let shape = Shape {
+        cube_dim,
+        items_per_unit,
+        per_cube,
         units_per_group: 1,
-    })
+    };
+    shape.plan(props, n, num_vectors)
+}
+
+/// The group count, the units wanted per group and the shared memory per cube of a
+/// [`LaunchPlan::per_group`] plan.
+#[derive(Clone, Copy, Debug)]
+struct Groups {
+    groups: usize,
+    units: usize,
+    shared_bytes: usize,
+}
+
+/// The plan of [`LaunchPlan::per_group`] under `props` and the vector-size override `vector`.
+fn per_group_for(
+    props: &DeviceProperties,
+    kind: KernelKind,
+    g: Groups,
+    elem_bytes: usize,
+    max_vector: usize,
+    live: usize,
+    vector: VectorSizeOverride,
+) -> Result<LaunchPlan> {
+    assert!(g.units > 0, "units is 0");
+    let hw = &props.hardware;
+    let class = DeviceClass::from_properties(props);
+    let (n, num_vectors) = vectors(
+        props, class, kind, g.groups, elem_bytes, max_vector, live, vector,
+    )?;
+    if g.shared_bytes > hw.max_shared_memory_size {
+        return Err(GridError::TooLarge);
+    }
+
+    let cpu_block = VectorPolicy::for_class(class).cpu_block_bytes(kind, elem_bytes);
+    let limit = hw.max_units_per_cube.min(hw.max_cube_dim.0).max(1);
+    let cap = match cpu_block {
+        Some(_) => limit,
+        None => limit.min(GPU_CUBE_DIM),
+    };
+    // At most `cap`, so it fits u32; at least 1, since `units` is.
+    let units = g.units.min(cap as usize) as u32;
+    let units_per_group = 1 << units.ilog2();
+    let (cube_dim, items_per_unit) = match cpu_block {
+        Some(block) => {
+            let bytes = n.checked_mul(elem_bytes).ok_or(GridError::TooLarge)?;
+            (units_per_group, cpu_items_per_unit(bytes, block))
+        }
+        None => (units_per_group * (cap / units_per_group), 1),
+    };
+    let per_cube = ((cube_dim / units_per_group) as usize)
+        .checked_mul(items_per_unit)
+        .ok_or(GridError::TooLarge)?;
+    let shape = Shape {
+        cube_dim,
+        items_per_unit,
+        per_cube,
+        units_per_group,
+    };
+    shape.plan(props, n, num_vectors)
+}
+
+/// The vector size of a plan for `items` items and its vector count, padding included.
+#[allow(clippy::too_many_arguments)]
+fn vectors(
+    props: &DeviceProperties,
+    class: DeviceClass,
+    kind: KernelKind,
+    items: usize,
+    elem_bytes: usize,
+    max_vector: usize,
+    live: usize,
+    vector: VectorSizeOverride,
+) -> Result<(usize, usize)> {
+    assert!(
+        is_vector_size(max_vector),
+        "max_vector {max_vector} is not a power of two dividing VECTOR_PAD"
+    );
+    assert!(elem_bytes > 0, "elem_bytes is 0");
+    let n = vector_size(props, class, kind, elem_bytes, max_vector, live, vector);
+    let num_vectors = pad_len(items)? / n;
+    u32::try_from(num_vectors).map_err(|_| GridError::TooLarge)?;
+    Ok((n, num_vectors))
+}
+
+/// The shape of a cube: its units, the vectors each unit (`elementwise`) or each group slot
+/// (`per_group`) visits, the vectors the cube covers, and the units per group.
+struct Shape {
+    cube_dim: u32,
+    items_per_unit: usize,
+    per_cube: usize,
+    units_per_group: u32,
+}
+
+impl Shape {
+    /// The plan covering `num_vectors` vectors of `n` lanes with cubes of this shape: the cube
+    /// count spread over `max_cube_count` (ADR-0010), and the launched units times
+    /// `items_per_unit` within u32.
+    fn plan(&self, props: &DeviceProperties, n: usize, num_vectors: usize) -> Result<LaunchPlan> {
+        let cubes = num_vectors.div_ceil(self.per_cube);
+        let (x, y, z) = spread_cubes(cubes, props.hardware.max_cube_count)?;
+        let covered = [x, y, z, self.cube_dim]
+            .into_iter()
+            .map(|f| f as usize)
+            .chain([self.items_per_unit])
+            .try_fold(1usize, |acc, f| acc.checked_mul(f))
+            .ok_or(GridError::TooLarge)?;
+        u32::try_from(covered).map_err(|_| GridError::TooLarge)?;
+        let fit = |v: usize| u32::try_from(v).map_err(|_| GridError::TooLarge);
+        Ok(LaunchPlan {
+            cube_count: CubeCount::Static(x, y, z),
+            cube_dim: CubeDim::new_1d(self.cube_dim),
+            vector_size: n,
+            items_per_unit: fit(self.items_per_unit)?,
+            num_vectors: fit(num_vectors)?,
+            units_per_group: self.units_per_group,
+        })
+    }
 }
 
 /// The vector size of a plan: the override's, else the policy rule, clamped by `max_vector`
@@ -691,6 +841,206 @@ mod tests {
             spread_cubes(100_000, (65_535, 65_535, 65_535)).unwrap(),
             (65_535, 2, 1)
         );
+    }
+
+    /// GPU properties with `units` units per cube and `dim` as `max_cube_dim.0`.
+    fn gpu(units: u32, dim: u32) -> DeviceProperties {
+        let mut props = props();
+        props.hardware.num_cpu_cores = None;
+        props.hardware.max_units_per_cube = units;
+        props.hardware.max_cube_dim = (dim, dim, 64);
+        props.hardware.max_cube_count = (65_535, 65_535, 65_535);
+        props.hardware.max_shared_memory_size = 48 << 10;
+        props
+    }
+
+    /// A `per_group` plan for `groups` groups and `units` units per group, scalar, 4-byte
+    /// elements, no shared memory.
+    fn group_plan(props: &DeviceProperties, groups: usize, units: usize) -> Result<LaunchPlan> {
+        let g = Groups {
+            groups,
+            units,
+            shared_bytes: 0,
+        };
+        let scalar = VectorSizeOverride::Scalar;
+        per_group_for(props, KernelKind::GeomFactors, g, 4, 16, 1, scalar)
+    }
+
+    /// Group slots per cube × vectors per slot × cubes covers the vectors, and every
+    /// launched unit's vectors fit u32.
+    fn assert_groups_covered(plan: &LaunchPlan, what: &str) {
+        let upg = plan.units_per_group;
+        assert!(upg.is_power_of_two(), "{what}: {upg} units per group");
+        let dim = plan.cube_dim.num_elems();
+        assert_eq!(
+            dim % upg,
+            0,
+            "{what}: cube_dim {dim}, {upg} units per group"
+        );
+        let slots = (dim / upg) as u128;
+        let covered = plan.num_cubes() as u128 * slots * u128::from(plan.items_per_unit);
+        assert!(
+            covered >= u128::from(plan.num_vectors),
+            "{what}: covers {covered}"
+        );
+        let units = plan.num_cubes() as u128 * u128::from(dim) * u128::from(plan.items_per_unit);
+        assert!(units <= u128::from(u32::MAX), "{what}: {units} launched");
+    }
+
+    /// `units_per_group` is the largest power of two ≤ min(units, limits): units 1 stays 1,
+    /// non-powers of two are clamped down, and GPU cubes hold at most 256 units.
+    #[test]
+    fn units_per_group_is_the_largest_power_of_two_within_the_limits() {
+        // (units, max_units_per_cube, max_cube_dim.0, want on a GPU)
+        let cases = [
+            (1, 1024, 1024, 1),
+            (2, 1024, 1024, 2),
+            (3, 1024, 1024, 2),
+            (5, 1024, 1024, 4),
+            (64, 1024, 1024, 64),
+            (100, 1024, 1024, 64),
+            (256, 1024, 1024, 256),
+            (300, 1024, 1024, 256),
+            (1024, 1024, 1024, 256),
+            (64, 48, 1024, 32),
+            (64, 1024, 20, 16),
+            (64, 1, 1, 1),
+            (usize::MAX, 100, 100, 64),
+        ];
+        for (units, max_units, max_dim, want) in cases {
+            let what = format!("GPU: {units} units, limits {max_units}, {max_dim}");
+            let plan = group_plan(&gpu(max_units, max_dim), 1000, units).unwrap();
+            assert_eq!(plan.units_per_group, want, "{what}");
+            // A cube is as many whole groups as fit 256 units, or the limits.
+            let cap = 256.min(max_units).min(max_dim);
+            assert_eq!(plan.cube_dim.num_elems(), cap / want * want, "{what}");
+            assert_eq!(plan.items_per_unit, 1, "{what}");
+            assert_groups_covered(&plan, &what);
+
+            // CPUs: cube_dim is the group, with no cap of 256.
+            let mut cpu = cpu16();
+            cpu.hardware.max_units_per_cube = max_units;
+            cpu.hardware.max_cube_dim = (max_dim, max_dim, 64);
+            let what = format!("CPU: {what}");
+            let plan = group_plan(&cpu, 1000, units).unwrap();
+            let limit = units.min(max_units.min(max_dim) as usize);
+            let want = 1 << limit.ilog2();
+            assert_eq!(plan.units_per_group, want, "{what}");
+            assert_eq!(plan.cube_dim.num_elems(), want, "{what}");
+            assert_groups_covered(&plan, &what);
+        }
+    }
+
+    /// `elementwise` plans have one unit per group.
+    #[test]
+    fn elementwise_has_one_unit_per_group() {
+        for props in [props(), cpu16(), gpu(1024, 1024)] {
+            let scalar = VectorSizeOverride::Scalar;
+            let plan = plan_for(&props, KernelKind::Fill, 1000, 4, 16, 1, scalar).unwrap();
+            assert_eq!(plan.units_per_group, 1);
+        }
+    }
+
+    /// The shared memory per cube may equal the device's limit, not exceed it.
+    #[test]
+    fn shared_memory_above_the_limit_is_too_large() {
+        for props in [cpu16(), gpu(1024, 1024)] {
+            let max = props.hardware.max_shared_memory_size;
+            let plan = |shared_bytes| {
+                let g = Groups {
+                    groups: 100,
+                    units: 4,
+                    shared_bytes,
+                };
+                per_group_for(
+                    &props,
+                    KernelKind::GeomFactors,
+                    g,
+                    8,
+                    16,
+                    1,
+                    VectorSizeOverride::Policy,
+                )
+            };
+            assert!(plan(0).is_ok());
+            assert!(plan(max).is_ok());
+            assert!(matches!(plan(max + 1), Err(GridError::TooLarge)));
+            assert!(matches!(plan(usize::MAX), Err(GridError::TooLarge)));
+        }
+    }
+
+    /// Group counts that overflow the padded length or u32 vectors, and cube counts beyond
+    /// `max_cube_count`, are `TooLarge`.
+    #[test]
+    fn overflowing_group_counts_are_too_large() {
+        for props in [cpu16(), gpu(1024, 1024)] {
+            for groups in [usize::MAX, 1 << 33] {
+                assert!(matches!(
+                    group_plan(&props, groups, 4),
+                    Err(GridError::TooLarge)
+                ));
+            }
+        }
+        // 64 units per group: 4 groups per cube, so 2^12 groups take 2^10 cubes and 2^20
+        // groups 2^18, more than 16^3.
+        let mut tight = gpu(1024, 1024);
+        tight.hardware.max_cube_count = (16, 16, 16);
+        assert!(group_plan(&tight, 1 << 12, 64).is_ok());
+        assert!(matches!(
+            group_plan(&tight, 1 << 20, 64),
+            Err(GridError::TooLarge)
+        ));
+        // The launched units exceed u32 although the vectors fit.
+        let mut wide = gpu(1024, 1024);
+        wide.hardware.max_cube_count = (u32::MAX, u32::MAX, u32::MAX);
+        assert!(matches!(
+            group_plan(&wide, (u32::MAX - 15) as usize, 1),
+            Err(GridError::TooLarge)
+        ));
+    }
+
+    /// On CPUs each cube visits a block of consecutive vectors of groups, whole 128-byte
+    /// lines of the block target; the cubes cover the vectors with at most one partial block.
+    #[test]
+    fn cpu_cubes_visit_blocks_of_consecutive_groups() {
+        let mut props = cpu16();
+        // Whatever the test device allows (Metal: 4), so every n below runs as asked.
+        props.hardware.max_vector_size = 16;
+        for kib in [4usize, 16, 64] {
+            for elem_bytes in [4usize, 8] {
+                for n in [1usize, 4, 16] {
+                    for groups in [1usize, 1000, 1_000_003] {
+                        let g = Groups {
+                            groups,
+                            units: 8,
+                            shared_bytes: 0,
+                        };
+                        let plan = testing::with_cpu_block_bytes(kib << 10, || {
+                            per_group_for(
+                                &props,
+                                KernelKind::GeomFactors,
+                                g,
+                                elem_bytes,
+                                16,
+                                1,
+                                VectorSizeOverride::Fixed(n),
+                            )
+                        })
+                        .unwrap();
+                        let what = format!("{kib} KiB, {groups} groups of {n} × {elem_bytes}");
+                        assert_eq!(plan.vector_size, n, "{what}");
+                        let block = plan.items_per_unit as usize * n * elem_bytes;
+                        assert_eq!(block, kib << 10, "{what}");
+                        assert_eq!(plan.cube_dim.num_elems(), 8, "{what}");
+                        assert_eq!(plan.units_per_group, 8, "{what}");
+                        let ipu = plan.items_per_unit as usize;
+                        let vectors = plan.num_vectors as usize;
+                        assert_eq!(plan.num_cubes(), vectors.div_ceil(ipu), "{what}");
+                        assert_groups_covered(&plan, &what);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
