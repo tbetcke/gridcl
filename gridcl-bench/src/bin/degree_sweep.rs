@@ -7,7 +7,7 @@
 //!     [--node-families equispaced,gll] [--types f32,f64] [--sizes 100000,...]
 //!     [--strategies direct,policy,...] [--launch-only] [--vector-sizes both|scalar|policy]
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]
-//! degree_sweep annotate --node-load RESULTS_DIR FILE...
+//! degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...
 //! ```
 //!
 //! - `--target`: the machine, `macmini` (the local Mac) or a target of
@@ -33,11 +33,13 @@
 //! - `--stopped-after S` (implies `--resume`): run nothing, and record each configuration of
 //!   the filters without a record as stopped by a process time limit of S seconds:
 //!   `too slow to compile` if its kernel has no record at a smaller size, else `too slow`
-//!   (`scripts/bench/degree-sweep.sh`, which runs each (family, cell, degree, type) as its own
-//!   process under such a limit).
+//!   (`scripts/bench/degree-sweep.sh`, which runs each (cell, degree) as one process, and after
+//!   a stop each of its (family, type) configurations without a record, under such limits).
 //!
-//! `annotate` adds the runner's node-load snapshots (`node-load-before.txt`,
-//! `node-load-after.txt` in `results/<job id>/`) to every record of each file.
+//! `annotate` adds to every record of each file the runner's node-load snapshots
+//! (`--node-load`: `node-load-before.txt`, `node-load-after.txt` in `results/<job id>/`), and
+//! the job's commit to records that say `unknown` (`--commit-from`: `commit=` of the results
+//! directory's `submit.env`; the job's tree must have been clean).
 //!
 //! For first-use compile times on CUDA, run with `CUDA_CACHE_DISABLE=1` (rule 6); the records
 //! then say `kernel_cache: disabled`.
@@ -53,7 +55,8 @@ use gridcl_bench::families::degree::{
 };
 use gridcl_bench::protocol::RUNS;
 use gridcl_bench::record::{
-    DegreeRecord, NodeLoad, STRATEGIES, Scalar, annotate_node_load, read_records, write_records,
+    DegreeRecord, NodeLoad, STRATEGIES, Scalar, annotate_commit, annotate_node_load, job_commit,
+    read_records, write_records,
 };
 use gridcl_dims::CellType;
 use serde_json::Value;
@@ -62,7 +65,7 @@ const USAGE: &str = "usage: degree_sweep [--target NAME] [--run-id ID] [--famili
     [--cells LIST] [--degrees LIST] [--node-families LIST] [--types LIST] [--sizes LIST] \
     [--strategies LIST] [--launch-only] [--vector-sizes both|scalar|policy] [--runs R] \
     [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]\n       \
-    degree_sweep annotate --node-load RESULTS_DIR FILE...";
+    degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1).peekable();
@@ -356,32 +359,50 @@ fn run(args: Args) -> Result<(), Failure> {
     Ok(())
 }
 
-/// `annotate --node-load DIR FILE...`: sets `node_load` in every record of every file.
+/// `annotate [--node-load DIR] [--commit-from DIR] FILE...`: sets `node_load` in every record
+/// of every file, and `commit` where it is `unknown`.
 fn annotate(mut args: impl Iterator<Item = String>) -> Result<(), Failure> {
-    let mut dir = None;
+    let mut load_dir = None;
+    let mut commit_dir = None;
     let mut files = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--node-load" => {
-                dir = Some(PathBuf::from(
-                    args.next().ok_or("--node-load needs a value")?,
-                ))
+            "--node-load" | "--commit-from" => {
+                let dir = PathBuf::from(args.next().ok_or(format!("{arg} needs a value"))?);
+                if arg == "--node-load" {
+                    load_dir = Some(dir);
+                } else {
+                    commit_dir = Some(dir);
+                }
             }
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg}").into()),
             _ => files.push(PathBuf::from(arg)),
         }
     }
-    let dir = dir.ok_or("annotate needs --node-load RESULTS_DIR")?;
+    if load_dir.is_none() && commit_dir.is_none() {
+        return Err("annotate needs --node-load or --commit-from RESULTS_DIR".into());
+    }
     if files.is_empty() {
         return Err("annotate needs at least one FILE".into());
     }
-    let load = NodeLoad::from_results_dir(&dir);
-    eprintln!(
-        "degree_sweep: node load before: {}; after: {}",
-        load.before, load.after
-    );
+    let load = load_dir.map(|dir| NodeLoad::from_results_dir(&dir));
+    if let Some(load) = &load {
+        eprintln!(
+            "degree_sweep: node load before: {}; after: {}",
+            load.before, load.after
+        );
+    }
+    let commit = commit_dir
+        .map(|dir| job_commit(&dir))
+        .transpose()
+        .map_err(Failure::Run)?;
     for file in files {
-        annotate_node_load(&file, &load).map_err(Failure::Run)?;
+        if let Some(load) = &load {
+            annotate_node_load(&file, load).map_err(Failure::Run)?;
+        }
+        if let Some(commit) = &commit {
+            annotate_commit(&file, commit).map_err(Failure::Run)?;
+        }
     }
     Ok(())
 }

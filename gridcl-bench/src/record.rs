@@ -249,6 +249,64 @@ pub fn write_records(path: &Path, records: &[Value]) -> Result<(), String> {
 ///
 /// A message naming the file if it cannot be read, parsed or written.
 pub fn annotate_node_load(path: &Path, load: &NodeLoad) -> Result<(), String> {
+    edit_records(path, |record| {
+        record.insert("node_load".to_owned(), load.to_json());
+        Ok(())
+    })
+}
+
+/// The commit of a runner job: `commit=` in `submit.env` of its results directory
+/// (scripts/hpc), for records made in a remote tree without `.git`.
+///
+/// # Errors
+///
+/// A message naming the file if it cannot be read or names no full commit, or if the job's
+/// tree was dirty.
+pub fn job_commit(dir: &Path) -> Result<String, String> {
+    let path = dir.join("submit.env");
+    let what = path.display();
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{what}: {e}"))?;
+    let value = |key: &str| {
+        text.lines()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+    };
+    let commit = value("commit")
+        .filter(|c| c.len() == 40 && c.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| format!("{what}: no commit"))?;
+    if value("dirty") != Some("no") {
+        return Err(format!("{what}: the job's tree was dirty"));
+    }
+    Ok(commit.to_owned())
+}
+
+/// Sets `commit` to `commit` in every record of the JSON array in `path` that says `unknown`:
+/// the records of a job whose tree had no `.git` ([`job_commit`]).
+///
+/// # Errors
+///
+/// A message naming the file if it cannot be read, parsed or written, or if a record names
+/// another commit.
+pub fn annotate_commit(path: &Path, commit: &str) -> Result<(), String> {
+    let what = path.display().to_string();
+    edit_records(path, |record| {
+        match record.get("commit").and_then(Value::as_str) {
+            Some("unknown") => {
+                record.insert("commit".to_owned(), json!(commit));
+                Ok(())
+            }
+            Some(c) if c == commit => Ok(()),
+            other => Err(format!(
+                "{what}: a record of commit {other:?}, not {commit}"
+            )),
+        }
+    })
+}
+
+/// Applies `edit` to every record of the JSON array in `path` and writes the file back.
+fn edit_records(
+    path: &Path,
+    mut edit: impl FnMut(&mut Map<String, Value>) -> Result<(), String>,
+) -> Result<(), String> {
     let what = path.display();
     let text = std::fs::read_to_string(path).map_err(|e| format!("{what}: {e}"))?;
     let mut value: Value = serde_json::from_str(&text).map_err(|e| format!("{what}: {e}"))?;
@@ -259,7 +317,7 @@ pub fn annotate_node_load(path: &Path, load: &NodeLoad) -> Result<(), String> {
         let object = record
             .as_object_mut()
             .ok_or_else(|| format!("{what}: a record is not a JSON object"))?;
-        object.insert("node_load".to_owned(), load.to_json());
+        edit(object)?;
     }
     write_records(path, records)
 }
@@ -1328,6 +1386,38 @@ mod tests {
         let error = load_high_order_dir(&dir).unwrap_err();
         assert!(
             error.contains("m9h-degree-bad.json: record 0: no field"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn commits_come_from_the_job() {
+        let dir = std::env::temp_dir().join(format!("gridcl-bench-load-{}-c", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let commit = "a88ab2a1a25ec8efda634cdf115be366161fdcc2";
+        let env = |dirty: &str| format!("target=locust\ncommit={commit}\ndirty={dirty}\n");
+        std::fs::write(dir.join("submit.env"), env("no")).unwrap();
+        assert_eq!(job_commit(&dir).unwrap(), commit);
+        std::fs::write(dir.join("submit.env"), env("yes")).unwrap();
+        assert!(
+            job_commit(&dir)
+                .unwrap_err()
+                .ends_with("the job's tree was dirty")
+        );
+        std::fs::write(dir.join("submit.env"), "commit=a88ab2a\ndirty=no\n").unwrap();
+        assert!(job_commit(&dir).unwrap_err().ends_with("no commit"));
+
+        let file = dir.join("records.json");
+        let record = |c: &str| json!({ "family": "Points", "commit": c });
+        write_records(&file, &[record("unknown"), record(commit)]).unwrap();
+        annotate_commit(&file, commit).unwrap();
+        let read = read_records(&file, |v| Ok(v.clone())).unwrap();
+        assert_eq!(read, vec![record(commit); 2]);
+        write_records(&file, &[record("unknown"), record("b9zz")]).unwrap();
+        let error = annotate_commit(&file, commit).unwrap_err();
+        assert!(
+            error.contains("a record of commit Some(\"b9zz\")"),
             "{error}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
