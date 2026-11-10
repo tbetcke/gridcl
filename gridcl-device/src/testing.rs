@@ -358,7 +358,8 @@ pub fn with_performance_cores<R>(cores: Option<u32>, f: impl FnOnce() -> R) -> R
     scoped(&PERFORMANCE_CORES, cores, f)
 }
 
-/// The plans made inside `f`, in order, so a test can assert the vector size it ran at. An
+/// The plans made inside `f` by `LaunchPlan::elementwise` and `LaunchPlan::per_group`, in
+/// order, so a test can assert the vector size (and the units per group) it ran at. An
 /// enclosing `record_plans` sees them too.
 ///
 /// # Example
