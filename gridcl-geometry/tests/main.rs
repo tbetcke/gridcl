@@ -7,3 +7,4 @@ mod factors;
 mod field;
 mod orient;
 mod rules;
+mod strategy;

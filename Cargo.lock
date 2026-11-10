@@ -2046,6 +2046,7 @@ dependencies = [
  "gridcl-refcell",
  "gridcl-testing",
  "gridcl-topology",
+ "toml",
 ]
 
 [[package]]

@@ -22,6 +22,7 @@ gridcl-dims = { path = "../gridcl-dims" }
 gridcl-parallel = { path = "../gridcl-parallel" }
 gridcl-refcell = { path = "../gridcl-refcell" }
 gridcl-topology = { path = "../gridcl-topology" }
+toml.workspace = true
 
 [dev-dependencies]
 gridcl = { path = "../gridcl" }

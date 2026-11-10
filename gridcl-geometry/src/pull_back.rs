@@ -9,6 +9,7 @@ use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
 use crate::basis_eval::expansion;
 use crate::layout::pinv_of;
+use crate::strategy::{self, StrategyFamily};
 use crate::{BlockFields, DeviceGrid, GeomLayout, QuadChunk, QuadField, ScalarShape, VecShape};
 
 /// Options of the pull-back (ADR-0039, item 13).
@@ -286,7 +287,8 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// # Errors
 ///
 /// `LengthMismatch` if `x` does not have one cell per local cell of block `b`; the element
-/// errors of the block's coordinate element; allocation and device errors.
+/// errors of the block's coordinate element; allocation and device errors; `NotYetImplemented`
+/// where the strategy chosen for the block does not run yet (ADR-0042, item 3).
 ///
 /// # Example
 ///
@@ -341,6 +343,14 @@ where
     }
     let gb = g.geometry_block(b);
     let cell: CellType = gb.element.cell.into();
+    // Only `direct` runs until T6b (docs/plans/M9h.md); `choose` rejects the others.
+    strategy::choose(
+        client,
+        StrategyFamily::PullBack,
+        cell,
+        gb.element.degree,
+        size_of::<F>(),
+    )?;
     let layout = GeomLayout::new::<TD, GD>(&gb.element, num_points, tile);
     let xe = g.evector(b)?;
     let coefficients = xe.coefficients(

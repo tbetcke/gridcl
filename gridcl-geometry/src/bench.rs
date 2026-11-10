@@ -18,6 +18,7 @@ use gridcl_dims::CellType;
 use gridcl_refcell::{NodeFamily, num_lagrange_nodes, tdim};
 
 use crate::basis_eval::{device_coefficients, expansion};
+use crate::strategy::{self, StrategyFamily};
 
 /// The interpolant Σ_j w_j ψ_j and its derivatives at each lane's point:
 ///   points        `[d][point]`, rows of `stride` vectors
@@ -130,7 +131,8 @@ impl<F: Real> Interpolant<F> {
     /// # Errors
     ///
     /// `LengthMismatch` if `stride` is not a multiple of `VECTOR_PAD` or `points` does not hold
-    /// tdim rows of it; `TooLarge` and allocation errors.
+    /// tdim rows of it; `TooLarge` and allocation errors; `NotYetImplemented` where the
+    /// strategy chosen for the PullBack family does not run yet.
     pub fn evaluate(&self, points: &DeviceBuffer<F>, stride: usize) -> Result<DeviceBuffer<F>> {
         let td = tdim(self.cell);
         if !stride.is_multiple_of(VECTOR_PAD) || points.len() != td * stride {
@@ -144,6 +146,14 @@ impl<F: Real> Interpolant<F> {
         if stride == 0 {
             return Ok(out);
         }
+        // Only `direct` runs until T6b (docs/plans/M9h.md); `choose` rejects the others.
+        strategy::choose(
+            client,
+            StrategyFamily::PullBack,
+            self.cell,
+            self.degree,
+            size_of::<F>(),
+        )?;
         let nb = num_lagrange_nodes(self.cell, self.degree);
         let plan = LaunchPlan::elementwise(
             client,

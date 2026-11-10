@@ -11,7 +11,8 @@ use crate::{DeviceGrid, JacShape, PointSet, QuadField, VecShape};
 ///
 /// # Errors
 ///
-/// Allocation and device errors.
+/// Allocation and device errors; `NotYetImplemented` where the strategy chosen for the block
+/// does not run yet (ADR-0042, item 3).
 ///
 /// # Example
 ///
@@ -47,7 +48,8 @@ where
 ///
 /// # Errors
 ///
-/// Allocation and device errors.
+/// Allocation and device errors; `NotYetImplemented` where the strategy chosen for the block
+/// does not run yet (ADR-0042, item 3).
 ///
 /// # Example
 ///

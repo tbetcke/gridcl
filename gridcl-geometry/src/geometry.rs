@@ -7,6 +7,7 @@ use gridcl_device::{DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{Dim, EmbeddedIn, TopoDim};
 use gridcl_parallel::{CommDyn, IndexMap};
 
+use crate::strategy::StrategyFamily;
 use crate::{EVector, GeometryBlock};
 
 /// The geometry of a mesh (ADR-0012).
@@ -125,17 +126,27 @@ where
         self.origin
     }
 
-    /// The E-vector of block `b`, built on first use and cached.
+    /// The E-vector of block `b`, built on first use with the strategy of the degree policy
+    /// (ADR-0042, item 3) and cached.
     ///
     /// # Errors
     ///
-    /// Allocation and device errors of the first build.
+    /// Allocation and device errors of the first build; `NotYetImplemented` for a strategy
+    /// that does not run yet.
     pub fn evector(&self, b: usize) -> Result<&EVector<F>> {
         let cache = &self.evectors[b];
         if let Some(xe) = cache.get() {
             return Ok(xe);
         }
         let block = &self.blocks[b];
+        // Only `direct` runs until T6a (docs/plans/M9h.md); `choose` rejects the others.
+        crate::strategy::choose(
+            self.nodes.client(),
+            StrategyFamily::EVector,
+            block.element.cell.into(),
+            block.element.degree,
+            size_of::<F>(),
+        )?;
         let xe = crate::evector::build(
             &self.nodes,
             &block.dofmap.data,

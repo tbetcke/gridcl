@@ -84,6 +84,13 @@ fn evaluate<F: Real>(
         .collect();
     let c = DeviceBuffer::from_host(&client, &c)?;
     let out = DeviceBuffer::<F>::uninit(&client, (1 + td) * nb * padded)?;
+    crate::strategy::choose(
+        &client,
+        crate::strategy::StrategyFamily::PullBack,
+        cell,
+        degree,
+        size_of::<F>(),
+    )?;
     let plan = LaunchPlan::elementwise(
         &client,
         KernelKind::PullBack,

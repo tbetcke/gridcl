@@ -8,6 +8,7 @@ use gridcl_device::{
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
 use crate::field::chunk_pairs;
+use crate::strategy::{self, StrategyFamily};
 use crate::{CoordinateElement, DeviceGrid, FieldShape, PointSet, QuadField};
 
 /// The comptime layout of a factor kernel.
@@ -78,6 +79,16 @@ impl Factor {
             Factor::Points | Factor::FacetNormals | Factor::Normals => l.gdim,
             Factor::Jacobian | Factor::Pinv => l.tdim * l.gdim,
             Factor::DetJ => 1,
+        }
+    }
+
+    /// The family of the degree policy.
+    fn family(self) -> StrategyFamily {
+        match self {
+            Factor::Points => StrategyFamily::Points,
+            Factor::Jacobian | Factor::DetJ | Factor::Pinv => StrategyFamily::Jacobian,
+            Factor::FacetNormals => StrategyFamily::FacetNormals,
+            Factor::Normals => StrategyFamily::Normals,
         }
     }
 }
@@ -406,7 +417,8 @@ fn fit(x: usize) -> Result<u32> {
 }
 
 /// The factor `f` of block `b` of `g` at the points of `pts`: one launch per chunk pair, each
-/// with its own `LaunchPlan` (GeomFactors, `max_vector` = the tile width; ADR-0012).
+/// with its own `LaunchPlan` (GeomFactors, `max_vector` = the tile width; ADR-0012), with the
+/// strategy of the degree policy (ADR-0042, item 3).
 pub(crate) fn launch_factor<F, TD, GD, G, S>(
     g: &G,
     b: usize,
@@ -431,6 +443,14 @@ where
     if num_cells == 0 || pts.is_empty() {
         return Ok(out);
     }
+    // Only `direct` runs until T6a (docs/plans/M9h.md); `choose` rejects the others.
+    strategy::choose(
+        client,
+        f.family(),
+        gb.element.cell.into(),
+        gb.element.degree,
+        size_of::<F>(),
+    )?;
     let xe = g.evector(b)?;
     let tab = match f {
         Factor::Points => pts.tabulate(&gb.element)?,

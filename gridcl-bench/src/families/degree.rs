@@ -33,13 +33,16 @@
 //!   extrapolated linearly from the previous size; `too slow` and `too slow to compile` carry
 //!   over to the larger sizes without running; `failed: <message>` for errors, failed checks
 //!   and panics. A compile that never finishes cannot be timed in-process, so
-//!   `scripts/bench/degree-sweep.sh` runs each (family, cell, degree, type) as its own process
-//!   under a time limit and records what a stopped process left as [`stopped_status`].
+//!   `scripts/bench/degree-sweep.sh` runs each (cell, degree) as one process under a time limit
+//!   (and after a stop each of its configurations without a record) and records what a stopped
+//!   process left as [`stopped_status`].
 //! - **Launch-only** (rule 7): the warm-up, its check and one more call, at vector size 1 and at
 //!   the policy's; no timed runs.
 //!
-//! Strategies: until T4 wires gridcl-geometry's strategy hooks, `direct` is the only one, and
-//! `policy` runs it.
+//! Strategies: `policy` runs the degree policy; a strategy's name forces it on every family
+//! (`gridcl_geometry::testing::with_strategy`), and each record names the strategy that ran
+//! (`record_strategies`: the requested one or its fallback `loops`). A strategy that does not
+//! run yet makes a `failed` record.
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -59,6 +62,9 @@ use gridcl_device::testing::{record_plans, with_kind_vector_size};
 use gridcl_device::{KernelKind, VectorPolicy, VectorSizeOverride, check_precision};
 use gridcl_dims::CellType;
 use gridcl_geometry::bench::Interpolant;
+use gridcl_geometry::testing::{
+    Strategy, StrategyFamily, StrategyOverride, record_strategies, with_strategy,
+};
 use gridcl_refcell::{LagrangeElement, Tabulation, gauss_rule, tdim};
 use gridcl_testing::HostMesh;
 use gridcl_testing::reference::{
@@ -234,7 +240,7 @@ pub struct DegreeOptions {
     pub scalars: Vec<Scalar>,
     /// Quadrature points, ascending.
     pub sizes: Vec<usize>,
-    /// Strategy names: `direct` or `policy` until T4.
+    /// Strategy names: [`STRATEGIES`](crate::record::STRATEGIES) or `policy`.
     pub strategies: Vec<String>,
     pub launch_only: bool,
     /// The vector sizes of a launch-only run.
@@ -278,14 +284,21 @@ pub enum LaunchVectorSizes {
     Policy,
 }
 
-/// The strategies the sweep can run (until T4 wires gridcl-geometry's hooks).
-const RUNNABLE: [&str; 2] = ["direct", "policy"];
-
-/// Runs `f` under the strategy `name` and returns the strategy that ran: `direct` for
-/// `direct` and `policy` (every family's policy is `direct` until T4).
+/// Runs `f` with every family under the strategy `name` (`policy` or a strategy's name) and
+/// returns the strategy that ran: the last one `record_strategies` saw, else (nothing
+/// launched) the requested one.
 fn under_strategy<R>(name: &str, f: impl FnOnce() -> R) -> (R, &'static str) {
-    debug_assert!(RUNNABLE.contains(&name), "{name}");
-    (f(), "direct")
+    let forced = Strategy::ALL.into_iter().find(|s| s.name() == name);
+    let s = forced.map_or(StrategyOverride::Policy, StrategyOverride::Fixed);
+    let every = StrategyFamily::ALL
+        .into_iter()
+        .rev()
+        .fold(Box::new(f) as Box<dyn FnOnce() -> R>, |f, family| {
+            Box::new(move || with_strategy(family, s, f))
+        });
+    let (result, ran) = record_strategies(every);
+    let ran = ran.last().map(|(_, s)| *s).or(forced);
+    (result, ran.map_or("policy", Strategy::name))
 }
 
 /// Runs the sweep and passes each record to `on_record` as soon as it is written.
@@ -296,7 +309,7 @@ fn under_strategy<R>(name: &str, f: impl FnOnce() -> R) -> (R, &'static str) {
 ///
 /// # Errors
 ///
-/// A strategy that cannot run yet, or sizes not in ascending order.
+/// An unknown strategy name, or sizes not in ascending order.
 pub fn degree_sweep(
     client: &Client,
     machine: &Machine,
@@ -306,11 +319,9 @@ pub fn degree_sweep(
     if let Some(s) = options
         .strategies
         .iter()
-        .find(|s| !RUNNABLE.contains(&s.as_str()))
+        .find(|s| s.as_str() != "policy" && !Strategy::ALL.iter().any(|t| t.name() == *s))
     {
-        return Err(format!(
-            "strategy {s} is not available before T4 (docs/plans/M9h.md); use direct or policy"
-        ));
+        return Err(format!("unknown strategy {s}"));
     }
     if !options.sizes.is_sorted() {
         return Err("sizes must ascend (compile times land on the smallest)".to_owned());
@@ -1670,13 +1681,35 @@ mod tests {
     }
 
     #[test]
-    fn strategies_beyond_direct_wait_for_t4() {
+    fn records_name_the_strategy_that_ran() {
         let client = gridcl_testing::test_client();
         let machine = Machine::new(&client);
         let mut o = options(&[DegreeFamily::Points], &[CellType::Interval], true);
-        o.strategies = vec!["loops".to_owned()];
+        o.degrees = vec![2];
+        o.node_families = vec![NodeFamily::Equispaced];
+        o.scalars = vec![Scalar::F32];
+        o.launch_vector_sizes = LaunchVectorSizes::Scalar;
+        o.strategies = ["policy", "direct", "loops"].map(str::to_owned).to_vec();
+        let records = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        let ran: Vec<(&str, &str)> = records
+            .iter()
+            .map(|r| (r.strategy.as_str(), r.strategy_ran.as_str()))
+            .collect();
+        assert_eq!(
+            ran,
+            [
+                ("policy", "direct"),
+                ("direct", "direct"),
+                ("loops", "loops")
+            ]
+        );
+        assert_eq!(records[0].status, "ok");
+        assert_eq!(records[1].status, "ok");
+        // `loops` runs from T6a (docs/plans/M9h.md): until then a failed record.
+        assert!(records[2].status.starts_with("failed: ") && records[2].status.contains("loops"));
+        o.strategies = vec!["fast".to_owned()];
         let e = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap_err();
-        assert!(e.contains("strategy loops"), "{e}");
+        assert!(e.contains("unknown strategy fast"), "{e}");
         o.strategies = vec!["direct".to_owned()];
         o.sizes = vec![20_000, 10_000];
         assert!(degree_sweep(&client, &machine, &o, &mut |_| ()).is_err());

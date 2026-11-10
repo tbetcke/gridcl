@@ -1,0 +1,209 @@
+# Degree policy of gridcl-geometry (docs/design.md, "Geometric factors"; ADR-0042, item 3).
+#
+# Per device class and kernel family, per cell type and scalar size in bytes: the strategy of
+# each degree range, as [first degree, strategy] pairs with ascending first degrees, starting at
+# 1; the last range is open-ended. Families: EVector, Points, Jacobian (J, det J and the
+# pseudo-inverse), Normals (codimension 1: intervals, triangles and quadrilaterals),
+# FacetNormals and PullBack (with the device basis evaluator). Strategies: direct, loops,
+# sumfact, shared, cooperative. Until T11b (docs/plans/M9h.md) every entry is `direct`, M9's
+# kernels.
+
+[CpuSimd128.EVector]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd128.Points]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd128.Jacobian]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd128.Normals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd128.FacetNormals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd128.PullBack]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd256.EVector]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd256.Points]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd256.Jacobian]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd256.Normals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd256.FacetNormals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd256.PullBack]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd512.EVector]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd512.Points]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd512.Jacobian]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd512.Normals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd512.FacetNormals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[CpuSimd512.PullBack]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[Gpu.EVector]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[Gpu.Points]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[Gpu.Jacobian]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[Gpu.Normals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[Gpu.FacetNormals]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+
+[Gpu.PullBack]
+Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
