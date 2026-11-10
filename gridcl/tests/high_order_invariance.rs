@@ -64,11 +64,12 @@ fn rule_degree(h: &HostMesh) -> u32 {
     2 * h.blocks.iter().map(|b| b.degree).max().unwrap_or(1)
 }
 
-/// The GPU tolerance scales of a mesh at the Gauss points of `degree`: X, J and the pull-back
-/// of each block; all 1 on bitwise devices, where they are not used.
+/// The GPU tolerance scales of a mesh at the Gauss points of `degree`: X, J, and K and the
+/// pull-back of each block (ADR-0044); all 1 on bitwise devices, where they are not used.
 struct Scales {
     x: f64,
     j: f64,
+    pinv: Vec<f64>,
     pull_back: Vec<f64>,
 }
 
@@ -84,18 +85,20 @@ impl Scales {
             return Scales {
                 x: 1.0,
                 j: 1.0,
+                pinv: vec![1.0; blocks],
                 pull_back: vec![1.0; blocks],
             };
         }
         let gauss = |cell| gridcl_refcell::gauss_rule(cell, degree).points;
+        let points = |b: usize| gauss(mesh.cell_blocks()[b].cell.into());
         Scales {
             x: block_scale(h, gauss, Amplification::Values),
             j: block_scale(h, gauss, Amplification::Derivatives),
+            pinv: (0..blocks)
+                .map(|b| reference::pinv_scale(mesh, b, &points(b)).expect("scale"))
+                .collect(),
             pull_back: (0..blocks)
-                .map(|b| {
-                    let cell = mesh.cell_blocks()[b].cell.into();
-                    reference::pull_back_scale(mesh, b, &gauss(cell)).expect("scale")
-                })
+                .map(|b| reference::pull_back_scale(mesh, b, &points(b)).expect("scale"))
                 .collect(),
         }
     }
@@ -109,8 +112,17 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
 {
-    let mesh = mesh.try_clone().expect("try_clone");
-    let rule = QuadRule::for_grid(&mesh, degree).expect("rule");
+    quantities_of(&mesh.try_clone().expect("try_clone"), degree, s)
+}
+
+/// [`common_quantities`] of `mesh` itself, which should have an empty E-vector cache.
+fn quantities_of<F, TD, GD>(mesh: &Mesh<F, TD, GD>, degree: u32, s: &Scales) -> Vec<Quantity>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let rule = QuadRule::for_grid(mesh, degree).expect("rule");
     let opts = PullBackOptions::default();
     let mut out = Vec::new();
     let mut push = |name: String, values: Vec<f64>, scale: f64, bitwise_only: bool| {
@@ -132,35 +144,35 @@ where
             .map(Real::widen)
             .collect();
         push(format!("E-vector of block {b}"), e, s.x, false);
-        let x = physical_points_block(&mesh, b, pts).expect("X");
+        let x = physical_points_block(mesh, b, pts).expect("X");
         push(
             format!("X of block {b}"),
             field_f64(&x).unwrap(),
             s.x,
             false,
         );
-        let j = jacobians_block(&mesh, b, pts).expect("J");
+        let j = jacobians_block(mesh, b, pts).expect("J");
         push(
             format!("J of block {b}"),
             field_f64(&j).unwrap(),
             s.j,
             false,
         );
-        let d = detj_block(&mesh, b, pts).expect("det J");
+        let d = detj_block(mesh, b, pts).expect("det J");
         push(
             format!("det J of block {b}"),
             field_f64(&d).unwrap(),
             s.j,
             false,
         );
-        let k = pseudo_inverse_block(&mesh, b, pts).expect("K");
+        let k = pseudo_inverse_block(mesh, b, pts).expect("K");
         push(
             format!("K of block {b}"),
             field_f64(&k).unwrap(),
-            s.j,
+            s.pinv[b],
             false,
         );
-        let (xi, step) = pull_back_block(&mesh, b, &x, &opts).expect("pull-back");
+        let (xi, step) = pull_back_block(mesh, b, &x, &opts).expect("pull-back");
         let pb = s.pull_back[b];
         push(
             format!("ξ of block {b}"),
@@ -328,8 +340,10 @@ where
     );
     let mut props = client.properties().clone();
     props.memory.max_page_size = limit as u64;
-    with_properties(props, || {
-        let fresh = mesh.try_clone().expect("try_clone");
+    // Each copy with an empty E-vector cache is made outside `with_properties`: under the
+    // lowered page size the copy of the mesh's arrays, built at the full size, is refused.
+    let fresh = mesh.try_clone().expect("try_clone");
+    with_properties(props.clone(), || {
         let chunks = fresh.evector(0).expect("E-vector").chunks().len();
         assert!(
             chunks >= 3,
@@ -339,9 +353,10 @@ where
         let pts = rule.get(fresh.cell_blocks()[0].cell).expect("point set");
         let chunks = jacobians_block(&fresh, 0, pts).expect("J").chunks().len();
         assert!(chunks >= 3, "{what} p={p}: J spans {chunks} chunks");
-        sweep_vector_sizes::<F>(client, &format!("{what} p={p}"), h.num_cells(), || {
-            common_quantities(&mesh, 1, &s)
-        });
+    });
+    sweep_vector_sizes::<F>(client, &format!("{what} p={p}"), h.num_cells(), || {
+        let fresh = mesh.try_clone().expect("try_clone");
+        with_properties(props.clone(), || quantities_of(&fresh, 1, &s))
     });
 }
 
@@ -450,6 +465,7 @@ impl MeshVisitor for Twice<'_> {
         let s = Scales {
             x: 1.0,
             j: 1.0,
+            pinv: vec![1.0; h.blocks.len()],
             pull_back: vec![1.0; h.blocks.len()],
         };
         sweep_twice::<F>(what, || {

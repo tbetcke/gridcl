@@ -455,10 +455,12 @@ pub mod host {
 pub enum Amplification {
     /// Σ_j |ψ_j(x)|, the Lebesgue function: for X.
     Values,
-    /// max_d Σ_j |∂_d ψ_j(x)|: for J and the quantities derived from it.
+    /// max_d Σ_j |∂_d ψ_j(x)|: for J and the quantities derived from it; for K times
+    /// κ_F(J) / TD ([`pinv_scale`]).
     Derivatives,
     /// Σ_k |φ_k(x)| Σ_j |C_kj|, with φ the orthonormal set and C the expansion coefficients
-    /// (`LagrangeElement::coefficients`): for a pull-back through coefficients.
+    /// (`LagrangeElement::coefficients`): for a pull-back through coefficients, times
+    /// κ_F(J) / TD ([`pull_back_scale`]).
     Coefficients,
 }
 
@@ -564,43 +566,86 @@ pub fn tolerance_scale(
     (a / a_ref).max(1.0)
 }
 
+/// The scale of a quantity computed by solving with J, K and the pull-back (ADR-0042, item 2;
+/// ADR-0044): max(1, A / A_ref) times the largest κ_F(J) / TD ([`condition_of`]) over the
+/// Jacobians `j` (`[cell][q]`, each column-major GD × TD at the q-th point of `points`), with
+/// A the largest factor `kind` of (`cell`, `degree`, `family`) and A_ref that of the
+/// equispaced element of [`reference_degree`], both over `points`. κ_F / TD is 1 where J is a
+/// scaled rotation and grows with the cell's distortion. The two maxima are taken separately:
+/// the error comes from J's rounding error, measured against the block's largest J, and need
+/// not be small where the element's factor is.
+///
+/// # Example
+///
+/// ```
+/// use gridcl::NodeFamily;
+/// use gridcl_dims::CellType;
+/// use gridcl_testing::reference::{Amplification, conditioned_scale};
+///
+/// let (cell, family, kind) = (CellType::Quadrilateral, NodeFamily::Equispaced, Amplification::Derivatives);
+/// let pts = [0.5, 0.5];
+/// // A square cell needs no scaling. One stretched 100 : 1 at p = 4 (A = A_ref) scales by
+/// // κ_F / TD = ‖J‖_F ‖K‖_F / 2 = sqrt(1.0001 · 10001) / 2 ≈ 50.
+/// let s = conditioned_scale(cell, 1, family, &pts, kind, &[1.0, 0.0, 0.0, 1.0], 2);
+/// assert!((s - 1.0).abs() < 1e-12);
+/// let s = conditioned_scale(cell, 4, family, &pts, kind, &[1.0, 0.0, 0.0, 0.01], 2);
+/// assert!((s - (1.0001f64 * 10001.0).sqrt() / 2.0).abs() < 1e-9);
+/// ```
+pub fn conditioned_scale(
+    cell: CellType,
+    degree: u32,
+    family: NodeFamily,
+    points: &[f64],
+    kind: Amplification,
+    j: &[f64],
+    gd: usize,
+) -> f64 {
+    let td = gridcl_refcell::tdim(cell);
+    let kappa = j
+        .chunks_exact(td * gd)
+        .map(|j| condition_of(j, td, gd) / td as f64)
+        .fold(1.0, f64::max);
+    tolerance_scale(cell, degree, family, points, kind) * kappa
+}
+
+/// [`conditioned_scale`] of block `b` of `g` at `points` for `kind`, from the block's nodes.
+fn block_conditioned_scale<G: DeviceGrid>(
+    g: &G,
+    b: usize,
+    points: &[f64],
+    kind: Amplification,
+) -> Result<f64> {
+    let nodes = BlockNodes::of_grid(g, b)?;
+    let j = nodes.jacobians(&tabulate(&nodes, points, 1));
+    Ok(conditioned_scale(
+        nodes.cell,
+        nodes.degree,
+        nodes.family,
+        points,
+        kind,
+        &j,
+        nodes.gd,
+    ))
+}
+
+/// The tolerance scale of K of block `b` at `points`: [`conditioned_scale`] with the
+/// [`Amplification::Derivatives`] factor (ADR-0044).
+///
+/// # Errors
+///
+/// Device errors of the reads.
+pub fn pinv_scale<G: DeviceGrid>(g: &G, b: usize, points: &[f64]) -> Result<f64> {
+    block_conditioned_scale(g, b, points, Amplification::Derivatives)
+}
+
 /// The tolerance scale of a pull-back of block `b` from the images of `points`:
-/// max(1, A / A_ref) with A = max over cells and points of κ(J) times the
-/// [`Amplification::Coefficients`] factor, and A_ref the same with the reference element's
-/// factor ([`condition_of`] gives κ).
+/// [`conditioned_scale`] with the [`Amplification::Coefficients`] factor (ADR-0044).
 ///
 /// # Errors
 ///
 /// Device errors of the reads.
 pub fn pull_back_scale<G: DeviceGrid>(g: &G, b: usize, points: &[f64]) -> Result<f64> {
-    let nodes = BlockNodes::of_grid(g, b)?;
-    let (td, gd) = (nodes.td(), nodes.gd);
-    let j = nodes.jacobians(&tabulate(&nodes, points, 1));
-    let kappa: Vec<f64> = j
-        .chunks_exact(td * gd)
-        .map(|j| condition_of(j, td, gd))
-        .collect();
-    let kind = Amplification::Coefficients;
-    let a = amplification(nodes.cell, nodes.degree, nodes.family, points, kind);
-    let a_ref = amplification(
-        nodes.cell,
-        reference_degree(nodes.cell),
-        NodeFamily::Equispaced,
-        points,
-        kind,
-    );
-    let nq = a.len();
-    let weighted = |f: &[f64]| {
-        kappa
-            .iter()
-            .enumerate()
-            .map(|(i, k)| k * f[i % nq])
-            .fold(0.0, f64::max)
-    };
-    if kappa.is_empty() {
-        return Ok(1.0);
-    }
-    Ok((weighted(&a) / weighted(&a_ref)).max(1.0))
+    block_conditioned_scale(g, b, points, Amplification::Coefficients)
 }
 
 /// The relative tolerance of `F` scaled by `scale`: `scale` · 1e-5 (f32) or `scale` · 1e-12

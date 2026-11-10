@@ -80,8 +80,18 @@ fn common<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
         let want: Vec<f64> = (0..xi.len() / td)
             .flat_map(|i| p[(i % nq) * td..(i % nq + 1) * td].to_vec())
             .collect();
+        // At p ≤ 4 the pull-back scales by the conditioning, κ_F(J) / TD, times the element's
+        // factor, at most 1.01 (ADR-0044).
         let scale = reference::pull_back_scale(&mesh, b, p).unwrap();
-        assert_eq!(scale, 1.0, "{what}: pull-back scale at p ≤ 4");
+        let conditioning = reference::jacobians(&mesh, b, p)
+            .unwrap()
+            .chunks_exact(td * GD::N)
+            .map(|j| reference::condition_of(j, td, GD::N) / td as f64)
+            .fold(1.0, f64::max);
+        assert!(
+            (1.0..=1.01 * conditioning).contains(&scale),
+            "{what}: pull-back scale {scale} at p ≤ 4 beyond κ_F / TD = {conditioning}"
+        );
         assert_close::<F>(&xi, &want, &format!("host ξ of {what}"));
         let xf = mesh.physical_points(&rule).expect("X");
         let pb = mesh

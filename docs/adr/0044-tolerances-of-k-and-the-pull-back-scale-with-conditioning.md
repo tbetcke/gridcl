@@ -105,3 +105,12 @@ Option 2. The K and ξ errors are J's rounding error amplified by J's conditioni
 ## Decision record
 
 Accepted by the maintainer on 2026-11-10, as proposed (option 2, κ_F(J) / TD). Applied in `adr: 0044 apply`: docs/design.md, "Tolerances", and ADR-0042's decision record. The test-support changes in `gridcl_testing::reference` and its callers follow with T6a, the next task that runs the affected tests.
+
+Amended by the maintainer on 2026-11-10, when the test support was written: the two maxima are taken separately, so the factor is max(1, A / A_ref) times the largest κ_F(J) / TD over the block's cells and points. The pointwise product of option 2 undershoots where the element's factor is small but κ is large. On the GLL ball at p = 4 it gives 11.3, though κ_F / TD reaches 27.2, and K's f32 error, 1.40e-4, exceeds that tolerance 1.24 times. The error comes from J's rounding error measured against the block's largest J, not from the factor at the same point. Measured ratios under separate maxima, f32 on the CPU runtime:
+
+| Ball | p = 3 | p = 4 |
+| --- | --- | --- |
+| equispaced | 0.11 | 0.23 |
+| GLL | 0.05 | 0.51 |
+
+The alternative, the block condition number max ‖J‖_F · max ‖K‖_F / TD, was not chosen: it would also loosen the tolerance on graded meshes of well-shaped cells.

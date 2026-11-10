@@ -68,8 +68,8 @@ use gridcl_geometry::testing::{
 use gridcl_refcell::{LagrangeElement, Tabulation, gauss_rule, tdim};
 use gridcl_testing::HostMesh;
 use gridcl_testing::reference::{
-    Amplification, amplification, condition_of, detj_of, pinv_of, reference_degree, rel_err,
-    tolerance, tolerance_scale,
+    Amplification, amplification, conditioned_scale, detj_of, pinv_of, rel_err, tolerance,
+    tolerance_scale,
 };
 
 use super::Machine;
@@ -863,7 +863,9 @@ impl PointSweep<'_> {
                                     .chunks_exact(td * gd)
                                     .flat_map(|j| pinv_of(j, td, gd))
                                     .collect();
-                                let tol = tolerance::<F>(refs.scale_derivatives) * side;
+                                let scale =
+                                    refs.conditioned_scale(h, &cells, Amplification::Derivatives);
+                                let tol = tolerance::<F>(scale) * side;
                                 Ok(Check::new(rel_err(&sampled(&field, &cells)?, &want), tol))
                             }
                         }
@@ -1343,34 +1345,29 @@ impl References {
         out
     }
 
-    /// The pull-back's scale on the sampled cells: max(1, A / A_ref) with A the largest κ(J)
-    /// times the coefficient amplification (`reference::pull_back_scale`).
-    fn pull_back_scale<F: Real>(&self, h: &HostCells<F>, cells: &[usize]) -> f64 {
+    /// The scale of a quantity that solves with J (K, the pull-back) on the sampled cells:
+    /// `reference::conditioned_scale` with the factor `kind` and the cells' J (ADR-0044).
+    fn conditioned_scale<F: Real>(
+        &self,
+        h: &HostCells<F>,
+        cells: &[usize],
+        kind: Amplification,
+    ) -> f64 {
         let p = self.point;
-        let td = tdim(p.cell);
-        let kappa: Vec<f64> = self
-            .jacobians_at(h, cells)
-            .chunks_exact(td * h.gd)
-            .map(|j| condition_of(j, td, h.gd))
-            .collect();
-        let kind = Amplification::Coefficients;
-        let a = amplification(p.cell, p.degree, p.node_family, &self.points, kind);
-        let a_ref = amplification(
+        conditioned_scale(
             p.cell,
-            reference_degree(p.cell),
-            NodeFamily::Equispaced,
+            p.degree,
+            p.node_family,
             &self.points,
             kind,
-        );
-        let nq = a.len();
-        let weighted = |f: &[f64]| {
-            kappa
-                .iter()
-                .enumerate()
-                .map(|(i, k)| k * f[i % nq])
-                .fold(0.0, f64::max)
-        };
-        (weighted(&a) / weighted(&a_ref)).max(1.0)
+            &self.jacobians_at(h, cells),
+            h.gd,
+        )
+    }
+
+    /// The pull-back's scale on the sampled cells (`reference::pull_back_scale`).
+    fn pull_back_scale<F: Real>(&self, h: &HostCells<F>, cells: &[usize]) -> f64 {
+        self.conditioned_scale(h, cells, Amplification::Coefficients)
     }
 }
 

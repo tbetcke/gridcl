@@ -3,8 +3,9 @@
 //! families where offered, X, J, det J, K, normals and facet normals from the device match the
 //! f64 host reference (`gridcl_testing::reference`, gridcl-refcell's tabulation at the stored
 //! nodes), and the pull-back recovers the reference points, to the tolerance of the precision
-//! scaled by max(1, A / A_ref): the amplification factor of X for points, of J for J and the
-//! quantities derived from it, and of the coefficients times κ(J) for the pull-back.
+//! scaled by max(1, A / A_ref): the amplification factor of X for points, of J for J, det J and
+//! the normals, of J times κ_F(J) / TD for K, and of the coefficients times κ_F(J) / TD for the
+//! pull-back (ADR-0044).
 //!
 //! Every check runs under the degree policy and under every strategy forced
 //! ([`for_each_strategy!`]; under `GRIDCL_GEOM_STRATEGY` only that setting). The references are
@@ -68,6 +69,7 @@ impl MeshVisitor for Factors<'_> {
             let j_ref = reference::jacobians(&mesh, b, p).expect("J");
             let d_ref = reference::detj(&mesh, b, p).expect("det J");
             let k_ref = reference::pseudo_inverses(&mesh, b, p).expect("K");
+            let sk = reference::pinv_scale(&mesh, b, p).expect("K scale");
             for_each_strategy!(|run| {
                 let mesh = fresh(&mesh);
                 let at = format!("{what}, block {b}, under {run}");
@@ -78,7 +80,7 @@ impl MeshVisitor for Factors<'_> {
                 let d = field_f64(&detj_block(&mesh, b, pts).expect("det J")).unwrap();
                 assert_scaled::<F>(&d, &d_ref, sj, &format!("det J of {at}"));
                 let k = field_f64(&pseudo_inverse_block(&mesh, b, pts).expect("K")).unwrap();
-                assert_scaled::<F>(&k, &k_ref, sj, &format!("K of {at}"));
+                assert_scaled::<F>(&k, &k_ref, sk, &format!("K of {at}"));
             });
         }
     }

@@ -2368,7 +2368,7 @@ where
     GD: Dim,
     C: Comm,
 {
-    use crate::reference::{Amplification, pull_back_scale, tolerance_scale};
+    use crate::reference::{Amplification, pinv_scale, pull_back_scale, tolerance_scale};
     use gridcl::{
         PullBackOptions, detj_block, jacobians_block, physical_points_block, pseudo_inverse_block,
     };
@@ -2394,10 +2394,13 @@ where
                 scale(Amplification::Values),
                 scale(Amplification::Derivatives),
             );
-            let spb = if gpu_scales {
-                pull_back_scale(mesh, b, pts.points())?
+            let (sk, spb) = if gpu_scales {
+                (
+                    pinv_scale(mesh, b, pts.points())?,
+                    pull_back_scale(mesh, b, pts.points())?,
+                )
             } else {
-                1.0
+                (1.0, 1.0)
             };
             let mut quantities = vec![
                 CellValues {
@@ -2418,7 +2421,7 @@ where
                 CellValues {
                     name: "K",
                     values: per_cell(&pseudo_inverse_block(mesh, b, pts)?, n)?,
-                    scale: sj,
+                    scale: sk,
                 },
                 CellValues {
                     name: "ξ",
