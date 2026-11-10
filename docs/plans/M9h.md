@@ -446,6 +446,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 | 14 | M9 question 22 (`set_vertex_sharers` wording) waits for an ADR touching "Ownership of vertices and entities". | Ownership of vertices and entities | Not touched by ADR-0042. | carried |
 | 15 | The Locust baseline at p = 1–8 takes 9–12 h more; the host mesh build at 10^7 points dominates on Grace. | ADR-0042, item 11; T3 | Sample p ∈ {1, 2, 4, 8} for Locust's pull-back families and Grace CPU. | ADR-0043 (accepted, applied) |
 | 16 | f32 K and ξ on the ball fail rule 2 from p = 3 (1.3e-5, 1.5e-5): J's error times κ(J), which grows without bound on the ball's singular edges, and rule 2 leaves κ out for K and cancels it for the pull-back. | Testing and validation, Tolerances; ADR-0042, item 2 | Scale K and ξ by the largest κ_F(J) / TD over the block (amended from pointwise at implementation); A_ref without κ. | ADR-0044 (accepted, applied, amended) |
+| 17 | On CPUs a `per_group` plan runs `units_per_group` threads (`cube_dim` = `units_per_group`, ADR-0042 item 4, while each CubeCL CPU unit is one thread visiting every cube), so T9's plans (`units_per_group` = 1) run on one thread and T10's on at most the group size. | Launch plans and the vector policy, Listing S2; ADR-0042, item 4 | CPU cubes hold `units_per_group` × ⌊U / `units_per_group`⌋ units, U = `elementwise`'s CPU units; done as T9's first step. | ADR-0045 |
 
 ## Deviations log
 
