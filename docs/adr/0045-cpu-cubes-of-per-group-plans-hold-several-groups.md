@@ -1,6 +1,6 @@
 # ADR-0045: CPU cubes of per-group plans hold several groups
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-10
 - **Raised in:** M9h T5 (`LaunchPlan::per_group`)
 - **Design sections affected:** "Launch plans and the vector policy", Listing S2 (the doc comment of `LaunchPlan::per_group`). Amends ADR-0042, item 4.
@@ -75,4 +75,4 @@ Option 2. A CPU plan then uses the threads `elementwise` uses, which is what the
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-10, as proposed (option 2). Applied in `adr: 0045 apply`: docs/design.md, Listing S2 (the doc comment of `LaunchPlan::per_group`), and ADR-0042's decision record. The change to `gridcl-device/src/plan.rs` and T5's CPU-shape tests follows as the first step of T9.

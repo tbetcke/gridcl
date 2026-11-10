@@ -209,3 +209,5 @@ Clarified by the maintainer on 2026-11-08 (M9h T0a): in item 2, "per component" 
 Amended by ADR-0043 (the Locust baseline of the pull-back families and of the Grace CPU samples p ∈ {1, 2, 4, 8}, pyramids {1, 2}), accepted 2026-11-10.
 
 Amended by ADR-0044 (the tolerances of K and the pull-back scale with κ_F(J) / TD), accepted 2026-11-10.
+
+Amended by ADR-0045 (CPU cubes of per-group plans hold several groups), accepted 2026-11-10.

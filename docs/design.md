@@ -1128,9 +1128,11 @@ impl LaunchPlan {
                        max_vector: usize, live: usize) -> Result<Self>;
     /// `groups` independent work groups (a cell or a tile of cells), each run by
     /// `units_per_group` units: the largest power of two ≤ min(units, max_units_per_cube).
-    /// GPUs: a cube holds units_per_group × (groups per cube) units, at most 256; CPUs:
-    /// cube_dim = units_per_group, and each cube visits blocks of consecutive groups.
-    /// `shared_bytes` per cube is checked against the device's shared-memory limit (ADR-0042).
+    /// GPUs: a cube holds units_per_group × (groups per cube) units, at most 256; CPUs: a
+    /// cube holds units_per_group × (groups per cube) units, as many as elementwise's CPU
+    /// units (ADR-0017), and each group slot visits blocks of consecutive groups.
+    /// `shared_bytes` per cube is checked against the device's shared-memory limit (ADR-0042,
+    /// ADR-0045).
     pub fn per_group(client: &Client, kind: KernelKind, groups: usize, units: usize,
                      elem_bytes: usize, max_vector: usize, live: usize, shared_bytes: usize)
         -> Result<Self>;
