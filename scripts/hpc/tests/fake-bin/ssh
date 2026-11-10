@@ -39,5 +39,7 @@ fi
 if [ $# -eq 0 ]; then
     exec bash -s
 fi
-# Like sshd: the words are joined with spaces and run by the remote shell.
-exec bash -c "$*"
+# Like sshd: the words are joined with spaces and run by the remote shell, and the connection
+# ends when the command's output is closed, also by a process it left in the background.
+bash -c "$*" | cat
+exit "${PIPESTATUS[0]}"

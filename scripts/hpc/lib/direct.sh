@@ -37,14 +37,16 @@ direct_submit() {
 }
 
 # direct_start <limit>: starts job $JOB_ID detached under timeout. The command reaches the
-# remote login shell as one `bash -c '...'` word, so the tree path must need no quoting.
+# remote login shell as one `bash -c '...'` word, so the tree path must need no quoting. Only
+# the wrapper goes to the background: `cd ... && nohup ... &` would background the whole list
+# in a subshell that holds ssh's output open until the job ends (M9h T3).
 direct_start() {
     local cmd rc
     printf '%s\n' "$TREE" | grep -Eqx '/[A-Za-z0-9._/+-]+' ||
         hpc_die 125 "the tree path $TREE needs quoting; use a simpler ${CFG_PREFIX}_BASE"
-    cmd="cd $TREE && JOB_ID=$JOB_ID nohup bash .gridcl-hpc/run/$JOB_ID.wrap $TREE $JOB_ID"
+    cmd="cd $TREE && { JOB_ID=$JOB_ID nohup bash .gridcl-hpc/run/$JOB_ID.wrap $TREE $JOB_ID"
     cmd="$cmd timeout -k 10 $1 bash results/$JOB_ID/job.sh"
-    cmd="$cmd </dev/null >>results/$JOB_ID/direct.log 2>&1 &"
+    cmd="$cmd </dev/null >>results/$JOB_ID/direct.log 2>&1 & }"
     # shellcheck disable=SC2086,SC2029 # options list; $cmd is meant to expand here
     ssh $HPC_SSH_OPTS "$CFG_HOST" "bash -c '$cmd'" </dev/null
     rc=$?

@@ -6,8 +6,10 @@
 #   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported GRIDCL_HPC_TARGET, CARGO_TARGET_DIR,
 #   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE (cuda; cpu on myriad-cpu and kathleen) and, for
 #   --ranks N, GRIDCL_RANKS=N (and on two Kathleen nodes GRIDCL_MPIRUN_FLAGS=--map-by node).
-# The command also sees GRIDCL_HPC_TREE, and GRIDCL_MPI_TEST_DIR=<results>/mpi-test: the logs
-# of scripts/mpi-test.sh then belong to the job, not to the tree that jobs of one branch share.
+# The command also sees GRIDCL_HPC_TREE, GRIDCL_HPC_COMMIT and GRIDCL_HPC_DIRTY (the remote tree
+# has no .git; scripts/bench/degree-sweep.sh records the commit from them), and
+# GRIDCL_MPI_TEST_DIR=<results>/mpi-test: the logs of scripts/mpi-test.sh then belong to the
+# job, not to the tree that jobs of one branch share.
 # JOB_ID comes from the scheduler (SGE; jobs/kathleen.sh sets it from SLURM_JOB_ID), or from
 # the runner on direct targets.
 #
@@ -248,7 +250,7 @@ gridcl_job_main() {
     gridcl_job_prologue >>"$results/prologue.txt" 2>&1 </dev/null
 
     GRIDCL_MPI_TEST_DIR=$results/mpi-test
-    export GRIDCL_HPC_TREE GRIDCL_MPI_TEST_DIR
+    export GRIDCL_HPC_TREE GRIDCL_HPC_COMMIT GRIDCL_HPC_DIRTY GRIDCL_MPI_TEST_DIR
     : >"$log"
     if [ -n "${GRIDCL_HPC_BUILD:-}" ]; then
         echo "build_start=$(date +%s)" >>"$times"

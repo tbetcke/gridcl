@@ -44,7 +44,7 @@ failing_command_first_error summary_header_and_length max_wait_deletes_job resul
 results_survive_resync busy_tree_refused cubecl_toml_written myriad_cpu_job_script
 myriad_cpu_rejects_gpus"
 DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees
-job_environment direct_job_group_ended no_answer_ends_runner"
+job_environment direct_start_returns direct_job_group_ended no_answer_ends_runner"
 SLURM_CASES="kathleen_job_script kathleen_two_nodes kathleen_rejects kathleen_max_wait_cancels
 kathleen_status_and_cancel cancel_only_own_jobs"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
@@ -785,13 +785,33 @@ case_direct_remote_timeout() {
 
 # The command sees GRIDCL_HPC_TREE and the job's own GRIDCL_MPI_TEST_DIR (M8 review).
 case_job_environment() {
-    rt locust -- 'echo "tree=$GRIDCL_HPC_TREE"; echo "mpi=$GRIDCL_MPI_TEST_DIR"'
+    rt locust -- 'echo "tree=$GRIDCL_HPC_TREE"; echo "mpi=$GRIDCL_MPI_TEST_DIR"
+        echo "commit=$GRIDCL_HPC_COMMIT"; echo "dirty=$GRIDCL_HPC_DIRTY"'
     expect_status 0 "direct run"
     local id tree=$REMOTE/locust/dev_e0-test
     id=$(job_id)
     expect_line "$LOCAL/target/hpc/locust/$id/output.log" "tree=$tree" "GRIDCL_HPC_TREE"
     expect_line "$LOCAL/target/hpc/locust/$id/output.log" "mpi=$tree/results/$id/mpi-test" \
         "GRIDCL_MPI_TEST_DIR in the job's results"
+    # M9h T3: the degree sweep records the commit from these; the remote tree has no .git.
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "commit=$(g rev-parse HEAD)" \
+        "GRIDCL_HPC_COMMIT"
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "dirty=no" "GRIDCL_HPC_DIRTY"
+}
+
+# The ssh that starts a direct job returns at once, not when the job ends (M9h T3: a
+# backgrounded `cd ... && nohup ...` list held ssh's output open for the whole job).
+case_direct_start_returns() {
+    bg_rt long locust --max-wait 00:01:00 -- 'sleep 50'
+    local i=0
+    while ! grep -q 'started job' "$T/long.stderr" 2>/dev/null && [ $i -lt 75 ]; do
+        sleep 0.2
+        i=$((i + 1))
+    done
+    expect_grep "$T/long.stderr" 'started job' "start reported within 15 s of a 50 s job"
+    "$CANCEL" "$(basename "$(wait_for_pid_file)" .pid)" >"$T/cancel" 2>&1
+    wait_exit "$BG" 30
+    no_process 'sleep 50' || fail "cancelled job still running"
 }
 
 # No process of a direct job outlives it: neither one left behind when the command ends nor
