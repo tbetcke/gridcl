@@ -207,3 +207,5 @@ Accepted by the maintainer on 2026-11-08, as proposed (option 2, items 1–13), 
 Clarified by the maintainer on 2026-11-08 (M9h T0a): in item 2, "per component" means per quantity. The relative error of X, J, det J, K, normals and ξ is each taken against the largest |want| of that quantity over the block, so det J ~ h³ stays relative, while the entries of one matrix share its largest value (rounding errors scale with the matrix, not with each entry; strictly per entry, f32 J fails at p = 3 with no kernel defect). docs/design.md's "largest value of each component" is read the same way.
 
 Amended by ADR-0043 (the Locust baseline of the pull-back families and of the Grace CPU samples p ∈ {1, 2, 4, 8}, pyramids {1, 2}), accepted 2026-11-10.
+
+Amended by ADR-0044 (the tolerances of K and the pull-back scale with κ_F(J) / TD), accepted 2026-11-10.

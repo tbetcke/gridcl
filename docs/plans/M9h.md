@@ -287,7 +287,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
   - Verify: kernel-task check set with `-p gridcl-geometry`, `GRIDCL_GEOM_STRATEGY=loops`
   - After: T4
   - Parallel with: T5, T6b
-  - Risks / notes: runtime zero and one as in `basis_eval` (C16).
+  - Risks / notes: runtime zero and one as in `basis_eval` (C16). First, ADR-0044's test support: K's and the pull-back's scales in `gridcl_testing::reference` with κ_F(J) / TD and its callers (the ADR lists them), and `try_clone` outside `with_properties` in `vector_size_invariance`'s large case (T4's check set).
 - [ ] **T6b Runtime loops: basis evaluator and pull-back (gridcl-geometry)**
   - Goal: `loops` for the evaluator (recurrence coefficients from runtime integers, 1D values in small local arrays, runtime loops over basis functions) and for the pull-back set-up and step. Buffers: five; if the set-up needs global scratch for a, it travels as a trailer of an existing buffer or the kernel binds six.
   - Crates/files: `gridcl-geometry/src/{basis_eval/loops.rs, basis_eval/mod.rs, pull_back.rs}`.
@@ -445,7 +445,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 | 13 | The upstream C18 report is outward-facing. | CLAUDE.md (cubecl-upstream) | Ask the maintainer at T2 before filing. | answered (procedure: the maintainer decides at T2) |
 | 14 | M9 question 22 (`set_vertex_sharers` wording) waits for an ADR touching "Ownership of vertices and entities". | Ownership of vertices and entities | Not touched by ADR-0042. | carried |
 | 15 | The Locust baseline at p = 1–8 takes 9–12 h more; the host mesh build at 10^7 points dominates on Grace. | ADR-0042, item 11; T3 | Sample p ∈ {1, 2, 4, 8} for Locust's pull-back families and Grace CPU. | ADR-0043 (accepted, applied) |
-| 16 | f32 K and ξ on the ball fail rule 2 from p = 3 (1.3e-5, 1.5e-5): J's error times κ(J), which grows without bound on the ball's singular edges, and rule 2 leaves κ out for K and cancels it for the pull-back. | Testing and validation, Tolerances; ADR-0042, item 2 | Scale K and ξ by κ_F(J) / TD pointwise; A_ref without κ. | ADR-0044 |
+| 16 | f32 K and ξ on the ball fail rule 2 from p = 3 (1.3e-5, 1.5e-5): J's error times κ(J), which grows without bound on the ball's singular edges, and rule 2 leaves κ out for K and cancels it for the pull-back. | Testing and validation, Tolerances; ADR-0042, item 2 | Scale K and ξ by κ_F(J) / TD pointwise; A_ref without κ. | ADR-0044 (accepted, applied) |
 
 ## Deviations log
 

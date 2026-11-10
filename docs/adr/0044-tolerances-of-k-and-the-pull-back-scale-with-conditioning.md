@@ -1,6 +1,6 @@
 # ADR-0044: Tolerances of K and the pull-back scale with the conditioning of J
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-10
 - **Raised in:** M9h T4 (the kernel-task check set)
 - **Design sections affected:** "Testing and validation", **Tolerances** (the degree-scaling bullet). Amends ADR-0042, item 2.
@@ -104,4 +104,4 @@ Option 2. The K and ξ errors are J's rounding error amplified by J's conditioni
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-10, as proposed (option 2, κ_F(J) / TD). Applied in `adr: 0044 apply`: docs/design.md, "Tolerances", and ADR-0042's decision record. The test-support changes in `gridcl_testing::reference` and its callers follow with T6a, the next task that runs the affected tests.
