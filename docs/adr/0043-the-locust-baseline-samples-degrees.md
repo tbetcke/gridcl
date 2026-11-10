@@ -1,6 +1,6 @@
 # ADR-0043: The Locust baseline samples degrees
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-10
 - **Raised in:** M9h T3
 - **Design sections affected:** none in docs/design.md. Amends ADR-0042, item 11.
@@ -68,4 +68,4 @@ The degree sweep that chooses the policy (item 12, T11a) is unchanged: it covers
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-10, as proposed (option 2). Applied in `adr: 0043 apply`: ADR-0042's decision record, `baseline_covers_every_target_and_degree` and the plan's T3.

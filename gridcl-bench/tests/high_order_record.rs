@@ -115,6 +115,17 @@ fn max_degree(cell: &str) -> u32 {
     if cell == "Pyramid" { 3 } else { 8 }
 }
 
+/// The baseline degrees of a (target, backend, family, cell): p = 1–8 (pyramids 1–3), except
+/// on Locust for the pull-back families (PullBack, BasisEval) and on the Grace CPU, which sample
+/// p ∈ {1, 2, 4, 8} (ADR-0043).
+fn baseline_degrees(target: &str, backend: &str, family: &str, cell: &str) -> Vec<u32> {
+    let sampled =
+        target == "locust" && (backend == "cpu" || matches!(family, "PullBack" | "BasisEval"));
+    (1..=max_degree(cell))
+        .filter(|p| !sampled || [1, 2, 4, 8].contains(p))
+        .collect()
+}
+
 /// The policy family of a bench family: J, det J and K share `Jacobian`; the basis evaluator is
 /// the pull-back's.
 fn policy_family(family: &str) -> &str {
@@ -386,8 +397,9 @@ const POLICY_FAMILIES: [&str; 6] = [
 // Tests.
 
 /// T3's drift baseline (rule 11): `direct` at one pinned commit, at p = 1–8 (pyramids 1–3), for
-/// every bench family, cell type and scalar type of every target. Failures and "too slow" are
-/// records too (not retried).
+/// every bench family, cell type and scalar type of every target; on Locust sampled for the
+/// pull-back families and the Grace CPU (ADR-0043, [`baseline_degrees`]). Failures and "too
+/// slow" are records too (not retried).
 #[test]
 fn baseline_covers_every_target_and_degree() {
     let data = data();
@@ -420,7 +432,7 @@ fn baseline_covers_every_target_and_degree() {
         }
         for family in DEGREE_FAMILIES {
             for &cell in cells_of(family) {
-                for degree in 1..=max_degree(cell) {
+                for degree in baseline_degrees(target, backend, family, cell) {
                     for scalar in scalars_of(backend) {
                         for size in RULE_SIZES {
                             for iterations in iterations_of(family) {
