@@ -1,7 +1,7 @@
 //! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
-//! not run yet is an error rather than a silent `direct`. `loops` runs for every family but the
-//! pull-back (T6a).
+//! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
+//! T6b).
 
 use gridcl::prelude::*;
 use gridcl::{FacetQuadRule, PullBackOptions};
@@ -118,16 +118,6 @@ fn strategies_that_do_not_run_yet_are_errors() {
         }
         assert!(ran.is_empty(), "{s:?} ran {ran:?}");
     }
-    // The pull-back runs `loops` from T6b.
-    let rule = QuadRule::for_grid(&triangle, 2).unwrap();
-    let x = triangle.physical_points(&rule).unwrap();
-    let loops = StrategyOverride::Fixed(Strategy::Loops);
-    match with_strategy(StrategyFamily::PullBack, loops, || {
-        triangle.pull_back(&x, &PullBackOptions::default())
-    }) {
-        Err(GridError::NotYetImplemented(task)) => assert!(task.contains("strategy loops ")),
-        other => panic!("{:?}", other.map(|_| ())),
-    }
 }
 
 #[test]
@@ -145,8 +135,11 @@ fn forced_loops_runs_loops() {
             with_strategy(EVector, StrategyOverride::Fixed(s), || {
                 with_strategy(Points, StrategyOverride::Fixed(s), || {
                     with_strategy(Jacobian, StrategyOverride::Fixed(s), || {
-                        mesh.physical_points(&rule).unwrap();
-                        mesh.jacobians(&rule).unwrap();
+                        with_strategy(PullBack, StrategyOverride::Fixed(s), || {
+                            let x = mesh.physical_points(&rule).unwrap();
+                            mesh.jacobians(&rule).unwrap();
+                            mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+                        })
                     })
                 })
             })
@@ -156,7 +149,8 @@ fn forced_loops_runs_loops() {
             [
                 (Points, Strategy::Loops),
                 (EVector, Strategy::Loops),
-                (Jacobian, Strategy::Loops)
+                (Jacobian, Strategy::Loops),
+                (PullBack, Strategy::Loops)
             ],
             "{s:?}"
         );

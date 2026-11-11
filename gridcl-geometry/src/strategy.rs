@@ -72,13 +72,11 @@ impl Strategy {
     }
 
     /// `None` when the launchers of `family` run the strategy, else the task that implements it.
-    fn not_yet(self, family: StrategyFamily) -> Option<&'static str> {
+    /// `direct` and `loops` run for every family (T6a, T6b); the later strategies arrive family
+    /// by family.
+    fn not_yet(self, _family: StrategyFamily) -> Option<&'static str> {
         match self {
-            Strategy::Direct => None,
-            Strategy::Loops if family == StrategyFamily::PullBack => {
-                Some("geometry strategy loops (docs/plans/M9h.md, T6b)")
-            }
-            Strategy::Loops => None,
+            Strategy::Direct | Strategy::Loops => None,
             Strategy::SumFactorised => {
                 Some("geometry strategy sumfact (docs/plans/M9h.md, T7a–T8)")
             }

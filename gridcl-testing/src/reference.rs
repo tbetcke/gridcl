@@ -17,7 +17,9 @@
 //! Tolerances (ADR-0042, item 2): the f32 and f64 tolerances scale by max(1, A / A_ref), where
 //! A is an amplification factor of the element at the test's points ([`Amplification`]) and
 //! A_ref the same factor of the equispaced element of degree 4 (3 on pyramids) of that cell at
-//! the same points. Errors are relative per quantity over a block ([`rel_err`]).
+//! the same points. For J, the quantities derived from it and the pull-back, the scale gains
+//! max(1, n / n_ref) ([`node_ratio`]) and max(1, R) ([`origin_ratio`]) (ADR-0046). Errors are
+//! relative per quantity over a block ([`rel_err`]).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -155,6 +157,14 @@ fn tabulate(nodes: &BlockNodes, points: &[f64], nderivs: u32) -> Tabulation {
 
 // ---------------------------------------------------------------------------------------------
 // Per-point maths on column-major J.
+
+/// The largest |x_g − o_g| over the nodes `coords` (`[node][gd]`, absolute coordinates).
+fn largest_offset(coords: &[f64], gd: usize, origin: &[f64]) -> f64 {
+    coords
+        .chunks_exact(gd)
+        .flat_map(|x| x.iter().zip(origin).map(|(x, o)| (x - o).abs()))
+        .fold(0.0, f64::max)
+}
 
 /// det J (TD = GD) or the pseudo-determinant sqrt(det(JᵀJ)) of the column-major GD × TD `j`.
 pub fn detj_of(j: &[f64], td: usize, gd: usize) -> f64 {
@@ -422,7 +432,10 @@ fn dims<G: DeviceGrid>() -> (usize, usize) {
 
 /// X, J and det J of a [`HostMesh`] block in f64, with the block's node family.
 pub mod host {
-    use super::{BlockNodes, detj_of, per_point, tabulate};
+    use super::{
+        Amplification, BlockNodes, detj_of, node_ratio, origin_ratio, per_point, tabulate,
+        tolerance_scale,
+    };
     use crate::HostMesh;
 
     /// X at `points` (`[q][tdim]`) for every cell of block `b`: `[cell][q][g]`.
@@ -435,6 +448,22 @@ pub mod host {
     pub fn jacobians(h: &HostMesh, b: usize, points: &[f64]) -> Vec<f64> {
         let nodes = BlockNodes::of_host(h, b);
         nodes.jacobians(&tabulate(&nodes, points, 1))
+    }
+
+    /// The tolerance scale of J of block `b` at `points`, as `reference::jacobian_scale`, with
+    /// R measured from the coordinates' zero: the host sums absolute coordinates.
+    pub fn jacobian_scale(h: &HostMesh, b: usize, points: &[f64]) -> f64 {
+        let nodes = BlockNodes::of_host(h, b);
+        let j = nodes.jacobians(&tabulate(&nodes, points, 1));
+        let r = origin_ratio(&nodes.coords, nodes.gd, &vec![0.0; nodes.gd], &j);
+        tolerance_scale(
+            nodes.cell,
+            nodes.degree,
+            nodes.family,
+            points,
+            Amplification::Derivatives,
+        ) * node_ratio(nodes.cell, nodes.degree)
+            * r
     }
 
     /// det J (the pseudo-determinant when TD < GD) at `points`: `[cell][q]`.
@@ -567,13 +596,14 @@ pub fn tolerance_scale(
 }
 
 /// The scale of a quantity computed by solving with J, K and the pull-back (ADR-0042, item 2;
-/// ADR-0044): max(1, A / A_ref) times the largest κ_F(J) / TD ([`condition_of`]) over the
-/// Jacobians `j` (`[cell][q]`, each column-major GD × TD at the q-th point of `points`), with
-/// A the largest factor `kind` of (`cell`, `degree`, `family`) and A_ref that of the
-/// equispaced element of [`reference_degree`], both over `points`. κ_F / TD is 1 where J is a
-/// scaled rotation and grows with the cell's distortion. The two maxima are taken separately:
-/// the error comes from J's rounding error, measured against the block's largest J, and need
-/// not be small where the element's factor is.
+/// ADR-0044; ADR-0046): max(1, A / A_ref) times [`node_ratio`] times the largest κ_F(J) / TD
+/// ([`condition_of`]) over the Jacobians `j` (`[cell][q]`, each column-major GD × TD at the
+/// q-th point of `points`), with A the largest factor `kind` of (`cell`, `degree`, `family`)
+/// and A_ref that of the equispaced element of [`reference_degree`], both over `points`.
+/// κ_F / TD is 1 where J is a scaled rotation and grows with the cell's distortion. The two
+/// maxima are taken separately: the error comes from J's rounding error, measured against the
+/// block's largest J, and need not be small where the element's factor is. The caller
+/// multiplies by [`origin_ratio`], which needs the nodes.
 ///
 /// # Example
 ///
@@ -605,18 +635,92 @@ pub fn conditioned_scale(
         .chunks_exact(td * gd)
         .map(|j| condition_of(j, td, gd) / td as f64)
         .fold(1.0, f64::max);
-    tolerance_scale(cell, degree, family, points, kind) * kappa
+    tolerance_scale(cell, degree, family, points, kind) * node_ratio(cell, degree) * kappa
 }
 
-/// [`conditioned_scale`] of block `b` of `g` at `points` for `kind`, from the block's nodes.
+/// max(1, n / n_ref), n the number of nodes of (`cell`, `degree`) and n_ref that of the element
+/// of [`reference_degree`] (ADR-0046): the rounding error of a sum over the nodes grows with
+/// their number, which the amplification factors do not measure.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_dims::CellType;
+/// use gridcl_testing::reference::node_ratio;
+///
+/// assert_eq!(node_ratio(CellType::Hexahedron, 4), 1.0);
+/// assert_eq!(node_ratio(CellType::Hexahedron, 8), 729.0 / 125.0);
+/// ```
+pub fn node_ratio(cell: CellType, degree: u32) -> f64 {
+    let n = gridcl_refcell::num_lagrange_nodes(cell, degree) as f64;
+    let n_ref = gridcl_refcell::num_lagrange_nodes(cell, reference_degree(cell)) as f64;
+    (n / n_ref).max(1.0)
+}
+
+/// max(1, R) of ADR-0046: R is the largest |x_g − o_g| over the nodes `coords` (`[node][gd]`,
+/// absolute coordinates; `o` the grid's origin) divided by the largest |entry| of the Jacobians
+/// `j`. The kernels sum coordinates relative to the origin, so the rounding error of J is
+/// relative to |x − o| rather than to J.
+///
+/// # Example
+///
+/// ```
+/// use gridcl_testing::reference::origin_ratio;
+///
+/// // Nodes up to 0.5 from the origin, cells of size 1/64.
+/// let r = origin_ratio(&[0.0, 0.5, 1.0], 1, &[0.5], &[1.0 / 64.0]);
+/// assert_eq!(r, 32.0);
+/// assert_eq!(origin_ratio(&[0.0, 0.1], 1, &[0.0], &[1.0]), 1.0);
+/// ```
+pub fn origin_ratio(coords: &[f64], gd: usize, origin: &[f64], j: &[f64]) -> f64 {
+    let jmax = j.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+    if jmax > 0.0 {
+        (largest_offset(coords, gd, origin) / jmax).max(1.0)
+    } else {
+        1.0
+    }
+}
+
+/// The nodes of block `b` of `g` and its J at `points`, with max(1, R) ([`origin_ratio`]).
+fn block_jacobians<G: DeviceGrid>(
+    g: &G,
+    b: usize,
+    points: &[f64],
+) -> Result<(BlockNodes, Vec<f64>, f64)> {
+    let nodes = BlockNodes::of_grid(g, b)?;
+    let j = nodes.jacobians(&tabulate(&nodes, points, 1));
+    let r = origin_ratio(&nodes.coords, nodes.gd, g.origin().as_ref(), &j);
+    Ok((nodes, j, r))
+}
+
+/// The tolerance scale of J, det J, normals and facet normals of block `b` at `points` (cell
+/// reference points): max(1, A / A_ref) of [`Amplification::Derivatives`] times
+/// [`node_ratio`] and [`origin_ratio`] (ADR-0042, item 2; ADR-0046).
+///
+/// # Errors
+///
+/// Device errors of the reads.
+pub fn jacobian_scale<G: DeviceGrid>(g: &G, b: usize, points: &[f64]) -> Result<f64> {
+    let (nodes, _, r) = block_jacobians(g, b, points)?;
+    Ok(tolerance_scale(
+        nodes.cell,
+        nodes.degree,
+        nodes.family,
+        points,
+        Amplification::Derivatives,
+    ) * node_ratio(nodes.cell, nodes.degree)
+        * r)
+}
+
+/// [`conditioned_scale`] of block `b` of `g` at `points` for `kind`, from the block's nodes,
+/// times [`origin_ratio`].
 fn block_conditioned_scale<G: DeviceGrid>(
     g: &G,
     b: usize,
     points: &[f64],
     kind: Amplification,
 ) -> Result<f64> {
-    let nodes = BlockNodes::of_grid(g, b)?;
-    let j = nodes.jacobians(&tabulate(&nodes, points, 1));
+    let (nodes, j, r) = block_jacobians(g, b, points)?;
     Ok(conditioned_scale(
         nodes.cell,
         nodes.degree,
@@ -625,11 +729,11 @@ fn block_conditioned_scale<G: DeviceGrid>(
         kind,
         &j,
         nodes.gd,
-    ))
+    ) * r)
 }
 
 /// The tolerance scale of K of block `b` at `points`: [`conditioned_scale`] with the
-/// [`Amplification::Derivatives`] factor (ADR-0044).
+/// [`Amplification::Derivatives`] factor (ADR-0044), times [`origin_ratio`] (ADR-0046).
 ///
 /// # Errors
 ///
@@ -639,7 +743,8 @@ pub fn pinv_scale<G: DeviceGrid>(g: &G, b: usize, points: &[f64]) -> Result<f64>
 }
 
 /// The tolerance scale of a pull-back of block `b` from the images of `points`:
-/// [`conditioned_scale`] with the [`Amplification::Coefficients`] factor (ADR-0044).
+/// [`conditioned_scale`] with the [`Amplification::Coefficients`] factor (ADR-0044), times
+/// [`origin_ratio`] (ADR-0046).
 ///
 /// # Errors
 ///

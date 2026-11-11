@@ -20,8 +20,8 @@
 //! - **Checks:** each warm-up is compared on a sample of cells with an f64 host evaluation from
 //!   the stored nodes (gridcl-refcell's tabulation), by ADR-0042, item 2: the relative error
 //!   per quantity within 10^−5 (f32) or 10^−12 (f64) times max(1, A / A_ref). The J-derived
-//!   quantities and the pull-back are held to a further factor of the box side, because
-//!   coordinates of size 1 sum into J ~ 1 / side (the cancellation of absolute coordinates);
+//!   quantities and the pull-back are held to further factors of max(1, n / n_ref) and of the
+//!   box side, because coordinates of size 1 sum into J ~ 1 / side (ADR-0046's R);
 //!   the basis evaluator to the absolute amplification of its coefficients. The E-vector is
 //!   compared bitwise. Records keep the error and the tolerance (T3's error survey).
 //! - **Compile time** (rule 6): the warm-up minus the median. Sizes run in ascending order with
@@ -68,8 +68,8 @@ use gridcl_geometry::testing::{
 use gridcl_refcell::{LagrangeElement, Tabulation, gauss_rule, tdim};
 use gridcl_testing::HostMesh;
 use gridcl_testing::reference::{
-    Amplification, amplification, conditioned_scale, detj_of, pinv_of, rel_err, tolerance,
-    tolerance_scale,
+    Amplification, amplification, conditioned_scale, detj_of, node_ratio, pinv_of, rel_err,
+    tolerance, tolerance_scale,
 };
 
 use super::Machine;
@@ -1294,13 +1294,15 @@ impl References {
             points: points.to_vec(),
             tab: element.tabulate(points, 1).expect("tabulate"),
             scale_values: tolerance_scale(cell, degree, family, points, Amplification::Values),
+            // J and what derives from it also scale with the node count (ADR-0046); the box
+            // side stands in for R where the checks use the scale.
             scale_derivatives: tolerance_scale(
                 cell,
                 degree,
                 family,
                 points,
                 Amplification::Derivatives,
-            ),
+            ) * node_ratio(cell, degree),
         }
     }
 
@@ -1686,9 +1688,12 @@ mod tests {
         o.node_families = vec![NodeFamily::Equispaced];
         o.scalars = vec![Scalar::F32];
         o.launch_vector_sizes = LaunchVectorSizes::Scalar;
-        o.strategies = ["policy", "direct", "loops"].map(str::to_owned).to_vec();
+        o.strategies = ["policy", "direct", "loops", "cooperative"]
+            .map(str::to_owned)
+            .to_vec();
         let records = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
-        let ran: Vec<(&str, &str)> = records
+        assert_eq!(records.len(), 4);
+        let ran: Vec<(&str, &str)> = records[..3]
             .iter()
             .map(|r| (r.strategy.as_str(), r.strategy_ran.as_str()))
             .collect();
@@ -1700,10 +1705,13 @@ mod tests {
                 ("loops", "loops")
             ]
         );
-        assert_eq!(records[0].status, "ok");
-        assert_eq!(records[1].status, "ok");
-        // `loops` runs from T6a (docs/plans/M9h.md): until then a failed record.
-        assert!(records[2].status.starts_with("failed: ") && records[2].status.contains("loops"));
+        assert!(records[..3].iter().all(|r| r.status == "ok"), "{records:?}");
+        // `cooperative` runs from T10a (docs/plans/M9h.md): until then a failed record.
+        assert!(
+            records[3].status.starts_with("failed: ") && records[3].status.contains("cooperative"),
+            "{}",
+            records[3].status
+        );
         o.strategies = vec!["fast".to_owned()];
         let e = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap_err();
         assert!(e.contains("unknown strategy fast"), "{e}");

@@ -1,4 +1,5 @@
-//! The device evaluation against gridcl-refcell's host tabulation (ADR-0039, item 15).
+//! The device evaluation against gridcl-refcell's host tabulation (ADR-0039, item 15), under
+//! `direct` (p ≤ 4) and `loops` (p ≤ 8; docs/plans/M9h.md, T6b).
 
 use cubecl::prelude::*;
 use gridcl_device::testing::{record_plans, with_vector_size};
@@ -9,7 +10,10 @@ use gridcl_device::{
 use gridcl_dims::CellType::{self, *};
 use gridcl_refcell::{LagrangeElement, NodeFamily, num_lagrange_nodes, tdim, vertices};
 
-use super::{device_coefficients, expansion, normalisation};
+use super::{
+    broadcast_rows, device_coefficients, expansion, expansion_loops, loops_capacity, normalisation,
+};
+use crate::strategy::Strategy;
 
 /// ψ_j and ∂_d ψ_j of the Lagrange basis at each lane's point:
 ///   points        `[d][point]`, rows of `stride` vectors
@@ -57,13 +61,70 @@ fn lagrange_kernel<F: Float, N: Size>(
     }
 }
 
-/// The device's ψ table of (cell, degree, family) at `points` (flat, tdim per point), as
-/// `[(deriv, j)][point]` without padding.
+/// [`lagrange_kernel`] with the evaluator of the `loops` strategy (`expansion_loops`), the
+/// degree and node count at run time:
+///   coefficients  read for the runtime zero and one only (at N² and N² + 1)
+///   rows          C' broadcast to rows of `VECTOR_PAD` (`broadcast_rows`), column-major: entry
+///                 (j, k) at row j N + k
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn lagrange_loops_kernel<F: Float, N: Size>(
+    points: &[Vector<F, N>],
+    coefficients: &[F],
+    rows: &[Vector<F, N>],
+    out: &mut [Vector<F, N>],
+    stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    degree: u32,
+    #[comptime] cell: CellType,
+    #[comptime] cap: usize,
+) {
+    let td = comptime!(tdim(cell));
+    let nb = nodes as usize;
+    let row = VECTOR_PAD / N::value();
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let v = first + it;
+        if v < num_vectors as usize {
+            let mut xi = Array::<Vector<F, N>>::new(comptime!(td));
+            #[unroll]
+            for d in 0..td {
+                xi[d] = points[d * stride as usize + v];
+            }
+            let zero = Vector::<F, N>::broadcast(coefficients[nb * nb]);
+            let one = Vector::<F, N>::broadcast(coefficients[nb * nb + 1]);
+            for j in 0..nb {
+                let psi = expansion_loops::<F, N>(
+                    &xi,
+                    rows,
+                    j * nb * row,
+                    row,
+                    one,
+                    zero,
+                    degree as usize,
+                    cell,
+                    1usize,
+                    cap,
+                );
+                #[unroll]
+                for d in 0..td + 1 {
+                    out[(d * nb + j) * stride as usize + v] = psi[d];
+                }
+            }
+        }
+    }
+}
+
+/// The device's ψ table of (cell, degree, family) at `points` (flat, tdim per point) by the
+/// evaluator of strategy `s` (`Direct` or `Loops`), as `[(deriv, j)][point]` without padding.
 fn evaluate<F: Real>(
     cell: CellType,
     degree: u32,
     family: NodeFamily,
     points: &[F],
+    s: Strategy,
 ) -> Result<Vec<F>, GridError> {
     let client = gridcl_testing::test_client();
     let td = tdim(cell);
@@ -78,19 +139,10 @@ fn evaluate<F: Real>(
         }
     }
     let rows = DeviceBuffer::from_host(&client, &rows)?;
-    let c: Vec<F> = device_coefficients(cell, degree, family)?
-        .into_iter()
-        .map(F::narrow)
-        .collect();
+    let c64 = device_coefficients(cell, degree, family)?;
+    let c: Vec<F> = c64.iter().copied().map(F::narrow).collect();
     let c = DeviceBuffer::from_host(&client, &c)?;
     let out = DeviceBuffer::<F>::uninit(&client, (1 + td) * nb * padded)?;
-    crate::strategy::choose(
-        &client,
-        crate::strategy::StrategyFamily::PullBack,
-        cell,
-        degree,
-        size_of::<F>(),
-    )?;
     let plan = LaunchPlan::elementwise(
         &client,
         KernelKind::PullBack,
@@ -100,6 +152,43 @@ fn evaluate<F: Real>(
         2,
     )?;
     let n = plan.vector_size;
+    if s == Strategy::Loops {
+        let columns: Vec<f64> = (0..nb)
+            .flat_map(|j| (0..nb).map(move |k| (j, k)))
+            .map(|(j, k)| c64[k * nb + j])
+            .collect();
+        let crows: Vec<F> = broadcast_rows(&columns)
+            .into_iter()
+            .map(F::narrow)
+            .collect();
+        let crows = DeviceBuffer::from_host(&client, &crows)?;
+        debug_assert_bindings(&client, 4);
+        // SAFETY: as for `direct` below; `crows` holds nb² · VECTOR_PAD elements and the kernel
+        // reads its vectors (j nb + k) · VECTOR_PAD / n for j, k < nb.
+        unsafe {
+            lagrange_loops_kernel::launch_unchecked::<F>(
+                &client,
+                plan.cube_count,
+                plan.cube_dim,
+                n,
+                rows.vector_arg(n),
+                c.arg(),
+                crows.vector_arg(n),
+                out.vector_arg(n),
+                (padded / n) as u32,
+                plan.num_vectors,
+                plan.items_per_unit,
+                nb as u32,
+                degree,
+                cell,
+                loops_capacity(degree),
+            );
+        }
+        let all = out.to_host()?;
+        return Ok((0..(1 + td) * nb)
+            .flat_map(|r| all[r * padded..r * padded + count].to_vec())
+            .collect());
+    }
     debug_assert_bindings(&client, 3);
     // SAFETY: n divides VECTOR_PAD and so `padded`; the kernel handles vectors
     // v < num_vectors = padded / n and reads `rows` at d · padded / n + v < td · padded / n,
@@ -183,9 +272,9 @@ fn sample(cell: CellType, n: usize, seed: u64) -> Vec<f64> {
     out
 }
 
-/// Every coordinate element of the tests: degrees 1–4 (pyramids 1–3), equispaced, and GLL
-/// where offered.
-fn elements() -> Vec<(CellType, u32, NodeFamily)> {
+/// Every coordinate element of the tests of strategy `s`: degrees 1–4 under `direct` and 1–8
+/// under `loops` (pyramids 1–3), equispaced, and GLL where offered.
+fn elements(s: Strategy) -> Vec<(CellType, u32, NodeFamily)> {
     let mut out = vec![];
     for cell in [
         Interval,
@@ -196,7 +285,11 @@ fn elements() -> Vec<(CellType, u32, NodeFamily)> {
         Prism,
         Pyramid,
     ] {
-        let top = if cell == Pyramid { 3 } else { 4 };
+        let top = match (cell, s) {
+            (Pyramid, _) => 3,
+            (_, Strategy::Loops) => 8,
+            _ => 4,
+        };
         for p in 1..=top {
             out.push((cell, p, NodeFamily::Equispaced));
             if matches!(cell, Interval | Quadrilateral | Hexahedron) {
@@ -207,16 +300,30 @@ fn elements() -> Vec<(CellType, u32, NodeFamily)> {
     out
 }
 
-/// The device table against `LagrangeElement::tabulate` at the same (narrowed, pyramid
-/// clamped) points: relative `tol`, against 1 for entries below 1 in magnitude.
-fn matches_host<F: Real>(tol: f64) {
-    for (cell, p, family) in elements() {
+/// The strategies of the evaluator.
+const STRATEGIES: [Strategy; 2] = [Strategy::Direct, Strategy::Loops];
+
+/// The tolerance scale of an element at `points` (`[q][tdim]`): max(1, A / A_ref) of the
+/// coefficient amplification (ADR-0042, item 2), and for derivatives a further max(1, (p / 4)²)
+/// (Markov), 1 at p ≤ 4.
+fn scales(cell: CellType, p: u32, family: NodeFamily, points: &[f64]) -> [f64; 2] {
+    use gridcl_testing::reference::{Amplification, tolerance_scale};
+    let values = tolerance_scale(cell, p, family, points, Amplification::Coefficients);
+    let markov = (f64::from(p) / 4.0).powi(2).max(1.0);
+    [values, values * markov]
+}
+
+/// The device table of strategy `s` against `LagrangeElement::tabulate` at the same
+/// (narrowed, pyramid clamped) points: relative `tol` times [`scales`], against 1 for entries
+/// below 1 in magnitude.
+fn matches_host<F: Real>(tol: f64, s: Strategy) {
+    for (cell, p, family) in elements(s) {
         let td = tdim(cell);
         let points: Vec<F> = sample(cell, 40, 17 + u64::from(p))
             .into_iter()
             .map(F::narrow)
             .collect();
-        let got = evaluate::<F>(cell, p, family, &points).unwrap();
+        let got = evaluate::<F>(cell, p, family, &points, s).unwrap();
         let mut host: Vec<f64> = points.iter().map(|x| x.widen()).collect();
         if cell == Pyramid {
             for x in host.as_chunks_mut::<3>().0 {
@@ -226,14 +333,16 @@ fn matches_host<F: Real>(tol: f64) {
         let e = LagrangeElement::new(cell, p, family).unwrap();
         let t = e.tabulate(&host, 1).unwrap();
         let (nb, count) = (e.dim(), t.num_points);
+        let scale = scales(cell, p, family, &host);
         for d in 0..=td {
+            let tol = tol * scale[d.min(1)];
             for j in 0..nb {
                 for q in 0..count {
                     let want = t.get(d, q, j);
                     let have = got[(d * nb + j) * count + q].widen();
                     assert!(
                         (have - want).abs() <= tol * want.abs().max(1.0),
-                        "{cell:?} p = {p} {family:?}, deriv {d}, basis {j}, point {:?}: {have} vs {want}",
+                        "{s:?}: {cell:?} p = {p} {family:?}, deriv {d}, basis {j}, point {:?}: {have} vs {want}",
                         &host[q * td..(q + 1) * td]
                     );
                 }
@@ -244,32 +353,65 @@ fn matches_host<F: Real>(tol: f64) {
 
 #[test]
 fn values_and_derivatives_match_the_host() {
-    matches_host::<f32>(gridcl_testing::TOL_F32);
-    if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
-        matches_host::<f64>(gridcl_testing::TOL_F64);
-    } else {
-        eprintln!("values_and_derivatives_match_the_host: f64 is not supported; skipped");
+    for s in STRATEGIES {
+        matches_host::<f32>(gridcl_testing::TOL_F32, s);
+        if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
+            matches_host::<f64>(gridcl_testing::TOL_F64, s);
+        } else {
+            eprintln!("values_and_derivatives_match_the_host: f64 is not supported; skipped");
+        }
     }
 }
 
-/// Every vector size the device offers gives the scalar result: bitwise on the CPU runtime,
-/// to the tolerance elsewhere. The plans are `KernelKind::PullBack` at the forced size.
-fn vector_size_independent<F: Real>(tol: f64) {
+/// `loops` agrees with `direct` at p ≤ 4 to the tolerance. Not bitwise: `direct`'s recurrence
+/// constants are comptime literals and `loops`' are runtime values, and the backends fuse
+/// multiply-adds around them differently (one f32 ulp on a triangle at p = 3).
+fn loops_like_direct<F: Real>(tol: f64) {
+    for (cell, p, family) in elements(Strategy::Direct) {
+        let points: Vec<F> = sample(cell, 37, 9).into_iter().map(F::narrow).collect();
+        let direct = evaluate::<F>(cell, p, family, &points, Strategy::Direct).unwrap();
+        let loops = evaluate::<F>(cell, p, family, &points, Strategy::Loops).unwrap();
+        for (i, (a, b)) in direct.iter().zip(&loops).enumerate() {
+            let (a, b) = (a.widen(), b.widen());
+            assert!(
+                (a - b).abs() <= tol * a.abs().max(1.0),
+                "{cell:?} p = {p}, entry {i}: {a} vs {b}"
+            );
+        }
+    }
+}
+
+#[test]
+fn loops_agrees_with_direct() {
+    loops_like_direct::<f32>(gridcl_testing::TOL_F32);
+    if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
+        loops_like_direct::<f64>(gridcl_testing::TOL_F64);
+    } else {
+        eprintln!("loops_agrees_with_direct: f64 is not supported; skipped");
+    }
+}
+
+/// Every vector size the device offers gives the scalar result under strategy `s`: bitwise on
+/// the CPU runtime, to the tolerance (times [`scales`]) elsewhere. The plans are
+/// `KernelKind::PullBack` at the forced size.
+fn vector_size_independent<F: Real>(tol: f64, s: Strategy) {
     let client = gridcl_testing::test_client();
     let widest = client
         .io_optimized_vector_sizes(size_of::<F>())
         .next()
         .unwrap_or(1);
-    for (cell, p, family) in elements() {
+    for (cell, p, family) in elements(s) {
         let points: Vec<F> = sample(cell, 37, 5).into_iter().map(F::narrow).collect();
+        let host: Vec<f64> = points.iter().map(|x| x.widen()).collect();
+        let tol = tol * scales(cell, p, family, &host)[1];
         let scalar = with_vector_size(VectorSizeOverride::Scalar, || {
-            evaluate::<F>(cell, p, family, &points)
+            evaluate::<F>(cell, p, family, &points, s)
         })
         .unwrap();
         for n in [2, 4, 8, 16].into_iter().filter(|&n| n <= widest) {
             let (vector, plans) = record_plans(|| {
                 with_vector_size(VectorSizeOverride::Fixed(n), || {
-                    evaluate::<F>(cell, p, family, &points)
+                    evaluate::<F>(cell, p, family, &points, s)
                 })
             });
             assert!(
@@ -284,12 +426,12 @@ fn vector_size_independent<F: Real>(tol: f64) {
                     assert_eq!(
                         a.to_bits(),
                         b.to_bits(),
-                        "{cell:?} p = {p}, n = {n}, entry {i}"
+                        "{s:?}: {cell:?} p = {p}, n = {n}, entry {i}"
                     );
                 } else {
                     assert!(
                         (a - b).abs() <= tol * a.abs().max(1.0),
-                        "{cell:?} p = {p}, n = {n}, entry {i}: {a} vs {b}"
+                        "{s:?}: {cell:?} p = {p}, n = {n}, entry {i}: {a} vs {b}"
                     );
                 }
             }
@@ -299,11 +441,13 @@ fn vector_size_independent<F: Real>(tol: f64) {
 
 #[test]
 fn every_vector_size_gives_the_scalar_result() {
-    vector_size_independent::<f32>(gridcl_testing::TOL_F32);
-    if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
-        vector_size_independent::<f64>(gridcl_testing::TOL_F64);
-    } else {
-        eprintln!("every_vector_size_gives_the_scalar_result: f64 is not supported; skipped");
+    for s in STRATEGIES {
+        vector_size_independent::<f32>(gridcl_testing::TOL_F32, s);
+        if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
+            vector_size_independent::<f64>(gridcl_testing::TOL_F64, s);
+        } else {
+            eprintln!("every_vector_size_gives_the_scalar_result: f64 is not supported; skipped");
+        }
     }
 }
 

@@ -214,16 +214,24 @@ fn reference_centroid(cell: CellType) -> Vec<f64> {
         .collect()
 }
 
-/// One affine cell `h` (degree 1), and the same cell stretched by 3 about its vertex centroid:
-/// the stretched cell's Gauss points pull back on the first cell to ξ_c + 3 (ξ_g − ξ_c),
-/// ξ_c the reference centroid, some of them outside the reference cell, in one Newton step.
-fn outside<F, TD, GD>(client: &Client, what: &str, h: &HostMesh)
+/// The box [−0.1, 1.1] that confines the pull-back's iterates in every coordinate (ADR-0046),
+/// with the margins rounded to f32 as the kernels hold them.
+const BOX: [f64; 2] = [-0.1f32 as f64, 1.1f32 as f64];
+
+/// One affine cell `h` (degree 1), and the same cell stretched by `stretch` about its vertex
+/// centroid: the stretched cell's Gauss points pull back on the first cell to
+/// ξ_c + stretch (ξ_g − ξ_c), ξ_c the reference centroid, in one Newton step, where that point
+/// lies in the box [`BOX`]^TD (ADR-0046); some of them lie outside the reference cell. A point
+/// beyond the box stays on its boundary, the clamp of its preimage, and does not converge.
+/// Returns the numbers of converged points outside the reference cell and of points beyond the
+/// box.
+fn outside<F, TD, GD>(client: &Client, what: &str, h: &HostMesh, stretch: f64) -> (usize, usize)
 where
     F: Real,
     TD: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
 {
-    let what = format!("{what} ({})", name::<F>());
+    let what = format!("{what} ({}), stretched by {stretch}", name::<F>());
     let cell = h.blocks[0].cell;
     assert_eq!(
         h.blocks[0].cells.len(),
@@ -241,7 +249,10 @@ where
         })
         .collect();
     let stretched = h.mapped(h.gdim, |x| {
-        x.iter().zip(&c).map(|(x, c)| c + 3.0 * (x - c)).collect()
+        x.iter()
+            .zip(&c)
+            .map(|(x, c)| c + stretch * (x - c))
+            .collect()
     });
     let mesh = build::<F, TD, GD>(h, client);
     let rule = QuadRule::for_grid(&mesh, 2).expect("rule");
@@ -254,19 +265,18 @@ where
     let pts = rule.get(mesh.cell_blocks()[0].cell).expect("point set");
     let xi_c = reference_centroid(cell);
     let td = TD::N;
-    let mut outside_cell = 0;
+    let (mut outside_cell, mut beyond_box) = (0, 0);
     for (q, (xi, step)) in flat(&pb.reference.blocks[0])
         .chunks_exact(td)
         .zip(flat(&pb.last_step.blocks[0]))
         .enumerate()
     {
         let want: Vec<f64> = (0..td)
-            .map(|d| xi_c[d] + 3.0 * (pts.points()[q * td + d] - xi_c[d]))
+            .map(|d| xi_c[d] + stretch * (pts.points()[q * td + d] - xi_c[d]))
             .collect();
-        if want.iter().any(|&w| w < 0.0) || want.iter().any(|&w| w > 1.0) {
-            outside_cell += 1;
-        }
+        let in_box = want.iter().all(|&w| (BOX[0]..=BOX[1]).contains(&w));
         for (d, (got, want)) in xi.iter().zip(&want).enumerate() {
+            let want = want.clamp(BOX[0], BOX[1]);
             let err = (got.widen() - want).abs();
             assert!(
                 err <= 4.0 * tol::<F>(),
@@ -274,29 +284,61 @@ where
                 got.widen()
             );
         }
-        assert!(
-            step.widen() <= default_tolerance::<F>(),
-            "{what}: last step {} at point {q}",
-            step.widen()
-        );
+        if in_box {
+            assert!(
+                step.widen() <= default_tolerance::<F>(),
+                "{what}: last step {} at point {q}",
+                step.widen()
+            );
+            if want.iter().any(|&w| !(0.0..=1.0).contains(&w)) {
+                outside_cell += 1;
+            }
+        } else {
+            assert!(
+                step.widen() > default_tolerance::<F>(),
+                "{what}: point {q} beyond the box converged (last step {})",
+                step.widen()
+            );
+            beyond_box += 1;
+        }
     }
-    assert!(outside_cell > 0, "{what}: no point outside the cell");
+    (outside_cell, beyond_box)
 }
 
 fn outside_all<F: Real>(client: &Client) {
-    outside::<F, D1, D1>(
-        client,
-        "interval",
-        &gridcl_testing::interval_box(3, 1).first_cells(1),
-    );
-    for cell in [Cell2::Triangle, Cell2::Quadrilateral] {
-        let h = gridcl_testing::square_box(cell, 2, 1).first_cells(1);
-        outside::<F, D2, D2>(client, &format!("{cell:?}"), &h);
+    let (mut outside_cell, mut beyond_box) = (0, 0);
+    for stretch in [1.8, 3.0] {
+        let mut add = |(a, b): (usize, usize)| {
+            outside_cell += a;
+            beyond_box += b;
+        };
+        add(outside::<F, D1, D1>(
+            client,
+            "interval",
+            &gridcl_testing::interval_box(3, 1).first_cells(1),
+            stretch,
+        ));
+        for cell in [Cell2::Triangle, Cell2::Quadrilateral] {
+            let h = gridcl_testing::square_box(cell, 2, 1).first_cells(1);
+            add(outside::<F, D2, D2>(
+                client,
+                &format!("{cell:?}"),
+                &h,
+                stretch,
+            ));
+        }
+        for kind in [BoxKind::Tetrahedron, BoxKind::Hexahedron, BoxKind::Prism] {
+            let h = kind.host(2, 1).first_cells(1);
+            add(outside::<F, D3, D3>(
+                client,
+                &format!("{kind:?}"),
+                &h,
+                stretch,
+            ));
+        }
     }
-    for kind in [BoxKind::Tetrahedron, BoxKind::Hexahedron, BoxKind::Prism] {
-        let h = kind.host(2, 1).first_cells(1);
-        outside::<F, D3, D3>(client, &format!("{kind:?}"), &h);
-    }
+    assert!(outside_cell > 0, "no converged point outside the cell");
+    assert!(beyond_box > 0, "no point beyond the box");
 }
 
 #[test]

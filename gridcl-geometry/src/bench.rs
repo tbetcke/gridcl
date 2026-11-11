@@ -17,8 +17,10 @@ use gridcl_device::{
 use gridcl_dims::CellType;
 use gridcl_refcell::{NodeFamily, num_lagrange_nodes, tdim};
 
-use crate::basis_eval::{device_coefficients, expansion};
-use crate::strategy::{self, StrategyFamily};
+use crate::basis_eval::{
+    broadcast_rows, device_coefficients, expansion, expansion_loops, loops_capacity,
+};
+use crate::strategy::{self, Strategy, StrategyFamily};
 
 /// The interpolant Σ_j w_j ψ_j and its derivatives at each lane's point:
 ///   points        `[d][point]`, rows of `stride` vectors
@@ -62,6 +64,61 @@ fn interpolant_kernel<F: Float, N: Size>(
     }
 }
 
+/// [`interpolant_kernel`] of the `loops` strategy, with the degree at run time and the
+/// evaluator of `basis_eval::expansion_loops` (`cap` its capacity):
+///   coefficients  as for [`interpolant_kernel`], read for the runtime zero and one only
+///   rows          a_k broadcast to rows of `VECTOR_PAD` (`basis_eval::broadcast_rows`)
+/// Four buffers.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn interpolant_loops_kernel<F: Float, N: Size>(
+    points: &[Vector<F, N>],
+    coefficients: &[F],
+    rows: &[Vector<F, N>],
+    out: &mut [Vector<F, N>],
+    stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    degree: u32,
+    #[comptime] cell: CellType,
+    #[comptime] cap: usize,
+) {
+    let td = comptime!(tdim(cell));
+    let nb = nodes as usize;
+    let stride = stride as usize;
+    let zero = Vector::<F, N>::broadcast(coefficients[nb]);
+    let one = Vector::<F, N>::broadcast(coefficients[nb + 1]);
+    let row = VECTOR_PAD / N::value();
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let v = first + it;
+        if v < num_vectors as usize {
+            let mut xi = Array::<Vector<F, N>>::new(comptime!(td));
+            #[unroll]
+            for d in 0..td {
+                xi[d] = points[d * stride + v];
+            }
+            let e = expansion_loops::<F, N>(
+                &xi,
+                rows,
+                0usize,
+                row,
+                one,
+                zero,
+                degree as usize,
+                cell,
+                1usize,
+                cap,
+            );
+            #[unroll]
+            for d in 0..td + 1 {
+                out[d * stride + v] = e[d];
+            }
+        }
+    }
+}
+
 /// A Lagrange interpolant of one element on the device, evaluated by the pull-back's basis
 /// evaluator.
 ///
@@ -86,12 +143,14 @@ pub struct Interpolant<F: Real> {
     cell: CellType,
     degree: u32,
     coefficients: DeviceBuffer<F>,
+    /// The coefficients broadcast to rows, for `loops`.
+    rows: DeviceBuffer<F>,
 }
 
 impl<F: Real> Interpolant<F> {
     /// The interpolant of `values`, one per node in gridcl-refcell's node order, on the element
     /// (`cell`, `degree`, `family`). The coefficients a_k = Σ_j C'[k N + j] w_j are formed in f64
-    /// and narrowed to `F`.
+    /// and narrowed to `F`, and uploaded once as they are and once broadcast to rows (`loops`).
     ///
     /// # Errors
     ///
@@ -112,15 +171,21 @@ impl<F: Real> Interpolant<F> {
                 found: values.len(),
             });
         }
-        let coefficients: Vec<F> = (0..n)
+        let a: Vec<f64> = (0..n)
             .map(|k| (0..n).map(|j| c[k * n + j] * values[j]).sum::<f64>())
+            .collect();
+        let coefficients: Vec<F> = a
+            .iter()
+            .copied()
             .chain([c[n * n], c[n * n + 1]])
             .map(F::narrow)
             .collect();
+        let rows: Vec<F> = broadcast_rows(&a).into_iter().map(F::narrow).collect();
         Ok(Interpolant {
             cell,
             degree,
             coefficients: DeviceBuffer::from_host(client, &coefficients)?,
+            rows: DeviceBuffer::from_host(client, &rows)?,
         })
     }
 
@@ -146,8 +211,7 @@ impl<F: Real> Interpolant<F> {
         if stride == 0 {
             return Ok(out);
         }
-        // Only `direct` runs until T6b (docs/plans/M9h.md); `choose` rejects the others.
-        strategy::choose(
+        let s = strategy::choose(
             client,
             StrategyFamily::PullBack,
             self.cell,
@@ -155,16 +219,52 @@ impl<F: Real> Interpolant<F> {
             size_of::<F>(),
         )?;
         let nb = num_lagrange_nodes(self.cell, self.degree);
+        let cap = loops_capacity(self.degree);
+        let live = if s == Strategy::Loops {
+            3 * cap + 3 * td + 22
+        } else {
+            nb + 3 * td + 4
+        };
         let plan = LaunchPlan::elementwise(
             client,
             KernelKind::PullBack,
             stride,
             size_of::<F>(),
             VECTOR_PAD,
-            nb + 3 * td + 4,
+            live,
         )?;
         let n = plan.vector_size;
         let rows = u32::try_from(stride / n).map_err(|_| GridError::TooLarge)?;
+        if s == Strategy::Loops {
+            debug_assert_bindings(client, 4);
+            // SAFETY: as for `direct` below; `rows` holds nb · VECTOR_PAD elements and the
+            // kernel reads its vectors k · VECTOR_PAD / n for k < nb, and `coefficients` at nb
+            // and nb + 1.
+            unsafe {
+                interpolant_loops_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    points.vector_arg(n),
+                    self.coefficients.arg(),
+                    self.rows.vector_arg(n),
+                    out.vector_arg(n),
+                    rows,
+                    plan.num_vectors,
+                    plan.items_per_unit,
+                    u32::try_from(nb).map_err(|_| GridError::TooLarge)?,
+                    self.degree,
+                    self.cell,
+                    cap,
+                );
+            }
+            return Ok(out);
+        }
+        debug_assert!(
+            s == Strategy::Direct,
+            "`choose` returns only the strategies that run"
+        );
         debug_assert_bindings(client, 3);
         // SAFETY: n divides VECTOR_PAD and so `stride`; the kernel handles vectors
         // v < num_vectors = stride / n and reads `points` at d · stride / n + v < td · stride / n
@@ -197,16 +297,27 @@ mod tests {
     use super::*;
 
     /// Against gridcl-refcell's tabulation of the interpolant, at p = 1–4 on every cell type
-    /// (pyramids to 3) and at a few points, in f32 and, where supported, f64: within 10^−10
+    /// (pyramids to 3) and at a few points, under the policy and under `loops`, in f32 and,
+    /// where supported, f64: within 10^−10
     /// (f64) or 10^−3 (f32) of max(1, |value|), loose bounds for the rounding through the
     /// coefficients (the accuracy tests of the pull-back are the acceptance check).
     #[test]
     fn interpolant_matches_the_host_tabulation() {
         let client = gridcl_testing::test_client();
-        matches_host::<f32>(&client, 1e-3);
-        if gridcl_testing::supports::<f64>(&client) {
-            matches_host::<f64>(&client, 1e-10);
-        }
+        let run = || {
+            matches_host::<f32>(&client, 1e-3);
+            if gridcl_testing::supports::<f64>(&client) {
+                matches_host::<f64>(&client, 1e-10);
+            }
+        };
+        run();
+        // The `loops` evaluator too (the hooks need the feature `testing`).
+        #[cfg(feature = "testing")]
+        crate::strategy::hook::with(
+            StrategyFamily::PullBack,
+            crate::strategy::StrategyOverride::Fixed(Strategy::Loops),
+            run,
+        );
     }
 
     fn matches_host<F: Real>(client: &Client, tol: f64) {

@@ -6,8 +6,10 @@
 //!   for 0, 1, 15, 16 and 17 cells of every cell type and (TD, GD) pair; and at p = 3–8 for
 //!   16k + 3 cells with a Gauss rule of degree 1, the mesh built outside
 //!   `testing::with_properties` and the calls inside it with `max_page_size` a third of the
-//!   E-vector or of the J field, whichever is smaller, so that the E-vector, J and K span at
-//!   least three chunks (quadrilaterals; hexahedra in release builds);
+//!   E-vector or of the J field, whichever is smaller, but at least the pull-back's C′
+//!   (ADR-0046), so that the E-vector spans at least three chunks, and J and K too except on
+//!   hexahedra from p = 6, whose C′ exceeds a third of J (quadrilaterals; hexahedra in release
+//!   builds);
 //! - **tiles:** tile widths 1 and 16;
 //! - **determinism:** two builds and runs give bitwise identical arrays, on every device.
 //!
@@ -64,8 +66,9 @@ fn rule_degree(h: &HostMesh) -> u32 {
     2 * h.blocks.iter().map(|b| b.degree).max().unwrap_or(1)
 }
 
-/// The GPU tolerance scales of a mesh at the Gauss points of `degree`: X, J, and K and the
-/// pull-back of each block (ADR-0044); all 1 on bitwise devices, where they are not used.
+/// The GPU tolerance scales of a mesh at the Gauss points of `degree`: X, J (the largest over
+/// blocks), and K and the pull-back of each block (ADR-0044, ADR-0046); all 1 on bitwise
+/// devices, where they are not used.
 struct Scales {
     x: f64,
     j: f64,
@@ -93,7 +96,9 @@ impl Scales {
         let points = |b: usize| gauss(mesh.cell_blocks()[b].cell.into());
         Scales {
             x: block_scale(h, gauss, Amplification::Values),
-            j: block_scale(h, gauss, Amplification::Derivatives),
+            j: (0..blocks)
+                .map(|b| reference::jacobian_scale(mesh, b, &points(b)).expect("scale"))
+                .fold(1.0, f64::max),
             pinv: (0..blocks)
                 .map(|b| reference::pinv_scale(mesh, b, &points(b)).expect("scale"))
                 .collect(),
@@ -312,8 +317,10 @@ impl MeshVisitor for VectorSizes<'_> {
 
 /// Rule 8's large case at degree `p`: [`LARGE_HIGH_ORDER_CELLS`] cells of `full` with a Gauss
 /// rule of degree 1. The mesh is built outside `with_properties`; the calls run inside it with
-/// `max_page_size` a third of the E-vector or of the J field, whichever is smaller, which must
-/// exceed the tabulation and one E-vector tile.
+/// `max_page_size` a third of the E-vector or of the J field, whichever is smaller, raised to
+/// the pull-back's C′ (one table per block, ADR-0046), which must exceed the tabulation and one
+/// E-vector tile. The E-vector spans at least three chunks at every degree; J does where the
+/// limit is at most a third of it, everywhere but on hexahedra from p = 6.
 fn large<F, TD, GD>(client: &Client, what: &str, full: &HostMesh, p: u32)
 where
     F: Real,
@@ -329,7 +336,18 @@ where
     let cells = LARGE_HIGH_ORDER_CELLS.next_multiple_of(PAD);
     let evector_bytes = cells * k * GD::N * elem;
     let jacobian_bytes = cells * TD::N * GD::N * elem;
-    let limit = evector_bytes.min(jacobian_bytes) / 3;
+    // C′, the runtime zero and one and the origin, as `EVector::coefficients` uploads them.
+    let coefficient_bytes = (k * k + 2 + GD::N).next_multiple_of(PAD) * elem;
+    let limit = (evector_bytes.min(jacobian_bytes) / 3).max(coefficient_bytes);
+    let j_in_thirds = 3 * limit <= jacobian_bytes;
+    assert!(
+        j_in_thirds || (h.blocks[0].cell == CellType::Hexahedron && p >= 6),
+        "{what} p={p}: C′ ({coefficient_bytes} B) exceeds a third of J ({jacobian_bytes} B)"
+    );
+    assert!(
+        3 * limit <= evector_bytes,
+        "{what} p={p}: limit {limit} B above a third of the E-vector ({evector_bytes} B)"
+    );
     let rule = gridcl_refcell::gauss_rule(h.blocks[0].cell, 1);
     let tabulation_bytes = (1 + TD::N) * rule.weights.len() * k * elem;
     let tile_bytes = 16 * k * GD::N * elem;
@@ -352,7 +370,10 @@ where
         let rule = QuadRule::for_grid(&fresh, 1).expect("rule");
         let pts = rule.get(fresh.cell_blocks()[0].cell).expect("point set");
         let chunks = jacobians_block(&fresh, 0, pts).expect("J").chunks().len();
-        assert!(chunks >= 3, "{what} p={p}: J spans {chunks} chunks");
+        assert!(
+            chunks >= 3 || !j_in_thirds,
+            "{what} p={p}: J spans {chunks} chunks"
+        );
     });
     sweep_vector_sizes::<F>(client, &format!("{what} p={p}"), h.num_cells(), || {
         let fresh = mesh.try_clone().expect("try_clone");

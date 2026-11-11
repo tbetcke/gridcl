@@ -82,8 +82,8 @@ mod tests {
     use crate::{HostMesh, cube_box, interval_box, square_box, triangle_strip};
 
     /// X and J of `a` (equispaced) and `b` at the Gauss points of degree 2p agree to the f64
-    /// tolerance scaled by `a`'s amplification (ADR-0042, item 2), relative to the largest value
-    /// of each.
+    /// tolerance scaled by `a`'s amplification (ADR-0042, item 2), and for J also by its node
+    /// count and coordinate size (ADR-0046), relative to the largest value of each.
     fn same_geometry(a: &HostMesh, b: &HostMesh, what: &str) {
         use crate::reference::{Amplification, rel_err, tolerance, tolerance_scale};
         for blk in 0..a.blocks.len() {
@@ -102,7 +102,7 @@ mod tests {
                     "J",
                     host::jacobians(a, blk, pts),
                     host::jacobians(b, blk, pts),
-                    scale(Amplification::Derivatives),
+                    host::jacobian_scale(a, blk, pts),
                 ),
             ];
             for (name, want, got, scale) in checks {

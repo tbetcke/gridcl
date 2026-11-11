@@ -5,7 +5,7 @@
 //! nodes), and the pull-back recovers the reference points, to the tolerance of the precision
 //! scaled by max(1, A / A_ref): the amplification factor of X for points, of J for J, det J and
 //! the normals, of J times κ_F(J) / TD for K, and of the coefficients times κ_F(J) / TD for the
-//! pull-back (ADR-0044).
+//! pull-back (ADR-0044); for all but X also by max(1, n / n_ref) and max(1, R) (ADR-0046).
 //!
 //! Every check runs under the degree policy and under every strategy forced
 //! ([`for_each_strategy!`]; under `GRIDCL_GEOM_STRATEGY` only that setting). The references are
@@ -61,10 +61,10 @@ impl MeshVisitor for Factors<'_> {
         let degree = rule_degree(h);
         let rule = QuadRule::for_grid(&mesh, degree).expect("rule");
         let sx = block_scale(h, gauss(degree), Amplification::Values);
-        let sj = block_scale(h, gauss(degree), Amplification::Derivatives);
         for (b, block) in mesh.cell_blocks().iter().enumerate() {
             let pts = rule.get(block.cell).expect("point set");
             let p = pts.points();
+            let sj = reference::jacobian_scale(&mesh, b, p).expect("J scale");
             let x_ref = reference::points(&mesh, b, p).expect("X");
             let j_ref = reference::jacobians(&mesh, b, p).expect("J");
             let d_ref = reference::detj(&mesh, b, p).expect("det J");
@@ -92,11 +92,8 @@ impl MeshVisitor for Factors<'_> {
         for (b, block) in mesh.cell_blocks().iter().enumerate() {
             let fps = rule.get(block.cell).expect("facet points");
             let want = reference::facet_normals(&mesh, b, fps).expect("facet normals");
-            let scale = block_scale(
-                h,
-                |_| fps.points().points().to_vec(),
-                Amplification::Derivatives,
-            );
+            let scale = reference::jacobian_scale(&mesh, b, fps.points().points())
+                .expect("facet normal scale");
             for_each_strategy!(|run| {
                 let mesh = fresh(&mesh);
                 let n = field_f64(&facet_normals_block(&mesh, b, fps).expect("n")).unwrap();
@@ -115,10 +112,10 @@ impl MeshVisitor for Factors<'_> {
         let mesh = build::<F, TD, GD>(h, self.client);
         let degree = rule_degree(h);
         let rule = QuadRule::for_grid(&mesh, degree).expect("rule");
-        let scale = block_scale(h, gauss(degree), Amplification::Derivatives);
         for (b, block) in mesh.cell_blocks().iter().enumerate() {
             let pts = rule.get(block.cell).expect("point set");
             let want = reference::normals(&mesh, b, pts.points()).expect("normals");
+            let scale = reference::jacobian_scale(&mesh, b, pts.points()).expect("normal scale");
             for_each_strategy!(|run| {
                 let mesh = fresh(&mesh);
                 let n = field_f64(&normals_block(&mesh, b, pts).expect("n")).unwrap();

@@ -2368,7 +2368,9 @@ where
     GD: Dim,
     C: Comm,
 {
-    use crate::reference::{Amplification, pinv_scale, pull_back_scale, tolerance_scale};
+    use crate::reference::{
+        Amplification, jacobian_scale, pinv_scale, pull_back_scale, tolerance_scale,
+    };
     use gridcl::{
         PullBackOptions, detj_block, jacobians_block, physical_points_block, pseudo_inverse_block,
     };
@@ -2383,24 +2385,21 @@ where
             let n = block.index_map.num_local();
             let ids = decode_ids(&block.origin_ids.to_host()?);
             let element = &mesh.geometry_block(b).element;
-            let scale = |kind| {
-                if gpu_scales {
-                    tolerance_scale(cell, element.degree, element.family, pts.points(), kind)
-                } else {
-                    1.0
-                }
-            };
-            let (sx, sj) = (
-                scale(Amplification::Values),
-                scale(Amplification::Derivatives),
-            );
-            let (sk, spb) = if gpu_scales {
+            let (sx, sj, sk, spb) = if gpu_scales {
                 (
+                    tolerance_scale(
+                        cell,
+                        element.degree,
+                        element.family,
+                        pts.points(),
+                        Amplification::Values,
+                    ),
+                    jacobian_scale(mesh, b, pts.points())?,
                     pinv_scale(mesh, b, pts.points())?,
                     pull_back_scale(mesh, b, pts.points())?,
                 )
             } else {
-                (1.0, 1.0)
+                (1.0, 1.0, 1.0, 1.0)
             };
             let mut quantities = vec![
                 CellValues {
