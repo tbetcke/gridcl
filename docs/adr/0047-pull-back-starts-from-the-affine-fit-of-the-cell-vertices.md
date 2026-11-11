@@ -1,6 +1,6 @@
 # ADR-0047: The pull-back starts from the affine fit of the cell's vertices
 
-- **Status:** Proposed
+- **Status:** Rejected
 - **Date:** 2026-11-11
 - **Raised in:** M9h, after T6b (the maintainer asked for a better initial guess as a small task before T7a and T8)
 - **Design sections affected:** "Pull-back" (the iteration bullet). Amends ADR-0042, item 11 (as ADR-0046 amended it).
@@ -104,4 +104,4 @@ Its value at the default 16 iterations is modest: at p = 8, one unconverged poin
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Rejected by the maintainer on 2026-11-11: the gain at the default 16 iterations is modest (one unconverged point fewer on the ball at p = 8), so no task is spent on it. The pull-back keeps the centroid start, and the design is unchanged. The measurements stay here for point location across meshes or a later change of `max_iterations`.
