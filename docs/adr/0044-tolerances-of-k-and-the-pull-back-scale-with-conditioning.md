@@ -114,3 +114,5 @@ Amended by the maintainer on 2026-11-10, when the test support was written: the 
 | GLL | 0.05 | 0.51 |
 
 The alternative, the block condition number max ‖J‖_F · max ‖K‖_F / TD, was not chosen: it would also loosen the tolerance on graded meshes of well-shaped cells.
+
+Amended by ADR-0046 (the scales of K and the pull-back also gain max(1, n / n_ref) and max(1, R)), accepted 2026-11-11.

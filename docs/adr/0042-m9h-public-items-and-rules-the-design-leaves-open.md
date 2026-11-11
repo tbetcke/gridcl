@@ -211,3 +211,5 @@ Amended by ADR-0043 (the Locust baseline of the pull-back families and of the Gr
 Amended by ADR-0044 (the tolerances of K and the pull-back scale with κ_F(J) / TD), accepted 2026-11-10.
 
 Amended by ADR-0045 (CPU cubes of per-group plans hold several groups), accepted 2026-11-10.
+
+Amended by ADR-0046 (items 2, 8 and 11: the pull-back clamps its iterates to the reference cell's box widened by 0.1, so `direct` differs from M9 only where an iterate left it; the J-derived and pull-back tolerances scale by n / n_ref and R; the large case's page limit is at least the per-block tables), accepted 2026-11-11.

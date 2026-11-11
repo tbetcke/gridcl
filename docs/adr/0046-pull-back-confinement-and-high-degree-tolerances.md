@@ -1,6 +1,6 @@
 # ADR-0046: Pull-back confinement, and tolerances and page limits at high degree
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-11
 - **Raised in:** M9h T6a (the kernel-task check set in release builds)
 - **Design sections affected:** "Pull-back" (the iteration bullet); "Testing and validation", **Tolerances** (the degree-scaling bullet). Amends ADR-0042, items 2, 8 and 11, and ADR-0044.
@@ -128,4 +128,4 @@ Option 2.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-11, as proposed (option 2: the clamp with m = 0.1, the product (A / A_ref) · (n / n_ref) with max(1, R), and the page limit above the per-block tables). Applied in `adr: 0046 apply`: docs/design.md, "Pull-back" and "Tolerances", and the decision records of ADR-0042 and ADR-0044. The kernel clamp and the test-support changes follow as T6b's first step.

@@ -123,6 +123,7 @@ Rules (each an ADR-0042 item):
    - A_ref is the same factor for the p = 4 equispaced element of that cell type on the same point set.
    - The relative error of each quantity is |have − want| / max |want| over the block (per component), not max(1, |want|), so det J ~ h³ stays relative.
    - The same factor scales the f32 GPU invariance comparisons.
+   - ADR-0046: for J, the quantities derived from it and the pull-back, the factor gains max(1, n / n_ref) (nodes of the element against the p = 4 equispaced element; p = 3 for pyramids) and max(1, R) (the largest |x − o| over the block's nodes divided by the block's largest entry of J).
    - ADR-0042's drafting computes A on the host for every (cell, p, family) and lists it. If the pull-back factor makes the f32 bound vacuous for a cell, the ADR says so for that cell.
 3. **Degree policy** (maintainer, 2026-11-08: crate-private).
    - `gridcl-geometry/degree-policy.toml` is compiled in. It holds one entry per (`StrategyFamily`, cell type, device class, scalar size) with ascending degree ranges and a strategy. The last range is open-ended and resolves to a strategy known to compile there (`loops` or better).
@@ -160,14 +161,14 @@ Rules (each an ADR-0042 item):
    - The 30 s bound on Locust applies to the variants selected for the Gpu class. The others are reported, and a strategy over 30 s on Locust cannot be selected for the Gpu class.
 8. **Vector-size invariance at p = 3–8.**
    - The 10^6 + 3-cell case stays at p ≤ 2 (at p = 8 a hexahedron E-vector of 10^6 cells is about 17 GB in f64).
-   - At p = 3–8 the large case is 16k + 3 cells with a Gauss rule of degree 1. The mesh is built outside `testing::with_properties`; the factor and pull-back calls run inside it, with `max_page_size` between the tabulation size and a third of the E-vector, so the E-vector and fields span at least three chunks and several cubes.
+   - At p = 3–8 the large case is 16k + 3 cells with a Gauss rule of degree 1. The mesh is built outside `testing::with_properties`; the factor and pull-back calls run inside it, with `max_page_size` between the tabulation size and a third of the E-vector, so the E-vector and fields span at least three chunks and several cubes. ADR-0046: the limit is also at least the largest per-block table the calls upload (C′); the E-vector spans three chunks at every degree, J wherever that limit allows, and the test names the exceptions.
    - Cell counts 0, 1, 15, 16 and 17 and tile widths 1 and 16 are unchanged.
 9. **Parallel invariance at p = 1–8.** Factors and pull-back results per (cell origin id, point) equal one rank's: bitwise on the CPU runtime (per-cell work does not depend on the partition), within the tolerances on GPUs.
    - Threads: 1–4 ranks at every p; every ghost mode at p ≤ 2, one per case above.
    - MPI target: 1–4 ranks at p ∈ {1, 4, 8}.
 10. **Simplices** (ADR-0041 open point). No throughput bound. Collapsed-coordinate sum factorisation is out of scope. Simplices get loops, shared and cooperative, and are reported.
 11. **"Than in M9"** (bullet 4).
-    - The `direct` strategy stays bitwise M9's kernels (T4 changes only dispatch).
+    - The `direct` strategy stays bitwise M9's kernels (T4 changes only dispatch), except that its pull-back clamps iterates to [−0.1, 1.1]^TD (ADR-0046) and so differs where an iterate left that box.
     - Bullet 4 is a paired comparison in one job per target: the policy against `direct`, at p ≤ 4, at most 1.05 by rule 1's class aggregation.
     - T3's baseline, at a pinned commit before any dispatch change, shows only that `direct` did not drift (dispatch overhead) and is reported, not bounded.
 12. **Degree sweep protocol and decision rule.**
@@ -296,7 +297,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
   - Verify: kernel-task check set with `-p gridcl-geometry`, `GRIDCL_GEOM_STRATEGY=loops`
   - After: T4
   - Parallel with: T5, T6a
-  - Risks / notes: the local array a (nb·gd) is the likely C18 cause. Choose its placement from T2's register and local-memory data.
+  - Risks / notes: the local array a (nb·gd) is the likely C18 cause. Choose its placement from T2's register and local-memory data. First, ADR-0046: the clamp of the iterates to [−0.1, 1.1]^TD in `direct`'s pull-back and in `loops`', and its test support (the n / n_ref and R factors in `gridcl_testing::reference` and the callers ADR-0044 lists; the large case's page limit above C′).
 - [ ] **T7a Sum factorisation I: tensor data, points and Jacobians (gridcl-geometry)**
   - Goal: rule 5's tensor point-set factors, 1D tabulations and packed permutation; a `sumfact` kernel for X and J on quadrilaterals and hexahedra (all (TD, GD) pairs), contracting one dimension at a time per cell. Buffers: five.
   - Crates/files: `gridcl-geometry/src/{point_set.rs, rule.rs, sumfact/{mod.rs, tensor.rs}, layout.rs}`.
@@ -447,7 +448,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 | 15 | The Locust baseline at p = 1–8 takes 9–12 h more; the host mesh build at 10^7 points dominates on Grace. | ADR-0042, item 11; T3 | Sample p ∈ {1, 2, 4, 8} for Locust's pull-back families and Grace CPU. | ADR-0043 (accepted, applied) |
 | 16 | f32 K and ξ on the ball fail rule 2 from p = 3 (1.3e-5, 1.5e-5): J's error times κ(J), which grows without bound on the ball's singular edges, and rule 2 leaves κ out for K and cancels it for the pull-back. | Testing and validation, Tolerances; ADR-0042, item 2 | Scale K and ξ by the largest κ_F(J) / TD over the block (amended from pointwise at implementation); A_ref without κ. | ADR-0044 (accepted, applied, amended) |
 | 17 | On CPUs a `per_group` plan runs `units_per_group` threads (`cube_dim` = `units_per_group`, ADR-0042 item 4, while each CubeCL CPU unit is one thread visiting every cube), so T9's plans (`units_per_group` = 1) run on one thread and T10's on at most the group size. | Launch plans and the vector policy, Listing S2; ADR-0042, item 4 | CPU cubes hold `units_per_group` × ⌊U / `units_per_group`⌋ units, U = `elementwise`'s CPU units; done as T9's first step. | ADR-0045 (accepted, applied) |
-| 18 | Release runs reach p ≥ 5 for the first time (T6a): the f32 pull-back converges to preimages outside the cell at p = 8 (ball, both families); J's f32 error grows with the number of nodes, which A does not measure (GLL hexahedra from p = 6); the large invariance case's coordinates are 13–65 times the cell size; and the pull-back's C′ exceeds the large case's page limit from hexahedron p = 6. | Pull-back; Testing and validation, Tolerances; ADR-0042, items 2, 8 and 11; ADR-0044 | Clamp Newton iterates to [−0.1, 1.1]^TD; scale J-derived quantities and ξ by n / n_ref and R; page limit above the per-block tables. | ADR-0046 |
+| 18 | Release runs reach p ≥ 5 for the first time (T6a): the f32 pull-back converges to preimages outside the cell at p = 8 (ball, both families); J's f32 error grows with the number of nodes, which A does not measure (GLL hexahedra from p = 6); the large invariance case's coordinates are 13–65 times the cell size; and the pull-back's C′ exceeds the large case's page limit from hexahedron p = 6. | Pull-back; Testing and validation, Tolerances; ADR-0042, items 2, 8 and 11; ADR-0044 | Clamp Newton iterates to [−0.1, 1.1]^TD; scale J-derived quantities and ξ by n / n_ref and R; page limit above the per-block tables. | ADR-0046 (accepted, applied) |
 
 ## Deviations log
 
