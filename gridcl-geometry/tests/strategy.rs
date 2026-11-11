@@ -1,6 +1,7 @@
 //! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
-//! not run yet is an error rather than a silent `direct`.
+//! not run yet is an error rather than a silent `direct`. `loops` runs for every family but the
+//! pull-back (T6a).
 
 use gridcl::prelude::*;
 use gridcl::{FacetQuadRule, PullBackOptions};
@@ -99,10 +100,7 @@ fn strategies_that_do_not_run_yet_are_errors() {
         .build::<f32, D2, D2>(&client)
         .unwrap();
     for (mesh, s, want) in [
-        (&triangle, Strategy::Loops, "loops"),
         (&quadrilateral, Strategy::SumFactorised, "sumfact"),
-        // Sum factorisation does not apply to a triangle: its fallback `loops` runs.
-        (&triangle, Strategy::SumFactorised, "loops"),
         (&triangle, Strategy::Shared, "shared"),
         (&triangle, Strategy::Cooperative, "cooperative"),
     ] {
@@ -120,6 +118,49 @@ fn strategies_that_do_not_run_yet_are_errors() {
         }
         assert!(ran.is_empty(), "{s:?} ran {ran:?}");
     }
+    // The pull-back runs `loops` from T6b.
+    let rule = QuadRule::for_grid(&triangle, 2).unwrap();
+    let x = triangle.physical_points(&rule).unwrap();
+    let loops = StrategyOverride::Fixed(Strategy::Loops);
+    match with_strategy(StrategyFamily::PullBack, loops, || {
+        triangle.pull_back(&x, &PullBackOptions::default())
+    }) {
+        Err(GridError::NotYetImplemented(task)) => assert!(task.contains("strategy loops ")),
+        other => panic!("{:?}", other.map(|_| ())),
+    }
+}
+
+#[test]
+fn forced_loops_runs_loops() {
+    use StrategyFamily::*;
+    let client = gridcl_testing::test_client();
+    let triangle = gridcl_testing::square_box(Cell2::Triangle, 2, 2)
+        .build::<f32, D2, D2>(&client)
+        .unwrap();
+    // Sum factorisation does not apply to a triangle: its fallback `loops` runs.
+    for s in [Strategy::Loops, Strategy::SumFactorised] {
+        let mesh = triangle.try_clone().unwrap();
+        let rule = QuadRule::for_grid(&mesh, 2).unwrap();
+        let ((), ran) = record_strategies(|| {
+            with_strategy(EVector, StrategyOverride::Fixed(s), || {
+                with_strategy(Points, StrategyOverride::Fixed(s), || {
+                    with_strategy(Jacobian, StrategyOverride::Fixed(s), || {
+                        mesh.physical_points(&rule).unwrap();
+                        mesh.jacobians(&rule).unwrap();
+                    })
+                })
+            })
+        });
+        assert_eq!(
+            ran,
+            [
+                (Points, Strategy::Loops),
+                (EVector, Strategy::Loops),
+                (Jacobian, Strategy::Loops)
+            ],
+            "{s:?}"
+        );
+    }
 }
 
 #[test]
@@ -130,10 +171,10 @@ fn overrides_nest_per_family() {
         .build::<f32, D2, D2>(&client)
         .unwrap();
     let rule = QuadRule::for_grid(&mesh, 2).unwrap();
-    let loops = StrategyOverride::Fixed(Strategy::Loops);
+    let cooperative = StrategyOverride::Fixed(Strategy::Cooperative);
     let direct = StrategyOverride::Fixed(Strategy::Direct);
     // Another family's override does not reach the points.
-    with_strategy(Jacobian, loops, || {
+    with_strategy(Jacobian, cooperative, || {
         mesh.physical_points(&rule).unwrap();
         assert!(mesh.jacobians(&rule).is_err());
         // The innermost override wins, and the outer one is back afterwards.
@@ -186,7 +227,7 @@ fn records_nest_and_survive_panics() {
     // The hook of the scope that panicked is gone.
     with_strategy(
         StrategyFamily::Jacobian,
-        StrategyOverride::Fixed(Strategy::Loops),
+        StrategyOverride::Fixed(Strategy::Cooperative),
         || assert!(mesh.jacobians(&rule).is_err()),
     );
     mesh.jacobians(&rule).unwrap();

@@ -71,11 +71,14 @@ impl Strategy {
         }
     }
 
-    /// `None` when the launchers run the strategy, else the task that implements it.
-    fn not_yet(self) -> Option<&'static str> {
+    /// `None` when the launchers of `family` run the strategy, else the task that implements it.
+    fn not_yet(self, family: StrategyFamily) -> Option<&'static str> {
         match self {
             Strategy::Direct => None,
-            Strategy::Loops => Some("geometry strategy loops (docs/plans/M9h.md, T6a and T6b)"),
+            Strategy::Loops if family == StrategyFamily::PullBack => {
+                Some("geometry strategy loops (docs/plans/M9h.md, T6b)")
+            }
+            Strategy::Loops => None,
             Strategy::SumFactorised => {
                 Some("geometry strategy sumfact (docs/plans/M9h.md, T7a–T8)")
             }
@@ -397,7 +400,7 @@ pub(crate) fn choose(
     } else {
         Strategy::Loops
     };
-    if let Some(task) = s.not_yet() {
+    if let Some(task) = s.not_yet(family) {
         return Err(GridError::NotYetImplemented(task));
     }
     hook::record(family, s);

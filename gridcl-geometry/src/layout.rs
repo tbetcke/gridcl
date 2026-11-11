@@ -8,7 +8,8 @@ use gridcl_device::{
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
 use crate::field::chunk_pairs;
-use crate::strategy::{self, StrategyFamily};
+use crate::layout_loops::{factor_loops_kernel, loops_layout};
+use crate::strategy::{self, Strategy, StrategyFamily};
 use crate::{CoordinateElement, DeviceGrid, FieldShape, PointSet, QuadField};
 
 /// The comptime layout of a factor kernel.
@@ -230,6 +231,107 @@ pub(crate) fn pinv_of<F: Float, N: Size>(
     k
 }
 
+/// Stores the factor `f` (any but `Points`) of J at point q of vector v's cells: tile entries
+/// (o + c) · vpt + lane of `out` for its components c. `extra` and `flags` as in
+/// [`factor_kernel`]. Shared by the factor kernels of every strategy.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn store_from_jacobian<F: Float, N: Size>(
+    j: &Array<Vector<F, N>>,
+    extra: &[F],
+    flags: &[u32],
+    out: &mut [Vector<F, N>],
+    o: usize,
+    vpt: usize,
+    lane: usize,
+    v: usize,
+    q: usize,
+    first_cell: u32,
+    last_cell: u32,
+    #[comptime] l: GeomLayout,
+    #[comptime] f: Factor,
+) {
+    match comptime!(f) {
+        Factor::Points => {
+            comptime!(panic!("Points is not a factor of J"));
+        }
+        Factor::Jacobian =>
+        {
+            #[unroll]
+            for c in 0..comptime!(l.tdim * l.gdim) {
+                out[(o + c) * vpt + lane] = j[c];
+            }
+        }
+        Factor::DetJ => {
+            out[o * vpt + lane] = detj_of::<F, N>(j, l);
+        }
+        Factor::Pinv => {
+            let k = pinv_of::<F, N>(j, l);
+            #[unroll]
+            for c in 0..comptime!(l.tdim * l.gdim) {
+                out[(o + c) * vpt + lane] = k[c];
+            }
+        }
+        Factor::FacetNormals => {
+            let k = pinv_of::<F, N>(j, l);
+            let td = l.tdim;
+            let mut m = Array::<Vector<F, N>>::new(comptime!(l.gdim));
+            #[unroll]
+            for g in 0..l.gdim {
+                let mut acc = k[g * td] * Vector::<F, N>::broadcast(extra[q * td]);
+                #[unroll]
+                for t in 1..td {
+                    acc += k[g * td + t] * Vector::<F, N>::broadcast(extra[q * td + t]);
+                }
+                m[g] = acc;
+            }
+            let mut s2 = m[0] * m[0];
+            #[unroll]
+            for g in 1..l.gdim {
+                s2 += m[g] * m[g];
+            }
+            let norm = s2.sqrt();
+            #[unroll]
+            for g in 0..l.gdim {
+                out[(o + g) * vpt + lane] = m[g] / norm;
+            }
+        }
+        Factor::Normals => {
+            let mut n = Array::<Vector<F, N>>::new(comptime!(l.gdim));
+            if comptime!(l.gdim == 2) {
+                n[0] = j[1];
+                n[1] = -j[0];
+            } else {
+                n[0] = j[1] * j[5] - j[2] * j[4];
+                n[1] = j[2] * j[3] - j[0] * j[5];
+                n[2] = j[0] * j[4] - j[1] * j[3];
+            }
+            let mut s2 = n[0] * n[0];
+            #[unroll]
+            for g in 1..l.gdim {
+                s2 += n[g] * n[g];
+            }
+            let norm = s2.sqrt();
+            // The sign of each lane's cell, by arithmetic masks.
+            let mut bit = Vector::<u32, N>::broadcast(0u32);
+            #[unroll]
+            for ln in 0..N::value() {
+                let c = min(first_cell + (v * N::value() + ln) as u32, last_cell);
+                bit.insert(ln, flags[c as usize] & 1u32);
+            }
+            let s = select_many(
+                bit.equal(&Vector::<u32, N>::broadcast(1u32)),
+                Vector::<F, N>::broadcast(F::from_int(-1)),
+                Vector::<F, N>::broadcast(F::from_int(1)),
+            );
+            #[unroll]
+            for g in 0..l.gdim {
+                out[(o + g) * vpt + lane] = (s * n[g]) / norm;
+            }
+        }
+    }
+}
+
 /// A geometric factor at every point of the cell vectors `v < num_vectors` of one chunk pair.
 /// The lanes are N consecutive cells of one tile (N divides the tile).
 ///   xe     E-vector chunk [k][g][cell], cells fastest; row (k, g) starts at (k·G + g)·x_stride
@@ -287,7 +389,7 @@ fn factor_kernel<F: Float, N: Size>(
                             out[(o + g) * vpt + lane] = acc + Vector::<F, N>::broadcast(extra[g]);
                         }
                     }
-                    Factor::Jacobian => {
+                    _ => {
                         let j = jacobian::<F, N>(
                             xe,
                             tab,
@@ -297,113 +399,9 @@ fn factor_kernel<F: Float, N: Size>(
                             q,
                             l,
                         );
-                        #[unroll]
-                        for c in 0..comptime!(l.tdim * l.gdim) {
-                            out[(o + c) * vpt + lane] = j[c];
-                        }
-                    }
-                    Factor::DetJ => {
-                        let j = jacobian::<F, N>(
-                            xe,
-                            tab,
-                            x_offset as usize,
-                            x_stride as usize,
-                            v,
-                            q,
-                            l,
+                        store_from_jacobian::<F, N>(
+                            &j, extra, flags, out, o, vpt, lane, v, q, first_cell, last_cell, l, f,
                         );
-                        out[o * vpt + lane] = detj_of::<F, N>(&j, l);
-                    }
-                    Factor::Pinv => {
-                        let j = jacobian::<F, N>(
-                            xe,
-                            tab,
-                            x_offset as usize,
-                            x_stride as usize,
-                            v,
-                            q,
-                            l,
-                        );
-                        let k = pinv_of::<F, N>(&j, l);
-                        #[unroll]
-                        for c in 0..comptime!(l.tdim * l.gdim) {
-                            out[(o + c) * vpt + lane] = k[c];
-                        }
-                    }
-                    Factor::FacetNormals => {
-                        let j = jacobian::<F, N>(
-                            xe,
-                            tab,
-                            x_offset as usize,
-                            x_stride as usize,
-                            v,
-                            q,
-                            l,
-                        );
-                        let k = pinv_of::<F, N>(&j, l);
-                        let td = l.tdim;
-                        let mut m = Array::<Vector<F, N>>::new(comptime!(l.gdim));
-                        #[unroll]
-                        for g in 0..l.gdim {
-                            let mut acc = k[g * td] * Vector::<F, N>::broadcast(extra[q * td]);
-                            #[unroll]
-                            for t in 1..td {
-                                acc += k[g * td + t] * Vector::<F, N>::broadcast(extra[q * td + t]);
-                            }
-                            m[g] = acc;
-                        }
-                        let mut s2 = m[0] * m[0];
-                        #[unroll]
-                        for g in 1..l.gdim {
-                            s2 += m[g] * m[g];
-                        }
-                        let norm = s2.sqrt();
-                        #[unroll]
-                        for g in 0..l.gdim {
-                            out[(o + g) * vpt + lane] = m[g] / norm;
-                        }
-                    }
-                    Factor::Normals => {
-                        let j = jacobian::<F, N>(
-                            xe,
-                            tab,
-                            x_offset as usize,
-                            x_stride as usize,
-                            v,
-                            q,
-                            l,
-                        );
-                        let mut n = Array::<Vector<F, N>>::new(comptime!(l.gdim));
-                        if comptime!(l.gdim == 2) {
-                            n[0] = j[1];
-                            n[1] = -j[0];
-                        } else {
-                            n[0] = j[1] * j[5] - j[2] * j[4];
-                            n[1] = j[2] * j[3] - j[0] * j[5];
-                            n[2] = j[0] * j[4] - j[1] * j[3];
-                        }
-                        let mut s2 = n[0] * n[0];
-                        #[unroll]
-                        for g in 1..l.gdim {
-                            s2 += n[g] * n[g];
-                        }
-                        let norm = s2.sqrt();
-                        // The sign of each lane's cell, by arithmetic masks.
-                        let mut bit = Vector::<u32, N>::broadcast(0u32);
-                        #[unroll]
-                        for ln in 0..N::value() {
-                            let c = min(first_cell + (v * N::value() + ln) as u32, last_cell);
-                            bit.insert(ln, flags[c as usize] & 1u32);
-                        }
-                        let s = select_many(
-                            bit.equal(&Vector::<u32, N>::broadcast(1u32)),
-                            Vector::<F, N>::broadcast(F::from_int(-1)),
-                            Vector::<F, N>::broadcast(F::from_int(1)),
-                        );
-                        #[unroll]
-                        for g in 0..l.gdim {
-                            out[(o + g) * vpt + lane] = (s * n[g]) / norm;
-                        }
                     }
                 }
             }
@@ -418,7 +416,7 @@ fn fit(x: usize) -> Result<u32> {
 
 /// The factor `f` of block `b` of `g` at the points of `pts`: one launch per chunk pair, each
 /// with its own `LaunchPlan` (GeomFactors, `max_vector` = the tile width; ADR-0012), with the
-/// strategy of the degree policy (ADR-0042, item 3).
+/// strategy of the degree policy (ADR-0042, item 3): `direct` or `loops`.
 pub(crate) fn launch_factor<F, TD, GD, G, S>(
     g: &G,
     b: usize,
@@ -443,8 +441,7 @@ where
     if num_cells == 0 || pts.is_empty() {
         return Ok(out);
     }
-    // Only `direct` runs until T6a (docs/plans/M9h.md); `choose` rejects the others.
-    strategy::choose(
+    let s = strategy::choose(
         client,
         f.family(),
         gb.element.cell.into(),
@@ -473,38 +470,73 @@ where
         )?;
         let n = plan.vector_size;
         debug_assert_bindings(client, 5);
-        // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD and the
-        // E-vector stride, so the vector offsets below are exact. The kernel handles vectors
-        // v < padded_cells / n, and for each of them:
-        // - it reads E-vector vectors (k·G + g)·stride/n + x_first_cell/n + v < K·G·stride/n,
-        //   inside the E-vector chunk (x_first_cell + padded_cells ≤ stride);
-        // - it reads `tab` below num_points · K · tdim, and `extra` below gdim (the origin) or
-        //   num_points · tdim (reference normals);
-        // - it reads `flags` at cells ≤ last_cell = min(num_cells, flags.len()) − 1, which is
-        //   word 0 of the allocation of at least VECTOR_PAD words when `flags` is empty;
-        // - it writes tiles out_first_cell/tile + v/(tile/n), which lie inside the field
-        //   chunk's padded cells, at vector offsets below padded_cells · num_points · LEN / n.
-        unsafe {
-            factor_kernel::launch_unchecked::<F>(
-                client,
-                plan.cube_count,
-                plan.cube_dim,
-                n,
-                r.x.vector_arg(n),
-                tab.arg(),
-                extra.unwrap_or(xe.origin()).arg(),
-                flags.arg(),
-                r.out.vector_arg(n),
-                fit(r.x_first_cell / n)?,
-                fit(r.x_stride_cells / n)?,
-                fit(r.out_first_cell / tile)?,
-                fit(r.first_cell)?,
-                last_cell,
-                fit(r.padded_cells / n)?,
-                plan.items_per_unit,
-                layout,
-                f,
-            );
+        let x_offset = fit(r.x_first_cell / n)?;
+        let x_stride = fit(r.x_stride_cells / n)?;
+        let out_first_tile = fit(r.out_first_cell / tile)?;
+        let first_cell = fit(r.first_cell)?;
+        let num_vectors = fit(r.padded_cells / n)?;
+        let extra = extra.unwrap_or(xe.origin());
+        match s {
+            // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD and the
+            // E-vector stride, so the vector offsets below are exact. The kernel handles vectors
+            // v < padded_cells / n, and for each of them:
+            // - it reads E-vector vectors (k·G + g)·stride/n + x_first_cell/n + v < K·G·stride/n,
+            //   inside the E-vector chunk (x_first_cell + padded_cells ≤ stride);
+            // - it reads `tab` below num_points · K · tdim, and `extra` below gdim (the origin) or
+            //   num_points · tdim (reference normals);
+            // - it reads `flags` at cells ≤ last_cell = min(num_cells, flags.len()) − 1, which is
+            //   word 0 of the allocation of at least VECTOR_PAD words when `flags` is empty;
+            // - it writes tiles out_first_cell/tile + v/(tile/n), which lie inside the field
+            //   chunk's padded cells, at vector offsets below padded_cells · num_points · LEN / n.
+            Strategy::Direct => unsafe {
+                factor_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    r.x.vector_arg(n),
+                    tab.arg(),
+                    extra.arg(),
+                    flags.arg(),
+                    r.out.vector_arg(n),
+                    x_offset,
+                    x_stride,
+                    out_first_tile,
+                    first_cell,
+                    last_cell,
+                    num_vectors,
+                    plan.items_per_unit,
+                    layout,
+                    f,
+                );
+            },
+            // SAFETY: as for `direct`: the `loops` kernel reads and writes the same entries,
+            // with K = nodes_per_cell and num_points passed at run time.
+            Strategy::Loops => unsafe {
+                factor_loops_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    r.x.vector_arg(n),
+                    tab.arg(),
+                    extra.arg(),
+                    flags.arg(),
+                    r.out.vector_arg(n),
+                    x_offset,
+                    x_stride,
+                    out_first_tile,
+                    first_cell,
+                    last_cell,
+                    num_vectors,
+                    plan.items_per_unit,
+                    fit(layout.nodes_per_cell)?,
+                    fit(layout.num_points)?,
+                    loops_layout(layout),
+                    f,
+                );
+            },
+            _ => unreachable!("`choose` returns only the strategies that run"),
         }
     }
     Ok(out)

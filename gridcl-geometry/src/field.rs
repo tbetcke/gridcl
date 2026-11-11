@@ -398,7 +398,15 @@ mod tests {
                     props.memory.max_page_size = l;
                 }
                 let xe = with_properties(props, || {
-                    crate::evector::build(&nodes, &dofmap, num_cells, 1, 1, nodes.share())
+                    crate::evector::build(
+                        &nodes,
+                        &dofmap,
+                        num_cells,
+                        1,
+                        1,
+                        nodes.share(),
+                        crate::strategy::Strategy::Direct,
+                    )
                 })
                 .unwrap();
                 let mut props = client.properties().clone();

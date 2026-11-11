@@ -13,6 +13,7 @@ use gridcl_refcell::NodeFamily;
 
 use crate::QuadChunk;
 use crate::field::{alloc_chunks, chunk_cells};
+use crate::strategy::Strategy;
 
 /// The cached E-vector of one geometry block (ADR-0012): chunks of whole tiles,
 /// `[k][g][cell]` with cells fastest, the cell count padded to `VECTOR_PAD` with copies of the
@@ -175,13 +176,60 @@ fn evector_kernel<F: Float, N: Size>(
     }
 }
 
+/// [`evector_kernel`] of the `loops` strategy: the node loop is a runtime loop over
+/// `nodes_per_cell` nodes, so one kernel serves every degree of a geometric dimension and the
+/// operation count does not grow with the degree (C20). It writes the same values.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn evector_loops_kernel<F: Float, N: Size>(
+    nodes: &[F],
+    dofmap: &[u32],
+    out: &mut [Vector<F, N>],
+    first_cell: u32,
+    num_cells: u32,
+    last_node: u32,
+    stride_vectors: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes_per_cell: u32,
+    #[comptime] gdim: usize,
+) {
+    let lanes = N::value();
+    let last = num_cells - 1;
+    let npc = nodes_per_cell as usize;
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let v = first + it;
+        if v < num_vectors as usize {
+            for k in 0..npc {
+                let mut node = Vector::<u32, N>::broadcast(0u32);
+                #[unroll]
+                for lane in 0..lanes {
+                    let c = min(first_cell + (v * lanes + lane) as u32, last) as usize;
+                    node.insert(lane, min(dofmap[c * npc + k], last_node));
+                }
+                #[unroll]
+                for g in 0..gdim {
+                    let mut x = Vector::<F, N>::broadcast(F::from_int(0));
+                    #[unroll]
+                    for lane in 0..lanes {
+                        x.insert(lane, nodes[node.extract(lane) as usize * gdim + g]);
+                    }
+                    out[(k * gdim + g) * stride_vectors as usize + v] = x;
+                }
+            }
+        }
+    }
+}
+
 /// u32 of `x`, or `TooLarge`.
 fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
 /// The E-vector of `num_cells` cells with `nodes_per_cell` nodes each from the L-vector `nodes`
-/// (`[node][gdim]`) and the block's `dofmap`, chunked by the device's `max_page_size`.
+/// (`[node][gdim]`) and the block's `dofmap`, chunked by the device's `max_page_size`, with
+/// the kernel of strategy `s` (`direct` or `loops`; both write the same values).
 ///
 /// # Errors
 ///
@@ -193,6 +241,7 @@ pub(crate) fn build<F: Real>(
     nodes_per_cell: usize,
     gdim: usize,
     origin: DeviceBuffer<F>,
+    s: Strategy,
 ) -> Result<EVector<F>> {
     let client = nodes.client();
     let per_cell = nodes_per_cell
@@ -215,33 +264,61 @@ pub(crate) fn build<F: Real>(
         )?;
         let n = plan.vector_size;
         debug_assert_bindings(client, 3);
-        // SAFETY: the chunk holds padded · per_cell elements, padded a multiple of VECTOR_PAD
-        // and so of n; the kernel writes vectors (k · gdim + g) · padded / n + v with
-        // v < num_vectors = padded / n, k < nodes_per_cell and g < gdim, all below
-        // per_cell · padded / n. It reads `dofmap` at c · nodes_per_cell + k with
-        // c ≤ num_cells − 1, within the block's dofmap. It reads `nodes` at node · gdim + g
-        // with node = min(dofmap[..], last_node) and g < gdim: at most nodes.len() − 1 when
-        // there are nodes (last_node = nodes.len() / gdim − 1), and below gdim ≤ VECTOR_PAD,
-        // inside the padded allocation, when there are none. No dofmap entry is trusted:
-        // Geometry::new checks lengths only (and rejects cells without nodes).
-        unsafe {
-            evector_kernel::launch_unchecked::<F>(
-                client,
-                plan.cube_count,
-                plan.cube_dim,
-                n,
-                nodes.arg(),
-                dofmap.arg(),
-                chunk.data.vector_arg(n),
-                fit(chunk.first_cell)?,
-                fit(num_cells)?,
-                last_node,
-                fit(padded / n)?,
-                plan.num_vectors,
-                plan.items_per_unit,
-                nodes_per_cell,
-                gdim,
-            );
+        let first_cell = fit(chunk.first_cell)?;
+        let cells = fit(num_cells)?;
+        let stride_vectors = fit(padded / n)?;
+        match s {
+            // SAFETY: the chunk holds padded · per_cell elements, padded a multiple of
+            // VECTOR_PAD and so of n; the kernel writes vectors (k · gdim + g) · padded / n + v
+            // with v < num_vectors = padded / n, k < nodes_per_cell and g < gdim, all below
+            // per_cell · padded / n. It reads `dofmap` at c · nodes_per_cell + k with
+            // c ≤ num_cells − 1, within the block's dofmap. It reads `nodes` at node · gdim + g
+            // with node = min(dofmap[..], last_node) and g < gdim: at most nodes.len() − 1 when
+            // there are nodes (last_node = nodes.len() / gdim − 1), and below
+            // gdim ≤ VECTOR_PAD, inside the padded allocation, when there are none. No dofmap
+            // entry is trusted: Geometry::new checks lengths only (and rejects cells without
+            // nodes).
+            Strategy::Direct => unsafe {
+                evector_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    nodes.arg(),
+                    dofmap.arg(),
+                    chunk.data.vector_arg(n),
+                    first_cell,
+                    cells,
+                    last_node,
+                    stride_vectors,
+                    plan.num_vectors,
+                    plan.items_per_unit,
+                    nodes_per_cell,
+                    gdim,
+                );
+            },
+            // SAFETY: as for `direct`: the `loops` kernel reads and writes the same entries,
+            // with nodes_per_cell passed at run time.
+            Strategy::Loops => unsafe {
+                evector_loops_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    nodes.arg(),
+                    dofmap.arg(),
+                    chunk.data.vector_arg(n),
+                    first_cell,
+                    cells,
+                    last_node,
+                    stride_vectors,
+                    plan.num_vectors,
+                    plan.items_per_unit,
+                    fit(nodes_per_cell)?,
+                    gdim,
+                );
+            },
+            _ => unreachable!("`choose` returns only the strategies that run"),
         }
     }
     Ok(EVector {
@@ -259,13 +336,13 @@ mod tests {
     /// Cells whose nodes are all out of range of an empty L-vector read only its zeroed
     /// padding: memory-safe and deterministic. `Geometry::new` rejects this input, so the
     /// kernel is called directly (M3 review, m10 and m11).
-    fn cells_without_nodes<F: Real>() {
+    fn cells_without_nodes<F: Real>(s: Strategy) {
         let client = gridcl_testing::test_client();
         let nodes = DeviceBuffer::<F>::from_host(&client, &[]).unwrap();
         let dofmap = DeviceBuffer::from_host(&client, &[3u32, 4, 5, 9, 9, 1]).unwrap();
         let origin = DeviceBuffer::from_host(&client, &[F::narrow(0.0); 3]).unwrap();
         let read = || -> Vec<Vec<F>> {
-            build(&nodes, &dofmap, 2, 3, 3, origin.share())
+            build(&nodes, &dofmap, 2, 3, 3, origin.share(), s)
                 .unwrap()
                 .chunks()
                 .iter()
@@ -284,9 +361,13 @@ mod tests {
 
     #[test]
     fn cells_without_nodes_read_no_node_memory() {
-        cells_without_nodes::<f32>();
+        for s in [Strategy::Direct, Strategy::Loops] {
+            cells_without_nodes::<f32>(s);
+        }
         if gridcl_testing::supports::<f64>(&gridcl_testing::test_client()) {
-            cells_without_nodes::<f64>();
+            for s in [Strategy::Direct, Strategy::Loops] {
+                cells_without_nodes::<f64>(s);
+            }
         } else {
             eprintln!("cells_without_nodes_read_no_node_memory: f64 is not supported; skipped");
         }

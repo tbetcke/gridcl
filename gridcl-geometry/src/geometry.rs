@@ -139,8 +139,7 @@ where
             return Ok(xe);
         }
         let block = &self.blocks[b];
-        // Only `direct` runs until T6a (docs/plans/M9h.md); `choose` rejects the others.
-        crate::strategy::choose(
+        let s = crate::strategy::choose(
             self.nodes.client(),
             StrategyFamily::EVector,
             block.element.cell.into(),
@@ -154,6 +153,7 @@ where
             block.nodes_per_cell(),
             GD::N,
             self.origin_device.share(),
+            s,
         )?;
         Ok(cache.get_or_init(|| xe))
     }
