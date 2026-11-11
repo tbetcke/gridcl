@@ -1,7 +1,7 @@
 //! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
 //! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
-//! T6b).
+//! T6b); `sumfact` for the factors on tensor rules (T7a).
 
 use gridcl::prelude::*;
 use gridcl::{FacetQuadRule, PullBackOptions};
@@ -99,22 +99,41 @@ fn strategies_that_do_not_run_yet_are_errors() {
     let quadrilateral = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 2)
         .build::<f32, D2, D2>(&client)
         .unwrap();
-    for (mesh, s, want) in [
-        (&quadrilateral, Strategy::SumFactorised, "sumfact"),
-        (&triangle, Strategy::Shared, "shared"),
-        (&triangle, Strategy::Cooperative, "cooperative"),
+    for (mesh, family, s, want) in [
+        (
+            &quadrilateral,
+            StrategyFamily::PullBack,
+            Strategy::SumFactorised,
+            "sumfact",
+        ),
+        (
+            &triangle,
+            StrategyFamily::Points,
+            Strategy::Shared,
+            "shared",
+        ),
+        (
+            &triangle,
+            StrategyFamily::Points,
+            Strategy::Cooperative,
+            "cooperative",
+        ),
     ] {
         let rule = QuadRule::for_grid(mesh, 2).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
         let (got, ran) = record_strategies(|| {
-            with_strategy(StrategyFamily::Points, StrategyOverride::Fixed(s), || {
-                mesh.physical_points(&rule)
+            with_strategy(family, StrategyOverride::Fixed(s), || match family {
+                StrategyFamily::PullBack => {
+                    mesh.pull_back(&x, &PullBackOptions::default()).map(drop)
+                }
+                _ => mesh.physical_points(&rule).map(drop),
             })
         });
         match got {
             Err(GridError::NotYetImplemented(task)) => {
                 assert!(task.contains(&format!("strategy {want} ")), "{s:?}: {task}");
             }
-            other => panic!("{s:?}: {:?}", other.map(|_| ())),
+            other => panic!("{s:?}: {other:?}"),
         }
         assert!(ran.is_empty(), "{s:?} ran {ran:?}");
     }
@@ -155,6 +174,110 @@ fn forced_loops_runs_loops() {
             "{s:?}"
         );
     }
+}
+
+/// X and J on `mesh` with every factor family and the E-vector forced to `s`, cell-major.
+fn points_and_jacobians<F: Real>(
+    mesh: &Mesh<F, D3, D3>,
+    rule: &QuadRule<F, D3>,
+    s: Strategy,
+) -> (Vec<f64>, Vec<f64>, Vec<(StrategyFamily, Strategy)>) {
+    use StrategyFamily::*;
+    let mesh = mesh.try_clone().unwrap();
+    let s = StrategyOverride::Fixed(s);
+    let ((x, j), ran) = record_strategies(|| {
+        with_strategy(EVector, s, || {
+            with_strategy(Points, s, || {
+                with_strategy(Jacobian, s, || {
+                    let x = mesh.physical_points(rule).unwrap();
+                    let j = mesh.jacobians(rule).unwrap();
+                    (
+                        x.blocks[0].to_host_cell_major().unwrap(),
+                        j.blocks[0].to_host_cell_major().unwrap(),
+                    )
+                })
+            })
+        })
+    });
+    (
+        x.into_iter().flatten().map(F::widen).collect(),
+        j.into_iter().flatten().flatten().map(F::widen).collect(),
+        ran,
+    )
+}
+
+#[test]
+fn forced_sumfact_runs_on_tensor_rules() {
+    let client = gridcl_testing::test_client();
+    sumfact_on_tensor_rules::<f32>(&client, 1e-5);
+    if gridcl_testing::supports::<f64>(&client) {
+        sumfact_on_tensor_rules::<f64>(&client, 1e-13);
+    }
+}
+
+/// Sum-factorised X and J of perturbed hexahedra at p = 3 against `loops`, relative to the
+/// largest entry, within `tol`.
+fn sumfact_on_tensor_rules<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+        let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 6).unwrap();
+        let (x, j, ran) = points_and_jacobians(&mesh, &rule, Strategy::SumFactorised);
+        assert_eq!(
+            ran,
+            [
+                (Points, Strategy::SumFactorised),
+                // The E-vector is a gather: sum factorisation falls back to `loops`.
+                (EVector, Strategy::Loops),
+                (Jacobian, Strategy::SumFactorised)
+            ]
+        );
+        let (x_loops, j_loops, _) = points_and_jacobians(&mesh, &rule, Strategy::Loops);
+        for (what, got, want) in [("X", &x, &x_loops), ("J", &j, &j_loops)] {
+            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            for (g, w) in got.iter().zip(want.iter()) {
+                assert!(
+                    (g - w).abs() <= tol * scale,
+                    "{what} {family:?}: {g} vs {w}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn sumfact_falls_back_to_loops_without_tensor_points() {
+    use StrategyFamily::*;
+    let client = gridcl_testing::test_client();
+    let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 2)
+        .with_node_family(NodeFamily::Gll)
+        .build::<f32, D3, D3>(&client)
+        .unwrap();
+    let sumfact = StrategyOverride::Fixed(Strategy::SumFactorised);
+    let ((), ran) = record_strategies(|| {
+        with_strategy(EVector, sumfact, || {
+            with_strategy(Points, sumfact, || {
+                with_strategy(FacetNormals, sumfact, || {
+                    // The equispaced lattice and (until T7b) the facet rule record no factors.
+                    gridcl_geometry::equispaced_nodes(&mesh).unwrap();
+                    mesh.facet_normals(&FacetQuadRule::for_grid(&mesh, 2).unwrap())
+                        .unwrap();
+                })
+            })
+        })
+    });
+    assert_eq!(
+        ran,
+        [
+            (Points, Strategy::Loops),
+            (EVector, Strategy::Loops),
+            (FacetNormals, Strategy::Loops)
+        ]
+    );
 }
 
 #[test]

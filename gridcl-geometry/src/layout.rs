@@ -10,6 +10,7 @@ use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use crate::field::chunk_pairs;
 use crate::layout_loops::{factor_loops_kernel, loops_layout};
 use crate::strategy::{self, Strategy, StrategyFamily};
+use crate::sumfact::tensor::{factor_sumfact_kernel, sumfact_layout};
 use crate::{CoordinateElement, DeviceGrid, FieldShape, PointSet, QuadField};
 
 /// The comptime layout of a factor kernel.
@@ -81,6 +82,11 @@ impl Factor {
             Factor::Jacobian | Factor::Pinv => l.tdim * l.gdim,
             Factor::DetJ => 1,
         }
+    }
+
+    /// Whether the factor is `Points`, the one factor not computed from J.
+    pub(crate) fn is_points(self) -> bool {
+        matches!(self, Factor::Points)
     }
 
     /// The family of the degree policy.
@@ -416,7 +422,8 @@ fn fit(x: usize) -> Result<u32> {
 
 /// The factor `f` of block `b` of `g` at the points of `pts`: one launch per chunk pair, each
 /// with its own `LaunchPlan` (GeomFactors, `max_vector` = the tile width; ADR-0012), with the
-/// strategy of the degree policy (ADR-0042, item 3): `direct` or `loops`.
+/// strategy of the degree policy (ADR-0042, item 3): `direct`, `loops`, or `sumfact` where the
+/// point set records its tensor factors.
 pub(crate) fn launch_factor<F, TD, GD, G, S>(
     g: &G,
     b: usize,
@@ -447,10 +454,12 @@ where
         gb.element.cell.into(),
         gb.element.degree,
         size_of::<F>(),
+        pts.tensor().is_some(),
     )?;
     let xe = g.evector(b)?;
-    let tab = match f {
-        Factor::Points => pts.tabulate(&gb.element)?,
+    let tab = match (s, f) {
+        (Strategy::SumFactorised, _) => pts.tabulate_tensor(&gb.element)?,
+        (_, Factor::Points) => pts.tabulate(&gb.element)?,
         _ => pts.tabulate_derivatives(&gb.element)?,
     };
     let live = 2 * layout.tdim * layout.gdim + 2;
@@ -533,6 +542,34 @@ where
                     fit(layout.nodes_per_cell)?,
                     fit(layout.num_points)?,
                     loops_layout(layout),
+                    f,
+                );
+            },
+            // SAFETY: as for `direct`, with `tab` the table of `TensorFactors::table` for this
+            // element and point set: its header offsets, 1D rows and permutation lie inside it
+            // by construction; the permutation holds nodes below nodes_per_cell, so the E-vector
+            // reads are those of `direct`; and the blocks hold each of the num_points points
+            // once (`PointSet::with_tensor` checks it), so the writes are those of `direct`.
+            Strategy::SumFactorised => unsafe {
+                factor_sumfact_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    r.x.vector_arg(n),
+                    tab.arg(),
+                    extra.arg(),
+                    flags.arg(),
+                    r.out.vector_arg(n),
+                    x_offset,
+                    x_stride,
+                    out_first_tile,
+                    first_cell,
+                    last_cell,
+                    num_vectors,
+                    plan.items_per_unit,
+                    fit(layout.num_points)?,
+                    sumfact_layout(layout, gb.element.degree as usize + 1),
                     f,
                 );
             },

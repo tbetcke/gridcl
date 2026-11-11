@@ -217,6 +217,7 @@ impl<F: Real> Interpolant<F> {
             self.cell,
             self.degree,
             size_of::<F>(),
+            true,
         )?;
         let nb = num_lagrange_nodes(self.cell, self.degree);
         let cap = loops_capacity(self.degree);

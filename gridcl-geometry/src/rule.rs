@@ -2,10 +2,11 @@
 
 use cubecl::prelude::Client;
 use gridcl_device::{GridError, Real, Result, check_precision};
-use gridcl_dims::TopoDim;
+use gridcl_dims::{CellType, TopoDim};
 use gridcl_refcell::gauss_rule;
 
 use crate::names::cell_name;
+use crate::sumfact::TensorFactors;
 use crate::{DeviceGrid, PointSet};
 
 /// The distinct cell types of `cells`, in order of first appearance.
@@ -61,8 +62,18 @@ impl<F: Real, TD: TopoDim> QuadRule<F, TD> {
         let sets = distinct(cells.iter().copied())
             .into_iter()
             .map(|cell| {
-                let rule = gauss_rule(cell.into(), degree);
-                PointSet::new(client, cell, rule.points, rule.weights)
+                let cell_type: CellType = cell.into();
+                let rule = gauss_rule(cell_type, degree);
+                let set = PointSet::new(client, cell, rule.points, rule.weights)?;
+                // Tensor Gauss on quadrilaterals and hexahedra records its 1D factor, the
+                // interval rule of the same degree (ADR-0042, item 5).
+                Ok(match cell_type {
+                    CellType::Quadrilateral | CellType::Hexahedron => {
+                        let line = gauss_rule(CellType::Interval, degree).points;
+                        set.with_tensor(TensorFactors::cube(TD::N, &line))
+                    }
+                    _ => set,
+                })
             })
             .collect::<Result<_>>()?;
         Ok(Self { sets })

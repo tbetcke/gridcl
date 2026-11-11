@@ -29,6 +29,7 @@ mod pull_back;
 mod rule;
 mod shape;
 mod strategy;
+mod sumfact;
 #[doc(hidden)]
 #[cfg(feature = "testing")]
 pub mod testing;

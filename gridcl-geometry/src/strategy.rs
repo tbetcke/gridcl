@@ -7,7 +7,7 @@
 //!
 //! Every launcher of a degree-dependent family asks [`choose`] for its strategy: the scoped
 //! hook, then `GRIDCL_GEOM_STRATEGY`, then `degree-policy.toml` for the client's device class;
-//! a strategy that does not apply to the cell falls back to `Loops`.
+//! a strategy that does not apply to the launch (the cell, the point set) falls back to `Loops`.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -58,28 +58,40 @@ impl Strategy {
         Strategy::ALL.into_iter().find(|s| s.name() == name)
     }
 
-    /// Whether the strategy applies to a block of `cell`: sum factorisation needs a tensor cell
-    /// (ADR-0042, item 3). The tensor point set and the shared-memory limit join the
-    /// conditions with the strategies that need them (docs/plans/M9h.md, T7a and T9).
-    fn applies(self, cell: CellType) -> bool {
+    /// Whether the strategy applies to a launch of `family` on a block of `cell`, where
+    /// `tensor` says whether the launch's points are a tensor point set (a point set that
+    /// records its factors; the pull-back, at arbitrary points, passes `true`). Sum
+    /// factorisation needs a tensor cell and tensor points, and does not apply to the E-vector,
+    /// a gather without contractions (ADR-0042, item 3). The shared-memory limit joins the
+    /// conditions with the strategy that needs it (docs/plans/M9h.md, T9).
+    fn applies(self, family: StrategyFamily, cell: CellType, tensor: bool) -> bool {
         match self {
-            Strategy::SumFactorised => matches!(
-                cell,
-                CellType::Quadrilateral | CellType::Hexahedron | CellType::Prism
-            ),
+            Strategy::SumFactorised => {
+                family != StrategyFamily::EVector
+                    && tensor
+                    && matches!(
+                        cell,
+                        CellType::Quadrilateral | CellType::Hexahedron | CellType::Prism
+                    )
+            }
             _ => true,
         }
     }
 
     /// `None` when the launchers of `family` run the strategy, else the task that implements it.
     /// `direct` and `loops` run for every family (T6a, T6b); the later strategies arrive family
-    /// by family.
-    fn not_yet(self, _family: StrategyFamily) -> Option<&'static str> {
+    /// by family. Sum factorisation runs for the factor families wherever the point set records
+    /// its factors (quadrilateral and hexahedron cell rules from T7a, facet rules from T7b,
+    /// prisms from T7c).
+    fn not_yet(self, family: StrategyFamily) -> Option<&'static str> {
         match self {
             Strategy::Direct | Strategy::Loops => None,
-            Strategy::SumFactorised => {
-                Some("geometry strategy sumfact (docs/plans/M9h.md, T7a–T8)")
-            }
+            Strategy::SumFactorised => match family {
+                StrategyFamily::PullBack => {
+                    Some("geometry strategy sumfact for the pull-back (docs/plans/M9h.md, T8)")
+                }
+                _ => None,
+            },
             Strategy::Shared => Some("geometry strategy shared (docs/plans/M9h.md, T9)"),
             Strategy::Cooperative => {
                 Some("geometry strategy cooperative (docs/plans/M9h.md, T10a and T10b)")
@@ -357,7 +369,8 @@ fn env_override(family: StrategyFamily) -> Option<StrategyOverride> {
 
 /// The strategy a launch of `family` on a block of `cell` at `degree` with `elem_bytes`-byte
 /// scalars runs on `client`'s device: the scoped hook, then `GRIDCL_GEOM_STRATEGY`, then
-/// `degree-policy.toml`; `Loops` where that strategy does not apply. Recorded for
+/// `degree-policy.toml`; `Loops` where that strategy does not apply (`tensor`: whether the
+/// launch's points are a tensor point set, see `Strategy::applies`). Recorded for
 /// `testing::record_strategies`.
 ///
 /// # Errors
@@ -374,6 +387,7 @@ pub(crate) fn choose(
     cell: CellType,
     degree: u32,
     elem_bytes: usize,
+    tensor: bool,
 ) -> Result<Strategy> {
     let wanted = match hook::get(family)
         .or_else(|| env_override(family))
@@ -393,7 +407,7 @@ pub(crate) fn choose(
         }
         StrategyOverride::Fixed(s) => s,
     };
-    let s = if wanted.applies(cell) {
+    let s = if wanted.applies(family, cell, tensor) {
         wanted
     } else {
         Strategy::Loops
@@ -657,24 +671,29 @@ mod tests {
     }
 
     #[test]
-    fn sum_factorisation_needs_a_tensor_cell() {
-        let tensor = [
+    fn sum_factorisation_needs_a_tensor_cell_and_points() {
+        let tensor_cells = [
             CellType::Quadrilateral,
             CellType::Hexahedron,
             CellType::Prism,
         ];
-        for cell in CELLS {
-            assert_eq!(
-                Strategy::SumFactorised.applies(cell),
-                tensor.contains(&cell)
-            );
-            for s in [
-                Strategy::Direct,
-                Strategy::Loops,
-                Strategy::Shared,
-                Strategy::Cooperative,
-            ] {
-                assert!(s.applies(cell));
+        for family in StrategyFamily::ALL {
+            for cell in CELLS {
+                for tensor in [false, true] {
+                    assert_eq!(
+                        Strategy::SumFactorised.applies(family, cell, tensor),
+                        family != StrategyFamily::EVector && tensor && tensor_cells.contains(&cell),
+                        "{family:?} {cell:?} {tensor}"
+                    );
+                    for s in [
+                        Strategy::Direct,
+                        Strategy::Loops,
+                        Strategy::Shared,
+                        Strategy::Cooperative,
+                    ] {
+                        assert!(s.applies(family, cell, tensor));
+                    }
+                }
             }
         }
     }

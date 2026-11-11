@@ -529,6 +529,7 @@ where
         cell,
         gb.element.degree,
         size_of::<F>(),
+        true,
     )?;
     let layout = GeomLayout::new::<TD, GD>(&gb.element, num_points, tile);
     let xe = g.evector(b)?;
