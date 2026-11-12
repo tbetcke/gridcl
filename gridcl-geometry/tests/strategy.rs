@@ -1,10 +1,10 @@
 //! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
 //! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
-//! T6b); `sumfact` for the factors on tensor rules (T7a).
+//! T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b).
 
 use gridcl::prelude::*;
-use gridcl::{FacetQuadRule, PullBackOptions};
+use gridcl::{FacetQuadRule, FieldShape, PullBackOptions};
 use gridcl_geometry::testing::{
     Strategy, StrategyFamily, StrategyOverride, record_strategies, with_strategy,
 };
@@ -249,6 +249,140 @@ fn sumfact_on_tensor_rules<F: Real>(client: &cubecl::prelude::Client, tol: f64) 
     }
 }
 
+/// The values of every block of `field`, concatenated.
+fn blocks_f64<F: Real, S: FieldShape>(field: &BlockFields<F, S>) -> Vec<f64> {
+    field
+        .blocks
+        .iter()
+        .flat_map(|b| gridcl_testing::reference::field_f64(b).unwrap())
+        .collect()
+}
+
+/// Named quantities, each flattened.
+type Quantities = Vec<(&'static str, Vec<f64>)>;
+
+/// `f` on a fresh copy of `mesh` with every family forced to `s`, and what ran.
+fn forced<F, TD, GD>(
+    mesh: &Mesh<F, TD, GD>,
+    s: Strategy,
+    f: impl FnOnce(&Mesh<F, TD, GD>) -> Quantities,
+) -> (Quantities, Vec<(StrategyFamily, Strategy)>)
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let mesh = mesh.try_clone().unwrap();
+    record_strategies(|| with_every(StrategyOverride::Fixed(s), || f(&mesh)))
+}
+
+/// The quantities of `f` under `sumfact` against `loops`, relative to each quantity's largest
+/// entry, within `tol`; `sumfact` runs for each of `families`, `loops` for everything else.
+fn sumfact_against_loops<F, TD, GD>(
+    what: &str,
+    mesh: &Mesh<F, TD, GD>,
+    families: &[StrategyFamily],
+    tol: f64,
+    f: impl Fn(&Mesh<F, TD, GD>) -> Quantities,
+) where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let (got, ran) = forced(mesh, Strategy::SumFactorised, &f);
+    for family in families {
+        assert!(
+            ran.contains(&(*family, Strategy::SumFactorised)),
+            "{what}: {family:?} not sum-factorised: {ran:?}"
+        );
+    }
+    assert!(
+        ran.iter()
+            .all(|(fam, s)| *s == Strategy::Loops || families.contains(fam)),
+        "{what}: {ran:?}"
+    );
+    let (want, _) = forced(mesh, Strategy::Loops, &f);
+    for ((name, got), (_, want)) in got.iter().zip(&want) {
+        assert_eq!(got.len(), want.len());
+        let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() <= tol * scale, "{name} of {what}: {g} vs {w}");
+        }
+    }
+}
+
+#[test]
+fn forced_sumfact_runs_for_derived_factors_and_facet_rules() {
+    let client = gridcl_testing::test_client();
+    derived_factors_and_facets::<f32>(&client, 1e-5);
+    if gridcl_testing::supports::<f64>(&client) {
+        derived_factors_and_facets::<f64>(&client, 1e-13);
+    }
+}
+
+/// det J, K and the facet normals of perturbed quadrilaterals and hexahedra, and det J, K and
+/// the normals of the mixed surface (its quadrilateral block), at p = 3, under `sumfact`
+/// against `loops`.
+fn derived_factors_and_facets<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    fn codim0<F: Real, TD: TopoDim + Codim0<TD>>(mesh: &Mesh<F, TD, TD>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        vec![
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            (
+                "facet normals",
+                blocks_f64(&mesh.facet_normals(&facets).unwrap()),
+            ),
+        ]
+    }
+    for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+        let square = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D2, D2>(client)
+            .unwrap();
+        let cube = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let factors = [Jacobian, FacetNormals];
+        sumfact_against_loops(
+            &format!("square {family:?}"),
+            &square,
+            &factors,
+            tol,
+            codim0,
+        );
+        sumfact_against_loops(&format!("cube {family:?}"), &cube, &factors, tol, codim0);
+    }
+    let surface = gridcl_testing::mixed_surface(1, 3)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    sumfact_against_loops(
+        "mixed surface",
+        &surface,
+        &[Jacobian, Normals],
+        tol,
+        |mesh| {
+            let rule = QuadRule::for_grid(mesh, 6).unwrap();
+            vec![
+                ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+                (
+                    "K",
+                    blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+                ),
+                ("normals", blocks_f64(&mesh.normals(&rule).unwrap())),
+            ]
+        },
+    );
+}
+
 #[test]
 fn sumfact_falls_back_to_loops_without_tensor_points() {
     use StrategyFamily::*;
@@ -261,23 +395,12 @@ fn sumfact_falls_back_to_loops_without_tensor_points() {
     let ((), ran) = record_strategies(|| {
         with_strategy(EVector, sumfact, || {
             with_strategy(Points, sumfact, || {
-                with_strategy(FacetNormals, sumfact, || {
-                    // The equispaced lattice and (until T7b) the facet rule record no factors.
-                    gridcl_geometry::equispaced_nodes(&mesh).unwrap();
-                    mesh.facet_normals(&FacetQuadRule::for_grid(&mesh, 2).unwrap())
-                        .unwrap();
-                })
+                // The equispaced lattice records no factors.
+                gridcl_geometry::equispaced_nodes(&mesh).unwrap();
             })
         })
     });
-    assert_eq!(
-        ran,
-        [
-            (Points, Strategy::Loops),
-            (EVector, Strategy::Loops),
-            (FacetNormals, Strategy::Loops)
-        ]
-    );
+    assert_eq!(ran, [(Points, Strategy::Loops), (EVector, Strategy::Loops)]);
 }
 
 #[test]

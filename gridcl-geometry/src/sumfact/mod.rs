@@ -42,7 +42,7 @@ pub(crate) struct TensorBlock {
 }
 
 /// The tensor structure of a point set: blocks that together hold each point once (one block
-/// for a cell rule).
+/// for a cell rule, one per facet for a facet rule).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorFactors {
     pub(crate) blocks: Vec<TensorBlock>,
@@ -71,6 +71,77 @@ impl TensorFactors {
         TensorFactors {
             blocks: vec![TensorBlock { offset: 0, levels }],
         }
+    }
+
+    /// The factors of the facet rule of `cell` (a quadrilateral or hexahedron) whose facets
+    /// carry the tensor rule with the 1D points `line` (the first facet direction fastest),
+    /// mapped facet by facet into cell coordinates by `facet_points_to_cell`, facet-major
+    /// (`FacetQuadRule::gauss`): one block per facet, whose levels follow the facet's axes and
+    /// end with the direction normal to the facet, a level of one point.
+    ///
+    /// # Panics
+    ///
+    /// If the cell is not a quadrilateral or hexahedron.
+    pub(crate) fn facets(cell: CellType, line: &[f64]) -> Self {
+        assert!(
+            matches!(cell, CellType::Quadrilateral | CellType::Hexahedron),
+            "facet sum factorisation on {cell:?}"
+        );
+        let td = gridcl_refcell::tdim(cell);
+        let fd = td - 1;
+        let m = line.len();
+        let per_facet = m.pow(fd as u32);
+        // The facet points, the first facet direction fastest: gauss_rule on the facet type.
+        let facet_points: Vec<f64> = (0..per_facet)
+            .flat_map(|flat| (0..fd).map(move |j| line[flat / m.pow(j as u32) % m]))
+            .collect();
+        // The facet's origin and its axes' ends: 0 and the unit points e_j.
+        let corners: Vec<f64> = (0..=fd)
+            .flat_map(|k| (0..fd).map(move |j| if k == j + 1 { 1.0 } else { 0.0 }))
+            .collect();
+        let num_facets = gridcl_refcell::sub_entity_types(cell, fd).len();
+        let blocks = (0..num_facets)
+            .map(|f| {
+                let ends = gridcl_refcell::facet_points_to_cell(cell, f, &corners);
+                let x = gridcl_refcell::facet_points_to_cell(cell, f, &facet_points);
+                // The cell direction along facet axis j: the one coordinate it changes.
+                let axis = |j: usize| {
+                    let moved: Vec<usize> = (0..td)
+                        .filter(|&d| ends[(j + 1) * td + d] != ends[d])
+                        .collect();
+                    assert_eq!(
+                        moved.len(),
+                        1,
+                        "{cell:?} facet {f}: axis {j} is not a direction"
+                    );
+                    moved[0]
+                };
+                let mut levels: Vec<Level> = (0..fd)
+                    .map(|j| {
+                        let dim = axis(j);
+                        let stride = m.pow(j as u32);
+                        Level {
+                            dim,
+                            points: (0..m).map(|i| x[i * stride * td + dim]).collect(),
+                            stride,
+                        }
+                    })
+                    .collect();
+                let normal = (0..td)
+                    .find(|d| levels.iter().all(|l| l.dim != *d))
+                    .expect("a direction normal to the facet");
+                levels.push(Level {
+                    dim: normal,
+                    points: vec![x[normal]],
+                    stride: 0,
+                });
+                TensorBlock {
+                    offset: f * per_facet,
+                    levels,
+                }
+            })
+            .collect();
+        TensorFactors { blocks }
     }
 
     /// The points `[q][td]` the factors describe, or `None` unless the blocks hold each of
@@ -218,44 +289,100 @@ fn permutation(
 mod tests {
     use super::*;
 
-    /// The tensor product of the 1D tables of `table`, permuted, is the element's tabulation.
+    /// The factors describe `points`, and the tensor product of the 1D tables of `table`,
+    /// permuted, is the element's tabulation there, block by block.
+    fn check_table(
+        cell: CellType,
+        degree: u32,
+        family: NodeFamily,
+        factors: &TensorFactors,
+        points: &[f64],
+    ) {
+        let td = gridcl_refcell::tdim(cell);
+        let num_points = points.len() / td;
+        assert_eq!(factors.points(td, num_points).unwrap(), points);
+        let t = factors.table(cell, degree, family).unwrap();
+        let element = LagrangeElement::new(cell, degree, family).unwrap();
+        let want = element.tabulate(points, 1).unwrap();
+        let n = degree as usize + 1;
+        let perm = t[1] as usize;
+        assert_eq!(t[0] as usize, factors.blocks.len());
+        for (blk, block) in factors.blocks.iter().enumerate() {
+            let h = 2 + blk * (1 + LEVEL_LEN * td);
+            assert_eq!(t[h] as usize, block.offset);
+            let level = |l: usize| &t[h + 1 + l * LEVEL_LEN..h + 1 + (l + 1) * LEVEL_LEN];
+            let count: usize = (0..td).map(|l| level(l)[0] as usize).product();
+            for flat in 0..count {
+                // The multi-index of the point, level 0 fastest.
+                let mut rest = flat;
+                let mut q = block.offset;
+                let mut i = vec![0; td];
+                for (l, il) in i.iter_mut().enumerate() {
+                    let (m, stride, dim) =
+                        (level(l)[0] as usize, level(l)[1] as usize, level(l)[4]);
+                    assert_eq!(level(l)[3] as usize, n.pow(dim as u32));
+                    *il = rest % m;
+                    rest /= m;
+                    q += *il * stride;
+                }
+                for lex in 0..n.pow(td as u32) {
+                    let a: Vec<usize> = (0..td).map(|d| lex / n.pow(d as u32) % n).collect();
+                    let k = t[perm + lex] as usize;
+                    // ∂_e of Π_d φ_{a_d}(x_d): the derivative table in direction e.
+                    for deriv in 0..=td {
+                        let got: f64 = (0..td)
+                            .map(|l| {
+                                let lv = level(l);
+                                let (m, at, dim) = (lv[0] as usize, lv[2] as usize, lv[4] as usize);
+                                let row = if deriv == dim + 1 { at + m * n } else { at };
+                                t[row + i[l] * n + a[dim]]
+                            })
+                            .product();
+                        let w = want.get(deriv, q, k);
+                        assert!(
+                            (got - w).abs() < 1e-10 * (1.0 + w.abs()),
+                            "{cell:?} p={degree} {family:?} q={q} k={k} deriv={deriv}: {got} vs {w}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The tensor Gauss rule of `rule_degree` on `cell`.
     fn check_products(cell: CellType, degree: u32, family: NodeFamily, rule_degree: u32) {
         let td = gridcl_refcell::tdim(cell);
         let rule = gridcl_refcell::gauss_rule(cell, rule_degree);
         let line = gridcl_refcell::gauss_rule(CellType::Interval, rule_degree).points;
-        let factors = TensorFactors::cube(td, &line);
-        assert_eq!(factors.points(td, rule.weights.len()).unwrap(), rule.points);
-        let t = factors.table(cell, degree, family).unwrap();
-        let element = LagrangeElement::new(cell, degree, family).unwrap();
-        let want = element.tabulate(&rule.points, 1).unwrap();
-        let n = degree as usize + 1;
-        let m = line.len();
-        let perm = t[1] as usize;
-        let level = |l: usize| &t[3 + l * LEVEL_LEN..3 + (l + 1) * LEVEL_LEN];
-        for q in 0..rule.weights.len() {
-            // The multi-index of point q, level ℓ = direction ℓ.
-            let i: Vec<usize> = (0..td).map(|d| q / m.pow(d as u32) % m).collect();
-            for lex in 0..n.pow(td as u32) {
-                let a: Vec<usize> = (0..td).map(|d| lex / n.pow(d as u32) % n).collect();
-                let k = t[perm + lex] as usize;
-                // ∂_e of Π_d φ_{a_d}(x_d): the derivative table in direction e.
-                for deriv in 0..=td {
-                    let got: f64 = (0..td)
-                        .map(|d| {
-                            let l = level(d);
-                            let (mm, at) = (l[0] as usize, l[2] as usize);
-                            let row = if deriv == d + 1 { at + mm * n } else { at };
-                            t[row + i[d] * n + a[d]]
-                        })
-                        .product();
-                    let w = want.get(deriv, q, k);
-                    assert!(
-                        (got - w).abs() < 1e-10 * (1.0 + w.abs()),
-                        "{cell:?} p={degree} {family:?} q={q} k={k} deriv={deriv}: {got} vs {w}"
-                    );
-                }
-            }
-        }
+        check_table(
+            cell,
+            degree,
+            family,
+            &TensorFactors::cube(td, &line),
+            &rule.points,
+        );
+    }
+
+    /// The facet Gauss rules of `rule_degree` on `cell`, as `FacetQuadRule::gauss` maps them.
+    fn check_facet_products(cell: CellType, degree: u32, family: NodeFamily, rule_degree: u32) {
+        let td = gridcl_refcell::tdim(cell);
+        let facet_types = gridcl_refcell::sub_entity_types(cell, td - 1);
+        let points: Vec<f64> = facet_types
+            .iter()
+            .enumerate()
+            .flat_map(|(f, &facet)| {
+                let rule = gridcl_refcell::gauss_rule(facet, rule_degree);
+                gridcl_refcell::facet_points_to_cell(cell, f, &rule.points)
+            })
+            .collect();
+        let line = gridcl_refcell::gauss_rule(CellType::Interval, rule_degree).points;
+        check_table(
+            cell,
+            degree,
+            family,
+            &TensorFactors::facets(cell, &line),
+            &points,
+        );
     }
 
     #[test]
@@ -267,6 +394,19 @@ mod tests {
             }
             check_products(CellType::Quadrilateral, 8, family, 3);
             check_products(CellType::Hexahedron, 6, family, 1);
+        }
+    }
+
+    #[test]
+    fn facet_tables_reproduce_the_element() {
+        for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+            for degree in 1..=4 {
+                check_facet_products(CellType::Quadrilateral, degree, family, 2 * degree);
+                check_facet_products(CellType::Hexahedron, degree, family, 2 * degree);
+            }
+            // One point per facet direction.
+            check_facet_products(CellType::Quadrilateral, 8, family, 1);
+            check_facet_products(CellType::Hexahedron, 5, family, 1);
         }
     }
 
