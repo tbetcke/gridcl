@@ -1,6 +1,6 @@
 # ADR-0048: Backport CubeCL's linear common-subexpression pass to 0.11.0
 
-- **Status:** Proposed
+- **Status:** Rejected
 - **Date:** 2026-11-11
 - **Raised in:** M9h, after T7a (test-suite run time; C20)
 - **Design sections affected:** "API caveat" (the pin `cubecl = "=0.11.0"`); "Handing this design to Claude Code" (CLAUDE.md's CubeCL line); M0's scope line (the pin in `[workspace.dependencies]`)
@@ -58,4 +58,4 @@ When a 0.11.x or later release with the fix is adopted under its own ADR, the ve
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Rejected by the maintainer on 2026-11-12. The pin stays at plain `cubecl = "=0.11.0"` with no vendored or patched crate, and no 0.11.4 is requested upstream. C20's compile times stay until gridcl moves to a CubeCL release that contains #1767, under its own ADR.
