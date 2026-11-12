@@ -23,6 +23,7 @@
   - ADR-0038: hidden cross-crate hooks.
   - ADR-0039: pull-back (items 13–15), device basis evaluator, coefficient cache; the copy-list clause for expansion coefficients.
   - ADR-0042 (accepted 2026-11-08, applied in `adr: 0042 apply`): [M9h public items and rules](../adr/0042-m9h-public-items-and-rules-the-design-leaves-open.md), items 1–13 = the plan's rules 1–13 and questions 1–12.
+  - ADR-0049 (accepted 2026-11-12, applied in `adr: 0049 apply`): [the tensor pull-back contracts modal coefficients](../adr/0049-modal-tensor-pull-back.md); amends rules 1 and 5 and T8.
 
 <!--
 Rules for this file (do not delete):
@@ -110,7 +111,7 @@ Rules (each an ADR-0042 item):
    - At an arbitrary point, a Newton step touches all (p + 1)^d coefficients, so its leading cost grows as (9/5)^d from p = 4 to p = 8: about 5.8 for hexahedra, 3.2 for quadrilaterals.
    - Geometric factors keep "at most 3 times".
    - Pull-back Newton step: at most 1.1 · (9/5)^d (hexahedra 6.4, quadrilaterals 3.6), a no-regression bound at the node-count floor.
-   - Pull-back set-up per point, where a strategy has one: at most 3 times. The tensor pull-back of T8 evaluates 1D Lagrange bases at ξ (barycentric form) and has no set-up.
+   - Pull-back set-up per point, where a strategy has one: at most 3 times. The tensor pull-back of T8 has a sum-factorised set-up (ADR-0049), bounded like any other.
    - The ratio is that of the strategy the policy selects at p = 8, timed at p = 8 and at p = 4.
    - Time per point = time per call / (cells × points per cell), with the Gauss rule of degree 2p, at 10^6 and 10^7 points. Newton step = (t(9 iterations) − t(1 iteration)) / 8; set-up = t(1) − one step.
    - Device classes use ADR-0015 item 5's geometric mean; per-device ratios are reported.
@@ -147,8 +148,7 @@ Rules (each an ADR-0042 item):
      - the 1D (or triangle × 1D) tabulations;
      - the lexicographic-to-gridcl node permutation, packed into the tabulation buffer so no kernel exceeds five buffers.
    - Uploaded once per geometry block, under the "expansion coefficients" clause:
-     - the 1D nodes and barycentric weights of the tensor pull-back;
-     - the prism's C'_tri factor.
+     - the tensor pull-back's coefficient factors C₁′ and (prisms) C'_tri, and its node permutation (ADR-0049).
    - CLAUDE.md's copy list and ADR-0039's clause are extended by name.
 6. **CUDA attributes and compile time without FFI** (ADR-0041 open point).
    - Registers, spill and local memory per thread come from `ncu` metrics (`launch__registers_per_thread`, local memory) or, failing that, `ptxas -v` of the driver's CUDA version on `CUBECL_CUDA_DUMP_PTX` output. A runner script joins them to the records by kernel name.
@@ -327,17 +327,18 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
   - Parallel with: –
   - Risks / notes: –
 - [ ] **T8 Tensor pull-back (gridcl-geometry)**
-  - Goal: `sumfact` for the pull-back:
-    - quadrilaterals and hexahedra evaluate the 1D Lagrange bases and derivatives at ξ in barycentric form and contract the E-vector one dimension at a time (no set-up, no C');
-    - prisms use C'_tri (Dubiner) times the 1D Lagrange interval basis.
-  - Buffers: five (the 1D data trail the coefficient buffer, rule 5).
+  - Goal: `sumfact` for the pull-back (ADR-0049):
+    - a set-up kernel forms each cell's modal coefficients by sum factorisation, a = (C₁′ ⊗ C₁′ ⊗ C₁′)x on hexahedra (C₁′ ⊗ C₁′ on quadrilaterals), into a scratch buffer as `loops`' set-up;
+    - each Newton step evaluates the 1D Legendre polynomials and derivatives at ξ by their recurrences and contracts a one dimension at a time;
+    - prisms use C'_tri ⊗ C₁′ in the set-up and the Dubiner set times Legendre in z in the step.
+  - Buffers: three (set-up), five (step); the factors and the permutation travel in one cached buffer per geometry block (rule 5).
   - Crates/files: `gridcl-geometry/src/{sumfact/pull_back.rs, sumfact/mod.rs, evector.rs}` (coefficient cache).
   - Public API added or changed: none.
   - Tests: `pull_back_recovers_reference_points` under `sumfact` for quadrilaterals, hexahedra and prisms at p = 1–8, both families; agrees with `loops` within tolerance; vector-size invariance bitwise on the CPU runtime.
   - Verify: kernel-task check set with `-p gridcl-geometry`, `GRIDCL_GEOM_STRATEGY=sumfact`
   - After: T6b, T7c
   - Parallel with: –
-  - Risks / notes: barycentric evaluation at ξ equal to a node needs the standard exact-node branch as an arithmetic select (no lane branches).
+  - Risks / notes: the nodal form of the original goal is ill-conditioned in f32 outside the cell (ADR-0049).
 - [ ] **T9 Shared memory (gridcl-geometry)**
   - Goal: `shared`. Factors stage the tabulation (or the 1D tabulation) in shared memory per cube; the pull-back stages C' or its factors. Planned by `per_group` with `units_per_group = 1`, for its shared-memory check; the cube's units load cooperatively behind `sync_cube` in uniform control flow.
   - Crates/files: `gridcl-geometry/src/{shared.rs, layout.rs, pull_back.rs}`.
@@ -452,7 +453,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 | 18 | Release runs reach p ≥ 5 for the first time (T6a): the f32 pull-back converges to preimages outside the cell at p = 8 (ball, both families); J's f32 error grows with the number of nodes, which A does not measure (GLL hexahedra from p = 6); the large invariance case's coordinates are 13–65 times the cell size; and the pull-back's C′ exceeds the large case's page limit from hexahedron p = 6. | Pull-back; Testing and validation, Tolerances; ADR-0042, items 2, 8 and 11; ADR-0044 | Clamp Newton iterates to [−0.1, 1.1]^TD; scale J-derived quantities and ξ by n / n_ref and R; page limit above the per-block tables. | ADR-0046 (accepted, applied) |
 | 19 | A better initial guess for the pull-back (maintainer, 2026-11-11, after a comparison with MFEM, deal.II, gslib and DOLFINx): the centroid start needs 1–2 more Newton iterations than the affine fit of the cell's vertices on every test mesh; MFEM's closest-node start finds wrong roots at p = 8. | Pull-back; ADR-0042, item 11; ADR-0046 | Start from the affine fit of the vertices, clamped to the box, in every pull-back strategy; a task T6c before T7a. | ADR-0047 rejected (maintainer, 2026-11-11: modest gain at the default 16 iterations); centroid start kept, no T6c |
 | 20 | C20: CubeCL 0.11.0's `SimpleCSEPass` is quadratic in a region's operations, so unrolled kernels (`direct` at p ≤ 8, every vector size up to 16) dominate the test-suite time; upstream fixed it on main (tracel-ai/cubecl#1767), not in 0.11.x. | API caveat (the `=0.11.0` pin); CLAUDE.md | Backport #1767 into a vendored cubecl-opt 0.11.0 through `[patch.crates-io]`; ask upstream for a 0.11.4. | ADR-0048 (rejected 2026-11-12: the pin and C20's compile times stay) |
-| 21 | The tensor pull-back as designed (1D Lagrange bases at ξ in barycentric form, contracting the nodal E-vector, no set-up) is ill-conditioned in f32 outside the reference cell: the Lebesgue function at ADR-0046's box margin is 296 per direction for equispaced p = 8 (2.6·10⁷ at a corner), and on Metal 12 of 5,832 ball points at p = 8 end on a box corner (`pull_back_recovers_reference_points`, relative error 1.10 > 0.248); f64 agrees with `loops`. | Pull-back; ADR-0042, items 1 and 5; T8 | Modal tensor pull-back: a sum-factorised set-up a = (C₁′ ⊗ C₁′ ⊗ C₁′)x (prisms C′_tri ⊗ C₁′), per step 1D Legendre recurrences and direction-by-direction contraction. | ADR-0049 (proposed) |
+| 21 | The tensor pull-back as designed (1D Lagrange bases at ξ in barycentric form, contracting the nodal E-vector, no set-up) is ill-conditioned in f32 outside the reference cell: the Lebesgue function at ADR-0046's box margin is 296 per direction for equispaced p = 8 (2.6·10⁷ at a corner), and on Metal 12 of 5,832 ball points at p = 8 end on a box corner (`pull_back_recovers_reference_points`, relative error 1.10 > 0.248); f64 agrees with `loops`. | Pull-back; ADR-0042, items 1 and 5; T8 | Modal tensor pull-back: a sum-factorised set-up a = (C₁′ ⊗ C₁′ ⊗ C₁′)x (prisms C′_tri ⊗ C₁′), per step 1D Legendre recurrences and direction-by-direction contraction. | ADR-0049 (accepted 2026-11-12, applied) |
 
 ## Deviations log
 

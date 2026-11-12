@@ -1,6 +1,6 @@
 # ADR-0049: The tensor pull-back contracts modal coefficients, not nodal values
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-12
 - **Raised in:** M9h T8 (Metal run of the kernel-task check set)
 - **Design sections affected:** "Pull-back" (the strategies bullet); "Handing this design to Claude Code", the copy list (and CLAUDE.md). Amends ADR-0042, items 1 and 5.
@@ -92,4 +92,4 @@ Option 2. The tensor pull-back keeps its sum factorisation and its tensor-cell s
 
 ## Decision record
 
-<Filled by the maintainer.>
+Accepted by the maintainer on 2026-11-12, as proposed (option 2). Applied in `adr: 0049 apply`: docs/design.md, "Pull-back" (the strategies bullet) and the copy list of "Handing this design to Claude Code", CLAUDE.md's copy list, the decision record of ADR-0042, and T8 and rules 1 and 5 of docs/plans/M9h.md. The kernels follow in T8.

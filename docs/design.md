@@ -1336,7 +1336,7 @@ Physical-to-reference mapping by Newton iteration, for point location and interp
 - The input is a `BlockFields` of absolute physical points per cell and point, as `physical_points` returns; lanes are consecutive cells of a tile reading the E-vector, and plans use `KernelKind::PullBack` with `max_vector` equal to the tile.
 - Iteration starts at the reference cell's vertex centroid with Δ = K(ξ)(x − X(ξ)), K the pseudo-inverse (Newton in codimension 0, Gauss–Newton otherwise). Each iterate is clamped to [−0.1, 1.1]^TD, the reference cell's box (every reference cell lies in [0, 1]^TD) widened by 0.1, while the freeze test and `last_step` use the unclamped step; a point whose preimage lies outside that box does not converge (ADR-0046). A lane freezes through a lane select once |Δ|∞ ≤ tolerance. The loop always runs `max_iterations`, with no early exit; non-convergence shows in `last_step`.
 - Results are bitwise identical across vector sizes on the CPU runtime and agree to 10^−12 (f64) and 10^−5 (f32) on GPUs (ADR-0039).
-- The pull-back runs the same strategies. On quadrilaterals and hexahedra, the sum-factorised pull-back evaluates the 1D Lagrange bases at ξ (barycentric form) and contracts the E-vector one dimension at a time, with no expansion coefficients; prisms combine the triangle's coefficients with the 1D interval basis (ADR-0042).
+- The pull-back runs the same strategies. On quadrilaterals and hexahedra, the sum-factorised pull-back forms each cell's coefficients over the tensor Legendre basis once, a = (C₁′ ⊗ C₁′ ⊗ C₁′)x by sum factorisation, then evaluates the 1D Legendre polynomials at ξ by their recurrences and contracts a one dimension at a time; prisms use C′_tri ⊗ C₁′ with the Dubiner set (ADR-0042, ADR-0049).
 
 ## Distributed mesh model
 
@@ -2185,9 +2185,9 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   placements back, the upload of the closure node maps and the child's vertex shared flags;
   in orient, the per-round change flag, the agreed error flags, the per-component (label,
   sum, open) records and the flip decisions back; and the upload of a geometry block's
-  expansion coefficients, or of the 1D nodes, barycentric weights and coefficient factors
-  of a sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
-  ADR-0042).
+  expansion coefficients, or of the coefficient factors and node permutation of a
+  sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
+  ADR-0042, ADR-0049).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests

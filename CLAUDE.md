@@ -54,9 +54,9 @@
   placements back, the upload of the closure node maps and the child's vertex shared flags;
   in orient, the per-round change flag, the agreed error flags, the per-component (label,
   sum, open) records and the flip decisions back; and the upload of a geometry block's
-  expansion coefficients, or of the 1D nodes, barycentric weights and coefficient factors
-  of a sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
-  ADR-0042).
+  expansion coefficients, or of the coefficient factors and node permutation of a
+  sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
+  ADR-0042, ADR-0049).
 - FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
   gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
