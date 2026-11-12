@@ -66,11 +66,16 @@ impl<F: Real, TD: TopoDim> QuadRule<F, TD> {
                 let rule = gauss_rule(cell_type, degree);
                 let set = PointSet::new(client, cell, rule.points, rule.weights)?;
                 // Tensor Gauss on quadrilaterals and hexahedra records its 1D factor, the
-                // interval rule of the same degree (ADR-0042, item 5).
+                // interval rule of the same degree, and the prism's rule its triangle and
+                // interval factors (ADR-0042, item 5).
+                let line = || gauss_rule(CellType::Interval, degree).points;
                 Ok(match cell_type {
                     CellType::Quadrilateral | CellType::Hexahedron => {
-                        let line = gauss_rule(CellType::Interval, degree).points;
-                        set.with_tensor(TensorFactors::cube(TD::N, &line))
+                        set.with_tensor(TensorFactors::cube(TD::N, &line()))
+                    }
+                    CellType::Prism => {
+                        let triangle = gauss_rule(CellType::Triangle, degree).points;
+                        set.with_tensor(TensorFactors::prism(&triangle, &line()))
                     }
                     _ => set,
                 })

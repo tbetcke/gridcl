@@ -61,12 +61,12 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
         }
         let narrowed: Vec<F> = normals.iter().map(|&x| F::narrow(x)).collect();
         let set = PointSet::new(client, cell, points, weights)?;
-        // The facets of quadrilaterals and hexahedra carry tensor Gauss rules, each mapped
-        // along cell axes: the set records one tensor block per facet (ADR-0042, item 5).
+        // The facets of quadrilaterals, hexahedra and prisms carry tensor Gauss rules (on the
+        // prism, triangle × z or edge × z), each mapped along cell axes: the set records one
+        // tensor block per facet (ADR-0042, item 5).
         let set = match cell_type {
-            CellType::Quadrilateral | CellType::Hexahedron => {
-                let line = gauss_rule(CellType::Interval, degree).points;
-                set.with_tensor(TensorFactors::facets(cell_type, &line))
+            CellType::Quadrilateral | CellType::Hexahedron | CellType::Prism => {
+                set.with_tensor(TensorFactors::facets(cell_type, degree))
             }
             _ => set,
         };

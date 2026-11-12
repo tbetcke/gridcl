@@ -1,7 +1,8 @@
 //! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
 //! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
-//! T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b).
+//! T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b), and on prisms
+//! (T7c).
 
 use gridcl::prelude::*;
 use gridcl::{FacetQuadRule, FieldShape, PullBackOptions};
@@ -215,12 +216,16 @@ fn forced_sumfact_runs_on_tensor_rules() {
     }
 }
 
-/// Sum-factorised X and J of perturbed hexahedra at p = 3 against `loops`, relative to the
-/// largest entry, within `tol`.
+/// Sum-factorised X and J of perturbed hexahedra (both node families) and prisms at p = 3
+/// against `loops`, relative to the largest entry, within `tol`.
 fn sumfact_on_tensor_rules<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
     use StrategyFamily::*;
-    for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
-        let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 3)
+    for (cell, family) in [
+        (Cell3::Hexahedron, NodeFamily::Equispaced),
+        (Cell3::Hexahedron, NodeFamily::Gll),
+        (Cell3::Prism, NodeFamily::Equispaced),
+    ] {
+        let mesh = gridcl_testing::cube_box(cell, 2, 3)
             .perturbed(0.05)
             .with_node_family(family)
             .build::<F, D3, D3>(client)
@@ -242,7 +247,7 @@ fn sumfact_on_tensor_rules<F: Real>(client: &cubecl::prelude::Client, tol: f64) 
             for (g, w) in got.iter().zip(want.iter()) {
                 assert!(
                     (g - w).abs() <= tol * scale,
-                    "{what} {family:?}: {g} vs {w}"
+                    "{what} {cell:?} {family:?}: {g} vs {w}"
                 );
             }
         }
@@ -320,8 +325,8 @@ fn forced_sumfact_runs_for_derived_factors_and_facet_rules() {
     }
 }
 
-/// det J, K and the facet normals of perturbed quadrilaterals and hexahedra, and det J, K and
-/// the normals of the mixed surface (its quadrilateral block), at p = 3, under `sumfact`
+/// det J, K and the facet normals of perturbed quadrilaterals, hexahedra and prisms, and det J,
+/// K and the normals of the mixed surface (its quadrilateral block), at p = 3, under `sumfact`
 /// against `loops`.
 fn derived_factors_and_facets<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
     use StrategyFamily::*;
@@ -361,6 +366,11 @@ fn derived_factors_and_facets<F: Real>(client: &cubecl::prelude::Client, tol: f6
         );
         sumfact_against_loops(&format!("cube {family:?}"), &cube, &factors, tol, codim0);
     }
+    let prisms = gridcl_testing::cube_box(Cell3::Prism, 2, 3)
+        .perturbed(0.05)
+        .build::<F, D3, D3>(client)
+        .unwrap();
+    sumfact_against_loops("prisms", &prisms, &[Jacobian, FacetNormals], tol, codim0);
     let surface = gridcl_testing::mixed_surface(1, 3)
         .build::<F, D2, D3>(client)
         .unwrap();

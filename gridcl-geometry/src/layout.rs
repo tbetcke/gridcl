@@ -448,10 +448,11 @@ where
     if num_cells == 0 || pts.is_empty() {
         return Ok(out);
     }
+    let cell: CellType = gb.element.cell.into();
     let s = strategy::choose(
         client,
         f.family(),
-        gb.element.cell.into(),
+        cell,
         gb.element.degree,
         size_of::<F>(),
         pts.tensor().is_some(),
@@ -546,7 +547,8 @@ where
                 );
             },
             // SAFETY: as for `direct`, with `tab` the table of `TensorFactors::table` for this
-            // element and point set: its header offsets, 1D rows and permutation lie inside it
+            // element and point set (on prisms, the triangle × z table, which the kernel reads
+            // with prism = true): its header offsets, rows and permutation lie inside it
             // by construction; the permutation holds nodes below nodes_per_cell, so the E-vector
             // reads are those of `direct`; and the blocks hold each of the num_points points
             // once (`PointSet::with_tensor` checks it), so the writes are those of `direct`.
@@ -571,6 +573,7 @@ where
                     fit(layout.num_points)?,
                     sumfact_layout(layout, gb.element.degree as usize + 1),
                     f,
+                    cell == CellType::Prism,
                 );
             },
             _ => unreachable!("`choose` returns only the strategies that run"),

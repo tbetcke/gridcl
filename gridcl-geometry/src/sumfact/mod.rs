@@ -5,6 +5,9 @@
 //! the nodes; a point set that is a tensor product of 1D point sets (a Gauss rule) records its
 //! factors ([`TensorFactors`]). A sum-factorised kernel then contracts the E-vector with the 1D
 //! tabulations one direction at a time, instead of summing over every node at every point.
+//! On prisms the basis is the product of the triangle's and the interval's Lagrange bases
+//! (Finding 3 of the plan), and the point sets are products of triangle points and points in
+//! z: the kernel contracts the triangle factor, then z ([`prism`]).
 //!
 //! The kernels read one table per (element, point set) ([`TensorFactors::table`]), uploaded once
 //! under CLAUDE.md's clause for tabulations: a header describing the tensor blocks of the point
@@ -12,6 +15,7 @@
 //! all as values of the scalar type (integers below 2^24, exact in f32), so no kernel binds a
 //! sixth buffer (ADR-0042, item 5).
 
+pub(crate) mod prism;
 pub(crate) mod tensor;
 
 use gridcl_device::{GridError, Result};
@@ -20,19 +24,35 @@ use gridcl_refcell::{LagrangeElement, NodeFamily};
 
 use crate::names::element_error;
 
-/// One direction of a [`TensorBlock`].
+/// One factor of a [`TensorBlock`]: a direction, or the triangle (directions 0 and 1) of a prism.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Level {
-    /// The reference direction (coordinate) the level runs along.
-    pub(crate) dim: usize,
-    /// The 1D points of the direction.
+    /// The reference directions (coordinates) the level sets, ascending.
+    pub(crate) dims: Vec<usize>,
+    /// The points of the level, `[i][dims]`.
     pub(crate) points: Vec<f64>,
-    /// The step of the point index per step along the direction.
+    /// The step of the point index per step along the level.
     pub(crate) stride: usize,
 }
 
-/// Points `offset + Σ_ℓ i_ℓ · stride_ℓ` with coordinate `dim_ℓ` equal to `points_ℓ[i_ℓ]`, for every
-/// multi-index (i_0, …) of the levels; level 0 is the innermost loop of the kernels.
+impl Level {
+    /// A level along the single direction `dim`.
+    fn line(dim: usize, points: Vec<f64>, stride: usize) -> Self {
+        Level {
+            dims: vec![dim],
+            points,
+            stride,
+        }
+    }
+
+    /// The number of points.
+    pub(crate) fn len(&self) -> usize {
+        self.points.len() / self.dims.len()
+    }
+}
+
+/// Points `offset + Σ_ℓ i_ℓ · stride_ℓ` with coordinates `dims_ℓ` equal to `points_ℓ[i_ℓ]`, for
+/// every multi-index (i_0, …) of the levels; level 0 is the innermost loop of the kernels.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorBlock {
     /// The index of the block's point with multi-index 0.
@@ -42,7 +62,8 @@ pub(crate) struct TensorBlock {
 }
 
 /// The tensor structure of a point set: blocks that together hold each point once (one block
-/// for a cell rule, one per facet for a facet rule).
+/// for a cell rule, one per facet for a facet rule). On quadrilaterals and hexahedra each level
+/// is a direction; on prisms level 0 is the triangle (directions 0 and 1) and level 1 is z.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorFactors {
     pub(crate) blocks: Vec<TensorBlock>,
@@ -62,31 +83,54 @@ impl TensorFactors {
     pub(crate) fn cube(td: usize, points: &[f64]) -> Self {
         let m = points.len();
         let levels = (0..td)
-            .map(|d| Level {
-                dim: d,
-                points: points.to_vec(),
-                stride: m.pow(d as u32),
-            })
+            .map(|d| Level::line(d, points.to_vec(), m.pow(d as u32)))
             .collect();
         TensorFactors {
             blocks: vec![TensorBlock { offset: 0, levels }],
         }
     }
 
-    /// The factors of the facet rule of `cell` (a quadrilateral or hexahedron) whose facets
-    /// carry the tensor rule with the 1D points `line` (the first facet direction fastest),
-    /// mapped facet by facet into cell coordinates by `facet_points_to_cell`, facet-major
-    /// (`FacetQuadRule::gauss`): one block per facet, whose levels follow the facet's axes and
-    /// end with the direction normal to the facet, a level of one point.
+    /// The factors of the prism rule with the triangle points `triangle` (`[i][2]`) and the
+    /// points `line` in z, the triangle running fastest (gridcl-refcell's `gauss_rule` on
+    /// prisms).
+    pub(crate) fn prism(triangle: &[f64], line: &[f64]) -> Self {
+        let mt = triangle.len() / 2;
+        TensorFactors {
+            blocks: vec![TensorBlock {
+                offset: 0,
+                levels: vec![
+                    Level {
+                        dims: vec![0, 1],
+                        points: triangle.to_vec(),
+                        stride: 1,
+                    },
+                    Level::line(2, line.to_vec(), mt),
+                ],
+            }],
+        }
+    }
+
+    /// The factors of the facet rule of `cell` (a quadrilateral, hexahedron or prism) whose
+    /// facets carry the Gauss rules of `degree`, mapped facet by facet into cell coordinates by
+    /// `facet_points_to_cell`, facet-major (`FacetQuadRule::gauss`): one block per facet.
+    /// - Quadrilaterals and hexahedra: the levels follow the facet's axes and end with the
+    ///   direction normal to the facet, a level of one point.
+    /// - Prisms: a triangle facet is its triangle rule times one point in z; a quadrilateral
+    ///   facet runs along a triangle edge (its first axis, a level of points in directions 0
+    ///   and 1) and along z (its second axis).
     ///
     /// # Panics
     ///
-    /// If the cell is not a quadrilateral or hexahedron.
-    pub(crate) fn facets(cell: CellType, line: &[f64]) -> Self {
+    /// If the cell is not a quadrilateral, hexahedron or prism.
+    pub(crate) fn facets(cell: CellType, degree: u32) -> Self {
+        if cell == CellType::Prism {
+            return Self::prism_facets(degree);
+        }
         assert!(
             matches!(cell, CellType::Quadrilateral | CellType::Hexahedron),
             "facet sum factorisation on {cell:?}"
         );
+        let line = &gridcl_refcell::gauss_rule(CellType::Interval, degree).points;
         let td = gridcl_refcell::tdim(cell);
         let fd = td - 1;
         let m = line.len();
@@ -120,21 +164,14 @@ impl TensorFactors {
                     .map(|j| {
                         let dim = axis(j);
                         let stride = m.pow(j as u32);
-                        Level {
-                            dim,
-                            points: (0..m).map(|i| x[i * stride * td + dim]).collect(),
-                            stride,
-                        }
+                        let points = (0..m).map(|i| x[i * stride * td + dim]).collect();
+                        Level::line(dim, points, stride)
                     })
                     .collect();
                 let normal = (0..td)
-                    .find(|d| levels.iter().all(|l| l.dim != *d))
+                    .find(|d| levels.iter().all(|l| l.dims[0] != *d))
                     .expect("a direction normal to the facet");
-                levels.push(Level {
-                    dim: normal,
-                    points: vec![x[normal]],
-                    stride: 0,
-                });
+                levels.push(Level::line(normal, vec![x[normal]], 0));
                 TensorBlock {
                     offset: f * per_facet,
                     levels,
@@ -144,26 +181,71 @@ impl TensorFactors {
         TensorFactors { blocks }
     }
 
+    /// [`facets`](TensorFactors::facets) of the prism.
+    fn prism_facets(degree: u32) -> Self {
+        let cell = CellType::Prism;
+        let mut offset = 0;
+        let mut blocks = Vec::new();
+        for (f, &facet) in gridcl_refcell::sub_entity_types(cell, 2).iter().enumerate() {
+            let rule = gridcl_refcell::gauss_rule(facet, degree);
+            let x = gridcl_refcell::facet_points_to_cell(cell, f, &rule.points);
+            let count = x.len() / 3;
+            // (x, y) of points 0..k and z of every `step`-th point.
+            let xy = |k: usize| (0..k).flat_map(|i| [x[3 * i], x[3 * i + 1]]).collect();
+            let z = |k: usize, step: usize| (0..k).map(|i| x[3 * i * step + 2]).collect();
+            let levels = if facet == CellType::Triangle {
+                // z is the same at every point of a facet z = 0 or z = 1.
+                vec![
+                    Level {
+                        dims: vec![0, 1],
+                        points: xy(count),
+                        stride: 1,
+                    },
+                    Level::line(2, z(1, 1), 0),
+                ]
+            } else {
+                // The facet's first axis runs along a triangle edge, its second along z (the
+                // prism's facets list a top vertex third, `sub_entities`).
+                let m = count.isqrt();
+                vec![
+                    Level {
+                        dims: vec![0, 1],
+                        points: xy(m),
+                        stride: 1,
+                    },
+                    Level::line(2, z(m, m), m),
+                ]
+            };
+            blocks.push(TensorBlock { offset, levels });
+            offset += count;
+        }
+        TensorFactors { blocks }
+    }
+
     /// The points `[q][td]` the factors describe, or `None` unless the blocks hold each of
     /// `num_points` points exactly once.
     pub(crate) fn points(&self, td: usize, num_points: usize) -> Option<Vec<f64>> {
         let mut out = vec![0.0; num_points * td];
         let mut seen = vec![false; num_points];
         for block in &self.blocks {
-            if block.levels.len() != td {
+            let dims: Vec<usize> = block.levels.iter().flat_map(|l| l.dims.clone()).collect();
+            if !(0..td).all(|d| dims.contains(&d)) || dims.len() != td {
                 return None;
             }
-            let count: usize = block.levels.iter().map(|l| l.points.len()).product();
+            let count: usize = block.levels.iter().map(Level::len).product();
             for flat in 0..count {
                 let mut rest = flat;
                 let mut q = block.offset;
                 let mut x = vec![0.0; td];
                 for level in &block.levels {
-                    let m = level.points.len();
+                    let m = level.len();
                     let i = rest % m;
                     rest /= m;
                     q += i * level.stride;
-                    *x.get_mut(level.dim)? = level.points[i];
+                    let k = level.dims.len();
+                    for (&d, &c) in level.dims.iter().zip(&level.points[i * k..(i + 1) * k]) {
+                        x[d] = c;
+                    }
                 }
                 if q >= num_points || std::mem::replace(&mut seen[q], true) {
                     return None;
@@ -175,15 +257,22 @@ impl TensorFactors {
     }
 
     /// The table of the sum-factorised kernels for the element of `degree` and `family` on
-    /// `cell` (a quadrilateral or hexahedron), in f64:
+    /// `cell` (a quadrilateral, hexahedron or prism), in f64:
     /// - `[0]` the number of blocks, `[1]` the offset of the permutation;
     /// - per block, its point offset, then per level ([`LEVEL_LEN`] entries): the number of
-    ///   points m, the point stride, the offset of the 1D values `[i][a]` (m × n, the
-    ///   derivatives `[i][a]` follow), the lexicographic stride n^dim and the direction;
-    /// - the 1D tables, level by level;
-    /// - the permutation: entry a_0 + n a_1 + n² a_2 is the gridcl node at the 1D nodes
-    ///   (a_0, a_1, a_2), indices of gridcl-refcell's interval element of the same degree and
-    ///   family.
+    ///   points m, the point stride, the offset of the level's values `[i][a]` (m × n, the
+    ///   derivatives `[i][a]` follow), the lexicographic stride of its node index and its first
+    ///   direction;
+    /// - the tables, level by level;
+    /// - the permutation: the gridcl node of each lexicographic multi-index of the factors'
+    ///   nodes.
+    ///
+    /// On quadrilaterals and hexahedra each level is a direction with n = p + 1 nodes of
+    /// gridcl-refcell's interval element of the same degree and family, its lexicographic stride
+    /// n^dim. On prisms level 0 is the triangle: its nt = n (n + 1) / 2 nodes of the triangle
+    /// element, the values `[i][t]` followed by the x and y derivatives, lexicographic stride 1;
+    /// level 1 is z, as on hexahedra, with lexicographic stride nt. The permutation's entry
+    /// t + nt c is the prism node at triangle node t and interval node c.
     ///
     /// # Errors
     ///
@@ -192,39 +281,71 @@ impl TensorFactors {
     ///
     /// # Panics
     ///
-    /// If the cell is not a quadrilateral or hexahedron, or its nodes are not the tensor grid of
-    /// the interval element's nodes.
+    /// If the cell is not a quadrilateral, hexahedron or prism, the levels do not have the
+    /// cell's form, or the cell's nodes are not the product of the factors' nodes.
     pub(crate) fn table(
         &self,
         cell: CellType,
         degree: u32,
         family: NodeFamily,
     ) -> Result<Vec<f64>> {
+        let td = gridcl_refcell::tdim(cell);
+        let prism = cell == CellType::Prism;
         assert!(
-            matches!(cell, CellType::Quadrilateral | CellType::Hexahedron),
+            prism || matches!(cell, CellType::Quadrilateral | CellType::Hexahedron),
             "sum factorisation on {cell:?}"
         );
-        let td = gridcl_refcell::tdim(cell);
         let line =
             LagrangeElement::new(CellType::Interval, degree, family).map_err(element_error)?;
+        let triangle = if prism {
+            Some(LagrangeElement::new(CellType::Triangle, degree, family).map_err(element_error)?)
+        } else {
+            None
+        };
         let n = line.dim();
-        let header = 2 + self.blocks.len() * (1 + LEVEL_LEN * td);
+        let nt = triangle.as_ref().map_or(0, LagrangeElement::dim);
+        let num_levels = if prism { 2 } else { td };
+        let header = 2 + self.blocks.len() * (1 + LEVEL_LEN * num_levels);
         let mut out = vec![0.0; header];
         out[0] = self.blocks.len() as f64;
         let mut h = 2;
         for block in &self.blocks {
+            assert_eq!(
+                block.levels.len(),
+                num_levels,
+                "{cell:?}: tensor block levels"
+            );
             out[h] = block.offset as f64;
             h += 1;
-            for level in &block.levels {
-                let m = level.points.len();
-                let tab = line.tabulate(&level.points, 1).map_err(element_error)?;
+            for (l, level) in block.levels.iter().enumerate() {
+                let m = level.len();
                 let at = out.len();
-                for deriv in 0..2 {
-                    for i in 0..m {
-                        out.extend((0..n).map(|a| tab.get(deriv, i, a)));
+                let (dim, lex) = match (&triangle, l) {
+                    (Some(tri), 0) => {
+                        assert_eq!(level.dims, [0, 1], "prism level 0 is the triangle");
+                        let tab = tri.tabulate(&level.points, 1).map_err(element_error)?;
+                        for deriv in 0..3 {
+                            for i in 0..m {
+                                out.extend((0..nt).map(|t| tab.get(deriv, i, t)));
+                            }
+                        }
+                        (0, 1)
                     }
-                }
-                let entry = [m, level.stride, at, n.pow(level.dim as u32), level.dim];
+                    _ => {
+                        let [dim] = level.dims[..] else {
+                            panic!("{cell:?}: level {l} is not a direction")
+                        };
+                        assert!(!prism || dim == 2, "prism level 1 is z");
+                        let tab = line.tabulate(&level.points, 1).map_err(element_error)?;
+                        for deriv in 0..2 {
+                            for i in 0..m {
+                                out.extend((0..n).map(|a| tab.get(deriv, i, a)));
+                            }
+                        }
+                        (dim, if prism { nt } else { n.pow(dim as u32) })
+                    }
+                };
+                let entry = [m, level.stride, at, lex, dim];
                 for (k, v) in entry.into_iter().enumerate() {
                     out[h + k] = v as f64;
                 }
@@ -232,11 +353,11 @@ impl TensorFactors {
             }
         }
         out[1] = out.len() as f64;
-        out.extend(
-            permutation(cell, degree, family, &line)?
-                .into_iter()
-                .map(|k| k as f64),
-        );
+        let perm = match &triangle {
+            Some(tri) => prism_permutation(degree, family, tri, &line)?,
+            None => permutation(cell, degree, family, &line)?,
+        };
+        out.extend(perm.into_iter().map(|k| k as f64));
         if out.len() >= MAX_TABLE_INT
             || self.blocks.iter().any(|b| {
                 b.offset >= MAX_TABLE_INT || b.levels.iter().any(|l| l.stride >= MAX_TABLE_INT)
@@ -279,6 +400,40 @@ fn permutation(
             perm[lex],
             usize::MAX,
             "{cell:?}: two nodes at one tensor point"
+        );
+        perm[lex] = k;
+    }
+    Ok(perm)
+}
+
+/// The prism node at each lexicographic pair (t, c) of the triangle element `triangle`'s nodes
+/// and the interval element `line`'s nodes, at entry t + nt c.
+///
+/// # Panics
+///
+/// If a product point is not a node of the prism's element.
+fn prism_permutation(
+    degree: u32,
+    family: NodeFamily,
+    triangle: &LagrangeElement,
+    line: &LagrangeElement,
+) -> Result<Vec<usize>> {
+    let element = LagrangeElement::new(CellType::Prism, degree, family).map_err(element_error)?;
+    let (s, t) = (triangle.points(), line.points());
+    let (nt, n) = (s.len() / 2, t.len());
+    // The index of the entry of `pts` (of `k` coordinates) at `x`.
+    let nearest = |pts: &[f64], k: usize, x: &[f64]| {
+        (0..pts.len() / k)
+            .find(|&a| (0..k).all(|d| (pts[a * k + d] - x[d]).abs() < 1e-12))
+            .unwrap_or_else(|| panic!("prism node {x:?} is no product node"))
+    };
+    let mut perm = vec![usize::MAX; nt * n];
+    for (k, x) in element.points().as_chunks::<3>().0.iter().enumerate() {
+        let lex = nearest(s, 2, &x[..2]) + nt * nearest(t, 1, &x[2..]);
+        assert_eq!(
+            perm[lex],
+            usize::MAX,
+            "prism: two nodes at one product point"
         );
         perm[lex] = k;
     }
@@ -375,13 +530,66 @@ mod tests {
                 gridcl_refcell::facet_points_to_cell(cell, f, &rule.points)
             })
             .collect();
+        let factors = TensorFactors::facets(cell, rule_degree);
+        if cell == CellType::Prism {
+            check_prism_table(degree, &factors, &points);
+        } else {
+            check_table(cell, degree, family, &factors, &points);
+        }
+    }
+
+    /// As [`check_table`] on the prism: the triangle table times the z table, permuted.
+    fn check_prism_table(degree: u32, factors: &TensorFactors, points: &[f64]) {
+        let family = NodeFamily::Equispaced;
+        let num_points = points.len() / 3;
+        assert_eq!(factors.points(3, num_points).unwrap(), points);
+        let t = factors.table(CellType::Prism, degree, family).unwrap();
+        let element = LagrangeElement::new(CellType::Prism, degree, family).unwrap();
+        let want = element.tabulate(points, 1).unwrap();
+        let n = degree as usize + 1;
+        let nt = n * (n + 1) / 2;
+        let perm = t[1] as usize;
+        assert_eq!(t[0] as usize, factors.blocks.len());
+        for (blk, block) in factors.blocks.iter().enumerate() {
+            let h = 2 + blk * (1 + LEVEL_LEN * 2);
+            assert_eq!(t[h] as usize, block.offset);
+            let tri = &t[h + 1..h + 1 + LEVEL_LEN];
+            let z = &t[h + 1 + LEVEL_LEN..h + 1 + 2 * LEVEL_LEN];
+            assert_eq!((tri[3], tri[4], z[3], z[4]), (1.0, 0.0, nt as f64, 2.0));
+            let (mt, mz) = (tri[0] as usize, z[0] as usize);
+            for (i, j) in (0..mz).flat_map(|j| (0..mt).map(move |i| (i, j))) {
+                let q = block.offset + i * tri[1] as usize + j * z[1] as usize;
+                for (lex, &k) in t[perm..perm + nt * n].iter().enumerate() {
+                    let (a, c) = (lex % nt, lex / nt);
+                    let psi = |d: usize| t[tri[2] as usize + (d * mt + i) * nt + a];
+                    let phi = |d: usize| t[z[2] as usize + (d * mz + j) * n + c];
+                    let got = [
+                        psi(0) * phi(0),
+                        psi(1) * phi(0),
+                        psi(2) * phi(0),
+                        psi(0) * phi(1),
+                    ];
+                    for (deriv, got) in got.into_iter().enumerate() {
+                        let w = want.get(deriv, q, k as usize);
+                        assert!(
+                            (got - w).abs() < 1e-10 * (1.0 + w.abs()),
+                            "prism p={degree} q={q} k={k} deriv={deriv}: {got} vs {w}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The prism's Gauss rule of `rule_degree`.
+    fn check_prism_products(degree: u32, rule_degree: u32) {
+        let rule = gridcl_refcell::gauss_rule(CellType::Prism, rule_degree);
+        let triangle = gridcl_refcell::gauss_rule(CellType::Triangle, rule_degree).points;
         let line = gridcl_refcell::gauss_rule(CellType::Interval, rule_degree).points;
-        check_table(
-            cell,
+        check_prism_table(
             degree,
-            family,
-            &TensorFactors::facets(cell, &line),
-            &points,
+            &TensorFactors::prism(&triangle, &line),
+            &rule.points,
         );
     }
 
@@ -408,6 +616,16 @@ mod tests {
             check_facet_products(CellType::Quadrilateral, 8, family, 1);
             check_facet_products(CellType::Hexahedron, 5, family, 1);
         }
+    }
+
+    #[test]
+    fn prism_tables_reproduce_the_element() {
+        for degree in 1..=4 {
+            check_prism_products(degree, 2 * degree);
+            check_facet_products(CellType::Prism, degree, NodeFamily::Equispaced, 2 * degree);
+        }
+        check_prism_products(8, 1);
+        check_facet_products(CellType::Prism, 6, NodeFamily::Equispaced, 1);
     }
 
     #[test]

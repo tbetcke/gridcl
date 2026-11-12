@@ -1,4 +1,5 @@
-//! The sum-factorised factor kernel on quadrilaterals and hexahedra (docs/plans/M9h.md, T7a).
+//! The sum-factorised factor kernel on quadrilaterals and hexahedra (docs/plans/M9h.md, T7a),
+//! and on prisms through [`block_prism`] (T7c).
 //!
 //! Per cell and tensor block of the point set, the kernel contracts the E-vector with the 1D
 //! tables of the outermost level first: on a hexahedron, for each point i_2 of level 2 it forms
@@ -17,6 +18,7 @@
 use cubecl::prelude::*;
 
 use super::LEVEL_LEN;
+use super::prism::block_prism;
 use crate::GeomLayout;
 use crate::layout::{Factor, store_from_jacobian};
 
@@ -33,13 +35,13 @@ pub(crate) fn sumfact_layout(l: GeomLayout, n: usize) -> GeomLayout {
 
 /// The integer at `tab[i]`.
 #[cube]
-fn int<F: Float>(tab: &[F], i: usize) -> usize {
+pub(super) fn int<F: Float>(tab: &[F], i: usize) -> usize {
     u32::cast_from(tab[i]) as usize
 }
 
 /// `x` in every lane.
 #[cube]
-fn bc<F: Float, N: Size>(x: F) -> Vector<F, N> {
+pub(super) fn bc<F: Float, N: Size>(x: F) -> Vector<F, N> {
     Vector::<F, N>::broadcast(x)
 }
 
@@ -313,7 +315,8 @@ fn block_3d<F: Float, N: Size>(
 
 /// `layout::factor_kernel` by sum factorisation; `l` from [`sumfact_layout`], `tab` the table
 /// of [`TensorFactors::table`](super::TensorFactors::table) narrowed to `F`, `num_points` the
-/// points per cell. The same buffers (five) and arguments otherwise.
+/// points per cell, `prism` whether the cell is a prism ([`block_prism`]). The same buffers
+/// (five) and arguments otherwise.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn factor_sumfact_kernel<F: Float, N: Size>(
@@ -332,7 +335,9 @@ pub(crate) fn factor_sumfact_kernel<F: Float, N: Size>(
     num_points: u32,
     #[comptime] l: GeomLayout,
     #[comptime] f: Factor,
+    #[comptime] prism: bool,
 ) {
+    let levels = comptime!(if prism { 2 } else { l.tdim });
     let vpt = comptime!(l.tile) / N::value();
     let num_blocks = int::<F>(tab, 0);
     let perm = int::<F>(tab, 1);
@@ -347,8 +352,13 @@ pub(crate) fn factor_sumfact_kernel<F: Float, N: Size>(
             let base = (out_first_tile as usize + local_tile) * num_points as usize;
             let xo = x_offset as usize + v;
             for blk in 0..num_blocks {
-                let h = 2 + blk * comptime!(1 + LEVEL_LEN * l.tdim);
-                if comptime!(l.tdim == 2) {
+                let h = 2 + blk * comptime!(1 + LEVEL_LEN * levels);
+                if comptime!(prism) {
+                    block_prism::<F, N>(
+                        xe, tab, extra, flags, out, h, perm, xo, xs, base, vpt, lane, v,
+                        first_cell, last_cell, l, f,
+                    );
+                } else if comptime!(l.tdim == 2) {
                     block_2d::<F, N>(
                         xe, tab, extra, flags, out, h, perm, xo, xs, base, vpt, lane, v,
                         first_cell, last_cell, l, f,
