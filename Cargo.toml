@@ -63,8 +63,13 @@ build-probe-mpi = "=0.1.6"
 # debug info for dependencies. Each feature combination is a build of its own, and with full
 # debug info a worktree's target/ had grown to 183 GiB by the end of M8, 45 GB of it object
 # files kept for their debug info. Set CARGO_PROFILE_DEV_DEBUG=true for a debugger session.
+# Workspace crates at opt-level 1, as in hosted CI since the M7 review: unoptimised host code
+# dominated the debug test times. Debug assertions, overflow checks and every
+# `cfg(debug_assertions)` choice stay as they are. Set CARGO_PROFILE_DEV_OPT_LEVEL=0 for a
+# debugger session.
 [profile.dev]
 debug = "line-tables-only"
+opt-level = 1
 
 # buildid 1.0.5 (via cubecl-server's build_id_hash) adds dlpi_addr + p_vaddr, which wraps for
 # some objects loaded on Myriad; with overflow checks the panic in its dl_iterate_phdr callback
