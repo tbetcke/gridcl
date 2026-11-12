@@ -353,10 +353,12 @@ pub fn flat_f64<F: Real, S: FieldShape>(fields: &BlockFields<F, S>) -> Vec<Vec<f
 /// Asserts `got` equals `want` bitwise up to the sign of zero on the CPU runtime, and within
 /// the tolerance of `F` (relative to the largest |want|) elsewhere. A separately written
 /// reference kernel may fuse multiply-adds differently, which can flip the sign of a zero
-/// (ADR-0013); every nonzero value must match in every bit.
+/// (ADR-0013); every nonzero value must match in every bit. Under a `GRIDCL_GEOM_STRATEGY`
+/// that reorders the sums of the node-order references ([`environment_reorders_sums`]), the
+/// CPU runtime is held to the tolerance too.
 pub fn assert_matches<F: Real>(got: &[F], want: &[F], what: &str) {
     assert_eq!(got.len(), want.len(), "{what}: lengths");
-    if gridcl_testing::bitwise_device() {
+    if gridcl_testing::bitwise_device() && !environment_reorders_sums() {
         for (i, (a, b)) in got.iter().zip(want).enumerate() {
             let (a, b) = (a.widen(), b.widen());
             assert!(
@@ -515,6 +517,23 @@ pub use gridcl_geometry::testing::{Strategy, StrategyFamily, StrategyOverride};
 
 /// The environment variable of the degree policy's override (ADR-0042, item 3).
 pub const GEOM_STRATEGY_VAR: &str = "GRIDCL_GEOM_STRATEGY";
+
+/// Whether `GRIDCL_GEOM_STRATEGY` forces, for some family, a strategy that sums in another
+/// order than the scalar node-order references: `sumfact` (one direction at a time) or
+/// `cooperative` (trees over units). `direct` and `loops` sum in node order, and the policy
+/// stays bitwise M9's kernels (ADR-0042, item 11), so the references' bitwise comparisons hold
+/// under them (docs/plans/M9h.md, Deviations log, T7b).
+pub fn environment_reorders_sums() -> bool {
+    let Some(value) = std::env::var_os(GEOM_STRATEGY_VAR) else {
+        return false;
+    };
+    value.to_string_lossy().split(',').any(|entry| {
+        let name = entry.rsplit('=').next().unwrap_or_default().trim();
+        [Strategy::SumFactorised, Strategy::Cooperative]
+            .iter()
+            .any(|s| s.name() == name)
+    })
+}
 
 /// One setting an M9h test runs under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
