@@ -42,6 +42,9 @@ pub struct EVector<F: Real> {
     /// The expansion coefficients of the block's coordinate element for the device basis
     /// evaluation (`basis_eval`), uploaded on first use (ADR-0039, item 15).
     coefficients: OnceCell<DeviceBuffer<F>>,
+    /// The data of the tensor pull-back (`sumfact::pull_back`), uploaded on first use
+    /// (ADR-0042, item 5).
+    tensor: OnceCell<DeviceBuffer<F>>,
 }
 
 impl<F: Real> EVector<F> {
@@ -117,11 +120,41 @@ impl<F: Real> EVector<F> {
         Ok(self.coefficients.get_or_init(|| c))
     }
 
-    /// The allocated bytes of the cached coefficients, 0 before their first use.
+    /// The data of the tensor pull-back of the block's coordinate element (cell, degree, family;
+    /// a quadrilateral, hexahedron or prism) and the grid's `origin`, narrowed to `F`
+    /// (`sumfact::pull_back::pull_back_data`): the runtime zero and one, the origin, the
+    /// interval's C₁′, the lexicographic node permutation and, on prisms, C'_tri. Computed in f64
+    /// and uploaded on first use, then cached with the E-vector, once per geometry block
+    /// (ADR-0042, item 5; ADR-0049); every call for one block passes the same arguments.
+    ///
+    /// # Errors
+    ///
+    /// The element errors of `LagrangeElement::new`; allocation and device errors.
+    pub(crate) fn tensor_coefficients(
+        &self,
+        cell: CellType,
+        degree: u32,
+        family: NodeFamily,
+        origin: &[f64],
+    ) -> Result<&DeviceBuffer<F>> {
+        if let Some(c) = self.tensor.get() {
+            return Ok(c);
+        }
+        let host: Vec<F> = crate::sumfact::pull_back::pull_back_data(cell, degree, family, origin)?
+            .into_iter()
+            .map(F::narrow)
+            .collect();
+        let c = DeviceBuffer::from_host(self.origin.client(), &host)?;
+        Ok(self.tensor.get_or_init(|| c))
+    }
+
+    /// The allocated bytes of the cached coefficients and tensor pull-back data, 0 before their
+    /// first use.
     pub(crate) fn coefficients_bytes(&self) -> usize {
-        self.coefficients
-            .get()
-            .map_or(0, DeviceBuffer::footprint_bytes)
+        [&self.coefficients, &self.tensor]
+            .iter()
+            .map(|c| c.get().map_or(0, DeviceBuffer::footprint_bytes))
+            .sum()
     }
 }
 
@@ -326,6 +359,7 @@ pub(crate) fn build<F: Real>(
         num_cells,
         origin,
         coefficients: OnceCell::new(),
+        tensor: OnceCell::new(),
     })
 }
 

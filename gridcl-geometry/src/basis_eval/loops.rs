@@ -165,7 +165,7 @@ fn emit_at<F: Float, N: Size>(
 /// P_i(2t − 1) and its derivative along t at 2i and 2i + 1 of `out`, i ≤ p
 /// ([`super::legendre`]).
 #[cube]
-fn legendre_into<F: Float, N: Size>(
+pub(crate) fn legendre_into<F: Float, N: Size>(
     out: &mut Array<Vector<F, N>>,
     t: Vector<F, N>,
     one: Vector<F, N>,
@@ -240,6 +240,45 @@ fn triangle_set<F: Float, N: Size>(
             } else {
                 emit_at::<F, N>(acc, a, a_at, a_stride, k, t0, t1, t2, zero, 2usize, g);
             }
+            k += 1;
+            step::<F, N>(&mut qb, (j + 1) as u32, alpha, asq, by, one, zero, false);
+        }
+        step::<F, N>(&mut qa, (i + 1) as u32, 0u32, zero, ax, s, zero, true);
+    }
+}
+
+/// The triangle set at (x, y) of degree `p`, with the operations of [`triangle_set`]: the value
+/// and its derivatives along x and y at 3k, 3k + 1 and 3k + 2 of `out`, k in the triangle order
+/// (the tensor pull-back on prisms, `sumfact::pull_back`).
+#[cube]
+pub(crate) fn dubiner_into<F: Float, N: Size>(
+    out: &mut Array<Vector<F, N>>,
+    x: Vector<F, N>,
+    y: Vector<F, N>,
+    one: Vector<F, N>,
+    zero: Vector<F, N>,
+    p: usize,
+) {
+    let two = cst::<F, N>(2i64);
+    let s = one - y;
+    let ax = two * x - s;
+    let by = two * y - one;
+    let mut qa = start_a0::<F, N>(ax, s, one, zero);
+    let mut k = 0usize;
+    for i in 0..p + 1 {
+        let ai = qa[0];
+        let aix = qa[1];
+        // ∂(2x − s)/∂y = 1 and ∂s/∂y = −1.
+        let aiy = aix - qa[2];
+        let alpha = (2 * i + 1) as u32;
+        let asq = square::<F, N>(alpha);
+        let mut qb = start::<F, N>(by, one, alpha, one, zero, false);
+        for j in 0..p - i + 1 {
+            let bj = qb[0];
+            let bjx = qb[1];
+            out[3 * k] = ai * bj;
+            out[3 * k + 1] = two * aix * bj;
+            out[3 * k + 2] = aiy * bj + ai * (two * bjx);
             k += 1;
             step::<F, N>(&mut qb, (j + 1) as u32, alpha, asq, by, one, zero, false);
         }

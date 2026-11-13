@@ -2,7 +2,7 @@
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
 //! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
 //! T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b), and on prisms
-//! (T7c).
+//! (T7c), and for the pull-back on quadrilaterals, hexahedra and prisms (T8).
 
 use gridcl::prelude::*;
 use gridcl::{FacetQuadRule, FieldShape, PullBackOptions};
@@ -104,8 +104,8 @@ fn strategies_that_do_not_run_yet_are_errors() {
         (
             &quadrilateral,
             StrategyFamily::PullBack,
-            Strategy::SumFactorised,
-            "sumfact",
+            Strategy::Shared,
+            "shared",
         ),
         (
             &triangle,
@@ -390,6 +390,65 @@ fn derived_factors_and_facets<F: Real>(client: &cubecl::prelude::Client, tol: f6
                 ("normals", blocks_f64(&mesh.normals(&rule).unwrap())),
             ]
         },
+    );
+}
+
+#[test]
+fn forced_sumfact_pull_back_agrees_with_loops() {
+    let client = gridcl_testing::test_client();
+    sumfact_pull_backs::<f32>(&client, 1e-5);
+    if gridcl_testing::supports::<f64>(&client) {
+        sumfact_pull_backs::<f64>(&client, 1e-12);
+    }
+}
+
+/// ξ and the last step of perturbed quadrilaterals, hexahedra (both node families), prisms and
+/// the mixed surface (its quadrilateral block, codimension 1) at p = 3, at the Gauss points of
+/// degree 6, under `sumfact` against `loops`; every point converges under both.
+fn sumfact_pull_backs<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    fn pull_back<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
+        mesh: &Mesh<F, TD, GD>,
+    ) -> Quantities {
+        let x = mesh
+            .physical_points(&QuadRule::for_grid(mesh, 6).unwrap())
+            .unwrap();
+        let pb = mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+        let steps = blocks_f64(&pb.last_step);
+        let converged = if size_of::<F>() == 8 { 1e-13 } else { 1e-5 };
+        assert!(steps.iter().all(|&s| s <= converged), "{steps:?}");
+        vec![("ξ", blocks_f64(&pb.reference))]
+    }
+    for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+        let square = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D2, D2>(client)
+            .unwrap();
+        let cube = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let what = format!("square {family:?}");
+        sumfact_against_loops(&what, &square, &[Points, PullBack], tol, pull_back);
+        let what = format!("cube {family:?}");
+        sumfact_against_loops(&what, &cube, &[Points, PullBack], tol, pull_back);
+    }
+    let prisms = gridcl_testing::cube_box(Cell3::Prism, 2, 3)
+        .perturbed(0.05)
+        .build::<F, D3, D3>(client)
+        .unwrap();
+    sumfact_against_loops("prisms", &prisms, &[Points, PullBack], tol, pull_back);
+    let surface = gridcl_testing::mixed_surface(1, 3)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    sumfact_against_loops(
+        "mixed surface",
+        &surface,
+        &[Points, PullBack],
+        tol,
+        pull_back,
     );
 }
 

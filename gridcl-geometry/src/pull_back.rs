@@ -13,6 +13,11 @@ use crate::layout::pinv_of;
 use crate::layout_loops::loops_layout;
 use crate::strategy::Strategy;
 use crate::strategy::{self, StrategyFamily};
+use crate::sumfact::pull_back::{
+    pull_back_sumfact_kernel, pull_back_sumfact_setup_kernel, sumfact_pull_back_live,
+    sumfact_setup_live,
+};
+use crate::sumfact::tensor::sumfact_layout;
 use crate::{BlockFields, DeviceGrid, GeomLayout, QuadChunk, QuadField, ScalarShape, VecShape};
 
 /// Options of the pull-back (ADR-0039, item 13).
@@ -71,7 +76,7 @@ pub struct PullBack<F: Real, TD: TopoDim> {
 }
 
 /// Coordinate `d` of the vertex centroid of `cell`, the start of the iteration.
-fn centroid(cell: CellType, d: usize) -> f32 {
+pub(crate) fn centroid(cell: CellType, d: usize) -> f32 {
     let v = gridcl_refcell::vertices(cell);
     (v.iter().map(|p| p[d]).sum::<f64>() / v.len() as f64) as f32
 }
@@ -463,6 +468,11 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// for a block uploads its expansion coefficients, cached with the E-vector. Under the `loops`
 /// strategy a set-up kernel first writes each cell's coordinate-map coefficients to a scratch
 /// buffer of the size of the largest range of the E-vector chunks, which the iterations read.
+/// Under `sumfact` (quadrilaterals, hexahedra and prisms) the set-up forms the same
+/// coefficients by sum factorisation, and each step evaluates the 1D Legendre polynomials at ξ
+/// and contracts them one direction at a time; the first call uploads the interval's
+/// coefficients, the node permutation and on prisms the triangle's coefficients instead of the
+/// expansion coefficients (ADR-0049).
 ///
 /// # Errors
 ///
@@ -533,12 +543,7 @@ where
     )?;
     let layout = GeomLayout::new::<TD, GD>(&gb.element, num_points, tile);
     let xe = g.evector(b)?;
-    let coefficients = xe.coefficients(
-        cell,
-        gb.element.degree,
-        gb.element.family,
-        g.origin().as_ref(),
-    )?;
+    let (degree, family, origin) = (gb.element.degree, gb.element.family, g.origin());
     // The tolerance as an f32 pair whose sum in F rounds like the tolerance itself (a float
     // scalar argument of generic F is not a CubeCL launch argument).
     let tolerance = opts
@@ -548,19 +553,112 @@ where
     let tolerance_lo = (tolerance - f64::from(tolerance_hi)) as f32;
     let (td, gd, nb) = (layout.tdim, layout.gdim, layout.nodes_per_cell);
     let ranges = ranges([xe.chunks(), x.chunks(), xi.chunks(), step.chunks()], tile);
+    // The scratch of the strategies with a set-up: the coordinate map's coefficients of the
+    // largest range, nodes × gdim per cell (the size of one E-vector chunk range).
+    let scratch = || -> Result<DeviceBuffer<F>> {
+        let cells = ranges.iter().map(|r| r.padded_cells).max().unwrap_or(0);
+        let per_cell = nb.checked_mul(gd).ok_or(GridError::TooLarge)?;
+        DeviceBuffer::<F>::uninit(
+            client,
+            per_cell.checked_mul(cells).ok_or(GridError::TooLarge)?,
+        )
+    };
+    if s == Strategy::SumFactorised {
+        let data = xe.tensor_coefficients(cell, degree, family, origin.as_ref())?;
+        // The node count per direction at run time, the arrays' capacity at comptime.
+        let n1 = degree as usize + 1;
+        let cap = loops_capacity(degree);
+        let l = sumfact_layout(layout, cap);
+        let a = scratch()?;
+        for r in &ranges {
+            let [ce, cx, cxi, cs] = r.chunks;
+            let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
+            let (cxi, cs) = (&xi.chunks()[cxi], &step.chunks()[cs]);
+            let setup = LaunchPlan::elementwise(
+                client,
+                KernelKind::PullBack,
+                r.padded_cells,
+                size_of::<F>(),
+                tile,
+                sumfact_setup_live(cell, cap, td),
+            )?;
+            let n = setup.vector_size;
+            debug_assert_bindings(client, 3);
+            // SAFETY: as for `loops`' set-up below: the kernel handles vectors
+            // v < padded_cells / n, reads E-vector vectors (k·G + g)·stride/n + offset/n + v
+            // < K·G·stride/n for the nodes k < K of the permutation, `data` below its length
+            // (`pull_back_data`: 2 + G + n², the permutation of K entries, on prisms nt²), and
+            // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n for k < K (n^TD
+            // coefficients on quadrilaterals and hexahedra, nt·n on prisms, both K), within the
+            // scratch of K·G·scratch_cells elements.
+            unsafe {
+                pull_back_sumfact_setup_kernel::launch_unchecked::<F>(
+                    client,
+                    setup.cube_count,
+                    setup.cube_dim,
+                    n,
+                    ce.data.vector_arg(n),
+                    data.arg(),
+                    a.vector_arg(n),
+                    fit((r.first_cell - ce.first_cell) / n)?,
+                    fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                    fit(r.padded_cells / n)?,
+                    fit(r.padded_cells / n)?,
+                    setup.items_per_unit,
+                    fit(n1)?,
+                    l,
+                    cell,
+                );
+            }
+            let plan = LaunchPlan::elementwise(
+                client,
+                KernelKind::PullBack,
+                r.padded_cells,
+                size_of::<F>(),
+                tile,
+                sumfact_pull_back_live(cell, cap, td, gd),
+            )?;
+            let n = plan.vector_size;
+            debug_assert_bindings(client, 5);
+            // SAFETY: as for `loops` below: the kernel reads `a` at (k·G + g)·padded_cells/n + v
+            // for k < K, inside the scratch the set-up kernel wrote (stream order), `data` at
+            // its first 2 + G entries, and `x`, `xi` and `step` as `direct` does, with
+            // num_points at run time.
+            unsafe {
+                pull_back_sumfact_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    cx.data.vector_arg(n),
+                    a.vector_arg(n),
+                    data.arg(),
+                    cxi.data.vector_arg(n),
+                    cs.data.vector_arg(n),
+                    fit((r.first_cell - cx.first_cell) / tile)?,
+                    fit(r.padded_cells / n)?,
+                    fit((r.first_cell - cxi.first_cell) / tile)?,
+                    fit((r.first_cell - cs.first_cell) / tile)?,
+                    opts.max_iterations,
+                    tolerance_hi,
+                    tolerance_lo,
+                    fit(r.padded_cells / n)?,
+                    plan.items_per_unit,
+                    fit(num_points)?,
+                    fit(n1)?,
+                    l,
+                    cell,
+                );
+            }
+        }
+        return Ok((xi, step));
+    }
+    let coefficients = xe.coefficients(cell, degree, family, origin.as_ref())?;
     if s == Strategy::Loops {
-        let degree = gb.element.degree;
         let cap = loops_capacity(degree);
         // The evaluator's sums, 1D values and recurrences, then the Newton step's values.
         let live = gd * (td + 1) + 3 * cap + 18 + 3 * td * gd + 2 * gd + 3 * td + 6;
-        let scratch_cells = ranges.iter().map(|r| r.padded_cells).max().unwrap_or(0);
-        let per_cell = nb.checked_mul(gd).ok_or(GridError::TooLarge)?;
-        let a = DeviceBuffer::<F>::uninit(
-            client,
-            per_cell
-                .checked_mul(scratch_cells)
-                .ok_or(GridError::TooLarge)?,
-        )?;
+        let a = scratch()?;
         for r in ranges {
             let [ce, cx, cxi, cs] = r.chunks;
             let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
@@ -696,7 +794,7 @@ where
                 plan.items_per_unit,
                 layout,
                 cell,
-                gb.element.degree as usize,
+                degree as usize,
             );
         }
     }

@@ -82,16 +82,10 @@ impl Strategy {
     /// `direct` and `loops` run for every family (T6a, T6b); the later strategies arrive family
     /// by family. Sum factorisation runs for the factor families wherever the point set records
     /// its factors (quadrilateral and hexahedron cell rules from T7a, facet rules from T7b,
-    /// prisms from T7c).
-    fn not_yet(self, family: StrategyFamily) -> Option<&'static str> {
+    /// prisms from T7c), and for the pull-back on every tensor cell (T8).
+    fn not_yet(self, _family: StrategyFamily) -> Option<&'static str> {
         match self {
-            Strategy::Direct | Strategy::Loops => None,
-            Strategy::SumFactorised => match family {
-                StrategyFamily::PullBack => {
-                    Some("geometry strategy sumfact for the pull-back (docs/plans/M9h.md, T8)")
-                }
-                _ => None,
-            },
+            Strategy::Direct | Strategy::Loops | Strategy::SumFactorised => None,
             Strategy::Shared => Some("geometry strategy shared (docs/plans/M9h.md, T9)"),
             Strategy::Cooperative => {
                 Some("geometry strategy cooperative (docs/plans/M9h.md, T10a and T10b)")

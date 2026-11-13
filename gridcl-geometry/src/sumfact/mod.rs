@@ -14,8 +14,13 @@
 //! set, the 1D tabulations of each direction, and the lexicographic-to-gridcl node permutation,
 //! all as values of the scalar type (integers below 2^24, exact in f32), so no kernel binds a
 //! sixth buffer (ADR-0042, item 5).
+//!
+//! The pull-back works on modal coefficients instead: a set-up contracts the E-vector with the
+//! interval's coefficients one direction at a time, and each Newton step evaluates the 1D
+//! Legendre polynomials at its changing point ([`pull_back`]; ADR-0049).
 
 pub(crate) mod prism;
+pub(crate) mod pull_back;
 pub(crate) mod tensor;
 
 use gridcl_device::{GridError, Result};

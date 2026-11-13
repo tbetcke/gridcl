@@ -211,13 +211,15 @@ impl<F: Real> Interpolant<F> {
         if stride == 0 {
             return Ok(out);
         }
+        // The tensor pull-back (`sumfact`) has no evaluator of C': `tensor` = false makes it
+        // fall back to `loops`, which `record_strategies` shows.
         let s = strategy::choose(
             client,
             StrategyFamily::PullBack,
             self.cell,
             self.degree,
             size_of::<F>(),
-            true,
+            false,
         )?;
         let nb = num_lagrange_nodes(self.cell, self.degree);
         let cap = loops_capacity(self.degree);

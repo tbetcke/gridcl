@@ -30,7 +30,7 @@ mod tensor;
 
 #[cfg(any(test, feature = "bench"))]
 pub(crate) use loops::broadcast_rows;
-pub(crate) use loops::{expansion_loops, loops_capacity};
+pub(crate) use loops::{dubiner_into, expansion_loops, legendre_into, loops_capacity};
 
 use cubecl::prelude::*;
 use gridcl_device::{GridError, Result};
