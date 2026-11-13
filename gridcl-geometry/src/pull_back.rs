@@ -11,6 +11,7 @@ use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 use crate::basis_eval::{expansion, expansion_loops, loops_capacity};
 use crate::layout::pinv_of;
 use crate::layout_loops::loops_layout;
+use crate::shared::{self, pull_back_setup_shared_kernel, pull_back_sumfact_setup_shared_kernel};
 use crate::strategy::Strategy;
 use crate::strategy::{self, StrategyFamily};
 use crate::sumfact::pull_back::{
@@ -278,6 +279,36 @@ fn pull_back_setup_kernel<F: Float, N: Size>(
     nodes: u32,
     #[comptime] gd: usize,
 ) {
+    pull_back_setup_body::<F, N>(
+        xe,
+        coefficients,
+        a,
+        xe_offset,
+        xe_stride,
+        a_stride,
+        num_vectors,
+        items_per_unit,
+        nodes,
+        gd,
+    );
+}
+
+/// The body of [`pull_back_setup_kernel`], with `coefficients` in global or shared memory
+/// (the `shared` strategy, `crate::shared`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pull_back_setup_body<F: Float, N: Size>(
+    xe: &[Vector<F, N>],
+    coefficients: &[F],
+    a: &mut [Vector<F, N>],
+    xe_offset: u32,
+    xe_stride: u32,
+    a_stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    #[comptime] gd: usize,
+) {
     let nb = nodes as usize;
     let xe_offset = xe_offset as usize;
     let xe_stride = xe_stride as usize;
@@ -533,17 +564,30 @@ where
     }
     let gb = g.geometry_block(b);
     let cell: CellType = gb.element.cell.into();
+    let (degree, family, origin) = (gb.element.degree, gb.element.family, g.origin());
+    // `shared` stages the set-up's table: the tensor data of `sumfact` on tensor cells, else
+    // `loops`' C′.
+    let sumfact = strategy::sum_factorises(StrategyFamily::PullBack, cell, true);
     let s = strategy::choose(
         client,
         StrategyFamily::PullBack,
         cell,
-        gb.element.degree,
+        degree,
         size_of::<F>(),
         true,
+        || {
+            let xe = g.evector(b)?;
+            let table = if sumfact {
+                xe.tensor_coefficients(cell, degree, family, origin.as_ref())?
+            } else {
+                xe.coefficients(cell, degree, family, origin.as_ref())?
+            };
+            Ok(Some(table.len()))
+        },
     )?;
+    let staged = s == Strategy::Shared;
     let layout = GeomLayout::new::<TD, GD>(&gb.element, num_points, tile);
     let xe = g.evector(b)?;
-    let (degree, family, origin) = (gb.element.degree, gb.element.family, g.origin());
     // The tolerance as an f32 pair whose sum in F rounds like the tolerance itself (a float
     // scalar argument of generic F is not a CubeCL launch argument).
     let tolerance = opts
@@ -563,7 +607,7 @@ where
             per_cell.checked_mul(cells).ok_or(GridError::TooLarge)?,
         )
     };
-    if s == Strategy::SumFactorised {
+    if s == Strategy::SumFactorised || (staged && sumfact) {
         let data = xe.tensor_coefficients(cell, degree, family, origin.as_ref())?;
         // The node count per direction at run time, the arrays' capacity at comptime.
         let n1 = degree as usize + 1;
@@ -574,41 +618,84 @@ where
             let [ce, cx, cxi, cs] = r.chunks;
             let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
             let (cxi, cs) = (&xi.chunks()[cxi], &step.chunks()[cs]);
-            let setup = LaunchPlan::elementwise(
-                client,
-                KernelKind::PullBack,
-                r.padded_cells,
-                size_of::<F>(),
-                tile,
-                sumfact_setup_live(cell, cap, td),
-            )?;
+            let live = sumfact_setup_live(cell, cap, td);
+            let (setup, staged_cap) = if staged {
+                shared::plan(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live,
+                    data.len(),
+                )?
+            } else {
+                let plan = LaunchPlan::elementwise(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live,
+                )?;
+                (plan, 0)
+            };
             let n = setup.vector_size;
             debug_assert_bindings(client, 3);
-            // SAFETY: as for `loops`' set-up below: the kernel handles vectors
-            // v < padded_cells / n, reads E-vector vectors (k·G + g)·stride/n + offset/n + v
-            // < K·G·stride/n for the nodes k < K of the permutation, `data` below its length
-            // (`pull_back_data`: 2 + G + n², the permutation of K entries, on prisms nt²), and
-            // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n for k < K (n^TD
-            // coefficients on quadrilaterals and hexahedra, nt·n on prisms, both K), within the
-            // scratch of K·G·scratch_cells elements.
-            unsafe {
-                pull_back_sumfact_setup_kernel::launch_unchecked::<F>(
-                    client,
-                    setup.cube_count,
-                    setup.cube_dim,
-                    n,
-                    ce.data.vector_arg(n),
-                    data.arg(),
-                    a.vector_arg(n),
-                    fit((r.first_cell - ce.first_cell) / n)?,
-                    fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
-                    fit(r.padded_cells / n)?,
-                    fit(r.padded_cells / n)?,
-                    setup.items_per_unit,
-                    fit(n1)?,
-                    l,
-                    cell,
-                );
+            if staged {
+                // SAFETY: as for the `sumfact` set-up in the other branch; besides, the kernel
+                // stages data[i] for i < data.len() into a shared array of staged_cap ≥
+                // data.len() entries (`shared::capacity`), the shared memory per cube the plan
+                // checked, and reads the staged copy where the `sumfact` set-up reads `data`. The plan has one unit per group, so its
+                // vectors are those of `elementwise`.
+                unsafe {
+                    pull_back_sumfact_setup_shared_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        data.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(n1)?,
+                        fit(data.len())?,
+                        l,
+                        cell,
+                        staged_cap,
+                    );
+                }
+            } else {
+                // SAFETY: as for `loops`' set-up below: the kernel handles vectors
+                // v < padded_cells / n, reads E-vector vectors (k·G + g)·stride/n + offset/n + v
+                // < K·G·stride/n for the nodes k < K of the permutation, `data` below its length
+                // (`pull_back_data`: 2 + G + n², the permutation of K entries, on prisms nt²), and
+                // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n for k < K (n^TD
+                // coefficients on quadrilaterals and hexahedra, nt·n on prisms, both K), within the
+                // scratch of K·G·scratch_cells elements.
+                unsafe {
+                    pull_back_sumfact_setup_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        data.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(n1)?,
+                        l,
+                        cell,
+                    );
+                }
             }
             let plan = LaunchPlan::elementwise(
                 client,
@@ -654,7 +741,7 @@ where
         return Ok((xi, step));
     }
     let coefficients = xe.coefficients(cell, degree, family, origin.as_ref())?;
-    if s == Strategy::Loops {
+    if s == Strategy::Loops || staged {
         let cap = loops_capacity(degree);
         // The evaluator's sums, 1D values and recurrences, then the Newton step's values.
         let live = gd * (td + 1) + 3 * cap + 18 + 3 * td * gd + 2 * gd + 3 * td + 6;
@@ -663,39 +750,81 @@ where
             let [ce, cx, cxi, cs] = r.chunks;
             let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
             let (cxi, cs) = (&xi.chunks()[cxi], &step.chunks()[cs]);
-            let setup = LaunchPlan::elementwise(
-                client,
-                KernelKind::PullBack,
-                r.padded_cells,
-                size_of::<F>(),
-                tile,
-                2 * gd + 2,
-            )?;
+            let (setup, staged_cap) = if staged {
+                shared::plan(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    2 * gd + 2,
+                    coefficients.len(),
+                )?
+            } else {
+                let plan = LaunchPlan::elementwise(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    2 * gd + 2,
+                )?;
+                (plan, 0)
+            };
             let n = setup.vector_size;
             debug_assert_bindings(client, 3);
-            // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD, every
-            // chunk's first cell and the E-vector stride. The kernel handles vectors
-            // v < padded_cells / n; it reads E-vector vectors (k·G + g)·stride/n + offset/n + v
-            // < K·G·stride/n (offset + padded_cells ≤ stride), `coefficients` below K², and
-            // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n, within the
-            // scratch of K·G·scratch_cells elements (padded_cells ≤ scratch_cells).
-            unsafe {
-                pull_back_setup_kernel::launch_unchecked::<F>(
-                    client,
-                    setup.cube_count,
-                    setup.cube_dim,
-                    n,
-                    ce.data.vector_arg(n),
-                    coefficients.arg(),
-                    a.vector_arg(n),
-                    fit((r.first_cell - ce.first_cell) / n)?,
-                    fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
-                    fit(r.padded_cells / n)?,
-                    fit(r.padded_cells / n)?,
-                    setup.items_per_unit,
-                    fit(nb)?,
-                    gd,
-                );
+            if staged {
+                // SAFETY: as for the `loops` set-up in the other branch; besides, the kernel
+                // stages coefficients[i] for i < coefficients.len() into a shared array of
+                // staged_cap ≥ coefficients.len() entries (`shared::capacity`), the shared
+                // memory per cube the plan checked, and reads the staged copy where the `loops`
+                // set-up reads `coefficients`. The plan has one unit per group, so its vectors
+                // are those of `elementwise`.
+                unsafe {
+                    pull_back_setup_shared_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        coefficients.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(nb)?,
+                        fit(coefficients.len())?,
+                        gd,
+                        staged_cap,
+                    );
+                }
+            } else {
+                // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD, every
+                // chunk's first cell and the E-vector stride. The kernel handles vectors
+                // v < padded_cells / n; it reads E-vector vectors (k·G + g)·stride/n + offset/n + v
+                // < K·G·stride/n (offset + padded_cells ≤ stride), `coefficients` below K², and
+                // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n, within the
+                // scratch of K·G·scratch_cells elements (padded_cells ≤ scratch_cells).
+                unsafe {
+                    pull_back_setup_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        coefficients.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(nb)?,
+                        gd,
+                    );
+                }
             }
             let plan = LaunchPlan::elementwise(
                 client,

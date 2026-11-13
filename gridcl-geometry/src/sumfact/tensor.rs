@@ -337,6 +337,48 @@ pub(crate) fn factor_sumfact_kernel<F: Float, N: Size>(
     #[comptime] f: Factor,
     #[comptime] prism: bool,
 ) {
+    factor_sumfact_body::<F, N>(
+        xe,
+        tab,
+        extra,
+        flags,
+        out,
+        x_offset,
+        x_stride,
+        out_first_tile,
+        first_cell,
+        last_cell,
+        num_vectors,
+        items_per_unit,
+        num_points,
+        l,
+        f,
+        prism,
+    );
+}
+
+/// The body of [`factor_sumfact_kernel`], with `tab` in global or shared memory (the `shared`
+/// strategy, `crate::shared`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn factor_sumfact_body<F: Float, N: Size>(
+    xe: &[Vector<F, N>],
+    tab: &[F],
+    extra: &[F],
+    flags: &[u32],
+    out: &mut [Vector<F, N>],
+    x_offset: u32,
+    x_stride: u32,
+    out_first_tile: u32,
+    first_cell: u32,
+    last_cell: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    num_points: u32,
+    #[comptime] l: GeomLayout,
+    #[comptime] f: Factor,
+    #[comptime] prism: bool,
+) {
     let levels = comptime!(if prism { 2 } else { l.tdim });
     let vpt = comptime!(l.tile) / N::value();
     let num_blocks = int::<F>(tab, 0);

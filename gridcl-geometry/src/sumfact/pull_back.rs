@@ -144,6 +144,38 @@ pub(crate) fn pull_back_sumfact_setup_kernel<F: Float, N: Size>(
     #[comptime] l: GeomLayout,
     #[comptime] cell: CellType,
 ) {
+    pull_back_sumfact_setup_body::<F, N>(
+        xe,
+        data,
+        a,
+        xe_offset,
+        xe_stride,
+        a_stride,
+        num_vectors,
+        items_per_unit,
+        nodes,
+        l,
+        cell,
+    );
+}
+
+/// The body of [`pull_back_sumfact_setup_kernel`], with `data` in global or shared memory
+/// (the `shared` strategy, `crate::shared`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pull_back_sumfact_setup_body<F: Float, N: Size>(
+    xe: &[Vector<F, N>],
+    data: &[F],
+    a: &mut [Vector<F, N>],
+    xe_offset: u32,
+    xe_stride: u32,
+    a_stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    #[comptime] l: GeomLayout,
+    #[comptime] cell: CellType,
+) {
     let n = nodes as usize;
     let gd = comptime!(l.gdim);
     let c_at = comptime!(2 + l.gdim);

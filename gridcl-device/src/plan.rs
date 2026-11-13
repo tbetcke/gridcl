@@ -126,12 +126,14 @@ impl LaunchPlan {
     /// - **GPUs:** a cube holds `units_per_group` × (groups per cube) units, at most 256 (or
     ///   `max_units_per_cube`, at most `max_cube_dim.0`, if that is smaller), so
     ///   `units_per_group` is at most that too; `items_per_unit` is 1.
-    /// - **CPUs:** `cube_dim` = `units_per_group` (at most `max_units_per_cube` and
-    ///   `max_cube_dim.0`), and each cube visits blocks of `items_per_unit` consecutive
-    ///   vectors of groups, sized as `elementwise`'s blocks (whole 128-byte lines of about
-    ///   `VectorPolicy::cpu_block_bytes`). The CPU runtime runs one thread per unit of a cube,
-    ///   and each thread visits every cube in turn, so a CPU plan runs `units_per_group`
-    ///   threads.
+    /// - **CPUs:** a cube holds `units_per_group` × (groups per cube) units, as many as
+    ///   `elementwise`'s CPU units U (the hardware threads, or the performance cores where
+    ///   the vector policy says so, ADR-0017) allow: `units_per_group` × ⌊U /
+    ///   `units_per_group`⌋, so `units_per_group` is at most U. Each group slot visits blocks
+    ///   of `items_per_unit` consecutive vectors of groups, sized as `elementwise`'s blocks
+    ///   (whole 128-byte lines of about `VectorPolicy::cpu_block_bytes`). The CPU runtime
+    ///   runs one thread per unit of a cube, so a CPU plan uses the threads `elementwise`
+    ///   uses (ADR-0045).
     /// - `shared_bytes` per cube is checked against the device's shared-memory limit
     ///   (`hardware.max_shared_memory_size`), along with `max_cube_dim`,
     ///   `max_units_per_cube` and `max_cube_count`, with usize overflow checks (ADR-0042,
@@ -229,14 +231,10 @@ fn plan_for(
     let cpu_block = policy.cpu_block_bytes(kind, elem_bytes);
     let (cube_dim, items_per_unit) = if let Some(block) = cpu_block {
         let bytes = n.checked_mul(elem_bytes).ok_or(GridError::TooLarge)?;
-        let all = hw.max_units_per_cube.min(hw.max_cube_dim.0);
-        let units = match policy.cpu_units(kind, elem_bytes) {
-            Some(CpuUnits::Performance) => testing::performance_cores()
-                .filter(|&p| p >= 1 && p < all)
-                .unwrap_or(all),
-            _ => all,
-        };
-        (units, cpu_items_per_unit(bytes, block))
+        (
+            cpu_units(props, policy, kind, elem_bytes),
+            cpu_items_per_unit(bytes, block),
+        )
     } else {
         (
             GPU_CUBE_DIM
@@ -287,21 +285,27 @@ fn per_group_for(
         return Err(GridError::TooLarge);
     }
 
-    let cpu_block = VectorPolicy::for_class(class).cpu_block_bytes(kind, elem_bytes);
-    let limit = hw.max_units_per_cube.min(hw.max_cube_dim.0).max(1);
+    let policy = VectorPolicy::for_class(class);
+    let cpu_block = policy.cpu_block_bytes(kind, elem_bytes);
+    // GPUs: cubes of at most 256 units; CPUs: `elementwise`'s units (ADR-0045).
     let cap = match cpu_block {
-        Some(_) => limit,
-        None => limit.min(GPU_CUBE_DIM),
-    };
+        Some(_) => cpu_units(props, policy, kind, elem_bytes),
+        None => hw
+            .max_units_per_cube
+            .min(hw.max_cube_dim.0)
+            .min(GPU_CUBE_DIM),
+    }
+    .max(1);
     // At most `cap`, so it fits u32; at least 1, since `units` is.
     let units = g.units.min(cap as usize) as u32;
     let units_per_group = 1 << units.ilog2();
-    let (cube_dim, items_per_unit) = match cpu_block {
+    let cube_dim = units_per_group * (cap / units_per_group);
+    let items_per_unit = match cpu_block {
         Some(block) => {
             let bytes = n.checked_mul(elem_bytes).ok_or(GridError::TooLarge)?;
-            (units_per_group, cpu_items_per_unit(bytes, block))
+            cpu_items_per_unit(bytes, block)
         }
-        None => (units_per_group * (cap / units_per_group), 1),
+        None => 1,
     };
     let per_cube = ((cube_dim / units_per_group) as usize)
         .checked_mul(items_per_unit)
@@ -313,6 +317,25 @@ fn per_group_for(
         units_per_group,
     };
     shape.plan(props, n, num_vectors)
+}
+
+/// The units of a CPU cube: the hardware threads (`max_units_per_cube`, at most
+/// `max_cube_dim.0`), or the performance cores where `policy` says so and the count is
+/// known and smaller (ADR-0017).
+fn cpu_units(
+    props: &DeviceProperties,
+    policy: &VectorPolicy,
+    kind: KernelKind,
+    elem_bytes: usize,
+) -> u32 {
+    let hw = &props.hardware;
+    let all = hw.max_units_per_cube.min(hw.max_cube_dim.0);
+    match policy.cpu_units(kind, elem_bytes) {
+        Some(CpuUnits::Performance) => testing::performance_cores()
+            .filter(|&p| p >= 1 && p < all)
+            .unwrap_or(all),
+        _ => all,
+    }
 }
 
 /// The vector size of a plan for `items` items and its vector count, padding included.
@@ -917,17 +940,37 @@ mod tests {
             assert_eq!(plan.items_per_unit, 1, "{what}");
             assert_groups_covered(&plan, &what);
 
-            // CPUs: cube_dim is the group, with no cap of 256.
+            // CPUs: as many whole groups as fit `elementwise`'s units, with no cap of 256
+            // (ADR-0045).
             let mut cpu = cpu16();
             cpu.hardware.max_units_per_cube = max_units;
             cpu.hardware.max_cube_dim = (max_dim, max_dim, 64);
             let what = format!("CPU: {what}");
-            let plan = group_plan(&cpu, 1000, units).unwrap();
-            let limit = units.min(max_units.min(max_dim) as usize);
-            let want = 1 << limit.ilog2();
-            assert_eq!(plan.units_per_group, want, "{what}");
-            assert_eq!(plan.cube_dim.num_elems(), want, "{what}");
-            assert_groups_covered(&plan, &what);
+            for cpu_units in [CpuUnits::All, CpuUnits::Performance] {
+                let (plan, all) = testing::with_performance_cores(Some(12), || {
+                    testing::with_cpu_units(cpu_units, || {
+                        let all = plan_for(
+                            &cpu,
+                            KernelKind::GeomFactors,
+                            1000,
+                            4,
+                            16,
+                            1,
+                            VectorSizeOverride::Scalar,
+                        )
+                        .unwrap()
+                        .cube_dim
+                        .num_elems();
+                        (group_plan(&cpu, 1000, units).unwrap(), all)
+                    })
+                });
+                let what = format!("{what}, {cpu_units:?}");
+                let limit = units.min(all as usize);
+                let want = 1 << limit.ilog2();
+                assert_eq!(plan.units_per_group, want, "{what}");
+                assert_eq!(plan.cube_dim.num_elems(), all / want * want, "{what}");
+                assert_groups_covered(&plan, &what);
+            }
         }
     }
 
@@ -999,8 +1042,9 @@ mod tests {
         ));
     }
 
-    /// On CPUs each cube visits a block of consecutive vectors of groups, whole 128-byte
-    /// lines of the block target; the cubes cover the vectors with at most one partial block.
+    /// On CPUs each group slot visits a block of consecutive vectors of groups, whole
+    /// 128-byte lines of the block target; a cube holds as many slots as fit the CPU's units
+    /// (ADR-0045), and the cubes cover the vectors with at most one partial cube.
     #[test]
     fn cpu_cubes_visit_blocks_of_consecutive_groups() {
         let mut props = cpu16();
@@ -1015,27 +1059,30 @@ mod tests {
                             units: 8,
                             shared_bytes: 0,
                         };
-                        let plan = testing::with_cpu_block_bytes(kib << 10, || {
-                            per_group_for(
-                                &props,
-                                KernelKind::GeomFactors,
-                                g,
-                                elem_bytes,
-                                16,
-                                1,
-                                VectorSizeOverride::Fixed(n),
-                            )
+                        let plan = testing::with_cpu_units(CpuUnits::All, || {
+                            testing::with_cpu_block_bytes(kib << 10, || {
+                                per_group_for(
+                                    &props,
+                                    KernelKind::GeomFactors,
+                                    g,
+                                    elem_bytes,
+                                    16,
+                                    1,
+                                    VectorSizeOverride::Fixed(n),
+                                )
+                            })
                         })
                         .unwrap();
                         let what = format!("{kib} KiB, {groups} groups of {n} × {elem_bytes}");
                         assert_eq!(plan.vector_size, n, "{what}");
                         let block = plan.items_per_unit as usize * n * elem_bytes;
                         assert_eq!(block, kib << 10, "{what}");
-                        assert_eq!(plan.cube_dim.num_elems(), 8, "{what}");
+                        // Two slots of 8 units fill the 16 units.
+                        assert_eq!(plan.cube_dim.num_elems(), 16, "{what}");
                         assert_eq!(plan.units_per_group, 8, "{what}");
                         let ipu = plan.items_per_unit as usize;
                         let vectors = plan.num_vectors as usize;
-                        assert_eq!(plan.num_cubes(), vectors.div_ceil(ipu), "{what}");
+                        assert_eq!(plan.num_cubes(), vectors.div_ceil(2 * ipu), "{what}");
                         assert_groups_covered(&plan, &what);
                     }
                 }

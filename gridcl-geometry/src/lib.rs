@@ -28,6 +28,7 @@ mod points_jac;
 mod pull_back;
 mod rule;
 mod shape;
+mod shared;
 mod strategy;
 mod sumfact;
 #[doc(hidden)]

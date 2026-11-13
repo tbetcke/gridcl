@@ -83,6 +83,48 @@ pub(crate) fn factor_loops_kernel<F: Float, N: Size>(
     #[comptime] l: GeomLayout,
     #[comptime] f: Factor,
 ) {
+    factor_loops_body::<F, N>(
+        xe,
+        tab,
+        extra,
+        flags,
+        out,
+        x_offset,
+        x_stride,
+        out_first_tile,
+        first_cell,
+        last_cell,
+        num_vectors,
+        items_per_unit,
+        nodes_per_cell,
+        num_points,
+        l,
+        f,
+    );
+}
+
+/// The body of [`factor_loops_kernel`], with `tab` in global or shared memory (the `shared`
+/// strategy, `crate::shared`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn factor_loops_body<F: Float, N: Size>(
+    xe: &[Vector<F, N>],
+    tab: &[F],
+    extra: &[F],
+    flags: &[u32],
+    out: &mut [Vector<F, N>],
+    x_offset: u32,
+    x_stride: u32,
+    out_first_tile: u32,
+    first_cell: u32,
+    last_cell: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes_per_cell: u32,
+    num_points: u32,
+    #[comptime] l: GeomLayout,
+    #[comptime] f: Factor,
+) {
     let vpt = comptime!(l.tile) / N::value();
     let len = comptime!(f.len(&l));
     let nodes = nodes_per_cell as usize;

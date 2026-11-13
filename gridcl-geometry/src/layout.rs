@@ -9,6 +9,7 @@ use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
 use crate::field::chunk_pairs;
 use crate::layout_loops::{factor_loops_kernel, loops_layout};
+use crate::shared::{self, factor_loops_shared_kernel, factor_sumfact_shared_kernel};
 use crate::strategy::{self, Strategy, StrategyFamily};
 use crate::sumfact::tensor::{factor_sumfact_kernel, sumfact_layout};
 use crate::{CoordinateElement, DeviceGrid, FieldShape, PointSet, QuadField};
@@ -422,8 +423,9 @@ fn fit(x: usize) -> Result<u32> {
 
 /// The factor `f` of block `b` of `g` at the points of `pts`: one launch per chunk pair, each
 /// with its own `LaunchPlan` (GeomFactors, `max_vector` = the tile width; ADR-0012), with the
-/// strategy of the degree policy (ADR-0042, item 3): `direct`, `loops`, or `sumfact` where the
-/// point set records its tensor factors.
+/// strategy of the degree policy (ADR-0042, item 3): `direct`, `loops`, `sumfact` where the
+/// point set records its tensor factors, or `shared`, the kernel of `sumfact` or `loops` with
+/// its table in shared memory (planned by `LaunchPlan::per_group`, `crate::shared`).
 pub(crate) fn launch_factor<F, TD, GD, G, S>(
     g: &G,
     b: usize,
@@ -449,20 +451,29 @@ where
         return Ok(out);
     }
     let cell: CellType = gb.element.cell.into();
+    let tensor = pts.tensor().is_some();
+    // The table of the sum-factorised kernels, or the full tabulation of the others.
+    let sumfact = strategy::sum_factorises(f.family(), cell, tensor);
+    let table = |tensor_table: bool| match (tensor_table, f) {
+        (true, _) => pts.tabulate_tensor(&gb.element),
+        (_, Factor::Points) => pts.tabulate(&gb.element),
+        _ => pts.tabulate_derivatives(&gb.element),
+    };
     let s = strategy::choose(
         client,
         f.family(),
         cell,
         gb.element.degree,
         size_of::<F>(),
-        pts.tensor().is_some(),
+        tensor,
+        || Ok(Some(table(sumfact)?.len())),
     )?;
     let xe = g.evector(b)?;
-    let tab = match (s, f) {
-        (Strategy::SumFactorised, _) => pts.tabulate_tensor(&gb.element)?,
-        (_, Factor::Points) => pts.tabulate(&gb.element)?,
-        _ => pts.tabulate_derivatives(&gb.element)?,
-    };
+    let tab = table(match s {
+        Strategy::SumFactorised => true,
+        Strategy::Shared => sumfact,
+        _ => false,
+    })?;
     let live = 2 * layout.tdim * layout.gdim + 2;
     let flags = &g.cell_blocks()[b].flags;
     // The last cell whose flags the Normals kernel reads: num_cells − 1, since Topology::new
@@ -470,14 +481,27 @@ where
     // for any DeviceGrid (0 for empty flags reads the first padding word).
     let last_cell = fit(num_cells.min(flags.len()).saturating_sub(1))?;
     for r in chunk_pairs(xe, &out) {
-        let plan = LaunchPlan::elementwise(
-            client,
-            KernelKind::GeomFactors,
-            r.padded_cells,
-            size_of::<F>(),
-            tile,
-            live,
-        )?;
+        let (plan, cap) = if s == Strategy::Shared {
+            shared::plan(
+                client,
+                KernelKind::GeomFactors,
+                r.padded_cells,
+                size_of::<F>(),
+                tile,
+                live,
+                tab.len(),
+            )?
+        } else {
+            let plan = LaunchPlan::elementwise(
+                client,
+                KernelKind::GeomFactors,
+                r.padded_cells,
+                size_of::<F>(),
+                tile,
+                live,
+            )?;
+            (plan, 0)
+        };
         let n = plan.vector_size;
         debug_assert_bindings(client, 5);
         let x_offset = fit(r.x_first_cell / n)?;
@@ -574,6 +598,63 @@ where
                     sumfact_layout(layout, gb.element.degree as usize + 1),
                     f,
                     cell == CellType::Prism,
+                );
+            },
+            // SAFETY: as for `sumfact`; besides, the kernel stages tab[i] for i < tab.len() into
+            // a shared array of cap ≥ tab.len() entries (`shared::capacity`), the shared memory
+            // per cube the plan checked, and reads the staged copy where `sumfact` reads `tab`.
+            // The plan has one unit per group, so its vectors are those of `elementwise`.
+            Strategy::Shared if sumfact => unsafe {
+                factor_sumfact_shared_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    r.x.vector_arg(n),
+                    tab.arg(),
+                    extra.arg(),
+                    flags.arg(),
+                    r.out.vector_arg(n),
+                    x_offset,
+                    x_stride,
+                    out_first_tile,
+                    first_cell,
+                    last_cell,
+                    num_vectors,
+                    plan.items_per_unit,
+                    fit(layout.num_points)?,
+                    fit(tab.len())?,
+                    sumfact_layout(layout, gb.element.degree as usize + 1),
+                    f,
+                    cell == CellType::Prism,
+                    cap,
+                );
+            },
+            // SAFETY: as for `loops`, with `tab` staged as for the `shared` kernel above.
+            Strategy::Shared => unsafe {
+                factor_loops_shared_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    r.x.vector_arg(n),
+                    tab.arg(),
+                    extra.arg(),
+                    flags.arg(),
+                    r.out.vector_arg(n),
+                    x_offset,
+                    x_stride,
+                    out_first_tile,
+                    first_cell,
+                    last_cell,
+                    num_vectors,
+                    plan.items_per_unit,
+                    fit(layout.nodes_per_cell)?,
+                    fit(layout.num_points)?,
+                    fit(tab.len())?,
+                    loops_layout(layout),
+                    f,
+                    cap,
                 );
             },
             _ => unreachable!("`choose` returns only the strategies that run"),

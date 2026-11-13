@@ -519,8 +519,8 @@ pub use gridcl_geometry::testing::{Strategy, StrategyFamily, StrategyOverride};
 pub const GEOM_STRATEGY_VAR: &str = "GRIDCL_GEOM_STRATEGY";
 
 /// Whether `GRIDCL_GEOM_STRATEGY` forces, for some family, a strategy that sums in another
-/// order than the scalar node-order references: `sumfact` (one direction at a time) or
-/// `cooperative` (trees over units). `direct` and `loops` sum in node order, and the policy
+/// order than the scalar node-order references: `sumfact` (one direction at a time), `shared`
+/// (`sumfact`'s kernels on tensor rules, T9) or `cooperative` (trees over units). `direct` and `loops` sum in node order, and the policy
 /// stays bitwise M9's kernels (ADR-0042, item 11), so the references' bitwise comparisons hold
 /// under them (docs/plans/M9h.md, Deviations log, T7b).
 pub fn environment_reorders_sums() -> bool {
@@ -529,9 +529,13 @@ pub fn environment_reorders_sums() -> bool {
     };
     value.to_string_lossy().split(',').any(|entry| {
         let name = entry.rsplit('=').next().unwrap_or_default().trim();
-        [Strategy::SumFactorised, Strategy::Cooperative]
-            .iter()
-            .any(|s| s.name() == name)
+        [
+            Strategy::SumFactorised,
+            Strategy::Shared,
+            Strategy::Cooperative,
+        ]
+        .iter()
+        .any(|s| s.name() == name)
     })
 }
 

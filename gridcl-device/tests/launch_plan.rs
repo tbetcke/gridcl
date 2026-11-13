@@ -316,7 +316,8 @@ proptest! {
 
 /// The checks every `per_group` plan must pass under `props`: those of `elementwise` plans,
 /// plus whole groups per cube, group slots that cover the vectors, and `units_per_group` the
-/// largest power of two within `units` and the limits (at most 256 on GPUs).
+/// largest power of two within `units` and the limits (at most 256 on GPUs; on CPUs, made
+/// with `CpuUnits::All`, the hardware threads, ADR-0045).
 fn check_group_plan(
     plan: &LaunchPlan,
     props: &DeviceProperties,
@@ -338,15 +339,9 @@ fn check_group_plan(
     );
     let dim = plan.cube_dim.num_elems();
     assert_eq!(dim % upg, 0, "cube_dim {dim} is not whole groups of {upg}");
+    assert_eq!(dim, cap / upg * upg, "a cube holds as many groups as fit");
     if gpu {
-        assert_eq!(
-            dim,
-            cap / upg * upg,
-            "a GPU cube holds as many groups as fit"
-        );
         assert_eq!(plan.items_per_unit, 1);
-    } else {
-        assert_eq!(dim, upg, "a CPU cube is one group");
     }
     let (x, y, z) = cube_count(plan);
     let slots = [x, y, z, dim / upg, plan.items_per_unit]
@@ -398,10 +393,11 @@ proptest! {
                 Some(v) => with_vector_size(v, make),
                 None => make(),
             };
-            match block {
+            let make = || match block {
                 Some(b) => with_cpu_block_bytes(b, make),
                 None => make(),
-            }
+            };
+            with_cpu_units(CpuUnits::All, make)
         });
         match plan {
             Ok(plan) => {
@@ -572,9 +568,9 @@ fn run_group_tree<T: common::TestScalar + Float>(
 
 /// Rule 4's tree over L = 64 leaves gives the same sums at units_per_group 1, 2 and
 /// min(64, limit) and at vector sizes 1 and the policy's (at most 4): bitwise, and bitwise
-/// equal to the host's tree, on the CPU runtime; within tolerance elsewhere. GPU cubes hold
-/// several groups; CPU cubes visit blocks of groups (4 KiB blocks, so 3000 groups take
-/// several cubes).
+/// equal to the host's tree, on the CPU runtime; within tolerance elsewhere. Cubes hold
+/// several groups where the units allow (on CPUs too, ADR-0045), and CPU group slots visit
+/// blocks of groups (4 KiB blocks, so 3000 groups take several cubes).
 fn group_tree_case<T: common::TestScalar + Float>(client: &Client) {
     let groups = 3000;
     let leaves = LEAVES as usize;

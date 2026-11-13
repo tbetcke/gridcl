@@ -7,7 +7,8 @@
 //!
 //! Every launcher of a degree-dependent family asks [`choose`] for its strategy: the scoped
 //! hook, then `GRIDCL_GEOM_STRATEGY`, then `degree-policy.toml` for the client's device class;
-//! a strategy that does not apply to the launch (the cell, the point set) falls back to `Loops`.
+//! a strategy that does not apply to the launch (the cell, the point set, a table beyond the
+//! shared-memory limit) falls back to `Loops`.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -62,8 +63,8 @@ impl Strategy {
     /// `tensor` says whether the launch's points are a tensor point set (a point set that
     /// records its factors; the pull-back, at arbitrary points, passes `true`). Sum
     /// factorisation needs a tensor cell and tensor points, and does not apply to the E-vector,
-    /// a gather without contractions (ADR-0042, item 3). The shared-memory limit joins the
-    /// conditions with the strategy that needs it (docs/plans/M9h.md, T9).
+    /// a gather without contractions (ADR-0042, item 3). `shared` needs a table that fits the
+    /// shared memory, which [`choose`] checks with the launch's table.
     fn applies(self, family: StrategyFamily, cell: CellType, tensor: bool) -> bool {
         match self {
             Strategy::SumFactorised => {
@@ -82,11 +83,11 @@ impl Strategy {
     /// `direct` and `loops` run for every family (T6a, T6b); the later strategies arrive family
     /// by family. Sum factorisation runs for the factor families wherever the point set records
     /// its factors (quadrilateral and hexahedron cell rules from T7a, facet rules from T7b,
-    /// prisms from T7c), and for the pull-back on every tensor cell (T8).
+    /// prisms from T7c), and for the pull-back on every tensor cell (T8); `shared` for every
+    /// family with a table (T9).
     fn not_yet(self, _family: StrategyFamily) -> Option<&'static str> {
         match self {
-            Strategy::Direct | Strategy::Loops | Strategy::SumFactorised => None,
-            Strategy::Shared => Some("geometry strategy shared (docs/plans/M9h.md, T9)"),
+            Strategy::Direct | Strategy::Loops | Strategy::SumFactorised | Strategy::Shared => None,
             Strategy::Cooperative => {
                 Some("geometry strategy cooperative (docs/plans/M9h.md, T10a and T10b)")
             }
@@ -364,12 +365,15 @@ fn env_override(family: StrategyFamily) -> Option<StrategyOverride> {
 /// The strategy a launch of `family` on a block of `cell` at `degree` with `elem_bytes`-byte
 /// scalars runs on `client`'s device: the scoped hook, then `GRIDCL_GEOM_STRATEGY`, then
 /// `degree-policy.toml`; `Loops` where that strategy does not apply (`tensor`: whether the
-/// launch's points are a tensor point set, see `Strategy::applies`). Recorded for
-/// `testing::record_strategies`.
+/// launch's points are a tensor point set, see `Strategy::applies`). `table` gives the
+/// entries of the table the `shared` variant of the launch stages (`None` where it has
+/// none, the E-vector and the bench evaluator), and is called only when `shared` is wanted;
+/// a table beyond the device's shared memory per cube makes `shared` fall back to `Loops` too
+/// (ADR-0042, item 3). Recorded for `testing::record_strategies`.
 ///
 /// # Errors
 ///
-/// `NotYetImplemented` for a strategy the launchers do not run yet.
+/// `NotYetImplemented` for a strategy the launchers do not run yet; the errors of `table`.
 ///
 /// # Panics
 ///
@@ -382,6 +386,7 @@ pub(crate) fn choose(
     degree: u32,
     elem_bytes: usize,
     tensor: bool,
+    table: impl FnOnce() -> Result<Option<usize>>,
 ) -> Result<Strategy> {
     let wanted = match hook::get(family)
         .or_else(|| env_override(family))
@@ -401,16 +406,21 @@ pub(crate) fn choose(
         }
         StrategyOverride::Fixed(s) => s,
     };
-    let s = if wanted.applies(family, cell, tensor) {
-        wanted
-    } else {
-        Strategy::Loops
-    };
+    let applies = wanted.applies(family, cell, tensor)
+        && (wanted != Strategy::Shared
+            || table()?.is_some_and(|len| crate::shared::fits(client, len, elem_bytes)));
+    let s = if applies { wanted } else { Strategy::Loops };
     if let Some(task) = s.not_yet(family) {
         return Err(GridError::NotYetImplemented(task));
     }
     hook::record(family, s);
     Ok(s)
+}
+
+/// Whether a launch of `family` on `cell` at points that are (`tensor`) or are not a tensor
+/// point set can be sum-factorised: the variant `shared` stages for it (`crate::shared`).
+pub(crate) fn sum_factorises(family: StrategyFamily, cell: CellType, tensor: bool) -> bool {
+    Strategy::SumFactorised.applies(family, cell, tensor)
 }
 
 /// The scoped hook and the recorder of `testing` (thread-local; absent without the feature).

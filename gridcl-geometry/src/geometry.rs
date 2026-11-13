@@ -146,6 +146,8 @@ where
             block.element.degree,
             size_of::<F>(),
             false,
+            // A gather: no table for `shared` to stage.
+            || Ok(None),
         )?;
         let xe = crate::evector::build(
             &self.nodes,

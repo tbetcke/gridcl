@@ -212,7 +212,8 @@ impl<F: Real> Interpolant<F> {
             return Ok(out);
         }
         // The tensor pull-back (`sumfact`) has no evaluator of C': `tensor` = false makes it
-        // fall back to `loops`, which `record_strategies` shows.
+        // fall back to `loops`, which `record_strategies` shows; nor has `shared` a table to
+        // stage here.
         let s = strategy::choose(
             client,
             StrategyFamily::PullBack,
@@ -220,6 +221,7 @@ impl<F: Real> Interpolant<F> {
             self.degree,
             size_of::<F>(),
             false,
+            || Ok(None),
         )?;
         let nb = num_lagrange_nodes(self.cell, self.degree);
         let cap = loops_capacity(self.degree);

@@ -2,7 +2,8 @@
 //! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
 //! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
 //! T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b), and on prisms
-//! (T7c), and for the pull-back on quadrilaterals, hexahedra and prisms (T8).
+//! (T7c), and for the pull-back on quadrilaterals, hexahedra and prisms (T8); `shared` for
+//! every family with a table that fits the shared memory (T9).
 
 use gridcl::prelude::*;
 use gridcl::{FacetQuadRule, FieldShape, PullBackOptions};
@@ -104,14 +105,8 @@ fn strategies_that_do_not_run_yet_are_errors() {
         (
             &quadrilateral,
             StrategyFamily::PullBack,
-            Strategy::Shared,
-            "shared",
-        ),
-        (
-            &triangle,
-            StrategyFamily::Points,
-            Strategy::Shared,
-            "shared",
+            Strategy::Cooperative,
+            "cooperative",
         ),
         (
             &triangle,
@@ -540,6 +535,123 @@ fn records_nest_and_survive_panics() {
         || assert!(mesh.jacobians(&rule).is_err()),
     );
     mesh.jacobians(&rule).unwrap();
+}
+
+#[test]
+fn forced_shared_matches_the_kernels_it_stages_for() {
+    let client = gridcl_testing::test_client();
+    shared_against_kernels::<f32>(&client, 1e-5);
+    if gridcl_testing::supports::<f64>(&client) {
+        shared_against_kernels::<f64>(&client, 1e-12);
+    }
+}
+
+/// X, J, det J, K, the facet normals and the pull-back's ξ under `shared` against the kernels
+/// whose table it stages: `sumfact` on perturbed hexahedra (both node families) and prisms at
+/// the Gauss points of degree 6, `loops` on perturbed tetrahedra, at p = 3. Every family but
+/// the E-vector runs `shared`. The arithmetic is theirs, so the results are bitwise equal on
+/// the CPU runtime, and within `tol` of the largest entry elsewhere.
+fn shared_against_kernels<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    fn quantities<F: Real>(mesh: &Mesh<F, D3, D3>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
+        let pb = mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+        vec![
+            ("X", blocks_f64(&x)),
+            ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            (
+                "facet normals",
+                blocks_f64(&mesh.facet_normals(&facets).unwrap()),
+            ),
+            ("ξ", blocks_f64(&pb.reference)),
+        ]
+    }
+    let bitwise = gridcl_testing::bitwise_device();
+    for (cell, family, staged_for) in [
+        (
+            Cell3::Hexahedron,
+            NodeFamily::Equispaced,
+            Strategy::SumFactorised,
+        ),
+        (Cell3::Hexahedron, NodeFamily::Gll, Strategy::SumFactorised),
+        (
+            Cell3::Prism,
+            NodeFamily::Equispaced,
+            Strategy::SumFactorised,
+        ),
+        (Cell3::Tetrahedron, NodeFamily::Equispaced, Strategy::Loops),
+    ] {
+        let mesh = gridcl_testing::cube_box(cell, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let what = format!("{} {cell:?} {family:?}", std::any::type_name::<F>());
+        let (got, ran) = forced(&mesh, Strategy::Shared, quantities);
+        for want in [Points, Jacobian, FacetNormals, PullBack] {
+            assert!(ran.contains(&(want, Strategy::Shared)), "{what}: {ran:?}");
+        }
+        assert!(
+            ran.iter()
+                .all(|r| r.1 == Strategy::Shared || *r == (EVector, Strategy::Loops)),
+            "{what}: {ran:?}"
+        );
+        let (want, _) = forced(&mesh, staged_for, quantities);
+        for ((name, got), (_, want)) in got.iter().zip(&want) {
+            assert_eq!(got.len(), want.len());
+            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            for (g, w) in got.iter().zip(want) {
+                if bitwise {
+                    assert_eq!(g.to_bits(), w.to_bits(), "{name} of {what}: {g} vs {w}");
+                } else {
+                    assert!((g - w).abs() <= tol * scale, "{name} of {what}: {g} vs {w}");
+                }
+            }
+        }
+    }
+}
+
+/// Where the table exceeds the shared memory per cube, `shared` falls back to `loops`: every
+/// family on hexahedra (the tensor table) and tetrahedra (the full tabulation) at p = 2 with
+/// 64 bytes of shared memory, against the device's own limit, under which they run `shared`.
+#[test]
+fn shared_falls_back_to_loops_above_the_limit() {
+    use StrategyFamily::*;
+    let client = gridcl_testing::test_client();
+    for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
+        let mesh = gridcl_testing::cube_box(cell, 1, 2)
+            .build::<f32, D3, D3>(&client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 4).unwrap();
+        let run = |mesh: &Mesh<f32, D3, D3>| {
+            let x = mesh.physical_points(&rule).unwrap();
+            mesh.jacobians(&rule).unwrap();
+            mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+            vec![]
+        };
+        let (_, ran) = forced(&mesh, Strategy::Shared, run);
+        let want = |s| {
+            vec![
+                (Points, s),
+                (EVector, Strategy::Loops),
+                (Jacobian, s),
+                (PullBack, s),
+            ]
+        };
+        assert_eq!(ran, want(Strategy::Shared), "{cell:?}");
+        let mut props = (*gridcl_device::device_properties(&client)).clone();
+        props.hardware.max_shared_memory_size = 64;
+        let (_, ran) =
+            gridcl_device::testing::with_properties(props, || forced(&mesh, Strategy::Shared, run));
+        assert_eq!(ran, want(Strategy::Loops), "{cell:?}");
+    }
 }
 
 /// Runs `f` with every family overridden by `s`.
