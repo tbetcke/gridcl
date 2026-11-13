@@ -62,9 +62,9 @@ impl Strategy {
     /// Whether the strategy applies to a launch of `family` on a block of `cell`, where
     /// `tensor` says whether the launch's points are a tensor point set (a point set that
     /// records its factors; the pull-back, at arbitrary points, passes `true`). Sum
-    /// factorisation needs a tensor cell and tensor points, and does not apply to the E-vector,
-    /// a gather without contractions (ADR-0042, item 3). `shared` needs a table that fits the
-    /// shared memory, which [`choose`] checks with the launch's table.
+    /// factorisation needs a tensor cell and tensor points; neither it nor `cooperative`
+    /// applies to the E-vector, a gather without sums (ADR-0042, item 3). `shared` needs a
+    /// table that fits the shared memory, which [`choose`] checks with the launch's table.
     fn applies(self, family: StrategyFamily, cell: CellType, tensor: bool) -> bool {
         match self {
             Strategy::SumFactorised => {
@@ -75,6 +75,7 @@ impl Strategy {
                         CellType::Quadrilateral | CellType::Hexahedron | CellType::Prism
                     )
             }
+            Strategy::Cooperative => family != StrategyFamily::EVector,
             _ => true,
         }
     }
@@ -84,13 +85,13 @@ impl Strategy {
     /// by family. Sum factorisation runs for the factor families wherever the point set records
     /// its factors (quadrilateral and hexahedron cell rules from T7a, facet rules from T7b,
     /// prisms from T7c), and for the pull-back on every tensor cell (T8); `shared` for every
-    /// family with a table (T9).
-    fn not_yet(self, _family: StrategyFamily) -> Option<&'static str> {
-        match self {
-            Strategy::Direct | Strategy::Loops | Strategy::SumFactorised | Strategy::Shared => None,
-            Strategy::Cooperative => {
-                Some("geometry strategy cooperative (docs/plans/M9h.md, T10a and T10b)")
+    /// family with a table (T9); `cooperative` for the factor families (T10a).
+    fn not_yet(self, family: StrategyFamily) -> Option<&'static str> {
+        match (self, family) {
+            (Strategy::Cooperative, StrategyFamily::PullBack) => {
+                Some("geometry strategy cooperative (docs/plans/M9h.md, T10b)")
             }
+            _ => None,
         }
     }
 }
@@ -675,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn sum_factorisation_needs_a_tensor_cell_and_points() {
+    fn sum_factorisation_and_cooperation_apply_where_they_sum() {
         let tensor_cells = [
             CellType::Quadrilateral,
             CellType::Hexahedron,
@@ -689,12 +690,12 @@ mod tests {
                         family != StrategyFamily::EVector && tensor && tensor_cells.contains(&cell),
                         "{family:?} {cell:?} {tensor}"
                     );
-                    for s in [
-                        Strategy::Direct,
-                        Strategy::Loops,
-                        Strategy::Shared,
-                        Strategy::Cooperative,
-                    ] {
+                    assert_eq!(
+                        Strategy::Cooperative.applies(family, cell, tensor),
+                        family != StrategyFamily::EVector,
+                        "{family:?} {cell:?} {tensor}"
+                    );
+                    for s in [Strategy::Direct, Strategy::Loops, Strategy::Shared] {
                         assert!(s.applies(family, cell, tensor));
                     }
                 }

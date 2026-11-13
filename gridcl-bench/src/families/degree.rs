@@ -1693,7 +1693,7 @@ mod tests {
             .to_vec();
         let records = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
         assert_eq!(records.len(), 4);
-        let ran: Vec<(&str, &str)> = records[..3]
+        let ran: Vec<(&str, &str)> = records
             .iter()
             .map(|r| (r.strategy.as_str(), r.strategy_ran.as_str()))
             .collect();
@@ -1702,16 +1702,14 @@ mod tests {
             [
                 ("policy", "direct"),
                 ("direct", "direct"),
-                ("loops", "loops")
+                ("loops", "loops"),
+                ("cooperative", "cooperative")
             ]
         );
-        assert!(records[..3].iter().all(|r| r.status == "ok"), "{records:?}");
-        // `cooperative` runs from T10a (docs/plans/M9h.md): until then a failed record.
-        assert!(
-            records[3].status.starts_with("failed: ") && records[3].status.contains("cooperative"),
-            "{}",
-            records[3].status
-        );
+        assert!(records.iter().all(|r| r.status == "ok"), "{records:?}");
+        // A cooperative launch plans groups of units: an interval of degree 2 has 3 nodes,
+        // so 2 leaves and at most 2 units per group.
+        assert!(records[3].units_per_group <= 2, "{records:?}");
         o.strategies = vec!["fast".to_owned()];
         let e = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap_err();
         assert!(e.contains("unknown strategy fast"), "{e}");

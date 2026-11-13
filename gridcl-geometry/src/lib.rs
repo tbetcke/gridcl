@@ -9,6 +9,7 @@ mod basis_eval;
 #[doc(hidden)]
 #[cfg(feature = "bench")]
 pub mod bench;
+mod cooperative;
 mod detj_pinv;
 mod element;
 mod equispaced;

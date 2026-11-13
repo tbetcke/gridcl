@@ -110,7 +110,7 @@ fn strategies_that_do_not_run_yet_are_errors() {
         ),
         (
             &triangle,
-            StrategyFamily::Points,
+            StrategyFamily::PullBack,
             Strategy::Cooperative,
             "cooperative",
         ),
@@ -475,17 +475,29 @@ fn overrides_nest_per_family() {
         .build::<f32, D2, D2>(&client)
         .unwrap();
     let rule = QuadRule::for_grid(&mesh, 2).unwrap();
-    let cooperative = StrategyOverride::Fixed(Strategy::Cooperative);
-    let direct = StrategyOverride::Fixed(Strategy::Direct);
-    // Another family's override does not reach the points.
-    with_strategy(Jacobian, cooperative, || {
+    // The E-vector is built here, so the records below hold the factors alone.
+    mesh.physical_points(&rule).unwrap();
+    let ran = |f: &dyn Fn()| record_strategies(f).1;
+    let points = || {
         mesh.physical_points(&rule).unwrap();
-        assert!(mesh.jacobians(&rule).is_err());
-        // The innermost override wins, and the outer one is back afterwards.
-        with_strategy(Jacobian, direct, || mesh.jacobians(&rule).unwrap());
-        assert!(mesh.jacobians(&rule).is_err());
+    };
+    let jacobians = || {
+        mesh.jacobians(&rule).unwrap();
+    };
+    let fixed = StrategyOverride::Fixed;
+    with_strategy(Points, fixed(Strategy::Loops), || {
+        with_strategy(Jacobian, fixed(Strategy::Cooperative), || {
+            // Another family's override does not reach the points.
+            assert_eq!(ran(&points), [(Points, Strategy::Loops)]);
+            assert_eq!(ran(&jacobians), [(Jacobian, Strategy::Cooperative)]);
+            // The innermost override wins, and the outer one is back afterwards.
+            with_strategy(Jacobian, fixed(Strategy::Direct), || {
+                assert_eq!(ran(&jacobians), [(Jacobian, Strategy::Direct)]);
+            });
+            assert_eq!(ran(&jacobians), [(Jacobian, Strategy::Cooperative)]);
+        });
+        assert_eq!(ran(&points), [(Points, Strategy::Loops)]);
     });
-    mesh.jacobians(&rule).unwrap();
 }
 
 #[test]
@@ -502,7 +514,7 @@ fn records_nest_and_survive_panics() {
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             with_strategy(
                 StrategyFamily::Jacobian,
-                StrategyOverride::Fixed(Strategy::Direct),
+                StrategyOverride::Fixed(Strategy::Cooperative),
                 || {
                     let _ = record_strategies(|| {
                         mesh.jacobians(&rule).unwrap();
@@ -528,13 +540,26 @@ fn records_nest_and_survive_panics() {
             StrategyFamily::Jacobian
         ]
     );
-    // The hook of the scope that panicked is gone.
+    assert!(outer.contains(&(StrategyFamily::Jacobian, Strategy::Cooperative)));
+    // The hook of a scope that panicked is gone: the enclosing one is back.
     with_strategy(
         StrategyFamily::Jacobian,
-        StrategyOverride::Fixed(Strategy::Cooperative),
-        || assert!(mesh.jacobians(&rule).is_err()),
+        StrategyOverride::Fixed(Strategy::Loops),
+        || {
+            let panicked = std::panic::catch_unwind(|| {
+                with_strategy(
+                    StrategyFamily::Jacobian,
+                    StrategyOverride::Fixed(Strategy::Cooperative),
+                    || panic!("inside"),
+                )
+            });
+            assert!(panicked.is_err());
+            let ((), ran) = record_strategies(|| {
+                mesh.jacobians(&rule).unwrap();
+            });
+            assert_eq!(ran, [(StrategyFamily::Jacobian, Strategy::Loops)]);
+        },
     );
-    mesh.jacobians(&rule).unwrap();
 }
 
 #[test]
@@ -662,4 +687,154 @@ fn with_every<R>(s: StrategyOverride, f: impl FnOnce() -> R) -> R {
         .fold(Box::new(f) as Box<dyn FnOnce() -> R>, |f, family| {
             Box::new(move || with_strategy(family, s, f))
         })()
+}
+
+#[test]
+fn forced_cooperative_is_independent_of_units_per_group() {
+    let client = gridcl_testing::test_client();
+    cooperative_units::<f32>(&client, 1e-5);
+    if gridcl_testing::supports::<f64>(&client) {
+        cooperative_units::<f64>(&client, 1e-12);
+    }
+}
+
+/// X, J, det J, K and the facet normals of perturbed hexahedra (both node families; 64 nodes,
+/// so L = 32 leaves) and tetrahedra (20 nodes, L = 16), and the normals of the sphere (10
+/// nodes, L = 8), at p = 3 and the Gauss points of degree 6, under `cooperative` with 1, 2 and
+/// L units per group, L at most the device's own units per cube, through injected GPU-class
+/// properties with `units` units per cube (so the CPU runtime runs groups of several units
+/// too), at vector sizes 1 and the widest: bitwise equal to one unit at vector size 1 on the
+/// CPU runtime, and within `tol` of the largest entry elsewhere; and within `tol` of `loops`
+/// everywhere (another summation order). Every factor family runs `cooperative`, the E-vector
+/// `loops`.
+fn cooperative_units<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    fn volume<F: Real>(mesh: &Mesh<F, D3, D3>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        vec![
+            ("X", blocks_f64(&mesh.physical_points(&rule).unwrap())),
+            ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            (
+                "facet normals",
+                blocks_f64(&mesh.facet_normals(&facets).unwrap()),
+            ),
+        ]
+    }
+    fn surface<F: Real>(mesh: &Mesh<F, D2, D3>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        vec![
+            ("X", blocks_f64(&mesh.physical_points(&rule).unwrap())),
+            ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            ("normals", blocks_f64(&mesh.normals(&rule).unwrap())),
+        ]
+    }
+    let volume_mesh = |cell, family| {
+        gridcl_testing::cube_box(cell, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap()
+    };
+    let name = std::any::type_name::<F>();
+    for (cell, family, leaves) in [
+        (Cell3::Hexahedron, NodeFamily::Equispaced, 32),
+        (Cell3::Hexahedron, NodeFamily::Gll, 32),
+        (Cell3::Tetrahedron, NodeFamily::Equispaced, 16),
+    ] {
+        let what = format!("{name} {cell:?} {family:?}");
+        let mesh = volume_mesh(cell, family);
+        units_against_one(client, &what, &mesh, leaves, tol, volume);
+    }
+    let sphere = gridcl_testing::sphere(1, 3)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    units_against_one(client, &format!("{name} sphere"), &sphere, 8, tol, surface);
+}
+
+/// The quantities of `f` under `cooperative` with 1, 2 and `leaves` units per group (at most
+/// the device's own) at vector sizes 1 and the widest against one unit at vector size 1, and
+/// against `loops` (see [`cooperative_units`]).
+fn units_against_one<F, TD, GD>(
+    client: &cubecl::prelude::Client,
+    what: &str,
+    mesh: &Mesh<F, TD, GD>,
+    leaves: u32,
+    tol: f64,
+    f: impl Fn(&Mesh<F, TD, GD>) -> Quantities,
+) where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    use StrategyFamily::*;
+    use gridcl_device::testing::{record_plans, with_properties, with_vector_size};
+    use gridcl_device::{KernelKind, VectorSizeOverride};
+    let run = |units: u32, vector: VectorSizeOverride| {
+        let mut props = (*gridcl_device::device_properties(client)).clone();
+        // A GPU class, whose cooperative launches ask for L units per group (CPUs ask for
+        // one), and cubes of `units` units.
+        props.hardware.num_cpu_cores = None;
+        props.hardware.max_units_per_cube = units;
+        props.hardware.max_cube_dim.0 = units;
+        let ((got, ran), plans) = with_properties(props, || {
+            with_vector_size(vector, || {
+                record_plans(|| forced(mesh, Strategy::Cooperative, &f))
+            })
+        });
+        assert!(
+            ran.iter()
+                .all(|r| *r == (EVector, Strategy::Loops) || r.1 == Strategy::Cooperative),
+            "{what}: {ran:?}"
+        );
+        let upg: Vec<u32> = plans
+            .iter()
+            .filter(|(k, _)| *k == KernelKind::GeomFactors)
+            .map(|(_, p)| p.units_per_group)
+            .collect();
+        assert!(!upg.is_empty(), "{what}: no factor plan");
+        assert!(
+            upg.iter().all(|&u| u == units.min(leaves)),
+            "{what}, {units} units: {upg:?}"
+        );
+        got
+    };
+    let bitwise = gridcl_testing::bitwise_device();
+    let compare = |at: &str, got: &Quantities, want: &Quantities, exact: bool| {
+        for ((name, got), (_, want)) in got.iter().zip(want) {
+            assert_eq!(got.len(), want.len(), "{name} of {at}");
+            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            for (g, w) in got.iter().zip(want) {
+                if exact {
+                    assert_eq!(g.to_bits(), w.to_bits(), "{name} of {at}: {g} vs {w}");
+                } else {
+                    assert!((g - w).abs() <= tol * scale, "{name} of {at}: {g} vs {w}");
+                }
+            }
+        }
+    };
+    // At most the units the device runs in one cube (a power of two): on the CPU runtime a cube of more units
+    // than cores spins at each `sync_cube` until the OS schedules all of them (C21).
+    let own = {
+        let hw = &gridcl_device::device_properties(client).hardware;
+        1 << hw.max_units_per_cube.min(hw.max_cube_dim.0).ilog2()
+    };
+    let one = run(1, VectorSizeOverride::Scalar);
+    for units in [1, 2, leaves.min(own)] {
+        for vector in [VectorSizeOverride::Scalar, VectorSizeOverride::Widest] {
+            let at = format!("{what}, {units} units per group, {vector:?}");
+            compare(&at, &run(units, vector), &one, bitwise);
+        }
+    }
+    let (loops, _) = forced(mesh, Strategy::Loops, &f);
+    compare(&format!("{what} against loops"), &one, &loops, false);
 }

@@ -7,6 +7,8 @@ use gridcl_device::{
 };
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
+use crate::cooperative::factors::{factor_cooperative_kernel, summed_components};
+use crate::cooperative::{self, Group};
 use crate::field::chunk_pairs;
 use crate::layout_loops::{factor_loops_kernel, loops_layout};
 use crate::shared::{self, factor_loops_shared_kernel, factor_sumfact_shared_kernel};
@@ -424,8 +426,9 @@ fn fit(x: usize) -> Result<u32> {
 /// The factor `f` of block `b` of `g` at the points of `pts`: one launch per chunk pair, each
 /// with its own `LaunchPlan` (GeomFactors, `max_vector` = the tile width; ADR-0012), with the
 /// strategy of the degree policy (ADR-0042, item 3): `direct`, `loops`, `sumfact` where the
-/// point set records its tensor factors, or `shared`, the kernel of `sumfact` or `loops` with
-/// its table in shared memory (planned by `LaunchPlan::per_group`, `crate::shared`).
+/// point set records its tensor factors, `shared`, the kernel of `sumfact` or `loops` with
+/// its table in shared memory, or `cooperative`, `loops`' node sums split among a group of
+/// units (both planned by `LaunchPlan::per_group`, `crate::shared` and `crate::cooperative`).
 pub(crate) fn launch_factor<F, TD, GD, G, S>(
     g: &G,
     b: usize,
@@ -480,9 +483,11 @@ where
     // checks flags.len() = num_cells; the min with flags.len() keeps the reads inside `flags`
     // for any DeviceGrid (0 for empty flags reads the first padding word).
     let last_cell = fit(num_cells.min(flags.len()).saturating_sub(1))?;
+    // The shape of a cooperative launch; unused by the others.
+    let mut group = Group::NONE;
     for r in chunk_pairs(xe, &out) {
-        let (plan, cap) = if s == Strategy::Shared {
-            shared::plan(
+        let (plan, cap) = match s {
+            Strategy::Shared => shared::plan(
                 client,
                 KernelKind::GeomFactors,
                 r.padded_cells,
@@ -490,17 +495,32 @@ where
                 tile,
                 live,
                 tab.len(),
-            )?
-        } else {
-            let plan = LaunchPlan::elementwise(
-                client,
-                KernelKind::GeomFactors,
-                r.padded_cells,
-                size_of::<F>(),
-                tile,
-                live,
-            )?;
-            (plan, 0)
+            )?,
+            Strategy::Cooperative => {
+                let (plan, g) = cooperative::plan(
+                    client,
+                    KernelKind::GeomFactors,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live,
+                    layout.nodes_per_cell,
+                    summed_components(&layout, f),
+                )?;
+                group = g;
+                (plan, 0)
+            }
+            _ => {
+                let plan = LaunchPlan::elementwise(
+                    client,
+                    KernelKind::GeomFactors,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live,
+                )?;
+                (plan, 0)
+            }
         };
         let n = plan.vector_size;
         debug_assert_bindings(client, 5);
@@ -657,7 +677,39 @@ where
                     cap,
                 );
             },
-            _ => unreachable!("`choose` returns only the strategies that run"),
+            // SAFETY: as for `loops`: each group slot takes the vectors (c · slots + s) ·
+            // items_per_unit + i of the plan, which cover num_vectors; its units read the
+            // E-vector and `tab` at the entries `loops` reads for vector min(v, num_vectors − 1)
+            // (leaf l reads nodes l + jL < nodes_per_cell), and only unit 0 writes, the entries
+            // of `loops` for v < num_vectors. The shared array has slots · units · round
+            // vectors, the bytes `per_group` checked (none with one unit per group), indexed by
+            // UNIT_POS · round + c and, in the tree, by (UNIT_POS + t) · round + c for the units
+            // u + t of the same group.
+            Strategy::Cooperative => unsafe {
+                factor_cooperative_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    r.x.vector_arg(n),
+                    tab.arg(),
+                    extra.arg(),
+                    flags.arg(),
+                    r.out.vector_arg(n),
+                    x_offset,
+                    x_stride,
+                    out_first_tile,
+                    first_cell,
+                    last_cell,
+                    num_vectors,
+                    plan.items_per_unit,
+                    fit(layout.nodes_per_cell)?,
+                    fit(layout.num_points)?,
+                    loops_layout(layout),
+                    f,
+                    group,
+                );
+            },
         }
     }
     Ok(out)
