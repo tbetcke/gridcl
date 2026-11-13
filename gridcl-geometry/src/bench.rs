@@ -3,7 +3,8 @@
 //! gridcl-bench turns it on.
 //!
 //! - [`Interpolant`]: the device basis evaluator of the pull-back (`basis_eval::expansion`) on
-//!   its own: a Lagrange interpolant and its first derivatives at given reference points.
+//!   its own: a Lagrange interpolant and its first derivatives at given reference points,
+//!   under the strategy of the PullBack family (`sumfact` and `shared` run `loops`).
 //!
 //! The pull-back's set-up and Newton step need no hook: `pull_back_block` always runs
 //! `max_iterations` steps, so the sweep times it at 1 and 9 iterations and takes the step as
@@ -18,8 +19,10 @@ use gridcl_dims::CellType;
 use gridcl_refcell::{NodeFamily, num_lagrange_nodes, tdim};
 
 use crate::basis_eval::{
-    broadcast_rows, device_coefficients, expansion, expansion_loops, loops_capacity,
+    broadcast_rows, device_coefficients, expansion, expansion_cooperative, expansion_loops,
+    loops_capacity,
 };
+use crate::cooperative::{self, Group, MAX_LEAVES, group_sum, position};
 use crate::strategy::{self, Strategy, StrategyFamily};
 
 /// The interpolant Σ_j w_j ψ_j and its derivatives at each lane's point:
@@ -119,6 +122,77 @@ fn interpolant_loops_kernel<F: Float, N: Size>(
     }
 }
 
+/// [`interpolant_loops_kernel`] of the `cooperative` strategy: each vector of points taken by
+/// a group of `g.units` units, which split the sum over the `nodes` ≥ `g.leaves` basis
+/// functions by the tree of `crate::cooperative` (`basis_eval::expansion_cooperative`); unit 0
+/// stores. The same buffers (four) and arguments. Slots past the last vector read it and store
+/// nothing, and every slot visits as many vectors as the cube's first, so every unit reaches
+/// every `sync_cube`.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn interpolant_cooperative_kernel<F: Float, N: Size>(
+    points: &[Vector<F, N>],
+    coefficients: &[F],
+    rows: &[Vector<F, N>],
+    out: &mut [Vector<F, N>],
+    stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    degree: u32,
+    #[comptime] cell: CellType,
+    #[comptime] cap: usize,
+    #[comptime] g: Group,
+) {
+    let td = comptime!(tdim(cell));
+    let nb = nodes as usize;
+    let stride = stride as usize;
+    let zero = Vector::<F, N>::broadcast(coefficients[nb]);
+    let one = Vector::<F, N>::broadcast(coefficients[nb + 1]);
+    let row = VECTOR_PAD / N::value();
+    let (slot, u) = position(g);
+    let num_vectors = num_vectors as usize;
+    let last = num_vectors - 1;
+    let items = items_per_unit as usize;
+    let first = (CUBE_POS * g.slots + slot) * items;
+    let mut from = CUBE_POS * g.slots * items;
+    if comptime!(g.units == 1) {
+        from = first;
+    }
+    let count = min(items, num_vectors - min(from, num_vectors));
+    for it in 0..count {
+        let v = first + it;
+        let vr = min(v, last);
+        let mut xi = Array::<Vector<F, N>>::new(comptime!(td));
+        #[unroll]
+        for d in 0..td {
+            xi[d] = points[d * stride + vr];
+        }
+        let part = expansion_cooperative::<F, N>(
+            &xi,
+            rows,
+            0usize,
+            row,
+            one,
+            zero,
+            degree as usize,
+            nb,
+            u,
+            cell,
+            1usize,
+            cap,
+            g,
+        );
+        let e = group_sum::<F, N>(&part, u, comptime!(td + 1), g);
+        if u == 0 && v < num_vectors {
+            #[unroll]
+            for d in 0..td + 1 {
+                out[d * stride + v] = e[d];
+            }
+        }
+    }
+}
+
 /// A Lagrange interpolant of one element on the device, evaluated by the pull-back's basis
 /// evaluator.
 ///
@@ -196,8 +270,7 @@ impl<F: Real> Interpolant<F> {
     /// # Errors
     ///
     /// `LengthMismatch` if `stride` is not a multiple of `VECTOR_PAD` or `points` does not hold
-    /// tdim rows of it; `TooLarge` and allocation errors; `NotYetImplemented` where the
-    /// strategy chosen for the PullBack family does not run yet.
+    /// tdim rows of it; `TooLarge` and allocation errors.
     pub fn evaluate(&self, points: &DeviceBuffer<F>, stride: usize) -> Result<DeviceBuffer<F>> {
         let td = tdim(self.cell);
         if !stride.is_multiple_of(VECTOR_PAD) || points.len() != td * stride {
@@ -213,7 +286,7 @@ impl<F: Real> Interpolant<F> {
         }
         // The tensor pull-back (`sumfact`) has no evaluator of C': `tensor` = false makes it
         // fall back to `loops`, which `record_strategies` shows; nor has `shared` a table to
-        // stage here.
+        // stage here. `cooperative` splits the evaluator's sum as in the pull-back.
         let s = strategy::choose(
             client,
             StrategyFamily::PullBack,
@@ -230,6 +303,49 @@ impl<F: Real> Interpolant<F> {
         } else {
             nb + 3 * td + 4
         };
+        if s == Strategy::Cooperative {
+            // `loops`' values, the deepest tree of one unit per group and its control words.
+            let live = 3 * cap + 3 * td + 22 + (MAX_LEAVES.ilog2() as usize + 2) * (td + 1) + 6;
+            let (plan, group) = cooperative::plan(
+                client,
+                KernelKind::PullBack,
+                stride,
+                size_of::<F>(),
+                VECTOR_PAD,
+                live,
+                nb,
+                td + 1,
+            )?;
+            let n = plan.vector_size;
+            let rows = u32::try_from(stride / n).map_err(|_| GridError::TooLarge)?;
+            debug_assert_bindings(client, 4);
+            // SAFETY: as for `loops` below: each group slot takes the vectors (c · slots + s) ·
+            // items_per_unit + i of the plan, which cover stride / n; its units read `points`
+            // and `rows` at the entries `loops` reads for vector min(v, stride / n − 1), and
+            // only unit 0 writes `out`, at the entries of `loops` for v < stride / n. The
+            // shared array has slots · units · round vectors, the bytes `per_group` checked.
+            unsafe {
+                interpolant_cooperative_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    points.vector_arg(n),
+                    self.coefficients.arg(),
+                    self.rows.vector_arg(n),
+                    out.vector_arg(n),
+                    rows,
+                    rows,
+                    plan.items_per_unit,
+                    u32::try_from(nb).map_err(|_| GridError::TooLarge)?,
+                    self.degree,
+                    self.cell,
+                    cap,
+                    group,
+                );
+            }
+            return Ok(out);
+        }
         let plan = LaunchPlan::elementwise(
             client,
             KernelKind::PullBack,
@@ -302,7 +418,8 @@ mod tests {
     use super::*;
 
     /// Against gridcl-refcell's tabulation of the interpolant, at p = 1–4 on every cell type
-    /// (pyramids to 3) and at a few points, under the policy and under `loops`, in f32 and,
+    /// (pyramids to 3) and at a few points, under the policy, `loops` and `cooperative` (one
+    /// unit per group on CPUs), in f32 and,
     /// where supported, f64: within 10^−10
     /// (f64) or 10^−3 (f32) of max(1, |value|), loose bounds for the rounding through the
     /// coefficients (the accuracy tests of the pull-back are the acceptance check).
@@ -316,13 +433,15 @@ mod tests {
             }
         };
         run();
-        // The `loops` evaluator too (the hooks need the feature `testing`).
+        // The `loops` and `cooperative` evaluators too (the hooks need the feature `testing`).
         #[cfg(feature = "testing")]
-        crate::strategy::hook::with(
-            StrategyFamily::PullBack,
-            crate::strategy::StrategyOverride::Fixed(Strategy::Loops),
-            run,
-        );
+        for s in [Strategy::Loops, Strategy::Cooperative] {
+            crate::strategy::hook::with(
+                StrategyFamily::PullBack,
+                crate::strategy::StrategyOverride::Fixed(s),
+                run,
+            );
+        }
     }
 
     fn matches_host<F: Real>(client: &Client, tol: f64) {

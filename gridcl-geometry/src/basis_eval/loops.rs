@@ -12,11 +12,21 @@
 //! runtime loop indices. So the results are the same at every vector size on the CPU runtime.
 //! The coefficients a_k are read from a slice of vectors, a(k, c) at
 //! (k g + c) · `a_stride` + `a_at`.
+//!
+//! [`expansion_cooperative`] is the evaluator of the `cooperative` strategy (docs/plans/M9h.md,
+//! T10b): the K basis functions split into L leaves of consecutive functions, leaf λ the
+//! functions ⌊λK/L⌋ ≤ k < ⌊(λ + 1)K/L⌋ (L ≤ K, so none is empty), each summed from `zero`
+//! in basis order, and a unit of a group sums its L / U consecutive leaves through the tree of
+//! [`crate::cooperative`]. Every unit runs the recurrences of every function it needs, with the
+//! operations of [`expansion_loops`], and skips the layers and rows of tensor cells that hold
+//! none of its functions (a skipped layer or row restarts its recurrence), so its values do not
+//! depend on the unit count.
 
 use cubecl::prelude::*;
 use gridcl_dims::CellType;
 
 use super::cst;
+use crate::cooperative::{Group, stack_levels, unit_partial, unit_tree};
 
 /// The comptime capacity of the 1D arrays of [`expansion_loops`] for `degree`: at least
 /// degree + 2 (the pyramid's powers of 1/s), a power of two and at least 4, so few kernels
@@ -162,6 +172,62 @@ fn emit_at<F: Float, N: Size>(
     }
 }
 
+/// [`emit_at`] of basis function `k`, or under `coop` (the `cooperative` evaluator) only for
+/// the unit's functions, into its open leaf `acc`, which the leaf's last function adds to the
+/// unit's tree in `stack` and resets to `zero`. `ctl` holds the unit's first and end function,
+/// the end of its open leaf, the open leaf's index among the unit's, the unit's first leaf
+/// and the function count K ([`expansion_cooperative`]).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn emit<F: Float, N: Size>(
+    acc: &mut Array<Vector<F, N>>,
+    a: &[Vector<F, N>],
+    a_at: usize,
+    a_stride: usize,
+    k: usize,
+    v0: Vector<F, N>,
+    v1: Vector<F, N>,
+    v2: Vector<F, N>,
+    v3: Vector<F, N>,
+    stack: &mut Array<Vector<F, N>>,
+    ctl: &mut Array<u32>,
+    zero: Vector<F, N>,
+    #[comptime] td: usize,
+    #[comptime] g: usize,
+    #[comptime] coop: Option<Group>,
+) {
+    if comptime!(coop.is_some()) {
+        let leaves = comptime!(coop.unwrap().leaves as u32);
+        let comps = comptime!(g * (td + 1));
+        let kk = k as u32;
+        if kk >= ctl[0] && kk < ctl[1] {
+            emit_at::<F, N>(acc, a, a_at, a_stride, k, v0, v1, v2, v3, td, g);
+            if kk + 1 == ctl[2] {
+                unit_tree::<F, N>(stack, acc, ctl[3] as usize, comps);
+                #[unroll]
+                for c in 0..comps {
+                    acc[c] = zero;
+                }
+                ctl[3] += 1;
+                ctl[2] = (ctl[4] + ctl[3] + 1) * ctl[5] / leaves;
+            }
+        }
+    } else {
+        emit_at::<F, N>(acc, a, a_at, a_stride, k, v0, v1, v2, v3, td, g);
+    }
+}
+
+/// Whether the functions k0 ≤ k < k0 + len hold one of the unit's under `coop`; always under
+/// `None` ([`emit`]).
+#[cube]
+fn wanted(ctl: &mut Array<u32>, k0: usize, len: usize, #[comptime] coop: Option<Group>) -> bool {
+    let mut run = true;
+    if comptime!(coop.is_some()) {
+        run = ((k0 + len) as u32) > ctl[0] && (k0 as u32) < ctl[1];
+    }
+    run
+}
+
 /// P_i(2t − 1) and its derivative along t at 2i and 2i + 1 of `out`, i ≤ p
 /// ([`super::legendre`]).
 #[cube]
@@ -200,8 +266,11 @@ fn triangle_set<F: Float, N: Size>(
     k0: usize,
     vz: Vector<F, N>,
     dz: Vector<F, N>,
+    stack: &mut Array<Vector<F, N>>,
+    ctl: &mut Array<u32>,
     #[comptime] prism: bool,
     #[comptime] g: usize,
+    #[comptime] coop: Option<Group>,
 ) {
     let two = cst::<F, N>(2i64);
     let s = one - y;
@@ -224,7 +293,7 @@ fn triangle_set<F: Float, N: Size>(
             let t1 = two * aix * bj;
             let t2 = aiy * bj + ai * (two * bjx);
             if comptime!(prism) {
-                emit_at::<F, N>(
+                emit::<F, N>(
                     acc,
                     a,
                     a_at,
@@ -234,11 +303,17 @@ fn triangle_set<F: Float, N: Size>(
                     t1 * vz,
                     t2 * vz,
                     t0 * dz,
+                    stack,
+                    ctl,
+                    zero,
                     3usize,
                     g,
+                    coop,
                 );
             } else {
-                emit_at::<F, N>(acc, a, a_at, a_stride, k, t0, t1, t2, zero, 2usize, g);
+                emit::<F, N>(
+                    acc, a, a_at, a_stride, k, t0, t1, t2, zero, stack, ctl, zero, 2usize, g, coop,
+                );
             }
             k += 1;
             step::<F, N>(&mut qb, (j + 1) as u32, alpha, asq, by, one, zero, false);
@@ -304,6 +379,98 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
     #[comptime] g: usize,
     #[comptime] cap: usize,
 ) -> Array<Vector<F, N>> {
+    // No tree: `emit` leaves both untouched.
+    let mut stack = Array::<Vector<F, N>>::new(1usize);
+    let mut ctl = Array::<u32>::new(1usize);
+    expansion_split::<F, N>(
+        xi,
+        a,
+        a_at,
+        a_stride,
+        one,
+        zero,
+        degree,
+        &mut stack,
+        &mut ctl,
+        cell,
+        g,
+        cap,
+        comptime!(None),
+    )
+}
+
+/// The unit's partial of [`expansion_loops`] in the `cooperative` strategy (module docs): the
+/// sum of its leaves of the `nodes` basis functions through [`unit_tree`], unit `u` of a
+/// group of `grp` ([`crate::cooperative::group_sum`] combines the partials).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn expansion_cooperative<F: Float, N: Size>(
+    xi: &Array<Vector<F, N>>,
+    a: &[Vector<F, N>],
+    a_at: usize,
+    a_stride: usize,
+    one: Vector<F, N>,
+    zero: Vector<F, N>,
+    degree: usize,
+    nodes: usize,
+    u: usize,
+    #[comptime] cell: CellType,
+    #[comptime] g: usize,
+    #[comptime] cap: usize,
+    #[comptime] grp: Group,
+) -> Array<Vector<F, N>> {
+    let comps = comptime!(g * (gridcl_refcell::tdim(cell) + 1));
+    let per_unit = comptime!((grp.leaves / grp.units) as u32);
+    let leaves = comptime!(grp.leaves as u32);
+    let mut stack = Array::<Vector<F, N>>::new(comptime!(stack_levels(grp) * comps));
+    // The unit's first and end function, the end of its open leaf, the open leaf among the
+    // unit's, the unit's first leaf and K (`emit`).
+    let k = nodes as u32;
+    let first = u as u32 * per_unit;
+    let mut ctl = Array::<u32>::new(6usize);
+    ctl[0] = first * k / leaves;
+    ctl[1] = (first + per_unit) * k / leaves;
+    ctl[2] = (first + 1) * k / leaves;
+    ctl[3] = 0u32;
+    ctl[4] = first;
+    ctl[5] = k;
+    expansion_split::<F, N>(
+        xi,
+        a,
+        a_at,
+        a_stride,
+        one,
+        zero,
+        degree,
+        &mut stack,
+        &mut ctl,
+        cell,
+        g,
+        cap,
+        comptime!(Some(grp)),
+    );
+    unit_partial::<F, N>(&stack, comps, grp)
+}
+
+/// [`expansion_loops`], or under `coop` the leaves of [`expansion_cooperative`] into `stack`
+/// (whose last open leaf, all `zero`, it returns), with `ctl` as [`emit`] describes.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn expansion_split<F: Float, N: Size>(
+    xi: &Array<Vector<F, N>>,
+    a: &[Vector<F, N>],
+    a_at: usize,
+    a_stride: usize,
+    one: Vector<F, N>,
+    zero: Vector<F, N>,
+    degree: usize,
+    stack: &mut Array<Vector<F, N>>,
+    ctl: &mut Array<u32>,
+    #[comptime] cell: CellType,
+    #[comptime] g: usize,
+    #[comptime] cap: usize,
+    #[comptime] coop: Option<Group>,
+) -> Array<Vector<F, N>> {
     let td = comptime!(gridcl_refcell::tdim(cell));
     let p = degree;
     let two = cst::<F, N>(2i64);
@@ -316,7 +483,7 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
         let mut lx = Array::<Vector<F, N>>::new(comptime!(2 * cap));
         legendre_into::<F, N>(&mut lx, xi[0], one, zero, p);
         for i in 0..p + 1 {
-            emit_at::<F, N>(
+            emit::<F, N>(
                 &mut acc,
                 a,
                 a_at,
@@ -326,8 +493,12 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
                 lx[2 * i + 1],
                 zero,
                 zero,
+                stack,
+                ctl,
+                zero,
                 1usize,
                 g,
+                coop,
             );
         }
     } else if comptime!(cell == CellType::Quadrilateral || cell == CellType::Hexahedron) {
@@ -341,65 +512,87 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
             for iy in 0..p + 1 {
                 let vy = qy[0];
                 let dy = two * qy[1];
-                for ix in 0..p + 1 {
-                    let vx = lx[2 * ix];
-                    let dx = lx[2 * ix + 1];
-                    emit_at::<F, N>(
-                        &mut acc,
-                        a,
-                        a_at,
-                        a_stride,
-                        k,
-                        vx * vy,
-                        dx * vy,
-                        vx * dy,
-                        zero,
-                        2usize,
-                        g,
-                    );
-                    k += 1;
+                if wanted(ctl, k, p + 1, coop) {
+                    for ix in 0..p + 1 {
+                        let vx = lx[2 * ix];
+                        let dx = lx[2 * ix + 1];
+                        emit::<F, N>(
+                            &mut acc,
+                            a,
+                            a_at,
+                            a_stride,
+                            k,
+                            vx * vy,
+                            dx * vy,
+                            vx * dy,
+                            zero,
+                            stack,
+                            ctl,
+                            zero,
+                            2usize,
+                            g,
+                            coop,
+                        );
+                        k += 1;
+                    }
+                } else {
+                    k += p + 1;
                 }
                 step::<F, N>(&mut qy, (iy + 1) as u32, 0u32, zero, ty, one, zero, false);
             }
         } else {
             let tz = two * xi[2] - one;
             let mut qz = start_a0::<F, N>(tz, one, one, zero);
+            let layer = (p + 1) * (p + 1);
             for iz in 0..p + 1 {
                 let vz = qz[0];
                 let dz = two * qz[1];
-                let mut qy = start_a0::<F, N>(ty, one, one, zero);
-                for iy in 0..p + 1 {
-                    let vy = qy[0];
-                    let dy = two * qy[1];
-                    let vyz = vy * vz;
-                    let dyz = dy * vz;
-                    let ydz = vy * dz;
-                    for ix in 0..p + 1 {
-                        let vx = lx[2 * ix];
-                        let dx = lx[2 * ix + 1];
-                        emit_at::<F, N>(
-                            &mut acc,
-                            a,
-                            a_at,
-                            a_stride,
-                            k,
-                            vx * vyz,
-                            dx * vyz,
-                            vx * dyz,
-                            vx * ydz,
-                            3usize,
-                            g,
-                        );
-                        k += 1;
+                if wanted(ctl, k, layer, coop) {
+                    let mut qy = start_a0::<F, N>(ty, one, one, zero);
+                    for iy in 0..p + 1 {
+                        let vy = qy[0];
+                        let dy = two * qy[1];
+                        if wanted(ctl, k, p + 1, coop) {
+                            let vyz = vy * vz;
+                            let dyz = dy * vz;
+                            let ydz = vy * dz;
+                            for ix in 0..p + 1 {
+                                let vx = lx[2 * ix];
+                                let dx = lx[2 * ix + 1];
+                                emit::<F, N>(
+                                    &mut acc,
+                                    a,
+                                    a_at,
+                                    a_stride,
+                                    k,
+                                    vx * vyz,
+                                    dx * vyz,
+                                    vx * dyz,
+                                    vx * ydz,
+                                    stack,
+                                    ctl,
+                                    zero,
+                                    3usize,
+                                    g,
+                                    coop,
+                                );
+                                k += 1;
+                            }
+                        } else {
+                            k += p + 1;
+                        }
+                        step::<F, N>(&mut qy, (iy + 1) as u32, 0u32, zero, ty, one, zero, false);
                     }
-                    step::<F, N>(&mut qy, (iy + 1) as u32, 0u32, zero, ty, one, zero, false);
+                } else {
+                    k += layer;
                 }
                 step::<F, N>(&mut qz, (iz + 1) as u32, 0u32, zero, tz, one, zero, false);
             }
         }
     } else if comptime!(cell == CellType::Triangle) {
         triangle_set::<F, N>(
-            xi[0], xi[1], a, a_at, a_stride, &mut acc, one, zero, p, 0usize, zero, zero, false, g,
+            xi[0], xi[1], a, a_at, a_stride, &mut acc, one, zero, p, 0usize, zero, zero, stack,
+            ctl, false, g, coop,
         );
     } else if comptime!(cell == CellType::Prism) {
         // Triangle times Legendre in z, z outer: the triangle set is recomputed per z layer.
@@ -409,22 +602,27 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
         for iz in 0..p + 1 {
             let vz = qz[0];
             let dz = two * qz[1];
-            triangle_set::<F, N>(
-                xi[0],
-                xi[1],
-                a,
-                a_at,
-                a_stride,
-                &mut acc,
-                one,
-                zero,
-                p,
-                iz * nt,
-                vz,
-                dz,
-                true,
-                g,
-            );
+            if wanted(ctl, iz * nt, nt, coop) {
+                triangle_set::<F, N>(
+                    xi[0],
+                    xi[1],
+                    a,
+                    a_at,
+                    a_stride,
+                    &mut acc,
+                    one,
+                    zero,
+                    p,
+                    iz * nt,
+                    vz,
+                    dz,
+                    stack,
+                    ctl,
+                    true,
+                    g,
+                    coop,
+                );
+            }
             step::<F, N>(&mut qz, (iz + 1) as u32, 0u32, zero, tz, one, zero, false);
         }
     } else if comptime!(cell == CellType::Tetrahedron) {
@@ -458,7 +656,7 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
                 for k in 0..p - i - j + 1 {
                     let ck = qc[0];
                     let ckx = qc[1];
-                    emit_at::<F, N>(
+                    emit::<F, N>(
                         &mut acc,
                         a,
                         a_at,
@@ -468,8 +666,12 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
                         dxab * ck,
                         dyab * ck,
                         dzab * ck + ab * (two * ckx),
+                        stack,
+                        ctl,
+                        zero,
                         3usize,
                         g,
+                        coop,
                     );
                     o += 1;
                     step::<F, N>(&mut qc, (k + 1) as u32, gamma, gsq, cz, one, zero, false);
@@ -522,7 +724,7 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
                 for k in 0..p - m + 1 {
                     let ck = qc[0];
                     let ckx = qc[1];
-                    emit_at::<F, N>(
+                    emit::<F, N>(
                         &mut acc,
                         a,
                         a_at,
@@ -532,8 +734,12 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
                         f1 * ck,
                         f2 * ck,
                         f3 * ck + f0 * (two * ckx),
+                        stack,
+                        ctl,
+                        zero,
                         3usize,
                         g,
+                        coop,
                     );
                     o += 1;
                     step::<F, N>(&mut qc, (k + 1) as u32, gamma, gsq, cz, one, zero, false);
@@ -543,10 +749,13 @@ pub(crate) fn expansion_loops<F: Float, N: Size>(
             step::<F, N>(&mut qa, (i + 1) as u32, 0u32, zero, ax, s, zero, true);
         }
     } else {
-        // The point cell: one basis function, the constant 1.
+        // The point cell: one basis function, the constant 1 (one leaf of one unit).
         #[unroll]
         for c in 0..g {
             acc[c] = a[c * a_stride + a_at];
+        }
+        if comptime!(coop.is_some()) {
+            unit_tree::<F, N>(stack, &mut acc, 0usize, g);
         }
     }
     acc

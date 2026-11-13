@@ -1,10 +1,12 @@
 //! The `cooperative` strategy (docs/plans/M9h.md, T10a and T10b; ADR-0042, item 4): a group of
 //! units per vector of cells, planned by `LaunchPlan::per_group`.
 //!
-//! A sum over the K terms of a cell (the nodes of the factor kernels) is split into L leaves,
-//! L the largest power of two not above min([`MAX_LEAVES`], K), so no leaf is empty: leaf l
-//! sums the terms l, l + L, l + 2L, … in ascending order from the product of its first term,
-//! as `loops` does. The group's `units_per_group` units take L / `units_per_group` consecutive
+//! A sum over the K terms of a cell (the nodes of the factor kernels, the basis functions of a
+//! pull-back step) is split into L leaves, L the largest power of two not above
+//! min([`MAX_LEAVES`], K), so no leaf is empty. In the factor kernels leaf l sums the nodes l,
+//! l + L, l + 2L, … in ascending order from the product of its first node, as `loops` does; in
+//! the pull-back it sums a run of consecutive basis functions from zero, in the order of the
+//! recurrences that produce them (`basis_eval::expansion_cooperative`). The group's `units_per_group` units take L / `units_per_group` consecutive
 //! leaves each and reduce them pairwise ([`unit_tree`]); the units then combine their partials
 //! pairwise in shared memory ([`group_sum`]). The tree over the L leaves is therefore the same
 //! for every power-of-two `units_per_group` dividing L, including 1, and so are the results:
@@ -24,6 +26,7 @@
 //! the CPU runtime with injected GPU-class properties.
 
 pub(crate) mod factors;
+pub(crate) mod pull_back;
 
 use cubecl::prelude::*;
 use gridcl_device::{DeviceClass, GridError, KernelKind, LaunchPlan, Result, device_properties};
@@ -196,7 +199,8 @@ pub(crate) fn stack_levels(g: Group) -> usize {
 }
 
 /// The sum of the group's partials, pairwise over its units (at strides t = 1, 2, …, unit u
-/// with u mod 2t = 0 adds unit u + t's partial), valid in unit 0. The components go through
+/// with u mod 2t = 0 adds unit u + t's partial), in every unit of the group: each reads unit
+/// 0's entries after the tree's last `sync_cube`. The components go through
 /// a shared array of [`Group::shared_len`] vectors (one per unit of the cube and component of
 /// a round) in rounds of `g.round`. Every unit of the cube calls it, in uniform control flow:
 /// it calls `sync_cube`. With one unit per group it returns `part` and declares no shared
@@ -217,6 +221,8 @@ pub(crate) fn group_sum<F: Float, N: Size>(
     } else {
         let mut shared = Shared::<[Vector<F, N>]>::new_slice(comptime!(g.shared_len()));
         let p = UNIT_POS as usize * g.round;
+        // Unit 0 of the group.
+        let base = p - u * g.round;
         #[unroll]
         for r in 0..comptime!(comps.div_ceil(g.round)) {
             let first = comptime!(r * g.round);
@@ -242,7 +248,7 @@ pub(crate) fn group_sum<F: Float, N: Size>(
             }
             #[unroll]
             for c in 0..len {
-                total[first + c] = shared[p + c];
+                total[first + c] = shared[base + c];
             }
         }
     }

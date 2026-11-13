@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use cubecl::prelude::Client;
-use gridcl_device::{DeviceClass, GridError, Result};
+use gridcl_device::{DeviceClass, Result};
 use gridcl_dims::CellType;
 
 /// How a kernel family evaluates a block, from the simplest to the most involved.
@@ -77,21 +77,6 @@ impl Strategy {
             }
             Strategy::Cooperative => family != StrategyFamily::EVector,
             _ => true,
-        }
-    }
-
-    /// `None` when the launchers of `family` run the strategy, else the task that implements it.
-    /// `direct` and `loops` run for every family (T6a, T6b); the later strategies arrive family
-    /// by family. Sum factorisation runs for the factor families wherever the point set records
-    /// its factors (quadrilateral and hexahedron cell rules from T7a, facet rules from T7b,
-    /// prisms from T7c), and for the pull-back on every tensor cell (T8); `shared` for every
-    /// family with a table (T9); `cooperative` for the factor families (T10a).
-    fn not_yet(self, family: StrategyFamily) -> Option<&'static str> {
-        match (self, family) {
-            (Strategy::Cooperative, StrategyFamily::PullBack) => {
-                Some("geometry strategy cooperative (docs/plans/M9h.md, T10b)")
-            }
-            _ => None,
         }
     }
 }
@@ -374,7 +359,7 @@ fn env_override(family: StrategyFamily) -> Option<StrategyOverride> {
 ///
 /// # Errors
 ///
-/// `NotYetImplemented` for a strategy the launchers do not run yet; the errors of `table`.
+/// The errors of `table`.
 ///
 /// # Panics
 ///
@@ -411,9 +396,6 @@ pub(crate) fn choose(
         && (wanted != Strategy::Shared
             || table()?.is_some_and(|len| crate::shared::fits(client, len, elem_bytes)));
     let s = if applies { wanted } else { Strategy::Loops };
-    if let Some(task) = s.not_yet(family) {
-        return Err(GridError::NotYetImplemented(task));
-    }
     hook::record(family, s);
     Ok(s)
 }

@@ -1,12 +1,12 @@
 //! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
-//! asks the degree policy, `record_strategies` shows what ran, and a forced strategy that does
-//! not run yet is an error rather than a silent `direct`. `loops` runs for every family (T6a,
-//! T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b), and on prisms
-//! (T7c), and for the pull-back on quadrilaterals, hexahedra and prisms (T8); `shared` for
-//! every family with a table that fits the shared memory (T9).
+//! asks the degree policy, and `record_strategies` shows what ran. `loops` runs for every
+//! family (T6a, T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b),
+//! and on prisms (T7c), and for the pull-back on quadrilaterals, hexahedra and prisms (T8);
+//! `shared` for every family with a table that fits the shared memory (T9); `cooperative` for
+//! every family but the E-vector (T10a, T10b).
 
 use gridcl::prelude::*;
-use gridcl::{FacetQuadRule, FieldShape, PullBackOptions};
+use gridcl::{FacetQuadRule, FieldShape, PullBackOptions, VecShape};
 use gridcl_geometry::testing::{
     Strategy, StrategyFamily, StrategyOverride, record_strategies, with_strategy,
 };
@@ -90,49 +90,6 @@ fn forced_direct_matches_the_policy_bitwise() {
         v.iter().flatten().flatten().map(|x| x.to_bits()).collect()
     };
     assert_eq!(bits(&policy), bits(&direct));
-}
-
-#[test]
-fn strategies_that_do_not_run_yet_are_errors() {
-    let client = gridcl_testing::test_client();
-    let triangle = gridcl_testing::square_box(Cell2::Triangle, 2, 2)
-        .build::<f32, D2, D2>(&client)
-        .unwrap();
-    let quadrilateral = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 2)
-        .build::<f32, D2, D2>(&client)
-        .unwrap();
-    for (mesh, family, s, want) in [
-        (
-            &quadrilateral,
-            StrategyFamily::PullBack,
-            Strategy::Cooperative,
-            "cooperative",
-        ),
-        (
-            &triangle,
-            StrategyFamily::PullBack,
-            Strategy::Cooperative,
-            "cooperative",
-        ),
-    ] {
-        let rule = QuadRule::for_grid(mesh, 2).unwrap();
-        let x = mesh.physical_points(&rule).unwrap();
-        let (got, ran) = record_strategies(|| {
-            with_strategy(family, StrategyOverride::Fixed(s), || match family {
-                StrategyFamily::PullBack => {
-                    mesh.pull_back(&x, &PullBackOptions::default()).map(drop)
-                }
-                _ => mesh.physical_points(&rule).map(drop),
-            })
-        });
-        match got {
-            Err(GridError::NotYetImplemented(task)) => {
-                assert!(task.contains(&format!("strategy {want} ")), "{s:?}: {task}");
-            }
-            other => panic!("{s:?}: {other:?}"),
-        }
-        assert!(ran.is_empty(), "{s:?} ran {ran:?}");
-    }
 }
 
 #[test]
@@ -698,21 +655,33 @@ fn forced_cooperative_is_independent_of_units_per_group() {
     }
 }
 
-/// X, J, det J, K and the facet normals of perturbed hexahedra (both node families; 64 nodes,
-/// so L = 32 leaves) and tetrahedra (20 nodes, L = 16), and the normals of the sphere (10
-/// nodes, L = 8), at p = 3 and the Gauss points of degree 6, under `cooperative` with 1, 2 and
+/// X, J, det J, K, the facet normals and ξ of the pull-back of X of perturbed hexahedra (both
+/// node families; 64 nodes, so L = 32 leaves) and tetrahedra (20 nodes, L = 16), and the
+/// normals and ξ of the sphere (10 nodes, L = 8), at p = 3 and the Gauss points of degree 6
+/// (every point converges), under `cooperative` with 1, 2 and
 /// L units per group, L at most the device's own units per cube, through injected GPU-class
 /// properties with `units` units per cube (so the CPU runtime runs groups of several units
 /// too), at vector sizes 1 and the widest: bitwise equal to one unit at vector size 1 on the
 /// CPU runtime, and within `tol` of the largest entry elsewhere; and within `tol` of `loops`
-/// everywhere (another summation order). Every factor family runs `cooperative`, the E-vector
-/// `loops`.
+/// everywhere (another summation order). Every family but the E-vector runs `cooperative`, the
+/// E-vector `loops`.
 fn cooperative_units<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    fn reference<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
+        mesh: &Mesh<F, TD, GD>,
+        x: &BlockFields<F, VecShape<GD>>,
+    ) -> Vec<f64> {
+        let pb = mesh.pull_back(x, &PullBackOptions::default()).unwrap();
+        let steps = blocks_f64(&pb.last_step);
+        let converged = if size_of::<F>() == 8 { 1e-13 } else { 1e-5 };
+        assert!(steps.iter().all(|&s| s <= converged), "{steps:?}");
+        blocks_f64(&pb.reference)
+    }
     fn volume<F: Real>(mesh: &Mesh<F, D3, D3>) -> Quantities {
         let rule = QuadRule::for_grid(mesh, 6).unwrap();
         let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
         vec![
-            ("X", blocks_f64(&mesh.physical_points(&rule).unwrap())),
+            ("X", blocks_f64(&x)),
             ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
             ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
             (
@@ -723,12 +692,14 @@ fn cooperative_units<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
                 "facet normals",
                 blocks_f64(&mesh.facet_normals(&facets).unwrap()),
             ),
+            ("ξ", reference(mesh, &x)),
         ]
     }
     fn surface<F: Real>(mesh: &Mesh<F, D2, D3>) -> Quantities {
         let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
         vec![
-            ("X", blocks_f64(&mesh.physical_points(&rule).unwrap())),
+            ("X", blocks_f64(&x)),
             ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
             ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
             (
@@ -736,6 +707,7 @@ fn cooperative_units<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
                 blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
             ),
             ("normals", blocks_f64(&mesh.normals(&rule).unwrap())),
+            ("ξ", reference(mesh, &x)),
         ]
     }
     let volume_mesh = |cell, family| {
@@ -796,15 +768,25 @@ fn units_against_one<F, TD, GD>(
                 .all(|r| *r == (EVector, Strategy::Loops) || r.1 == Strategy::Cooperative),
             "{what}: {ran:?}"
         );
-        let upg: Vec<u32> = plans
-            .iter()
-            .filter(|(k, _)| *k == KernelKind::GeomFactors)
-            .map(|(_, p)| p.units_per_group)
-            .collect();
-        assert!(!upg.is_empty(), "{what}: no factor plan");
+        let upg = |kind| -> Vec<u32> {
+            plans
+                .iter()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, p)| p.units_per_group)
+                .collect()
+        };
+        let want = units.min(leaves);
+        let factors = upg(KernelKind::GeomFactors);
+        assert!(!factors.is_empty(), "{what}: no factor plan");
         assert!(
-            upg.iter().all(|&u| u == units.min(leaves)),
-            "{what}, {units} units: {upg:?}"
+            factors.iter().all(|&u| u == want),
+            "{what}, {units} units: {factors:?}"
+        );
+        // The pull-back's set-up is `loops`' (one unit per group), its Newton steps cooperate.
+        let pull_back = upg(KernelKind::PullBack);
+        assert!(
+            pull_back.contains(&want) && pull_back.iter().all(|&u| u == 1 || u == want),
+            "{what}, {units} units: pull-back {pull_back:?}"
         );
         got
     };

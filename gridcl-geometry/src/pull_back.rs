@@ -9,6 +9,8 @@ use gridcl_device::{
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
 use crate::basis_eval::{expansion, expansion_loops, loops_capacity};
+use crate::cooperative::pull_back::{pull_back_cooperative_kernel, step_components};
+use crate::cooperative::{self, MAX_LEAVES};
 use crate::layout::pinv_of;
 use crate::layout_loops::loops_layout;
 use crate::shared::{self, pull_back_setup_shared_kernel, pull_back_sumfact_setup_shared_kernel};
@@ -503,13 +505,14 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// coefficients by sum factorisation, and each step evaluates the 1D Legendre polynomials at ξ
 /// and contracts them one direction at a time; the first call uploads the interval's
 /// coefficients, the node permutation and on prisms the triangle's coefficients instead of the
-/// expansion coefficients (ADR-0049).
+/// expansion coefficients (ADR-0049). Under `cooperative` the `loops` set-up runs once per cell,
+/// and each Newton step's sum over the basis functions is split among a group of units
+/// (planned by `LaunchPlan::per_group`, `crate::cooperative`).
 ///
 /// # Errors
 ///
 /// `LengthMismatch` if `x` does not have one cell per local cell of block `b`; the element
-/// errors of the block's coordinate element; allocation and device errors; `NotYetImplemented`
-/// where the strategy chosen for the block does not run yet (ADR-0042, item 3).
+/// errors of the block's coordinate element; allocation and device errors.
 ///
 /// # Example
 ///
@@ -741,10 +744,15 @@ where
         return Ok((xi, step));
     }
     let coefficients = xe.coefficients(cell, degree, family, origin.as_ref())?;
-    if s == Strategy::Loops || staged {
+    let cooperate = s == Strategy::Cooperative;
+    if s == Strategy::Loops || staged || cooperate {
         let cap = loops_capacity(degree);
         // The evaluator's sums, 1D values and recurrences, then the Newton step's values.
         let live = gd * (td + 1) + 3 * cap + 18 + 3 * td * gd + 2 * gd + 3 * td + 6;
+        // `cooperative` adds the deepest tree of one unit per group, the step's sum and the
+        // tree's control words.
+        let comps = step_components(&layout);
+        let tree_live = (MAX_LEAVES.ilog2() as usize + 2) * comps + 6;
         let a = scratch()?;
         for r in ranges {
             let [ce, cx, cxi, cs] = r.chunks;
@@ -825,6 +833,58 @@ where
                         gd,
                     );
                 }
+            }
+            if cooperate {
+                let (plan, group) = cooperative::plan(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live + tree_live,
+                    nb,
+                    comps,
+                )?;
+                let n = plan.vector_size;
+                debug_assert_bindings(client, 5);
+                // SAFETY: as for `loops` below: each group slot takes the vectors (c · slots +
+                // s) · items_per_unit + i of the plan, which cover padded_cells / n; its units
+                // read `x` and `a` at the entries `loops` reads for vector min(v, num_vectors −
+                // 1) (a unit reads `a` only for its basis functions k < K), and only unit 0
+                // writes `xi` and `step`, at the entries of `loops` for v < num_vectors. The
+                // shared array has slots · units · round vectors, the bytes `per_group` checked
+                // (none with one unit per group), indexed by UNIT_POS · round + c and, in the
+                // tree, by (UNIT_POS + t) · round + c for the units u + t of the same group.
+                unsafe {
+                    pull_back_cooperative_kernel::launch_unchecked::<F>(
+                        client,
+                        plan.cube_count,
+                        plan.cube_dim,
+                        n,
+                        cx.data.vector_arg(n),
+                        a.vector_arg(n),
+                        coefficients.arg(),
+                        cxi.data.vector_arg(n),
+                        cs.data.vector_arg(n),
+                        fit((r.first_cell - cx.first_cell) / tile)?,
+                        fit(r.padded_cells / n)?,
+                        fit((r.first_cell - cxi.first_cell) / tile)?,
+                        fit((r.first_cell - cs.first_cell) / tile)?,
+                        opts.max_iterations,
+                        tolerance_hi,
+                        tolerance_lo,
+                        fit(r.padded_cells / n)?,
+                        plan.items_per_unit,
+                        fit(nb)?,
+                        fit(num_points)?,
+                        degree,
+                        loops_layout(layout),
+                        cell,
+                        cap,
+                        group,
+                    );
+                }
+                continue;
             }
             let plan = LaunchPlan::elementwise(
                 client,

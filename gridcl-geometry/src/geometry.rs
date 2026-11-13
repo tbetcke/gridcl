@@ -131,8 +131,7 @@ where
     ///
     /// # Errors
     ///
-    /// Allocation and device errors of the first build; `NotYetImplemented` for a strategy
-    /// that does not run yet.
+    /// Allocation and device errors of the first build.
     pub fn evector(&self, b: usize) -> Result<&EVector<F>> {
         let cache = &self.evectors[b];
         if let Some(xe) = cache.get() {

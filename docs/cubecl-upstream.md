@@ -219,3 +219,12 @@ Never put user ids, host names or project codes in an entry (CLAUDE.md).
 - **gridcl workaround:** `LaunchPlan::per_group` plans CPU cubes of at most `elementwise`'s CPU units (the hardware threads, ADR-0045); tests that inject a unit limit keep it at most the device's own.
 - **Suggestion:** reject or clamp a `CubeDim` above `max_cube_dim` for barrier kernels, or let `cube_barrier` yield (or park on a futex) after a bounded spin, as the dispatcher's idle loop does.
 - **Status:** not reported.
+
+### C22 `#[cube]` call arguments: no `&mut` to `&` reborrow, and `Some(x)` expands as a cube function
+
+- **Version:** cubecl-macros 0.11.0 (`src/generate/expression.rs`, `map_args`).
+- **Observation:** the macro wraps every argument of a call inside a `#[cube]` function in `(arg).into()` (`map_args`), so Rust's implicit reborrow of a `&mut` local to a `&` parameter no longer applies: passing a `&mut Array<u32>` parameter on to a function that takes `&Array<u32>` fails with "the trait bound `&NativeExpand<Array<u32>>: From<&mut NativeExpand<Array<u32>>>` is not satisfied" (cubecl-core has `From` impls from `&SharedExpand<T>`, not from `&mut NativeExpand<T>`). Separately, an enum constructor in argument position, `f(…, Some(grp))` for a `#[comptime] Option<_>` parameter, is expanded as a call of a cube function `Some` ("cannot find module `Some`").
+- **Evidence:** M9h T10b, `gridcl-geometry/src/basis_eval/loops.rs` (`wanted`, `expansion_cooperative`), `cargo check` of 2026-11-13.
+- **gridcl workaround:** the callee takes `&mut` where the caller holds `&mut`, and comptime enum values are built inside `comptime!(Some(grp))` (and `comptime!(None)` alike).
+- **Suggestion:** have `map_args` pass references through unchanged (or add `From<&'a mut NativeExpand<T>> for &'a NativeExpand<T>`), and treat tuple-variant constructors of comptime arguments as constants; at least document both in the macro guide.
+- **Status:** not reported.
