@@ -3,7 +3,8 @@
 # Runs shards k of `cargo test -p gridcl` in hosted CI, where the whole suite took 52-59 min in
 # one job (M8 review). Shards 1-10 together run every test of gridcl once, doc tests included;
 # in release builds the M9h tests at p = 5-8 are in shards h5-h8 (one degree each), and are
-# ignored in debug builds. gridcl's integration tests are one executable (tests/main.rs, a module
+# ignored in debug builds. Hosted CI does not run h5-h8: on lavapipe p = 6 took 33 min and
+# p = 7 and 8 over an hour each; Metal and CUDA run p = 5-8 (maintainer, 2026-11-14). gridcl's integration tests are one executable (tests/main.rs, a module
 # per file), so its tests share a process: the CPU runtime's threads and the compiled kernels
 # (nextest's process per test made the suite five times slower). Shards select modules by name:
 # a libtest filter matches anywhere in a test's path, so `gmsh::` would also match a module
@@ -54,11 +55,11 @@ pull_back=high_order::pull_back_recovers_reference_points
 parallel=parallel_threads::high_order_parallel_invariance
 ho_tests=("$sizes" "$tiles" "$twice" "$factors" "$pull_back" "$parallel")
 ho=(
-    [2]="$sizes::p1 $sizes::p4"
-    [3]="$sizes::p2 $sizes::p3 $tiles::p1 $tiles::p2 $twice::p1 $twice::p2"
-    [6]="$factors::p1 $factors::p2 $factors::p3 $factors::p4 $pull_back::p1 $pull_back::p2"
+    [2]="$sizes::p1"
+    [3]="$sizes::p2 $tiles::p1 $tiles::p2 $twice::p1 $twice::p2"
+    [6]="$sizes::p3 $factors::p1 $factors::p2 $factors::p3 $factors::p4 $pull_back::p1 $pull_back::p2"
     [9]="$parallel::p1 $parallel::p2 $parallel::p3 $parallel::p4 $tiles::p3 $tiles::p4"
-    [10]="$twice::p3 $twice::p4 $pull_back::p3 $pull_back::p4"
+    [10]="$sizes::p4 $twice::p3 $twice::p4 $pull_back::p3 $pull_back::p4"
 )
 # The modules of shards 4, 5, 7, 8 and 10.
 named=(io_threads gmsh parallel_threads compile submesh_threads submesh orient_threads)

@@ -186,11 +186,13 @@ jobs:
   vulkan:
     name: vulkan-${{ matrix.shard }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # A runaway job ends with its log (one ran 3 h and left none).
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1", "2", "3", "4", "5,7,8", "6", "9", "10", h5, h6, h7, h8, other]
+        # Not h5-h8 (M9h's tests at p = 5-8): too slow on lavapipe; Metal and CUDA run them.
+        shard: ["1,4", "2", "3", "5,7,8", "6", "9", "10", other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)
