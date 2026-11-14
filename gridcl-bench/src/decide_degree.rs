@@ -28,7 +28,7 @@
 //!   followed by a `loops` range from the next degree (ADR-0042, item 3).
 //! - CpuSimd256 copies the CpuSimd512 table ("Benchmarks", "Where").
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gridcl_device::DeviceClass;
 
@@ -218,12 +218,19 @@ pub struct Times<'a> {
 }
 
 impl<'a> Times<'a> {
-    /// The index of `data`'s strategy sweeps (`policy` records left out) and launch records.
+    /// The index of `data`'s strategy sweeps and launch records. Rule 11's paired runs (every
+    /// run with `policy` records) check the policy and are left out.
     pub fn new(data: &'a HighOrderData) -> Times<'a> {
+        let paired: HashSet<&str> = data
+            .degree
+            .iter()
+            .filter(|r| r.strategy == "policy")
+            .map(|r| r.run_id.as_str())
+            .collect();
         let index = |records: &'a [DegreeRecord]| {
             let mut times = HashMap::new();
             for r in records {
-                if r.strategy == "policy"
+                if paired.contains(r.run_id.as_str())
                     || r.strategy_ran != r.strategy
                     || r.launch_only
                     || r.status != "ok"
@@ -252,7 +259,7 @@ impl<'a> Times<'a> {
         let mut locust = HashMap::new();
         let mut locust_compile: HashMap<_, f64> = HashMap::new();
         for r in data.launch.iter().chain(&data.degree) {
-            if r.target != "locust" || r.backend != "cuda" || r.strategy == "policy" {
+            if r.target != "locust" || r.backend != "cuda" || paired.contains(r.run_id.as_str()) {
                 continue;
             }
             let key = (

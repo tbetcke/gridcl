@@ -278,21 +278,17 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Tetrahedron | CpuSimd512 | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | EVector | Tetrahedron | Gpu | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | EVector | Tetrahedron | Gpu | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
-| EVector | Tetrahedron | Gpu | f64 | 1–4 | direct | 1.00 | no strategy 10% faster |
-| EVector | Tetrahedron | Gpu | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
+| EVector | Tetrahedron | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
+| EVector | Tetrahedron | Gpu | f64 | 4– | loops | 0.87–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Hexahedron | CpuSimd128 | f32 | 1–5 | direct | 1.00 | no strategy 10% faster |
 | EVector | Hexahedron | CpuSimd128 | f32 | 6– | loops | 0.82–1.00 | direct not selectable at p = 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Hexahedron | CpuSimd128 | f64 | 1–7 | direct | 1.00 | no strategy 10% faster |
 | EVector | Hexahedron | CpuSimd128 | f64 | 8– | loops | 1.00 | direct not selectable at p = 8; no strategy 10% faster |
-| EVector | Hexahedron | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
-| EVector | Hexahedron | CpuSimd256 | f32 | 2–2 | loops | – | as CpuSimd512 |
-| EVector | Hexahedron | CpuSimd256 | f32 | 3–8 | direct | – | as CpuSimd512 |
+| EVector | Hexahedron | CpuSimd256 | f32 | 1–8 | direct | – | as CpuSimd512 |
 | EVector | Hexahedron | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
 | EVector | Hexahedron | CpuSimd256 | f64 | 1–8 | direct | – | as CpuSimd512 |
 | EVector | Hexahedron | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
-| EVector | Hexahedron | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| EVector | Hexahedron | CpuSimd512 | f32 | 2–2 | loops | 0.88 | at least 10% faster than the baseline; within 3% of the fastest |
-| EVector | Hexahedron | CpuSimd512 | f32 | 3–8 | direct | 1.00 | no strategy 10% faster |
+| EVector | Hexahedron | CpuSimd512 | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Hexahedron | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | EVector | Hexahedron | CpuSimd512 | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Hexahedron | CpuSimd512 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
@@ -405,9 +401,9 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Quadrilateral | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Points | Quadrilateral | CpuSimd512 | f64 | 2– | sumfact | 0.20–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| Points | Quadrilateral | Gpu | f32 | 4– | shared | 0.54–0.85 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Quadrilateral | Gpu | f32 | 4– | shared | 0.54–0.83 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | Gpu | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Points | Quadrilateral | Gpu | f64 | 3–3 | sumfact | 0.81–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Quadrilateral | Gpu | f64 | 3–3 | sumfact | 0.73–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | Gpu | f64 | 4– | shared | 0.17–0.74 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Tetrahedron | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Points | Tetrahedron | CpuSimd128 | f32 | 2– | loops | 0.75–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
@@ -437,15 +433,16 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Hexahedron | CpuSimd256 | f32 | 1– | sumfact | – | as CpuSimd512 |
 | Points | Hexahedron | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
 | Points | Hexahedron | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
-| Points | Hexahedron | CpuSimd512 | f32 | 1– | sumfact | 0.02–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | CpuSimd512 | f32 | 1– | sumfact | 0.02–0.85 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.03–0.74 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.03–0.69 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Points | Hexahedron | Gpu | f32 | 3–3 | shared | 0.48–0.52 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Hexahedron | Gpu | f32 | 4–4 | sumfact | 0.11 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | Gpu | f32 | 3–3 | shared | 0.48–0.51 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | Gpu | f32 | 4–4 | sumfact | 0.12 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f32 | 5–5 | shared | 0.05–0.06 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f32 | 6– | sumfact | 0.02–0.05 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Hexahedron | Gpu | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Points | Hexahedron | Gpu | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Points | Hexahedron | Gpu | f64 | 2–2 | shared | 0.74–0.90 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f64 | 3– | sumfact | 0.06–0.41 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Points | Prism | CpuSimd128 | f32 | 2– | sumfact | 0.12–0.47 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
@@ -457,11 +454,11 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Prism | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Points | Prism | CpuSimd512 | f64 | 2– | sumfact | 0.16–0.70 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| Points | Prism | Gpu | f32 | 4–4 | sumfact | 0.76–0.80 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | Gpu | f32 | 4–4 | sumfact | 0.76–0.79 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f32 | 5–7 | shared | 0.11–0.37 | at least 10% faster than the baseline; closest to the fastest at p = 6, 7 |
 | Points | Prism | Gpu | f32 | 8– | sumfact | 0.08–0.10 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Prism | Gpu | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Points | Prism | Gpu | f64 | 3–4 | shared | 0.06–0.65 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | Gpu | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Points | Prism | Gpu | f64 | 2–4 | shared | 0.06–0.87 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f64 | 5–5 | sumfact | 0.06–0.08 | at least 10% faster than the baseline; closest to the fastest at p = 5 |
 | Points | Prism | Gpu | f64 | 6–7 | shared | 0.05–0.06 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f64 | 8– | sumfact | 0.04–0.05 | at least 10% faster than the baseline; closest to the fastest at p = 8 |
@@ -577,14 +574,14 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Hexahedron | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | Jacobian | Hexahedron | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 3– | sumfact | 0.01–0.77 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 3– | sumfact | 0.01–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 3– | sumfact | 0.02–0.47 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 3– | sumfact | 0.02–0.48 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | Gpu | f32 | 2–5 | shared | 0.03–0.87 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | Gpu | f32 | 2–5 | shared | 0.03–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f32 | 6– | sumfact | 0.02–0.06 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | Gpu | f64 | 3–4 | sumfact | 0.21–0.28 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | Gpu | f64 | 3–4 | sumfact | 0.21–0.29 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f64 | 5–5 | shared | 0.25–0.31 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f64 | 6– | sumfact | 0.04–0.15 | direct not selectable at p = 8; at least 10% faster than the baseline; closest to the fastest at p = 7 |
 | Jacobian | Prism | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
@@ -600,13 +597,14 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Prism | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Prism | CpuSimd512 | f64 | 3– | sumfact | 0.05–0.80 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Prism | Gpu | f32 | 2–3 | sumfact | 0.71–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Prism | Gpu | f32 | 4–4 | shared | 0.21–0.23 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | Gpu | f32 | 2–2 | shared | 0.88–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | Gpu | f32 | 3–3 | sumfact | 0.71 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | Gpu | f32 | 4–4 | shared | 0.22–0.22 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f32 | 5–5 | sumfact | 0.14–0.15 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f32 | 6–7 | shared | 0.05–0.08 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f32 | 8– | sumfact | 0.02 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Prism | Gpu | f64 | 2– | shared | 0.01–0.79 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | Gpu | f64 | 2– | shared | 0.01–0.80 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Pyramid | CpuSimd128 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Pyramid | CpuSimd128 | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
 | Jacobian | Pyramid | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
@@ -783,7 +781,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Quadrilateral | Gpu | f32 | 1–5 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Quadrilateral | Gpu | f32 | 6– | shared | 0.32–0.68 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Quadrilateral | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Quadrilateral | Gpu | f64 | 4– | shared | 0.41–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Quadrilateral | Gpu | f64 | 4– | shared | 0.41–0.90 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Tetrahedron | CpuSimd128 | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Tetrahedron | CpuSimd128 | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | FacetNormals | Tetrahedron | CpuSimd128 | f64 | 1–4 | direct | 1.00 | no strategy 10% faster |
@@ -808,20 +806,21 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Hexahedron | CpuSimd128 | f32 | 2– | sumfact | 0.02–0.56 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 2– | sumfact | 0.03–0.52 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Hexahedron | CpuSimd256 | f32 | 1–1 | loops | – | as CpuSimd512 |
+| FacetNormals | Hexahedron | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
 | FacetNormals | Hexahedron | CpuSimd256 | f32 | 2– | sumfact | – | as CpuSimd512 |
-| FacetNormals | Hexahedron | CpuSimd256 | f64 | 1– | sumfact | – | as CpuSimd512 |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1–1 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2– | sumfact | 0.01–0.71 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 1– | sumfact | 0.02–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
+| FacetNormals | Hexahedron | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2– | sumfact | 0.01–0.74 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.02–0.67 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Hexahedron | Gpu | f32 | 2–2 | shared | 0.77–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 3–3 | sumfact | 0.17–0.23 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 4–5 | shared | 0.04–0.10 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 6– | sumfact | 0.03–0.05 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Hexahedron | Gpu | f64 | 3–3 | sumfact | 0.30–0.37 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Hexahedron | Gpu | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Hexahedron | Gpu | f64 | 3–4 | sumfact | 0.30–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f64 | 5–5 | shared | 0.42–0.66 | at least 10% faster than the baseline; closest to the fastest at p = 5 |
 | FacetNormals | Hexahedron | Gpu | f64 | 6– | sumfact | 0.05–0.21 | direct not selectable at p = 8; at least 10% faster than the baseline; closest to the fastest at p = 7 |
 | FacetNormals | Prism | CpuSimd128 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
@@ -852,7 +851,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Prism | Gpu | f32 | 4–5 | shared | 0.35–0.53 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | Gpu | f32 | 6– | sumfact | 0.08–0.31 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | Gpu | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Prism | Gpu | f64 | 2– | shared | 0.02–0.88 | at least 10% faster than the baseline; closest to the fastest at p = 4 |
+| FacetNormals | Prism | Gpu | f64 | 2– | shared | 0.02–0.87 | at least 10% faster than the baseline; closest to the fastest at p = 4 |
 | FacetNormals | Pyramid | CpuSimd128 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Pyramid | CpuSimd128 | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
 | FacetNormals | Pyramid | CpuSimd128 | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -958,11 +957,11 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | PullBack | Hexahedron | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 3– | sumfact | 0.40–0.64 | at least 10% faster than the baseline; within 3% of the fastest |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 3–7 | sumfact | 0.42–0.71 | at least 10% faster than the baseline; within 3% of the fastest |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 3–7 | sumfact | 0.42–0.70 | at least 10% faster than the baseline; within 3% of the fastest |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 8–8 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| PullBack | Hexahedron | Gpu | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| PullBack | Hexahedron | Gpu | f32 | 3– | loops | 0.86–1.00 | direct not selectable at p = 4, 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| PullBack | Hexahedron | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
+| PullBack | Hexahedron | Gpu | f32 | 4– | loops | 1.00 | direct not selectable at p = 4, 5, 6, 7, 8; no strategy 10% faster |
 | PullBack | Hexahedron | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Hexahedron | Gpu | f64 | 4–4 | loops | 1.00 | direct not selectable at p = 4; no strategy 10% faster |
 | PullBack | Hexahedron | Gpu | f64 | 5– | sumfact | 0.72–0.88 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
@@ -1040,18 +1039,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Interval | CpuSimd512 | f64 | 6 | direct | 0.19 | 1.00 | 1.30 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f64 | 7 | direct | 0.16 | 1.00 | 1.35 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f64 | 8 | direct | 0.16 | 1.00 | 1.45 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f32 | 1 | direct | 0.08 / 0.05 | 1.00 / 1.00 | 1.01 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f32 | 2 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.02 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f32 | 3 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 0.97 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f32 | 4 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.02 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f32 | 1 | direct | 0.08 / 0.05 | 1.00 / 1.00 | 1.06 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f32 | 2 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.05 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.06 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f32 | 4 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.10 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f32 | 5 | direct | 0.10 / 0.02 | 1.00 / 1.00 | 1.02 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f32 | 6 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.07 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f32 | 7 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.02 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f32 | 8 | direct | 0.10 / 0.02 | 1.00 / 1.00 | 0.99 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 0.95 / 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f64 | 2 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.01 / 0.87 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.01 / 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.04 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f64 | 1 | direct | 0.02 / 0.02 | 1.00 / 1.00 | 1.15 / 0.75 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f64 | 2 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.07 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.13 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | Gpu | f64 | 4 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.20 / 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f64 | 5 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.17 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f64 | 6 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.06 / 1.11 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f64 | 7 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 0.99 / 1.05 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1088,18 +1087,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Triangle | CpuSimd512 | f64 | 6 | direct | 0.86 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
 | EVector | Triangle | CpuSimd512 | f64 | 7 | direct | 2.01 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f64 | 8 | direct | 1.19 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| EVector | Triangle | Gpu | f32 | 1 | direct | 0.10 / 0.02 | 1.00 / 1.00 | 1.02 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | Gpu | f32 | 2 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 1.00 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | Gpu | f32 | 3 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 0.98 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f32 | 1 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.09 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f32 | 2 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.05 / 1.04 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f32 | 3 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 1.05 / 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f32 | 4 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.01 / 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f32 | 5 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 0.97 / 1.11 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f32 | 6 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.03 / 1.22 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f32 | 7 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.08 / 1.13 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f32 | 8 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.04 / 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.99 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.89 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.99 / 1.14 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.08 / 1.62 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.01 / 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f64 | 2 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.00 / 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.02 / 1.19 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.12 / 1.61 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f64 | 5 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.92 / 1.48 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.59 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.96 / 1.06 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1136,18 +1135,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 2.07 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 2.66 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f64 | 8 | direct | 3.78 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f32 | 1 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 0.99 / 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f32 | 2 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.04 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f32 | 3 | direct | 0.11 / 0.03 | 1.00 / 1.00 | 1.01 / 1.14 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f32 | 4 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 1.01 / 1.16 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f32 | 1 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.04 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f32 | 2 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.04 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f32 | 3 | direct | 0.11 / 0.03 | 1.00 / 1.00 | 0.99 / 1.13 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f32 | 4 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 1.02 / 1.16 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f32 | 5 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 1.04 / 1.48 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f32 | 6 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 1.05 / 1.47 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f32 | 7 | direct | 0.14 / 0.05 | 1.00 / 1.00 | 1.04 / 1.15 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f32 | 8 | direct | 0.15 / 0.05 | 1.00 / 1.00 | 1.03 / 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 0.99 / 0.77 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.10 / 1.22 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.87 / 2.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | Gpu | f64 | 4 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 0.95 / 1.83 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 0.97 / 0.74 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.17 / 1.23 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.02 / 2.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | Gpu | f64 | 4 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 0.98 / 1.82 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f64 | 5 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 0.95 / 1.56 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f64 | 6 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.09 / 2.07 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f64 | 7 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.15 / 1.62 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1184,18 +1183,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 3.33 | n.m.; T3: 0.97 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 1.34 | n.m.; T3: 1.04 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 8 | loops | 1.17 | n.m.; T3: 1.21 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Tetrahedron | Gpu | f32 | 1 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.07 / 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | Gpu | f32 | 2 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.04 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | Gpu | f32 | 3 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 0.89 / 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f32 | 1 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 0.89 / 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f32 | 2 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.04 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f32 | 3 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 0.94 / 0.95 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Tetrahedron | Gpu | f32 | 4 | direct | 0.10 / 0.02 | 1.00 / 1.00 | 0.94 / 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Tetrahedron | Gpu | f32 | 5 | loops | 0.11 / 0.02 | n.m.; T3: 1.02 / 1.01 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f32 | 6 | loops | 0.11 / 0.02 | n.m.; T3: 1.00 / 0.91 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f32 | 7 | loops | 0.12 / 0.02 | n.m.; T3: 1.00 / 0.93 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f32 | 8 | loops | 0.16 / 0.03 | n.m.; T3: 0.97 / 0.91 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Tetrahedron | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.09 / 0.95 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.08 / 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.03 / 1.11 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | Gpu | f64 | 4 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 0.95 / 0.88 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.16 / 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.04 / 1.10 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.09 / 1.10 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | Gpu | f64 | 4 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 0.87 / 0.87 | – | – | – | loops | loops 0.87 / 0.87 of direct |
 | EVector | Tetrahedron | Gpu | f64 | 5 | loops | 0.04 / 0.01 | n.m.; T3: 0.90 / 0.84 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f64 | 6 | loops | 0.05 / 0.01 | n.m.; T3: 0.81 / 0.79 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f64 | 7 | loops | 0.07 / 0.01 | n.m.; T3: 0.81 / 0.74 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -1216,34 +1215,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | CpuSimd128 | f64 | 6 | direct | 1.04 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 7 | direct | 1.21 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 8 | loops | 1.30 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.33 | 1.00 | 1.21 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f32 | 2 | direct | 1.50 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
-| EVector | Hexahedron | CpuSimd512 | f32 | 3 | direct | 3.49 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f32 | 4 | direct | 6.68 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.33 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 2 | direct | 1.42 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 3 | direct | 3.52 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 4 | direct | 6.82 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 5 | direct | 7.01 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 6 | direct | 7.37 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 7 | direct | 7.04 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 8 | direct | 7.14 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.30 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.60 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 3 | direct | 4.06 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 4 | direct | 12.1 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.29 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.64 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 3 | direct | 4.19 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 4 | direct | 11.9 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 5 | direct | 12.0 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 6 | direct | 11.6 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 7 | direct | 11.8 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 8 | direct | 19.0 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 0.98 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f32 | 2 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 1.06 / 1.45 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.00 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f32 | 2 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 1.05 / 1.44 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 3 | direct | 0.14 / 0.06 | 1.00 / 1.00 | 1.03 / 1.26 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f32 | 4 | direct | 0.19 / 0.07 | 1.00 / 1.00 | 1.04 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f32 | 4 | direct | 0.18 / 0.07 | 1.00 / 1.00 | 1.05 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 5 | direct | 0.20 / 0.07 | 1.00 / 1.00 | 0.98 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 6 | direct | 0.28 / 0.08 | 1.00 / 1.00 | 1.04 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 7 | direct | 0.53 / 0.10 | 1.00 / 1.00 | 0.92 / 0.85 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 8 | loops | 0.52 / 0.11 | n.m.; T3: 1.16 / 1.18 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Hexahedron | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.97 / 1.07 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f64 | 2 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.00 / 2.84 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.24 / 1.92 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f64 | 4 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.13 / 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.00 / 1.09 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f64 | 2 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.03 / 2.84 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.24 / 1.91 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | Gpu | f64 | 4 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.15 / 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 5 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.49 / 1.23 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 6 | direct | 0.14 / 0.04 | 1.00 / 1.00 | 1.51 / 1.24 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 7 | direct | 0.27 / 0.05 | 1.00 / 1.00 | 1.33 / 1.33 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1280,18 +1279,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Prism | CpuSimd512 | f64 | 6 | loops | 4.26 | n.m.; T3: 1.01 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f64 | 7 | loops | 4.51 | n.m.; T3: 1.00 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f64 | 8 | direct | 6.42 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | Gpu | f32 | 1 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 0.98 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | Gpu | f32 | 1 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.05 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f32 | 2 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.01 / 1.10 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.04 / 1.22 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.03 / 1.22 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f32 | 4 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 1.08 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f32 | 5 | direct | 0.13 / 0.04 | 1.00 / 1.00 | 1.11 / 1.11 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f32 | 6 | direct | 0.16 / 0.04 | 1.00 / 1.00 | 1.08 / 1.14 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f32 | 7 | direct | 0.20 / 0.06 | 1.00 / 1.00 | 0.98 / 0.90 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f32 | 8 | direct | 0.27 / 0.07 | 1.00 / 1.00 | 0.94 / 0.91 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.07 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.98 / 1.82 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.13 / 1.78 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | Gpu | f64 | 4 | direct | 0.05 / 0.01 | 1.00 / 1.00 | 1.15 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.06 / 1.06 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.00 / 1.83 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.17 / 1.79 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | Gpu | f64 | 4 | direct | 0.05 / 0.01 | 1.00 / 1.00 | 1.16 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f64 | 5 | direct | 0.06 / 0.01 | 1.00 / 1.00 | 1.43 / 1.32 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f64 | 6 | direct | 0.08 / 0.01 | 1.00 / 1.00 | 1.32 / 1.40 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f64 | 7 | direct | 0.14 / 0.02 | 1.00 / 1.00 | 1.18 / 1.55 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1308,12 +1307,12 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.17 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.51 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Pyramid | CpuSimd512 | f64 | 3 | direct | 0.90 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
-| EVector | Pyramid | Gpu | f32 | 1 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 0.99 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | Gpu | f32 | 2 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.04 / 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.06 / 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.95 / 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.10 / 1.24 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.13 / 1.40 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | Gpu | f32 | 1 | direct | 0.12 / 0.03 | 1.00 / 1.00 | 0.87 / 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | Gpu | f32 | 2 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.04 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.04 / 1.07 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.01 / 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.09 / 1.29 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.17 / 1.39 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 1 | direct | 0.04 | 1.00 | 1.22 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 2 | direct | 0.05 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 3 | direct | 0.05 | 1.00 | 1.18 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1346,18 +1345,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Interval | CpuSimd512 | f64 | 6 | direct | 0.09 | 1.00 | 1.39 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f64 | 7 | direct | 0.11 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f64 | 8 | direct | 0.10 | 1.00 | 1.28 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f32 | 1 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 0.93 / 1.15 | – | 0.91 / 1.14 | 1.10 / 1.39 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f32 | 2 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.02 / 1.16 | – | 1.05 / 1.14 | 1.23 / 1.53 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f32 | 3 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.02 / 1.15 | – | 1.00 / 1.21 | 1.27 / 2.00 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f32 | 4 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.13 / 1.09 | – | 1.10 / 1.04 | 1.48 / 2.28 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f32 | 1 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.07 / 1.07 | – | 1.04 / 1.05 | 1.27 / 1.29 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f32 | 2 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.07 / 1.16 | – | 1.10 / 1.15 | 1.29 / 1.53 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f32 | 3 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.03 / 1.10 | – | 1.02 / 1.15 | 1.29 / 1.91 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f32 | 4 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 0.97 / 1.18 | – | 0.94 / 1.12 | 1.27 / 2.45 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f32 | 5 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.01 / 1.15 | – | 1.04 / 1.13 | 1.39 / 2.14 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f32 | 6 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.02 / 1.27 | – | 1.02 / 1.24 | 1.29 / 2.39 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f32 | 7 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.15 / 1.26 | – | 1.14 / 1.22 | 1.87 / 3.77 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f32 | 8 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 1.00 / 1.20 | – | 1.02 / 1.15 | 1.84 / 4.39 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 0.91 / 1.08 | – | 1.01 / 1.11 | 1.08 / 1.37 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.00 | – | 0.96 / 1.01 | 1.04 / 1.50 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.04 / 1.06 | – | 1.03 / 1.01 | 1.43 / 2.25 | direct | no strategy 10% faster than direct |
-| Points | Interval | Gpu | f64 | 4 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.29 / 1.10 | – | 1.27 / 1.01 | 1.79 / 2.97 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.87 / 1.08 | – | 0.97 / 1.11 | 1.04 / 1.37 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f64 | 2 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.34 / 0.97 | – | 1.13 / 0.98 | 1.22 / 1.46 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.08 / 1.11 | – | 1.07 / 1.05 | 1.48 / 2.35 | direct | no strategy 10% faster than direct |
+| Points | Interval | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.13 / 1.03 | – | 1.12 / 0.95 | 1.57 / 2.79 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f64 | 5 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.10 / 1.25 | – | 1.17 / 1.14 | 1.96 / 3.10 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.06 / 1.13 | – | 1.14 / 1.17 | 1.55 / 2.87 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.02 / 1.17 | – | 0.95 / 1.20 | 1.83 / 4.79 | direct | no strategy 10% faster than direct |
@@ -1394,18 +1393,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Triangle | CpuSimd512 | f64 | 6 | direct | 0.45 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd512 | f64 | 7 | direct | 0.55 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd512 | f64 | 8 | direct | 0.64 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
-| Points | Triangle | Gpu | f32 | 1 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.03 / 1.03 | – | 1.05 / 1.03 | 1.19 / 1.35 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f32 | 1 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.02 / 1.04 | – | 1.04 / 1.04 | 1.18 / 1.36 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f32 | 2 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.11 / 1.15 | – | 1.12 / 1.13 | 1.63 / 2.20 | direct | no strategy 10% faster than direct |
-| Points | Triangle | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.04 / 1.33 | – | 1.05 / 1.19 | 2.27 / 4.65 | direct | no strategy 10% faster than direct |
-| Points | Triangle | Gpu | f32 | 4 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.57 / 1.56 | – | 1.43 / 1.40 | 2.73 / 4.75 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f32 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.19 / 1.32 | – | 1.20 / 1.18 | 2.60 / 4.62 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f32 | 4 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.36 / 1.56 | – | 1.24 / 1.41 | 2.38 / 4.76 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f32 | 5 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.68 / 2.26 | – | 1.78 / 2.58 | 4.47 / 9.44 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f32 | 6 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.62 / 3.50 | – | 2.40 / 3.31 | 3.99 / 8.88 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f32 | 7 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 3.21 / 4.20 | – | 2.93 / 3.86 | 6.64 / 15.51 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f32 | 8 | direct | 0.14 / 0.05 | 1.00 / 1.00 | 4.19 / 6.00 | – | 4.49 / 5.28 | 6.49 / 17.90 | direct | no strategy 10% faster than direct |
-| Points | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.99 / 1.00 | – | 1.01 / 0.96 | 1.33 / 1.81 | direct | no strategy 10% faster than direct |
-| Points | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.13 / 1.19 | – | 1.28 / 1.13 | 2.88 / 4.86 | direct | no strategy 10% faster than direct |
-| Points | Triangle | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.54 / 1.68 | – | 1.63 / 1.99 | 5.14 / 10.78 | direct | no strategy 10% faster than direct |
-| Points | Triangle | Gpu | f64 | 4 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 1.61 / 4.34 | – | 1.75 / 4.92 | 4.11 / 11.28 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.06 / 1.04 | – | 1.08 / 0.99 | 1.42 / 1.87 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.08 / 1.10 | – | 1.22 / 1.05 | 2.74 / 4.50 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.60 / 1.67 | – | 1.69 / 1.98 | 5.35 / 10.76 | direct | no strategy 10% faster than direct |
+| Points | Triangle | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.91 / 4.56 | – | 2.07 / 5.17 | 4.87 / 11.86 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f64 | 5 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 2.22 / 7.74 | – | 2.40 / 8.27 | 7.84 / 20.10 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f64 | 6 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 3.52 / 7.88 | – | 5.75 / 8.66 | 7.38 / 19.46 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f64 | 7 | direct | 0.06 / 0.02 | 1.00 / 1.00 | 6.51 / 9.30 | – | 10.81 / 10.38 | 9.18 / 26.09 | direct | no strategy 10% faster than direct |
@@ -1442,18 +1441,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 0.74 | 1.00 | 0.76 | 0.39 | – | – | sumfact | sumfact 0.39 of direct |
 | Points | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 1.15 | 1.00 | 0.58 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
 | Points | Quadrilateral | CpuSimd512 | f64 | 8 | direct | 1.30 | 1.00 | 0.82 | 0.28 | – | – | sumfact | sumfact 0.28 of direct |
-| Points | Quadrilateral | Gpu | f32 | 1 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.09 / 1.08 | 1.13 / 1.04 | 1.08 / 0.99 | 1.48 / 1.81 | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.22 / 1.25 | 1.08 / 1.03 | 1.19 / 0.97 | 2.59 / 4.26 | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | Gpu | f32 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.37 / 1.51 | 0.97 / 0.98 | 0.96 / 1.00 | 4.26 / 8.93 | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | Gpu | f32 | 4 | direct | 0.11 / 0.03 | 1.00 / 1.00 | 2.10 / 3.50 | 0.80 / 0.92 | 0.76 / 0.85 | 3.85 / 9.71 | shared | shared 0.76 / 0.85 of direct |
+| Points | Quadrilateral | Gpu | f32 | 1 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.00 / 1.12 | 1.03 / 1.08 | 0.99 / 1.03 | 1.35 / 1.89 | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.22 / 1.21 | 1.08 / 0.99 | 1.19 / 0.94 | 2.59 / 4.12 | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.28 / 1.50 | 0.91 / 0.97 | 0.90 / 0.99 | 3.97 / 8.85 | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | Gpu | f32 | 4 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 2.14 / 3.40 | 0.82 / 0.90 | 0.78 / 0.83 | 3.93 / 9.43 | shared | shared 0.78 / 0.83 of direct |
 | Points | Quadrilateral | Gpu | f32 | 5 | direct | 0.14 / 0.05 | 1.00 / 1.00 | 2.61 / 6.42 | 0.63 / 0.73 | 0.63 / 0.66 | 6.14 / 15.90 | shared | shared 0.63 / 0.66 of direct |
 | Points | Quadrilateral | Gpu | f32 | 6 | direct | 0.14 / 0.06 | 1.00 / 1.00 | 3.80 / 7.23 | 0.63 / 0.63 | 0.61 / 0.62 | 6.96 / 15.62 | shared | shared 0.61 / 0.62 of direct |
 | Points | Quadrilateral | Gpu | f32 | 7 | direct | 0.21 / 0.06 | 1.00 / 1.00 | 3.73 / 10.06 | 0.57 / 0.86 | 0.54 / 0.80 | 5.45 / 16.81 | shared | shared 0.54 / 0.80 of direct |
 | Points | Quadrilateral | Gpu | f32 | 8 | direct | 0.22 / 0.08 | 1.00 / 1.00 | 5.19 / 10.88 | 0.57 / 0.68 | 0.54 / 0.64 | 6.27 / 16.13 | shared | shared 0.54 / 0.64 of direct |
-| Points | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.85 / 0.99 | 0.85 / 1.05 | 0.95 / 0.99 | 2.17 / 3.73 | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.46 / 1.48 | 1.01 / 0.95 | 1.31 / 1.00 | 5.31 / 9.28 | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.75 / 4.72 | 0.81 / 0.88 | 0.81 / 0.86 | 7.60 / 16.99 | sumfact | sumfact 0.81 / 0.88 of direct, within 3% of shared (0.81 / 0.86) |
-| Points | Quadrilateral | Gpu | f64 | 4 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 2.13 / 6.18 | 0.84 / 0.76 | 0.66 / 0.74 | 6.67 / 19.02 | shared | shared 0.66 / 0.74 of direct |
+| Points | Quadrilateral | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.00 / 1.01 | 1.00 / 1.07 | 1.12 / 1.01 | 2.56 / 3.80 | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.38 / 1.46 | 0.95 / 0.94 | 1.24 / 0.99 | 5.01 / 9.19 | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | Gpu | f64 | 3 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 1.57 / 4.77 | 0.73 / 0.88 | 0.73 / 0.87 | 6.83 / 17.15 | sumfact | sumfact 0.73 / 0.88 of direct, within 3% of shared (0.73 / 0.87) |
+| Points | Quadrilateral | Gpu | f64 | 4 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 2.19 / 6.19 | 0.86 / 0.77 | 0.68 / 0.74 | 6.87 / 19.04 | shared | shared 0.68 / 0.74 of direct |
 | Points | Quadrilateral | Gpu | f64 | 5 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 4.74 / 9.48 | 0.76 / 0.69 | 0.70 / 0.64 | 13.26 / 25.15 | shared | shared 0.70 / 0.64 of direct |
 | Points | Quadrilateral | Gpu | f64 | 6 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 5.36 / 9.03 | 0.57 / 0.53 | 0.53 / 0.53 | 9.12 / 23.18 | shared | shared 0.53 / 0.53 of direct |
 | Points | Quadrilateral | Gpu | f64 | 7 | direct | 0.19 / 0.07 | 1.00 / 1.00 | 3.62 / 4.36 | 0.25 / 0.26 | 0.19 / 0.24 | 3.83 / 10.17 | shared | shared 0.19 / 0.24 of direct |
@@ -1490,18 +1489,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 14.0 | n.m.; T3: 0.61 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 5.30 | n.m.; T3: 1.36 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f64 | 8 | loops | 11.5 | n.m.; T3: 1.39 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Points | Tetrahedron | Gpu | f32 | 1 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.12 / 1.09 | – | 1.01 / 1.07 | 1.41 / 1.79 | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.46 / 1.54 | – | 1.37 / 1.42 | 2.72 / 4.42 | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | Gpu | f32 | 3 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.86 / 3.50 | – | 2.75 / 3.14 | 3.92 / 8.18 | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | Gpu | f32 | 4 | direct | 0.22 / 0.07 | 1.00 / 1.00 | 3.53 / 5.20 | – | 3.38 / 3.74 | 5.36 / 14.46 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f32 | 1 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.21 / 1.04 | – | 1.10 / 1.03 | 1.53 / 1.71 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f32 | 2 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.33 / 1.48 | – | 1.24 / 1.36 | 2.47 / 4.24 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f32 | 3 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.74 / 3.48 | – | 2.63 / 3.12 | 3.75 / 8.14 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f32 | 4 | direct | 0.22 / 0.07 | 1.00 / 1.00 | 3.49 / 5.11 | – | 3.34 / 3.67 | 5.30 / 14.20 | direct | no strategy 10% faster than direct |
 | Points | Tetrahedron | Gpu | f32 | 5 | loops | 1.65 / 0.84 | n.m.; T3: 0.17 / 0.10 | 1.00 / 1.00 | – | – | 1.05 / 1.77 | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | Gpu | f32 | 6 | loops | 4.01 / 1.61 | n.m.; T3: 0.17 / 0.22 | 1.00 / 1.00 | – | – | 0.55 / 1.06 | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | Gpu | f32 | 7 | loops | 10.3 / 3.64 | n.m.; T3: 0.32 / 0.30 | 1.00 / 1.00 | – | – | 0.26 / 0.80 | cooperative | cooperative 0.26 / 0.80 of loops |
 | Points | Tetrahedron | Gpu | f32 | 8 | loops | 22.8 / 6.66 | n.m.; T3: 0.31 / 0.37 | 1.00 / 1.00 | – | – | 0.22 / 0.59 | cooperative | cooperative 0.22 / 0.59 of loops |
-| Points | Tetrahedron | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.83 / 1.04 | – | 0.95 / 1.13 | 1.82 / 2.91 | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.86 / 2.10 | – | 2.06 / 5.03 | 4.29 / 9.20 | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | Gpu | f64 | 3 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 6.45 / 10.51 | – | 7.36 / 9.60 | 7.15 / 17.65 | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | Gpu | f64 | 4 | direct | 0.12 / 0.03 | 1.00 / 1.00 | 7.37 / 10.20 | – | 9.89 / 10.03 | 4.62 / 14.86 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.91 / 1.08 | – | 1.04 / 1.17 | 1.99 / 3.02 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.95 / 1.99 | – | 2.17 / 4.78 | 4.51 / 8.74 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f64 | 3 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 6.06 / 10.27 | – | 6.92 / 9.38 | 6.72 / 17.25 | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | Gpu | f64 | 4 | direct | 0.12 / 0.03 | 1.00 / 1.00 | 7.38 / 10.19 | – | 9.90 / 10.02 | 4.62 / 14.85 | direct | no strategy 10% faster than direct |
 | Points | Tetrahedron | Gpu | f64 | 5 | loops | 3.68 / 0.60 | n.m.; T3: 0.13 / 0.14 | 1.00 / 1.00 | – | 0.88 / 1.21 | 0.25 / 1.22 | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | Gpu | f64 | 6 | loops | 8.99 / 2.26 | n.m.; T3: 0.66 / 0.73 | 1.00 / 1.00 | – | 0.77 / 0.78 | 0.13 / 0.47 | cooperative | cooperative 0.13 / 0.47 of loops |
 | Points | Tetrahedron | Gpu | f64 | 7 | loops | 19.6 / 4.55 | n.m.; T3: 0.61 / 0.65 | 1.00 / 1.00 | – | – | 0.08 / 0.34 | cooperative | cooperative 0.08 / 0.34 of loops |
@@ -1522,34 +1521,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Hexahedron | CpuSimd128 | f64 | 6 | direct | 192 | 1.00 | 0.86 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Points | Hexahedron | CpuSimd128 | f64 | 7 | direct | 294 | 1.00 | 0.82 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Points | Hexahedron | CpuSimd128 | f64 | 8 | loops | 339 | n.m.; T3: 1.30 | 1.00 | 0.02 | – | – | sumfact | sumfact 0.02 of loops |
-| Points | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 0.91 | 0.86 | – | – | sumfact | sumfact 0.86 of direct |
-| Points | Hexahedron | CpuSimd512 | f32 | 2 | direct | 2.35 | 1.00 | 0.46 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
-| Points | Hexahedron | CpuSimd512 | f32 | 3 | direct | 11.0 | 1.00 | 0.47 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
-| Points | Hexahedron | CpuSimd512 | f32 | 4 | direct | 24.6 | 1.00 | 0.66 | 0.11 | – | – | sumfact | sumfact 0.11 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 0.91 | 0.85 | – | – | sumfact | sumfact 0.85 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 2 | direct | 2.17 | 1.00 | 0.50 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 3 | direct | 11.1 | 1.00 | 0.47 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 4 | direct | 25.1 | 1.00 | 0.64 | 0.11 | – | – | sumfact | sumfact 0.11 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 5 | direct | 43.7 | 1.00 | 0.62 | 0.07 | – | – | sumfact | sumfact 0.07 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 6 | direct | 71.2 | 1.00 | 0.59 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 7 | direct | 107 | 1.00 | 0.58 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 8 | direct | 153 | 1.00 | 0.57 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.39 | 1.00 | 1.05 | 1.08 | – | – | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 2 | direct | 0.60 | 1.00 | 0.81 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 3 | direct | 1.28 | 1.00 | 0.62 | 0.36 | – | – | sumfact | sumfact 0.36 of direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 4 | direct | 2.71 | 1.00 | 0.85 | 0.18 | – | – | sumfact | sumfact 0.18 of direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.39 | 1.00 | 1.03 | 1.07 | – | – | direct | no strategy 10% faster than direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 2 | direct | 0.63 | 1.00 | 0.76 | 0.69 | – | – | sumfact | sumfact 0.69 of direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 3 | direct | 1.29 | 1.00 | 0.62 | 0.36 | – | – | sumfact | sumfact 0.36 of direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 4 | direct | 2.72 | 1.00 | 0.85 | 0.18 | – | – | sumfact | sumfact 0.18 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 5 | direct | 6.26 | 1.00 | 0.84 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 6 | direct | 14.8 | 1.00 | 0.86 | 0.10 | – | – | sumfact | sumfact 0.10 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 7 | direct | 38.2 | 1.00 | 0.73 | 0.06 | – | – | sumfact | sumfact 0.06 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 8 | direct | 140 | 1.00 | 0.91 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
-| Points | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.20 / 1.20 | 1.08 / 1.05 | 1.00 / 1.02 | 1.86 / 3.14 | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | Gpu | f32 | 2 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 3.14 / 6.80 | 0.90 / 1.02 | 0.96 / 0.97 | 3.98 / 9.13 | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | Gpu | f32 | 3 | direct | 0.23 / 0.11 | 1.00 / 1.00 | 7.21 / 8.97 | 0.54 / 0.52 | 0.52 / 0.48 | 6.55 / 15.05 | shared | shared 0.52 / 0.48 of direct |
-| Points | Hexahedron | Gpu | f32 | 4 | direct | 1.74 / 0.99 | 1.00 / 1.00 | 3.32 / 3.10 | 0.11 / 0.12 | 0.12 / 0.12 | 1.79 / 2.96 | sumfact | sumfact 0.11 / 0.12 of direct |
+| Points | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.14 / 1.20 | 1.03 / 1.05 | 0.95 / 1.01 | 1.77 / 3.13 | direct | no strategy 10% faster than direct |
+| Points | Hexahedron | Gpu | f32 | 2 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 3.19 / 6.63 | 0.92 / 0.99 | 0.97 / 0.94 | 4.04 / 8.90 | direct | no strategy 10% faster than direct |
+| Points | Hexahedron | Gpu | f32 | 3 | direct | 0.23 / 0.11 | 1.00 / 1.00 | 7.07 / 9.07 | 0.53 / 0.53 | 0.51 / 0.48 | 6.42 / 15.21 | shared | shared 0.51 / 0.48 of direct |
+| Points | Hexahedron | Gpu | f32 | 4 | direct | 1.68 / 0.99 | 1.00 / 1.00 | 3.43 / 3.10 | 0.12 / 0.12 | 0.12 / 0.12 | 1.86 / 2.96 | sumfact | sumfact 0.12 / 0.12 of direct |
 | Points | Hexahedron | Gpu | f32 | 5 | direct | 5.70 / 3.49 | 1.00 / 1.00 | 2.33 / 1.96 | 0.06 / 0.05 | 0.06 / 0.05 | 0.88 / 1.37 | shared | shared 0.06 / 0.05 of direct |
 | Points | Hexahedron | Gpu | f32 | 6 | direct | 12.3 / 8.31 | 1.00 / 1.00 | 2.56 / 1.63 | 0.04 / 0.03 | 0.10 / 0.06 | 0.71 / 0.92 | sumfact | sumfact 0.04 / 0.03 of direct |
 | Points | Hexahedron | Gpu | f32 | 7 | direct | 36.8 / 17.2 | 1.00 / 1.00 | 1.90 / 1.53 | 0.04 / 0.03 | 0.07 / 0.05 | 0.35 / 0.61 | sumfact | sumfact 0.04 / 0.03 of direct |
 | Points | Hexahedron | Gpu | f32 | 8 | direct | 41.8 / 27.7 | 1.00 / 1.00 | 3.10 / 1.56 | 0.05 / 0.02 | 0.09 / 0.04 | 0.53 / 0.71 | sumfact | sumfact 0.05 / 0.02 of direct |
-| Points | Hexahedron | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.31 / 1.46 | 1.02 / 0.99 | 1.17 / 1.02 | 3.49 / 5.77 | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | Gpu | f64 | 2 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 5.10 / 10.12 | 0.91 / 0.90 | 0.74 / 0.90 | 7.44 / 17.95 | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | Gpu | f64 | 3 | direct | 0.22 / 0.09 | 1.00 / 1.00 | 6.33 / 5.44 | 0.31 / 0.41 | 0.35 / 0.71 | 3.87 / 9.35 | sumfact | sumfact 0.31 / 0.41 of direct |
-| Points | Hexahedron | Gpu | f64 | 4 | direct | 4.04 / 1.72 | 1.00 / 1.00 | 1.31 / 0.81 | 0.17 / 0.14 | 0.18 / 0.14 | 0.41 / 0.90 | sumfact | sumfact 0.17 / 0.14 of direct |
+| Points | Hexahedron | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.27 / 1.49 | 0.98 / 1.01 | 1.13 / 1.04 | 3.38 / 5.91 | direct | no strategy 10% faster than direct |
+| Points | Hexahedron | Gpu | f64 | 2 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 5.09 / 10.05 | 0.91 / 0.90 | 0.74 / 0.90 | 7.42 / 17.82 | shared | shared 0.74 / 0.90 of direct |
+| Points | Hexahedron | Gpu | f64 | 3 | direct | 0.20 / 0.09 | 1.00 / 1.00 | 7.03 / 5.42 | 0.34 / 0.41 | 0.39 / 0.70 | 4.30 / 9.31 | sumfact | sumfact 0.34 / 0.41 of direct |
+| Points | Hexahedron | Gpu | f64 | 4 | direct | 4.18 / 1.71 | 1.00 / 1.00 | 1.26 / 0.81 | 0.16 / 0.14 | 0.17 / 0.14 | 0.40 / 0.90 | sumfact | sumfact 0.16 / 0.14 of direct |
 | Points | Hexahedron | Gpu | f64 | 5 | direct | 8.70 / 2.38 | 1.00 / 1.00 | 1.67 / 1.59 | 0.16 / 0.14 | 0.17 / 0.15 | 0.32 / 1.11 | sumfact | sumfact 0.16 / 0.14 of direct |
 | Points | Hexahedron | Gpu | f64 | 6 | direct | 24.8 / 4.51 | 1.00 / 1.00 | 1.67 / 2.04 | 0.11 / 0.11 | 0.17 / 0.15 | 0.19 / 0.96 | sumfact | sumfact 0.11 / 0.11 of direct |
 | Points | Hexahedron | Gpu | f64 | 7 | direct | 58.0 / 8.61 | 1.00 / 1.00 | 1.69 / 2.40 | 0.08 / 0.09 | 0.14 / 0.15 | 0.13 / 0.74 | sumfact | sumfact 0.08 / 0.09 of direct |
@@ -1586,18 +1585,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Prism | CpuSimd512 | f64 | 6 | loops | 7.18 | n.m.; T3: 1.23 | 1.00 | 0.29 | – | – | sumfact | sumfact 0.29 of loops |
 | Points | Prism | CpuSimd512 | f64 | 7 | loops | 12.2 | n.m.; T3: 1.41 | 1.00 | 0.24 | – | – | sumfact | sumfact 0.24 of loops |
 | Points | Prism | CpuSimd512 | f64 | 8 | direct | 32.4 | 1.00 | 0.90 | 0.16 | – | – | sumfact | sumfact 0.16 of direct |
-| Points | Prism | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.18 / 1.14 | 1.11 / 1.08 | 1.14 / 1.00 | 1.54 / 1.96 | direct | no strategy 10% faster than direct |
-| Points | Prism | Gpu | f32 | 2 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.13 / 3.08 | 0.98 / 0.95 | 0.99 / 0.96 | 3.95 / 8.36 | direct | no strategy 10% faster than direct |
-| Points | Prism | Gpu | f32 | 3 | direct | 0.15 / 0.07 | 1.00 / 1.00 | 4.89 / 7.98 | 0.90 / 0.97 | 0.85 / 0.92 | 8.42 / 16.10 | direct | no strategy 10% faster than direct |
-| Points | Prism | Gpu | f32 | 4 | direct | 0.47 / 0.26 | 1.00 / 1.00 | 4.72 / 5.21 | 0.80 / 0.76 | 0.82 / 0.79 | 4.18 / 6.19 | sumfact | sumfact 0.80 / 0.76 of direct |
+| Points | Prism | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.07 / 1.14 | 1.01 / 1.09 | 1.04 / 1.00 | 1.40 / 1.97 | direct | no strategy 10% faster than direct |
+| Points | Prism | Gpu | f32 | 2 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.13 / 2.99 | 0.98 / 0.93 | 0.99 / 0.93 | 3.95 / 8.12 | direct | no strategy 10% faster than direct |
+| Points | Prism | Gpu | f32 | 3 | direct | 0.15 / 0.07 | 1.00 / 1.00 | 4.89 / 7.89 | 0.90 / 0.96 | 0.84 / 0.91 | 8.41 / 15.92 | direct | no strategy 10% faster than direct |
+| Points | Prism | Gpu | f32 | 4 | direct | 0.47 / 0.26 | 1.00 / 1.00 | 4.67 / 5.20 | 0.79 / 0.76 | 0.81 / 0.79 | 4.14 / 6.18 | sumfact | sumfact 0.79 / 0.76 of direct |
 | Points | Prism | Gpu | f32 | 5 | direct | 1.56 / 1.08 | 1.00 / 1.00 | 3.71 / 3.58 | 0.53 / 0.40 | 0.37 / 0.32 | 1.76 / 2.68 | shared | shared 0.37 / 0.32 of direct |
 | Points | Prism | Gpu | f32 | 6 | direct | 8.05 / 2.71 | 1.00 / 1.00 | 1.69 / 2.93 | 0.13 / 0.20 | 0.12 / 0.22 | 0.55 / 1.66 | shared | closest: shared 0.12 / 0.22 of direct, 10% slower than the fastest at one size |
 | Points | Prism | Gpu | f32 | 7 | direct | 17.3 / 6.66 | 1.00 / 1.00 | 1.52 / 2.14 | 0.12 / 0.13 | 0.11 / 0.14 | 0.35 / 0.97 | shared | closest: shared 0.11 / 0.14 of direct, 7% slower than the fastest at one size |
 | Points | Prism | Gpu | f32 | 8 | direct | 20.2 / 14.6 | 1.00 / 1.00 | 2.51 / 1.65 | 0.10 / 0.08 | – | 0.59 / 0.64 | sumfact | sumfact 0.10 / 0.08 of direct |
-| Points | Prism | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.33 / 1.15 | 1.01 / 1.00 | 1.16 / 1.01 | 2.44 / 3.25 | direct | no strategy 10% faster than direct |
-| Points | Prism | Gpu | f64 | 2 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 3.49 / 7.97 | 0.98 / 0.94 | 0.99 / 0.88 | 6.65 / 15.06 | direct | no strategy 10% faster than direct |
-| Points | Prism | Gpu | f64 | 3 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 8.06 / 9.08 | 0.63 / 0.62 | 0.65 / 0.49 | 7.79 / 15.16 | shared | shared 0.65 / 0.49 of direct |
-| Points | Prism | Gpu | f64 | 4 | direct | 1.96 / 1.03 | 1.00 / 1.00 | 1.55 / 0.84 | 0.08 / 0.10 | 0.06 / 0.10 | 0.51 / 0.92 | shared | shared 0.06 / 0.10 of direct |
+| Points | Prism | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.33 / 1.15 | 1.00 / 1.00 | 1.16 / 1.00 | 2.43 / 3.24 | direct | no strategy 10% faster than direct |
+| Points | Prism | Gpu | f64 | 2 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 2.96 / 7.94 | 0.83 / 0.93 | 0.84 / 0.87 | 5.64 / 14.99 | shared | shared 0.84 / 0.87 of direct |
+| Points | Prism | Gpu | f64 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 7.71 / 9.11 | 0.60 / 0.62 | 0.62 / 0.49 | 7.46 / 15.22 | shared | shared 0.62 / 0.49 of direct |
+| Points | Prism | Gpu | f64 | 4 | direct | 1.89 / 1.03 | 1.00 / 1.00 | 1.61 / 0.85 | 0.08 / 0.10 | 0.06 / 0.10 | 0.54 / 0.92 | shared | shared 0.06 / 0.10 of direct |
 | Points | Prism | Gpu | f64 | 5 | direct | 5.42 / 1.95 | 1.00 / 1.00 | 1.78 / 1.20 | 0.06 / 0.08 | 0.07 / 0.08 | 0.35 / 0.80 | sumfact | closest: sumfact 0.06 / 0.08 of direct, 5% slower than the fastest at one size |
 | Points | Prism | Gpu | f64 | 6 | direct | 14.2 / 3.60 | 1.00 / 1.00 | 1.74 / 1.57 | 0.05 / 0.06 | 0.05 / 0.06 | 0.20 / 0.68 | shared | shared 0.05 / 0.06 of direct |
 | Points | Prism | Gpu | f64 | 7 | direct | 21.5 / 5.06 | 1.00 / 1.00 | 2.25 / 2.42 | 0.06 / 0.07 | 0.05 / 0.06 | 0.18 / 0.70 | shared | shared 0.05 / 0.06 of direct |
@@ -1614,12 +1613,12 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.26 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.36 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | Points | Pyramid | CpuSimd512 | f64 | 3 | direct | 0.52 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Pyramid | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.10 / 1.10 | – | 0.93 / 1.02 | 1.25 / 1.87 | direct | no strategy 10% faster than direct |
-| Points | Pyramid | Gpu | f32 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.46 / 1.72 | – | 1.44 / 1.71 | 2.21 / 4.34 | direct | no strategy 10% faster than direct |
-| Points | Pyramid | Gpu | f32 | 3 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 4.92 / 5.32 | – | 3.98 / 5.68 | 3.98 / 7.24 | direct | no strategy 10% faster than direct |
-| Points | Pyramid | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.25 / 1.09 | – | 1.15 / 1.40 | 2.46 / 3.26 | direct | no strategy 10% faster than direct |
-| Points | Pyramid | Gpu | f64 | 2 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 2.89 / 5.16 | – | 2.94 / 5.89 | 4.62 / 9.18 | direct | no strategy 10% faster than direct |
-| Points | Pyramid | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 10.43 / 12.52 | – | 10.23 / 11.31 | 8.42 / 19.86 | direct | no strategy 10% faster than direct |
+| Points | Pyramid | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.18 / 1.09 | – | 0.99 / 1.02 | 1.34 / 1.86 | direct | no strategy 10% faster than direct |
+| Points | Pyramid | Gpu | f32 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.44 / 1.70 | – | 1.43 / 1.69 | 2.18 / 4.30 | direct | no strategy 10% faster than direct |
+| Points | Pyramid | Gpu | f32 | 3 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 4.90 / 5.30 | – | 3.96 / 5.66 | 3.97 / 7.23 | direct | no strategy 10% faster than direct |
+| Points | Pyramid | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.29 / 1.13 | – | 1.18 / 1.45 | 2.53 / 3.37 | direct | no strategy 10% faster than direct |
+| Points | Pyramid | Gpu | f64 | 2 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 2.44 / 5.19 | – | 2.47 / 5.92 | 3.89 / 9.23 | direct | no strategy 10% faster than direct |
+| Points | Pyramid | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 10.30 / 12.16 | – | 10.10 / 10.99 | 8.32 / 19.29 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 1 | direct | 0.12 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 2 | direct | 0.14 | 1.00 | 1.14 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 3 | direct | 0.15 | 1.00 | 1.21 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1652,18 +1651,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Interval | CpuSimd512 | f64 | 6 | direct | 0.38 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | Jacobian | Interval | CpuSimd512 | f64 | 7 | direct | 0.35 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f64 | 8 | direct | 0.35 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f32 | 1 | direct | 0.21 / 0.06 | 1.00 / 1.00 | 0.98 / 1.05 | – | 1.01 / 1.11 | 1.08 / 1.26 | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f32 | 2 | direct | 0.21 / 0.06 | 1.00 / 1.00 | 1.02 / 1.10 | – | 1.02 / 1.10 | 1.15 / 1.41 | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f32 | 3 | direct | 0.20 / 0.05 | 1.00 / 1.00 | 1.10 / 1.18 | – | 1.10 / 1.19 | 1.34 / 1.96 | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f32 | 4 | direct | 0.20 / 0.05 | 1.00 / 1.00 | 1.11 / 1.15 | – | 1.13 / 1.12 | 1.48 / 2.35 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f32 | 1 | direct | 0.20 / 0.05 | 1.00 / 1.00 | 1.03 / 1.09 | – | 1.06 / 1.14 | 1.14 / 1.30 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f32 | 2 | direct | 0.21 / 0.05 | 1.00 / 1.00 | 1.02 / 1.15 | – | 1.01 / 1.15 | 1.14 / 1.49 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f32 | 3 | direct | 0.20 / 0.05 | 1.00 / 1.00 | 1.10 / 1.17 | – | 1.09 / 1.17 | 1.33 / 1.94 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f32 | 4 | direct | 0.21 / 0.05 | 1.00 / 1.00 | 1.07 / 1.17 | – | 1.09 / 1.14 | 1.43 / 2.39 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f32 | 5 | direct | 0.21 / 0.06 | 1.00 / 1.00 | 1.12 / 1.18 | – | 1.12 / 1.19 | 1.42 / 2.24 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f32 | 6 | direct | 0.21 / 0.07 | 1.00 / 1.00 | 1.09 / 1.07 | – | 1.10 / 1.00 | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f32 | 7 | direct | 0.21 / 0.06 | 1.00 / 1.00 | 1.16 / 1.26 | – | 1.12 / 1.23 | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f32 | 8 | direct | 0.22 / 0.06 | 1.00 / 1.00 | 1.07 / 1.22 | – | 1.06 / 1.19 | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f64 | 1 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 0.98 / 1.10 | – | 1.05 / 1.11 | 1.13 / 1.38 | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f64 | 2 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 0.94 / 1.14 | – | 0.98 / 1.11 | 1.07 / 1.67 | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f64 | 3 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.04 / 1.07 | – | 1.14 / 1.10 | 1.55 / 2.29 | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | Gpu | f64 | 4 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.08 / 0.99 | – | 1.12 / 1.05 | 1.72 / 2.66 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f64 | 1 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.03 / 1.08 | – | 1.10 / 1.10 | 1.18 / 1.36 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f64 | 2 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.08 / 1.10 | – | 1.13 / 1.08 | 1.23 / 1.62 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f64 | 3 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 0.95 / 1.05 | – | 1.04 / 1.08 | 1.42 / 2.25 | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | Gpu | f64 | 4 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.08 / 1.02 | – | 1.11 / 1.09 | 1.72 / 2.75 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f64 | 5 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 0.97 / 1.18 | – | 0.94 / 1.12 | 1.47 / 2.77 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f64 | 6 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.16 / 1.16 | – | 1.13 / 1.14 | 1.71 / 2.79 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f64 | 7 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 1.08 / 1.27 | – | 1.13 / 1.23 | 2.01 / 4.76 | direct | no strategy 10% faster than direct |
@@ -1700,18 +1699,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Triangle | CpuSimd512 | f64 | 6 | direct | 1.78 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f64 | 7 | direct | 2.73 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
 | Jacobian | Triangle | CpuSimd512 | f64 | 8 | direct | 3.10 | 1.00 | 0.85 | – | – | – | loops | loops 0.85 of direct |
-| Jacobian | Triangle | Gpu | f32 | 1 | direct | 0.23 / 0.10 | 1.00 / 1.00 | 1.09 / 1.00 | – | 1.05 / 0.99 | 1.35 / 1.65 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f32 | 2 | direct | 0.24 / 0.10 | 1.00 / 1.00 | 1.14 / 1.11 | – | 1.11 / 1.05 | 2.16 / 2.98 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f32 | 3 | direct | 0.26 / 0.11 | 1.00 / 1.00 | 1.18 / 1.24 | – | 1.14 / 1.14 | 3.68 / 6.53 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f32 | 4 | direct | 0.28 / 0.12 | 1.00 / 1.00 | 1.32 / 1.39 | – | 1.28 / 1.32 | 3.55 / 6.20 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f32 | 1 | direct | 0.25 / 0.10 | 1.00 / 1.00 | 1.04 / 1.00 | – | 1.00 / 0.99 | 1.28 / 1.64 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f32 | 2 | direct | 0.24 / 0.10 | 1.00 / 1.00 | 1.10 / 1.10 | – | 1.07 / 1.04 | 2.09 / 2.97 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f32 | 3 | direct | 0.26 / 0.11 | 1.00 / 1.00 | 1.15 / 1.23 | – | 1.12 / 1.14 | 3.59 / 6.51 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f32 | 4 | direct | 0.29 / 0.12 | 1.00 / 1.00 | 1.27 / 1.39 | – | 1.23 / 1.32 | 3.42 / 6.21 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f32 | 5 | direct | 0.38 / 0.15 | 1.00 / 1.00 | 1.43 / 1.76 | – | 1.32 / 2.01 | 5.46 / 11.74 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f32 | 6 | direct | 0.45 / 0.18 | 1.00 / 1.00 | 2.10 / 2.42 | – | 1.81 / 2.32 | 4.72 / 10.17 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f32 | 7 | direct | 0.56 / 0.22 | 1.00 / 1.00 | 2.48 / 2.63 | – | 1.94 / 1.84 | 8.09 / 18.55 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f32 | 8 | direct | 0.74 / 0.27 | 1.00 / 1.00 | 2.46 / 2.94 | – | 2.37 / 2.44 | 6.33 / 16.32 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f64 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.08 / 1.03 | – | 1.04 / 1.01 | 2.18 / 3.21 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f64 | 2 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.16 / 1.12 | – | 1.09 / 1.17 | 5.52 / 10.12 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f64 | 3 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.36 / 1.41 | – | 1.25 / 1.79 | 9.24 / 20.84 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | Gpu | f64 | 4 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 1.74 / 1.82 | – | 1.68 / 3.08 | 8.26 / 19.68 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f64 | 1 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 1.10 / 1.07 | – | 1.06 / 1.05 | 2.22 / 3.33 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f64 | 2 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.17 / 1.10 | – | 1.10 / 1.15 | 5.56 / 9.95 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f64 | 3 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.42 / 1.42 | – | 1.30 / 1.81 | 9.67 / 21.09 | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | Gpu | f64 | 4 | direct | 0.14 / 0.05 | 1.00 / 1.00 | 1.56 / 1.86 | – | 1.50 / 3.15 | 7.41 / 20.12 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f64 | 5 | direct | 0.18 / 0.06 | 1.00 / 1.00 | 1.89 / 4.02 | – | 1.65 / 4.67 | 11.77 / 32.13 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f64 | 6 | direct | 0.25 / 0.08 | 1.00 / 1.00 | 2.37 / 5.14 | – | 3.06 / 5.26 | 8.93 / 25.32 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f64 | 7 | direct | 0.24 / 0.09 | 1.00 / 1.00 | 4.37 / 5.41 | – | 5.14 / 5.21 | 16.29 / 40.71 | direct | no strategy 10% faster than direct |
@@ -1748,18 +1747,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 3.34 | 1.00 | 0.88 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 2.90 | 1.00 | 1.03 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f64 | 8 | direct | 5.55 | 1.00 | 0.95 | 0.38 | – | – | sumfact | sumfact 0.38 of direct |
-| Jacobian | Quadrilateral | Gpu | f32 | 1 | direct | 0.25 / 0.11 | 1.00 / 1.00 | 1.03 / 1.04 | 1.03 / 1.05 | 1.07 / 0.98 | 1.92 / 2.75 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | Gpu | f32 | 2 | direct | 0.27 / 0.11 | 1.00 / 1.00 | 1.11 / 1.18 | 1.05 / 1.05 | 1.01 / 0.98 | 3.53 / 6.21 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | Gpu | f32 | 3 | direct | 0.28 / 0.12 | 1.00 / 1.00 | 1.30 / 1.35 | 1.01 / 0.96 | 1.01 / 0.90 | 7.20 / 13.31 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | Gpu | f32 | 4 | direct | 0.36 / 0.15 | 1.00 / 1.00 | 1.86 / 2.66 | 0.83 / 0.83 | 0.78 / 0.77 | 5.75 / 12.18 | shared | shared 0.78 / 0.77 of direct |
+| Jacobian | Quadrilateral | Gpu | f32 | 1 | direct | 0.26 / 0.11 | 1.00 / 1.00 | 1.00 / 1.04 | 1.01 / 1.05 | 1.04 / 0.98 | 1.87 / 2.75 | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | Gpu | f32 | 2 | direct | 0.28 / 0.12 | 1.00 / 1.00 | 1.05 / 1.16 | 1.00 / 1.03 | 0.96 / 0.96 | 3.36 / 6.12 | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | Gpu | f32 | 3 | direct | 0.29 / 0.12 | 1.00 / 1.00 | 1.25 / 1.37 | 0.97 / 0.97 | 0.97 / 0.92 | 6.92 / 13.49 | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | Gpu | f32 | 4 | direct | 0.36 / 0.15 | 1.00 / 1.00 | 1.86 / 2.64 | 0.84 / 0.83 | 0.78 / 0.77 | 5.76 / 12.09 | shared | shared 0.78 / 0.77 of direct |
 | Jacobian | Quadrilateral | Gpu | f32 | 5 | direct | 0.46 / 0.21 | 1.00 / 1.00 | 2.47 / 4.17 | 0.73 / 0.76 | 0.72 / 0.68 | 9.90 / 19.57 | shared | shared 0.72 / 0.68 of direct |
 | Jacobian | Quadrilateral | Gpu | f32 | 6 | direct | 0.76 / 0.36 | 1.00 / 1.00 | 2.11 / 3.38 | 0.50 / 0.48 | 0.47 / 0.44 | 6.44 / 12.86 | shared | shared 0.47 / 0.44 of direct |
 | Jacobian | Quadrilateral | Gpu | f32 | 7 | direct | 1.48 / 0.81 | 1.00 / 1.00 | 1.59 / 2.24 | 0.29 / 0.26 | 0.27 / 0.24 | 3.58 / 6.19 | shared | shared 0.27 / 0.24 of direct |
 | Jacobian | Quadrilateral | Gpu | f32 | 8 | direct | 1.73 / 1.00 | 1.00 / 1.00 | 1.97 / 2.47 | 0.27 / 0.21 | 0.26 / 0.19 | 3.53 / 5.78 | shared | shared 0.26 / 0.19 of direct |
-| Jacobian | Quadrilateral | Gpu | f64 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.13 / 1.05 | 1.32 / 1.42 | 1.24 / 1.40 | 4.73 / 8.75 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | Gpu | f64 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.32 / 1.26 | 1.23 / 1.35 | 1.34 / 1.35 | 9.75 / 19.85 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | Gpu | f64 | 3 | direct | 0.15 / 0.05 | 1.00 / 1.00 | 1.22 / 2.03 | 0.86 / 1.11 | 0.87 / 1.09 | 12.86 / 34.17 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | Gpu | f64 | 4 | direct | 0.22 / 0.07 | 1.00 / 1.00 | 1.46 / 4.90 | 0.59 / 0.81 | 0.59 / 0.82 | 9.65 / 29.55 | sumfact | sumfact 0.59 / 0.81 of direct |
+| Jacobian | Quadrilateral | Gpu | f64 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.19 / 1.03 | 1.39 / 1.39 | 1.31 / 1.37 | 4.97 / 8.59 | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | Gpu | f64 | 2 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 1.19 / 1.25 | 1.11 / 1.35 | 1.22 / 1.35 | 8.82 / 19.78 | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | Gpu | f64 | 3 | direct | 0.14 / 0.05 | 1.00 / 1.00 | 1.26 / 2.04 | 0.88 / 1.11 | 0.90 / 1.10 | 13.26 / 34.33 | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | Gpu | f64 | 4 | direct | 0.22 / 0.07 | 1.00 / 1.00 | 1.48 / 4.90 | 0.60 / 0.81 | 0.60 / 0.82 | 9.77 / 29.52 | sumfact | sumfact 0.60 / 0.81 of direct |
 | Jacobian | Quadrilateral | Gpu | f64 | 5 | direct | 0.27 / 0.10 | 1.00 / 1.00 | 2.15 / 4.79 | 0.48 / 0.60 | 0.48 / 0.59 | 14.66 / 39.19 | sumfact | sumfact 0.48 / 0.60 of direct, within 3% of shared (0.48 / 0.59) |
 | Jacobian | Quadrilateral | Gpu | f64 | 6 | direct | 0.36 / 0.13 | 1.00 / 1.00 | 2.90 / 6.13 | 0.48 / 0.55 | 0.45 / 0.51 | 12.27 / 32.98 | shared | shared 0.45 / 0.51 of direct |
 | Jacobian | Quadrilateral | Gpu | f64 | 7 | direct | 1.03 / 0.32 | 1.00 / 1.00 | 1.89 / 2.79 | 0.23 / 0.27 | 0.18 / 0.25 | 4.53 / 14.18 | shared | shared 0.18 / 0.25 of direct |
@@ -1796,18 +1795,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 43.7 | n.m.; T3: 1.06 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 21.9 | n.m.; T3: 4.48 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f64 | 8 | loops | 47.3 | n.m.; T3: 5.26 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Jacobian | Tetrahedron | Gpu | f32 | 1 | direct | 0.30 / 0.17 | 1.00 / 1.00 | 1.10 / 1.07 | – | 1.13 / 1.06 | 2.32 / 3.04 | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | Gpu | f32 | 2 | direct | 0.37 / 0.16 | 1.00 / 1.00 | 1.34 / 1.48 | – | 1.27 / 1.40 | 4.25 / 7.79 | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | Gpu | f32 | 3 | direct | 0.49 / 0.24 | 1.00 / 1.00 | 2.05 / 1.95 | – | 2.20 / 2.11 | 6.69 / 12.60 | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | Gpu | f32 | 4 | direct | 1.40 / 0.51 | 1.00 / 1.00 | 2.07 / 2.53 | – | – | 5.59 / 13.92 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f32 | 1 | direct | 0.32 / 0.17 | 1.00 / 1.00 | 1.03 / 1.07 | – | 1.06 / 1.06 | 2.17 / 3.02 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f32 | 2 | direct | 0.36 / 0.17 | 1.00 / 1.00 | 1.38 / 1.45 | – | 1.31 / 1.37 | 4.38 / 7.67 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f32 | 3 | direct | 0.48 / 0.24 | 1.00 / 1.00 | 2.13 / 1.96 | – | 2.28 / 2.12 | 6.95 / 12.67 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f32 | 4 | direct | 1.45 / 0.51 | 1.00 / 1.00 | 2.00 / 2.55 | – | – | 5.41 / 14.05 | direct | no strategy 10% faster than direct |
 | Jacobian | Tetrahedron | Gpu | f32 | 5 | loops | 6.50 / 2.91 | n.m.; T3: 0.49 / 0.42 | 1.00 / 1.00 | – | – | 1.55 / 3.00 | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | Gpu | f32 | 6 | loops | 16.0 / 5.48 | n.m.; T3: 0.48 / 0.64 | 1.00 / 1.00 | – | – | 0.73 / 1.75 | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | Gpu | f32 | 7 | loops | 35.6 / 12.3 | n.m.; T3: 0.63 / 0.67 | 1.00 / 1.00 | – | – | 0.37 / 1.12 | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | Gpu | f32 | 8 | loops | 78.0 / 22.1 | n.m.; T3: 0.93 / 0.98 | 1.00 / 1.00 | – | – | 0.27 / 0.78 | cooperative | cooperative 0.27 / 0.78 of loops |
-| Jacobian | Tetrahedron | Gpu | f64 | 1 | direct | 0.12 / 0.06 | 1.00 / 1.00 | 1.16 / 1.13 | – | 1.09 / 1.06 | 2.77 / 4.01 | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | Gpu | f64 | 2 | direct | 0.19 / 0.07 | 1.00 / 1.00 | 1.65 / 1.71 | – | 1.21 / 1.88 | 4.59 / 10.18 | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | Gpu | f64 | 3 | direct | 0.35 / 0.11 | 1.00 / 1.00 | 2.96 / 5.00 | – | 1.90 / 4.10 | 5.51 / 16.90 | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | Gpu | f64 | 4 | direct | 1.12 / 0.32 | 1.00 / 1.00 | 3.19 / 4.01 | – | 1.93 / 1.90 | 3.63 / 11.45 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f64 | 1 | direct | 0.12 / 0.06 | 1.00 / 1.00 | 1.11 / 1.13 | – | 1.04 / 1.06 | 2.65 / 4.02 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f64 | 2 | direct | 0.18 / 0.07 | 1.00 / 1.00 | 1.74 / 1.73 | – | 1.28 / 1.90 | 4.84 / 10.27 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f64 | 3 | direct | 0.35 / 0.11 | 1.00 / 1.00 | 2.97 / 5.01 | – | 1.91 / 4.12 | 5.54 / 16.95 | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | Gpu | f64 | 4 | direct | 1.12 / 0.33 | 1.00 / 1.00 | 3.20 / 3.98 | – | 1.94 / 1.88 | 3.64 / 11.35 | direct | no strategy 10% faster than direct |
 | Jacobian | Tetrahedron | Gpu | f64 | 5 | loops | 14.1 / 2.49 | n.m.; T3: 0.28 / 0.33 | 1.00 / 1.00 | – | – | 0.40 / 1.81 | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | Gpu | f64 | 6 | loops | 33.2 / 7.62 | n.m.; T3: 0.48 / 0.50 | 1.00 / 1.00 | – | – | 0.18 / 0.73 | cooperative | cooperative 0.18 / 0.73 of loops |
 | Jacobian | Tetrahedron | Gpu | f64 | 7 | loops | 66.7 / 15.3 | n.m.; T3: 0.46 / 0.52 | 1.00 / 1.00 | – | – | 0.11 / 0.47 | cooperative | cooperative 0.11 / 0.47 of loops |
@@ -1828,34 +1827,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 6 | direct | 1115 | 1.00 | 0.46 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 7 | direct | 1681 | 1.00 | 0.45 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 8 | loops | 1080 | n.m.; T3: 2.32 | 1.00 | 0.04 | – | – | sumfact | sumfact 0.04 of loops |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.58 | 1.00 | 0.93 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 2 | direct | 7.61 | 1.00 | 0.96 | 1.03 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 3 | direct | 24.4 | 1.00 | 0.98 | 0.77 | – | – | sumfact | sumfact 0.77 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 4 | direct | 123 | 1.00 | 0.48 | 0.17 | – | – | sumfact | sumfact 0.17 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.48 | 1.00 | 0.99 | 1.08 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 2 | direct | 7.57 | 1.00 | 0.97 | 1.03 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 3 | direct | 25.0 | 1.00 | 0.96 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 4 | direct | 121 | 1.00 | 0.48 | 0.17 | – | – | sumfact | sumfact 0.17 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 5 | direct | 471 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 6 | direct | 915 | 1.00 | 0.18 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 7 | direct | 1360 | 1.00 | 0.16 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 8 | direct | 2106 | 1.00 | 0.15 | 0.01 | – | – | sumfact | sumfact 0.01 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 1 | direct | 3.36 | 1.00 | 1.01 | 1.03 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 2 | direct | 3.70 | 1.00 | 0.99 | 0.98 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 3 | direct | 7.97 | 1.00 | 0.70 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 4 | direct | 36.4 | 1.00 | 0.30 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 1 | direct | 3.44 | 1.00 | 0.99 | 1.01 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 2 | direct | 3.70 | 1.00 | 0.99 | 0.97 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 3 | direct | 7.82 | 1.00 | 0.71 | 0.48 | – | – | sumfact | sumfact 0.48 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 4 | direct | 36.2 | 1.00 | 0.30 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 5 | direct | 118 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 6 | direct | 315 | 1.00 | 0.17 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 7 | direct | 813 | 1.00 | 0.13 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 8 | direct | 1787 | 1.00 | 0.35 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| Jacobian | Hexahedron | Gpu | f32 | 1 | direct | 0.37 / 0.19 | 1.00 / 1.00 | 1.14 / 1.22 | 1.11 / 1.16 | 1.11 / 1.15 | 3.87 / 6.42 | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | Gpu | f32 | 2 | direct | 0.53 / 0.28 | 1.00 / 1.00 | 2.49 / 3.63 | 0.93 / 0.86 | 0.87 / 0.82 | 6.50 / 11.54 | shared | shared 0.87 / 0.82 of direct |
-| Jacobian | Hexahedron | Gpu | f32 | 3 | direct | 3.16 / 2.22 | 1.00 / 1.00 | 1.80 / 1.45 | 0.19 / 0.14 | 0.18 / 0.14 | 2.75 / 4.13 | shared | shared 0.18 / 0.14 of direct |
-| Jacobian | Hexahedron | Gpu | f32 | 4 | direct | 13.1 / 7.58 | 1.00 / 1.00 | 1.47 / 1.34 | 0.08 / 0.08 | 0.08 / 0.07 | 1.11 / 1.80 | shared | shared 0.08 / 0.07 of direct |
+| Jacobian | Hexahedron | Gpu | f32 | 1 | direct | 0.36 / 0.19 | 1.00 / 1.00 | 1.15 / 1.22 | 1.12 / 1.16 | 1.13 / 1.15 | 3.93 / 6.41 | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | Gpu | f32 | 2 | direct | 0.54 / 0.28 | 1.00 / 1.00 | 2.45 / 3.63 | 0.92 / 0.86 | 0.86 / 0.82 | 6.39 / 11.55 | shared | shared 0.86 / 0.82 of direct |
+| Jacobian | Hexahedron | Gpu | f32 | 3 | direct | 3.14 / 2.23 | 1.00 / 1.00 | 1.81 / 1.45 | 0.19 / 0.14 | 0.19 / 0.14 | 2.77 / 4.12 | shared | shared 0.19 / 0.14 of direct |
+| Jacobian | Hexahedron | Gpu | f32 | 4 | direct | 13.0 / 7.58 | 1.00 / 1.00 | 1.48 / 1.34 | 0.08 / 0.08 | 0.08 / 0.07 | 1.11 / 1.80 | shared | shared 0.08 / 0.07 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 5 | direct | 44.4 / 29.4 | 1.00 / 1.00 | 1.00 / 0.78 | 0.04 / 0.03 | 0.03 / 0.03 | 0.48 / 0.68 | shared | shared 0.03 / 0.03 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 6 | direct | 96.9 / 64.5 | 1.00 / 1.00 | 1.09 / 0.70 | 0.06 / 0.05 | 0.06 / 0.05 | 0.35 / 0.46 | sumfact | sumfact 0.06 / 0.05 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 7 | direct | 257 / 157 | 1.00 / 1.00 | 0.91 / 0.56 | 0.04 / 0.02 | 0.05 / 0.03 | 0.19 / 0.24 | sumfact | sumfact 0.04 / 0.02 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 8 | loops | 438 / 143 | n.m.; T3: 1.66 / 2.61 | 1.00 / 1.00 | 0.03 / 0.04 | 0.04 / 0.04 | 0.18 / 0.46 | sumfact | sumfact 0.03 / 0.04 of loops |
-| Jacobian | Hexahedron | Gpu | f64 | 1 | direct | 0.14 / 0.07 | 1.00 / 1.00 | 1.29 / 1.48 | 1.32 / 1.48 | 1.25 / 1.49 | 5.45 / 9.02 | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | Gpu | f64 | 2 | direct | 0.29 / 0.11 | 1.00 / 1.00 | 3.14 / 5.85 | 0.78 / 1.07 | 0.76 / 1.08 | 7.60 / 17.88 | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | Gpu | f64 | 3 | direct | 1.38 / 0.71 | 1.00 / 1.00 | 3.47 / 2.33 | 0.22 / 0.28 | 0.65 / 1.06 | 3.57 / 6.69 | sumfact | sumfact 0.22 / 0.28 of direct |
-| Jacobian | Hexahedron | Gpu | f64 | 4 | direct | 8.65 / 6.07 | 1.00 / 1.00 | 2.14 / 0.78 | 0.26 / 0.21 | 0.54 / 0.35 | 0.88 / 1.17 | sumfact | sumfact 0.26 / 0.21 of direct |
+| Jacobian | Hexahedron | Gpu | f64 | 1 | direct | 0.13 / 0.07 | 1.00 / 1.00 | 1.33 / 1.49 | 1.37 / 1.49 | 1.29 / 1.50 | 5.65 / 9.09 | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | Gpu | f64 | 2 | direct | 0.29 / 0.11 | 1.00 / 1.00 | 3.16 / 5.87 | 0.79 / 1.08 | 0.76 / 1.09 | 7.64 / 17.95 | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | Gpu | f64 | 3 | direct | 1.40 / 0.68 | 1.00 / 1.00 | 3.42 / 2.42 | 0.22 / 0.29 | 0.64 / 1.11 | 3.52 / 6.96 | sumfact | sumfact 0.22 / 0.29 of direct |
+| Jacobian | Hexahedron | Gpu | f64 | 4 | direct | 9.35 / 5.93 | 1.00 / 1.00 | 1.98 / 0.80 | 0.24 / 0.21 | 0.50 / 0.36 | 0.81 / 1.19 | sumfact | sumfact 0.24 / 0.21 of direct |
 | Jacobian | Hexahedron | Gpu | f64 | 5 | direct | 27.7 / 10.1 | 1.00 / 1.00 | 1.90 / 1.26 | 0.31 / 0.26 | 0.31 / 0.25 | 0.42 / 1.05 | shared | shared 0.31 / 0.25 of direct |
 | Jacobian | Hexahedron | Gpu | f64 | 6 | direct | 470 / 72.9 | 1.00 / 1.00 | 0.32 / 0.42 | 0.04 / 0.05 | 0.04 / 0.05 | 0.04 / 0.22 | sumfact | sumfact 0.04 / 0.05 of direct |
 | Jacobian | Hexahedron | Gpu | f64 | 7 | direct | 217 / 38.9 | 1.00 / 1.00 | 1.66 / 1.78 | 0.15 / 0.14 | 0.19 / 0.17 | 0.13 / 0.59 | sumfact | closest: sumfact 0.15 / 0.14 of direct, 20% slower than the fastest at one size |
@@ -1892,18 +1891,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Prism | CpuSimd512 | f64 | 6 | loops | 31.2 | n.m.; T3: 5.16 | 1.00 | 0.37 | – | – | sumfact | sumfact 0.37 of loops |
 | Jacobian | Prism | CpuSimd512 | f64 | 7 | loops | 46.9 | n.m.; T3: 7.19 | 1.00 | 0.37 | – | – | sumfact | sumfact 0.37 of loops |
 | Jacobian | Prism | CpuSimd512 | f64 | 8 | direct | 722 | 1.00 | 0.18 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
-| Jacobian | Prism | Gpu | f32 | 1 | direct | 0.32 / 0.18 | 1.00 / 1.00 | 1.22 / 1.13 | 1.14 / 1.07 | 1.08 / 1.02 | 2.41 / 3.06 | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | Gpu | f32 | 2 | direct | 0.46 / 0.23 | 1.00 / 1.00 | 1.60 / 2.02 | 0.87 / 0.89 | 0.88 / 0.88 | 7.00 / 12.96 | sumfact | sumfact 0.87 / 0.89 of direct, within 3% of shared (0.88 / 0.88) |
-| Jacobian | Prism | Gpu | f32 | 3 | direct | 0.84 / 0.45 | 1.00 / 1.00 | 3.12 / 3.90 | 0.71 / 0.71 | 0.79 / 0.79 | 9.53 / 16.19 | sumfact | sumfact 0.71 / 0.71 of direct |
-| Jacobian | Prism | Gpu | f32 | 4 | direct | 4.77 / 2.91 | 1.00 / 1.00 | 1.69 / 1.60 | 0.26 / 0.23 | 0.23 / 0.21 | 2.20 / 3.17 | shared | shared 0.23 / 0.21 of direct |
+| Jacobian | Prism | Gpu | f32 | 1 | direct | 0.35 / 0.18 | 1.00 / 1.00 | 1.12 / 1.12 | 1.04 / 1.06 | 0.99 / 1.00 | 2.21 / 3.02 | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | Gpu | f32 | 2 | direct | 0.45 / 0.23 | 1.00 / 1.00 | 1.62 / 2.04 | 0.88 / 0.90 | 0.89 / 0.88 | 7.09 / 13.07 | shared | shared 0.89 / 0.88 of direct |
+| Jacobian | Prism | Gpu | f32 | 3 | direct | 0.85 / 0.45 | 1.00 / 1.00 | 3.12 / 3.90 | 0.71 / 0.71 | 0.79 / 0.79 | 9.52 / 16.20 | sumfact | sumfact 0.71 / 0.71 of direct |
+| Jacobian | Prism | Gpu | f32 | 4 | direct | 4.83 / 2.89 | 1.00 / 1.00 | 1.67 / 1.61 | 0.25 / 0.23 | 0.22 / 0.22 | 2.18 / 3.20 | shared | shared 0.22 / 0.22 of direct |
 | Jacobian | Prism | Gpu | f32 | 5 | direct | 15.0 / 8.23 | 1.00 / 1.00 | 1.30 / 1.59 | 0.15 / 0.14 | 0.15 / 0.16 | 0.90 / 1.64 | sumfact | sumfact 0.15 / 0.14 of direct |
 | Jacobian | Prism | Gpu | f32 | 6 | direct | 53.9 / 24.6 | 1.00 / 1.00 | 0.85 / 1.08 | 0.07 / 0.08 | 0.06 / 0.08 | 0.36 / 0.78 | shared | shared 0.06 / 0.08 of direct |
 | Jacobian | Prism | Gpu | f32 | 7 | direct | 105 / 55.7 | 1.00 / 1.00 | 0.86 / 0.85 | 0.07 / 0.06 | 0.06 / 0.05 | 0.24 / 0.46 | shared | shared 0.06 / 0.05 of direct |
 | Jacobian | Prism | Gpu | f32 | 8 | direct | 409 / 207 | 1.00 / 1.00 | 0.43 / 0.38 | 0.02 / 0.02 | – | 0.11 / 0.17 | sumfact | sumfact 0.02 / 0.02 of direct |
-| Jacobian | Prism | Gpu | f64 | 1 | direct | 0.13 / 0.07 | 1.00 / 1.00 | 1.15 / 1.26 | 1.01 / 1.00 | 1.01 / 0.99 | 2.97 / 4.09 | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | Gpu | f64 | 2 | direct | 0.27 / 0.09 | 1.00 / 1.00 | 2.04 / 4.78 | 0.61 / 0.82 | 0.59 / 0.79 | 6.78 / 19.10 | shared | shared 0.59 / 0.79 of direct |
-| Jacobian | Prism | Gpu | f64 | 3 | direct | 0.75 / 0.26 | 1.00 / 1.00 | 3.06 / 4.06 | 0.35 / 0.56 | 0.30 / 0.45 | 5.58 / 14.77 | shared | shared 0.30 / 0.45 of direct |
-| Jacobian | Prism | Gpu | f64 | 4 | direct | 4.69 / 3.04 | 1.00 / 1.00 | 2.36 / 0.97 | 0.14 / 0.11 | 0.11 / 0.11 | 1.18 / 1.71 | shared | shared 0.11 / 0.11 of direct |
+| Jacobian | Prism | Gpu | f64 | 1 | direct | 0.13 / 0.07 | 1.00 / 1.00 | 1.08 / 1.27 | 0.95 / 1.01 | 0.95 / 1.00 | 2.81 / 4.14 | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | Gpu | f64 | 2 | direct | 0.28 / 0.09 | 1.00 / 1.00 | 2.02 / 4.85 | 0.61 / 0.83 | 0.58 / 0.80 | 6.70 / 19.38 | shared | shared 0.58 / 0.80 of direct |
+| Jacobian | Prism | Gpu | f64 | 3 | direct | 0.76 / 0.26 | 1.00 / 1.00 | 3.02 / 4.15 | 0.35 / 0.57 | 0.29 / 0.46 | 5.51 / 15.08 | shared | shared 0.29 / 0.46 of direct |
+| Jacobian | Prism | Gpu | f64 | 4 | direct | 4.65 / 3.05 | 1.00 / 1.00 | 2.37 / 0.97 | 0.14 / 0.11 | 0.11 / 0.11 | 1.19 / 1.71 | shared | shared 0.11 / 0.11 of direct |
 | Jacobian | Prism | Gpu | f64 | 5 | direct | 14.8 / 5.65 | 1.00 / 1.00 | 2.27 / 1.40 | 0.11 / 0.10 | 0.09 / 0.10 | 0.59 / 1.26 | shared | shared 0.09 / 0.10 of direct |
 | Jacobian | Prism | Gpu | f64 | 6 | direct | 37.2 / 10.5 | 1.00 / 1.00 | 2.41 / 1.81 | 0.09 / 0.07 | 0.07 / 0.07 | 0.33 / 0.97 | shared | shared 0.07 / 0.07 of direct |
 | Jacobian | Prism | Gpu | f64 | 7 | direct | 266 / 57.5 | 1.00 / 1.00 | 0.66 / 0.71 | 0.02 / 0.02 | 0.02 / 0.02 | 0.05 / 0.24 | shared | shared 0.02 / 0.02 of direct |
@@ -1920,12 +1919,12 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Pyramid | CpuSimd512 | f64 | 1 | direct | 3.04 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | CpuSimd512 | f64 | 2 | direct | 2.85 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | CpuSimd512 | f64 | 3 | direct | 3.62 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | Gpu | f32 | 1 | direct | 0.31 / 0.17 | 1.00 / 1.00 | 1.13 / 1.11 | – | 1.17 / 1.09 | 2.39 / 3.16 | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | Gpu | f32 | 2 | direct | 0.45 / 0.21 | 1.00 / 1.00 | 1.37 / 1.54 | – | 1.31 / 1.58 | 3.57 / 6.43 | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | Gpu | f32 | 3 | direct | 0.69 / 0.32 | 1.00 / 1.00 | 3.00 / 3.37 | – | 3.12 / 3.51 | 5.11 / 9.99 | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | Gpu | f64 | 1 | direct | 0.12 / 0.07 | 1.00 / 1.00 | 1.11 / 1.19 | – | 1.09 / 1.14 | 2.84 / 4.21 | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | Gpu | f64 | 2 | direct | 0.21 / 0.08 | 1.00 / 1.00 | 2.02 / 3.10 | – | 1.45 / 2.93 | 4.31 / 10.15 | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | Gpu | f64 | 3 | direct | 0.35 / 0.13 | 1.00 / 1.00 | 5.21 / 6.03 | – | 2.71 / 4.96 | 6.54 / 16.57 | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | Gpu | f32 | 1 | direct | 0.31 / 0.17 | 1.00 / 1.00 | 1.14 / 1.11 | – | 1.17 / 1.08 | 2.40 / 3.15 | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | Gpu | f32 | 2 | direct | 0.41 / 0.21 | 1.00 / 1.00 | 1.49 / 1.52 | – | 1.42 / 1.57 | 3.87 / 6.36 | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | Gpu | f32 | 3 | direct | 0.70 / 0.32 | 1.00 / 1.00 | 2.96 / 3.37 | – | 3.07 / 3.52 | 5.04 / 10.01 | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | Gpu | f64 | 1 | direct | 0.12 / 0.07 | 1.00 / 1.00 | 1.14 / 1.19 | – | 1.12 / 1.14 | 2.92 / 4.21 | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | Gpu | f64 | 2 | direct | 0.20 / 0.08 | 1.00 / 1.00 | 2.13 / 3.13 | – | 1.52 / 2.95 | 4.54 / 10.23 | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | Gpu | f64 | 3 | direct | 0.37 / 0.13 | 1.00 / 1.00 | 5.00 / 6.06 | – | 2.61 / 4.98 | 6.27 / 16.64 | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f32 | 1 | direct | 0.17 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f32 | 2 | direct | 0.17 | 1.00 | 0.62 | – | – | – | loops | loops 0.62 of direct |
 | Normals | Interval | CpuSimd128 | f32 | 3 | direct | 0.18 | 1.00 | 0.64 | – | – | – | loops | loops 0.64 of direct |
@@ -1958,18 +1957,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Normals | Interval | CpuSimd512 | f64 | 6 | direct | 0.22 | 1.00 | 1.59 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f64 | 7 | direct | 0.39 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
 | Normals | Interval | CpuSimd512 | f64 | 8 | direct | 0.36 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f32 | 1 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.03 / 1.04 | – | 1.06 / 1.05 | 1.15 / 1.32 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.05 / 1.07 | – | 1.08 / 1.05 | 1.22 / 1.48 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f32 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.07 / 1.10 | – | 1.07 / 1.10 | 1.43 / 1.88 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f32 | 4 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.09 / 1.12 | – | 1.10 / 1.09 | 1.59 / 2.09 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f32 | 1 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.04 / 1.05 | – | 1.07 / 1.06 | 1.15 / 1.33 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.03 / 1.07 | – | 1.07 / 1.04 | 1.20 / 1.47 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f32 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.08 / 1.10 | – | 1.08 / 1.10 | 1.45 / 1.88 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f32 | 4 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.09 / 1.11 | – | 1.10 / 1.08 | 1.59 / 2.08 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f32 | 5 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.11 / 1.16 | – | 1.11 / 1.12 | 1.57 / 2.00 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f32 | 6 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.14 / 1.21 | – | 1.13 / 1.17 | 1.55 / 2.13 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f32 | 7 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.14 / 1.20 | – | 1.13 / 1.19 | 2.21 / 3.70 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f32 | 8 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.16 / 1.26 | – | 1.15 / 1.20 | 2.43 / 4.18 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.13 / 1.04 | – | 1.12 / 1.06 | 1.66 / 1.79 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f64 | 2 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.07 / 1.06 | – | 1.09 / 1.03 | 1.58 / 2.02 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.08 / 1.06 | – | 1.11 / 1.05 | 2.32 / 3.53 | direct | no strategy 10% faster than direct |
-| Normals | Interval | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.12 | – | 1.13 / 1.08 | 2.46 / 4.03 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.16 / 1.03 | – | 1.15 / 1.05 | 1.69 / 1.79 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.03 / 1.05 | – | 1.05 / 1.02 | 1.52 / 2.00 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.10 / 1.08 | – | 1.13 / 1.06 | 2.35 / 3.57 | direct | no strategy 10% faster than direct |
+| Normals | Interval | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.15 / 1.11 | – | 1.14 / 1.07 | 2.48 / 4.02 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f64 | 5 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.16 | – | 1.14 / 1.13 | 2.43 / 4.02 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.15 / 1.19 | – | 1.12 / 1.20 | 2.33 / 4.22 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.16 / 1.29 | – | 1.13 / 1.24 | 4.09 / 8.91 | direct | no strategy 10% faster than direct |
@@ -2006,18 +2005,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Normals | Triangle | CpuSimd512 | f64 | 6 | direct | 1.28 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f64 | 7 | direct | 1.35 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
 | Normals | Triangle | CpuSimd512 | f64 | 8 | direct | 1.70 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
-| Normals | Triangle | Gpu | f32 | 1 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 1.09 / 1.10 | – | 1.06 / 1.03 | 1.34 / 1.65 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f32 | 2 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.12 / 1.22 | – | 1.22 / 1.11 | 2.05 / 2.86 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f32 | 3 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.27 / 1.45 | – | 1.19 / 1.30 | 4.59 / 8.52 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f32 | 4 | direct | 0.10 / 0.05 | 1.00 / 1.00 | 1.60 / 1.57 | – | 1.49 / 1.36 | 4.42 / 7.30 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f32 | 1 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 1.08 / 1.10 | – | 1.05 / 1.02 | 1.33 / 1.64 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f32 | 2 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.12 / 1.21 | – | 1.22 / 1.11 | 2.05 / 2.85 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f32 | 3 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.29 / 1.46 | – | 1.21 / 1.30 | 4.66 / 8.53 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f32 | 4 | direct | 0.10 / 0.05 | 1.00 / 1.00 | 1.60 / 1.58 | – | 1.49 / 1.37 | 4.42 / 7.34 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f32 | 5 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 2.35 / 4.76 | – | 2.28 / 3.30 | 7.85 / 16.67 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f32 | 6 | direct | 0.15 / 0.07 | 1.00 / 1.00 | 2.81 / 4.97 | – | 2.53 / 4.83 | 6.88 / 12.79 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f32 | 7 | direct | 0.19 / 0.09 | 1.00 / 1.00 | 3.74 / 5.39 | – | 3.12 / 4.65 | 10.82 / 22.17 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f32 | 8 | direct | 0.34 / 0.15 | 1.00 / 1.00 | 3.02 / 4.27 | – | 2.50 / 3.59 | 6.32 / 14.45 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.05 / 1.06 | – | 1.25 / 1.18 | 1.94 / 2.77 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.08 / 1.25 | – | 1.19 / 1.33 | 3.95 / 7.41 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f64 | 3 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.28 / 1.46 | – | 1.76 / 1.94 | 8.21 / 16.16 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | Gpu | f64 | 4 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.43 / 1.65 | – | 2.40 / 4.80 | 6.71 / 14.45 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.05 / 1.06 | – | 1.26 / 1.18 | 1.96 / 2.77 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.09 / 1.24 | – | 1.21 / 1.32 | 3.99 / 7.36 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f64 | 3 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.27 / 1.45 | – | 1.75 / 1.93 | 8.16 / 16.07 | direct | no strategy 10% faster than direct |
+| Normals | Triangle | Gpu | f64 | 4 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.42 / 1.65 | – | 2.39 / 4.82 | 6.69 / 14.50 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f64 | 5 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 5.85 / 3.50 | – | 6.69 / 4.62 | 14.26 / 20.02 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f64 | 6 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 2.46 / 4.17 | – | 6.11 / 5.95 | 9.87 / 18.88 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f64 | 7 | direct | 0.16 / 0.05 | 1.00 / 1.00 | 1.90 / 4.77 | – | 4.99 / 7.31 | 8.29 / 24.66 | direct | no strategy 10% faster than direct |
@@ -2054,18 +2053,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Normals | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 1.55 | 1.00 | 0.86 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 1.99 | 1.00 | 0.81 | 0.42 | – | – | sumfact | sumfact 0.42 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f64 | 8 | direct | 3.85 | 1.00 | 0.76 | 0.30 | – | – | sumfact | sumfact 0.30 of direct |
-| Normals | Quadrilateral | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.07 / 1.11 | 1.10 / 1.16 | 1.07 / 1.09 | 1.88 / 2.34 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | Gpu | f32 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.20 / 1.32 | 1.18 / 1.19 | 1.10 / 1.10 | 4.30 / 7.75 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | Gpu | f32 | 3 | direct | 0.11 / 0.05 | 1.00 / 1.00 | 1.45 / 1.97 | 0.97 / 1.06 | 0.94 / 1.00 | 8.08 / 16.27 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | Gpu | f32 | 4 | direct | 0.13 / 0.06 | 1.00 / 1.00 | 2.78 / 4.16 | 0.92 / 1.02 | 0.90 / 0.97 | 7.45 / 14.81 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.08 / 1.12 | 1.11 / 1.17 | 1.08 / 1.09 | 1.89 / 2.35 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f32 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.15 / 1.32 | 1.13 / 1.19 | 1.05 / 1.10 | 4.12 / 7.74 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f32 | 3 | direct | 0.11 / 0.05 | 1.00 / 1.00 | 1.46 / 1.98 | 0.97 / 1.07 | 0.95 / 1.01 | 8.11 / 16.42 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f32 | 4 | direct | 0.13 / 0.06 | 1.00 / 1.00 | 2.79 / 4.16 | 0.92 / 1.02 | 0.91 / 0.97 | 7.47 / 14.78 | direct | no strategy 10% faster than direct |
 | Normals | Quadrilateral | Gpu | f32 | 5 | direct | 0.16 / 0.09 | 1.00 / 1.00 | 3.64 / 5.15 | 0.90 / 0.86 | 0.85 / 0.84 | 13.30 / 21.37 | shared | shared 0.85 / 0.84 of direct |
 | Normals | Quadrilateral | Gpu | f32 | 6 | direct | 0.26 / 0.15 | 1.00 / 1.00 | 3.33 / 4.09 | 0.61 / 0.57 | 0.59 / 0.55 | 8.68 / 14.09 | shared | shared 0.59 / 0.55 of direct |
 | Normals | Quadrilateral | Gpu | f32 | 7 | direct | 0.59 / 0.35 | 1.00 / 1.00 | 2.79 / 2.74 | 0.37 / 0.33 | 0.34 / 0.31 | 4.14 / 7.32 | shared | shared 0.34 / 0.31 of direct |
 | Normals | Quadrilateral | Gpu | f32 | 8 | direct | 1.39 / 0.89 | 1.00 / 1.00 | 1.95 / 1.42 | 0.17 / 0.14 | 0.16 / 0.13 | 1.98 / 2.99 | shared | shared 0.16 / 0.13 of direct |
-| Normals | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.09 / 1.09 | 1.47 / 1.63 | 1.54 / 1.63 | 3.59 / 6.32 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | Gpu | f64 | 2 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 0.90 / 1.29 | 1.02 / 1.53 | 0.99 / 1.49 | 6.22 / 15.78 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | Gpu | f64 | 3 | direct | 0.06 / 0.03 | 1.00 / 1.00 | 1.11 / 2.13 | 0.88 / 0.95 | 0.85 / 0.92 | 11.15 / 21.47 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | Gpu | f64 | 4 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 1.34 / 4.66 | 0.79 / 0.80 | 0.72 / 0.77 | 8.95 / 19.65 | shared | shared 0.72 / 0.77 of direct |
+| Normals | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.11 / 1.10 | 1.51 / 1.64 | 1.57 / 1.63 | 3.68 / 6.34 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f64 | 2 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.04 / 1.29 | 1.18 / 1.52 | 1.14 / 1.48 | 7.15 / 15.72 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f64 | 3 | direct | 0.06 / 0.03 | 1.00 / 1.00 | 1.10 / 2.11 | 0.88 / 0.94 | 0.84 / 0.92 | 11.07 / 21.32 | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | Gpu | f64 | 4 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 1.36 / 4.68 | 0.80 / 0.80 | 0.74 / 0.77 | 9.08 / 19.71 | shared | shared 0.74 / 0.77 of direct |
 | Normals | Quadrilateral | Gpu | f64 | 5 | direct | 0.13 / 0.05 | 1.00 / 1.00 | 1.49 / 5.53 | 0.48 / 0.73 | 0.45 / 0.71 | 10.20 / 27.54 | shared | shared 0.45 / 0.71 of direct |
 | Normals | Quadrilateral | Gpu | f64 | 6 | direct | 0.24 / 0.10 | 1.00 / 1.00 | 1.41 / 3.26 | 0.36 / 0.46 | 0.33 / 0.45 | 6.28 / 13.74 | shared | shared 0.33 / 0.45 of direct |
 | Normals | Quadrilateral | Gpu | f64 | 7 | direct | 3.57 / 1.59 | 1.00 / 1.00 | 0.16 / 0.28 | 0.05 / 0.08 | 0.04 / 0.10 | 0.47 / 1.01 | shared | closest: shared 0.04 / 0.10 of direct, 15% slower than the fastest at one size |
@@ -2102,18 +2101,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Interval | CpuSimd512 | f64 | 6 | direct | 0.35 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
 | FacetNormals | Interval | CpuSimd512 | f64 | 7 | direct | 0.33 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd512 | f64 | 8 | direct | 0.33 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f32 | 1 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.04 / 1.05 | – | 1.08 / 1.07 | 1.18 / 1.31 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f32 | 2 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.09 / 1.19 | – | 1.11 / 1.21 | 1.28 / 1.61 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f32 | 3 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.03 / 1.21 | – | 1.07 / 1.23 | 1.43 / 2.27 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f32 | 4 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.07 / 1.14 | – | 1.08 / 1.16 | 1.53 / 2.49 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f32 | 1 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.04 / 1.13 | – | 1.08 / 1.15 | 1.18 / 1.41 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f32 | 2 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.07 / 1.17 | – | 1.09 / 1.19 | 1.25 / 1.59 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f32 | 3 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.05 / 1.21 | – | 1.09 / 1.23 | 1.45 / 2.28 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f32 | 4 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.07 / 1.14 | – | 1.08 / 1.15 | 1.54 / 2.48 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f32 | 5 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.09 / 1.18 | – | 1.11 / 1.18 | 1.52 / 2.29 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f32 | 6 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.08 / 1.22 | – | 1.09 / 1.21 | 1.47 / 2.18 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f32 | 7 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.09 / 1.22 | – | 1.12 / 1.23 | 2.01 / 3.34 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f32 | 8 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.07 / 1.16 | – | 1.14 / 1.11 | 2.07 / 3.54 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.09 / 1.21 | – | 1.11 / 1.26 | 1.38 / 1.91 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f64 | 2 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.14 / 1.18 | – | 1.17 / 1.21 | 1.45 / 2.19 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.10 / 1.16 | – | 1.13 / 1.19 | 1.68 / 2.51 | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | Gpu | f64 | 4 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.13 / 1.09 | – | 1.13 / 1.11 | 1.85 / 2.90 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f64 | 1 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.05 / 1.21 | – | 1.07 / 1.26 | 1.33 / 1.91 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f64 | 2 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.08 / 1.17 | – | 1.11 / 1.20 | 1.38 / 2.17 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f64 | 3 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.09 / 1.17 | – | 1.13 / 1.20 | 1.67 / 2.54 | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | Gpu | f64 | 4 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.10 / 1.09 | – | 1.10 / 1.10 | 1.80 / 2.89 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f64 | 5 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.13 / 1.12 | – | 1.16 / 1.13 | 1.81 / 2.62 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.12 / 1.14 | – | 1.15 / 1.16 | 1.76 / 2.43 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.16 | – | 1.20 / 1.24 | 2.43 / 3.60 | direct | no strategy 10% faster than direct |
@@ -2150,18 +2149,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Triangle | CpuSimd512 | f64 | 6 | direct | 0.69 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 7 | direct | 1.24 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 8 | direct | 1.03 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f32 | 1 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.06 / 1.17 | – | 1.06 / 1.14 | 1.40 / 1.91 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.12 / 1.25 | – | 1.13 / 1.20 | 2.32 / 3.73 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f32 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.18 / 1.41 | – | 1.19 / 1.34 | 3.96 / 8.20 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f32 | 4 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.31 / 1.42 | – | 1.25 / 1.35 | 3.81 / 6.94 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f32 | 1 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.04 / 1.17 | – | 1.05 / 1.14 | 1.38 / 1.91 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.08 / 1.25 | – | 1.09 / 1.20 | 2.23 / 3.73 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f32 | 3 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.18 / 1.41 | – | 1.18 / 1.34 | 3.95 / 8.22 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f32 | 4 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.32 / 1.41 | – | 1.26 / 1.34 | 3.83 / 6.93 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f32 | 5 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.78 / 2.36 | – | 1.62 / 2.26 | 6.97 / 13.78 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f32 | 6 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 2.17 / 4.03 | – | 2.03 / 3.92 | 6.03 / 13.07 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f32 | 7 | direct | 0.15 / 0.06 | 1.00 / 1.00 | 2.41 / 4.79 | – | 2.21 / 4.50 | 9.98 / 24.09 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f32 | 8 | direct | 0.17 / 0.08 | 1.00 / 1.00 | 2.91 / 4.72 | – | 2.63 / 4.56 | 9.55 / 19.16 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.18 / 1.19 | – | 1.20 / 1.19 | 2.26 / 4.43 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.38 / 1.36 | – | 1.39 / 1.32 | 5.43 / 12.21 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.31 / 1.48 | – | 1.20 / 1.32 | 9.39 / 22.91 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | Gpu | f64 | 4 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.39 / 1.75 | – | 1.41 / 1.51 | 8.60 / 17.46 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.19 / 1.19 | – | 1.21 / 1.19 | 2.27 / 4.43 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.30 / 1.38 | – | 1.30 / 1.34 | 5.11 / 12.37 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.31 / 1.48 | – | 1.21 / 1.32 | 9.42 / 22.97 | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | Gpu | f64 | 4 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.40 / 1.79 | – | 1.42 / 1.54 | 8.68 / 17.87 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f64 | 5 | direct | 0.34 / 0.02 | 1.00 / 1.00 | 1.08 / 4.01 | – | 0.99 / 2.69 | 2.85 / 31.50 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f64 | 6 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.90 / 3.97 | – | 1.48 / 3.90 | 11.47 / 23.29 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f64 | 7 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 2.35 / 4.82 | – | 1.70 / 4.26 | 17.30 / 35.50 | direct | no strategy 10% faster than direct |
@@ -2198,18 +2197,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 1.12 | 1.00 | 0.95 | 0.65 | – | – | sumfact | sumfact 0.65 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 1.58 | 1.00 | 0.92 | 0.52 | – | – | sumfact | sumfact 0.52 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f64 | 8 | direct | 2.10 | 1.00 | 0.79 | 0.39 | – | – | sumfact | sumfact 0.39 of direct |
-| FacetNormals | Quadrilateral | Gpu | f32 | 1 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.19 / 1.21 | 1.13 / 1.27 | 1.21 / 1.21 | 2.10 / 3.45 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.17 / 1.31 | 1.15 / 1.21 | 1.06 / 1.12 | 3.99 / 7.98 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | Gpu | f32 | 3 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.32 / 1.43 | 1.02 / 1.18 | 1.00 / 1.15 | 6.94 / 15.35 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | Gpu | f32 | 4 | direct | 0.11 / 0.05 | 1.00 / 1.00 | 1.97 / 2.99 | 0.93 / 1.04 | 0.90 / 0.95 | 6.48 / 12.92 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f32 | 1 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.20 / 1.21 | 1.13 / 1.27 | 1.22 / 1.21 | 2.11 / 3.45 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f32 | 2 | direct | 0.08 / 0.03 | 1.00 / 1.00 | 1.18 / 1.31 | 1.16 / 1.22 | 1.06 / 1.12 | 4.02 / 8.01 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f32 | 3 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.30 / 1.43 | 1.01 / 1.18 | 0.99 / 1.15 | 6.84 / 15.34 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f32 | 4 | direct | 0.11 / 0.05 | 1.00 / 1.00 | 1.99 / 2.98 | 0.94 / 1.04 | 0.91 / 0.94 | 6.54 / 12.87 | direct | no strategy 10% faster than direct |
 | FacetNormals | Quadrilateral | Gpu | f32 | 5 | direct | 0.15 / 0.06 | 1.00 / 1.00 | 2.26 / 4.78 | 0.95 / 1.16 | 0.93 / 1.11 | 9.83 / 23.83 | direct | no strategy 10% faster than direct |
 | FacetNormals | Quadrilateral | Gpu | f32 | 6 | direct | 0.21 / 0.10 | 1.00 / 1.00 | 2.57 / 4.04 | 0.73 / 0.72 | 0.68 / 0.66 | 7.79 / 15.30 | shared | shared 0.68 / 0.66 of direct |
 | FacetNormals | Quadrilateral | Gpu | f32 | 7 | direct | 0.33 / 0.21 | 1.00 / 1.00 | 2.14 / 2.79 | 0.46 / 0.44 | 0.42 / 0.41 | 5.40 / 8.26 | shared | shared 0.42 / 0.41 of direct |
 | FacetNormals | Quadrilateral | Gpu | f32 | 8 | direct | 0.39 / 0.27 | 1.00 / 1.00 | 2.95 / 3.04 | 0.41 / 0.35 | 0.39 / 0.32 | 5.29 / 7.25 | shared | shared 0.39 / 0.32 of direct |
-| FacetNormals | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.11 / 1.22 | 1.51 / 1.74 | 1.37 / 1.74 | 4.82 / 11.10 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | Gpu | f64 | 2 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 1.29 / 1.35 | 1.61 / 1.45 | 1.33 / 1.40 | 8.98 / 21.67 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | Gpu | f64 | 3 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.39 / 1.77 | 1.15 / 1.45 | 0.98 / 1.28 | 14.38 / 32.89 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | Gpu | f64 | 4 | direct | 0.06 / 0.03 | 1.00 / 1.00 | 1.79 / 3.79 | 1.06 / 1.09 | 0.87 / 0.89 | 12.41 / 24.54 | shared | shared 0.87 / 0.89 of direct |
+| FacetNormals | Quadrilateral | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.12 / 1.22 | 1.52 / 1.74 | 1.38 / 1.74 | 4.85 / 11.09 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.32 / 1.36 | 1.65 / 1.46 | 1.36 / 1.41 | 9.19 / 21.80 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.26 / 1.75 | 1.04 / 1.44 | 0.89 / 1.26 | 13.02 / 32.49 | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | Gpu | f64 | 4 | direct | 0.06 / 0.03 | 1.00 / 1.00 | 1.81 / 3.81 | 1.07 / 1.10 | 0.89 / 0.90 | 12.60 / 24.64 | shared | shared 0.89 / 0.90 of direct |
 | FacetNormals | Quadrilateral | Gpu | f64 | 5 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 2.40 / 4.81 | 0.92 / 0.93 | 0.79 / 0.78 | 17.10 / 35.39 | shared | shared 0.79 / 0.78 of direct |
 | FacetNormals | Quadrilateral | Gpu | f64 | 6 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.61 / 5.27 | 0.93 / 1.02 | 0.71 / 0.84 | 13.46 / 31.37 | shared | shared 0.71 / 0.84 of direct |
 | FacetNormals | Quadrilateral | Gpu | f64 | 7 | direct | 0.20 / 0.10 | 1.00 / 1.00 | 1.86 / 3.16 | 0.48 / 0.69 | 0.41 / 0.60 | 7.76 / 15.08 | shared | shared 0.41 / 0.60 of direct |
@@ -2246,18 +2245,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 3.29 | n.m.; T3: 2.09 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 4.18 | n.m.; T3: 4.07 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 8 | loops | 27.5 | n.m.; T3: 1.66 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| FacetNormals | Tetrahedron | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.14 / 1.19 | – | 1.11 / 1.13 | 2.84 / 4.71 | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | Gpu | f32 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.42 / 1.48 | – | 1.21 / 1.41 | 5.06 / 10.48 | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | Gpu | f32 | 3 | direct | 0.16 / 0.07 | 1.00 / 1.00 | 2.00 / 2.59 | – | 2.32 / 2.42 | 7.20 / 15.38 | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | Gpu | f32 | 4 | direct | 0.31 / 0.15 | 1.00 / 1.00 | 2.89 / 2.61 | – | – | 8.39 / 15.91 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.13 / 1.20 | – | 1.10 / 1.14 | 2.82 / 4.71 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f32 | 2 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 1.35 / 1.49 | – | 1.15 / 1.41 | 4.81 / 10.51 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f32 | 3 | direct | 0.16 / 0.07 | 1.00 / 1.00 | 1.99 / 2.58 | – | 2.32 / 2.41 | 7.19 / 15.29 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f32 | 4 | direct | 0.31 / 0.15 | 1.00 / 1.00 | 2.90 / 2.58 | – | – | 8.41 / 15.71 | direct | no strategy 10% faster than direct |
 | FacetNormals | Tetrahedron | Gpu | f32 | 5 | loops | 1.96 / 0.77 | n.m.; T3: 0.41 / 0.52 | 1.00 / 1.00 | – | – | 1.53 / 3.53 | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | Gpu | f32 | 6 | loops | 4.03 / 1.85 | n.m.; T3: 0.60 / 0.69 | 1.00 / 1.00 | – | – | 1.03 / 1.97 | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | Gpu | f32 | 7 | loops | 6.52 / 3.27 | n.m.; T3: 0.63 / 0.80 | 1.00 / 1.00 | – | – | 0.78 / 1.19 | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | Gpu | f32 | 8 | loops | 12.0 / 6.68 | n.m.; T3: 0.90 / 0.83 | 1.00 / 1.00 | – | – | 0.49 / 0.73 | cooperative | cooperative 0.49 / 0.73 of loops |
-| FacetNormals | Tetrahedron | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.14 / 1.19 | – | 1.06 / 1.18 | 2.85 / 5.19 | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | Gpu | f64 | 2 | direct | 0.06 / 0.02 | 1.00 / 1.00 | 1.70 / 1.54 | – | 1.18 / 1.28 | 4.94 / 10.14 | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | Gpu | f64 | 3 | direct | 0.14 / 0.05 | 1.00 / 1.00 | 1.88 / 3.07 | – | 1.29 / 2.91 | 4.74 / 12.56 | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | Gpu | f64 | 4 | direct | 0.31 / 0.12 | 1.00 / 1.00 | 2.17 / 2.22 | – | 1.37 / 1.36 | 4.23 / 10.08 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.15 / 1.21 | – | 1.06 / 1.20 | 2.86 / 5.28 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f64 | 2 | direct | 0.06 / 0.02 | 1.00 / 1.00 | 1.54 / 1.55 | – | 1.06 / 1.29 | 4.46 / 10.21 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f64 | 3 | direct | 0.15 / 0.05 | 1.00 / 1.00 | 1.78 / 3.09 | – | 1.22 / 2.93 | 4.48 / 12.65 | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | Gpu | f64 | 4 | direct | 0.31 / 0.12 | 1.00 / 1.00 | 2.17 / 2.21 | – | 1.37 / 1.36 | 4.23 / 10.03 | direct | no strategy 10% faster than direct |
 | FacetNormals | Tetrahedron | Gpu | f64 | 5 | loops | 1.91 / 0.50 | n.m.; T3: 0.39 / 0.54 | 1.00 / 1.00 | – | 0.57 / 0.90 | 0.87 / 3.00 | shared | shared 0.57 / 0.90 of loops |
 | FacetNormals | Tetrahedron | Gpu | f64 | 6 | loops | 3.82 / 0.92 | n.m.; T3: 0.80 / 1.17 | 1.00 / 1.00 | – | – | 0.62 / 2.03 | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | Gpu | f64 | 7 | loops | 5.51 / 1.51 | n.m.; T3: 0.69 / 1.03 | 1.00 / 1.00 | – | – | 0.52 / 1.51 | loops | no strategy 10% faster than loops |
@@ -2278,34 +2277,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 6 | direct | 330 | 1.00 | 0.37 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 7 | direct | 560 | 1.00 | 0.47 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 8 | loops | 377 | n.m.; T3: 2.26 | 1.00 | 0.05 | – | – | sumfact | sumfact 0.05 of loops |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.68 | 1.00 | 0.87 | 0.86 | – | – | loops | loops 0.87 of direct, within 3% of sumfact (0.86) |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2 | direct | 5.07 | 1.00 | 0.96 | 0.71 | – | – | sumfact | sumfact 0.71 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 3 | direct | 9.43 | 1.00 | 1.08 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 4 | direct | 41.0 | 1.00 | 0.33 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.48 | 1.00 | 0.99 | 0.97 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2 | direct | 4.87 | 1.00 | 0.99 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 3 | direct | 9.68 | 1.00 | 1.05 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 4 | direct | 41.8 | 1.00 | 0.33 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 5 | direct | 155 | 1.00 | 0.20 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 6 | direct | 310 | 1.00 | 0.13 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 7 | direct | 463 | 1.00 | 0.19 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 8 | direct | 695 | 1.00 | 0.14 | 0.01 | – | – | sumfact | sumfact 0.01 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.61 | 1.00 | 1.10 | 0.86 | – | – | sumfact | sumfact 0.86 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.01 | 1.00 | 0.80 | 0.66 | – | – | sumfact | sumfact 0.66 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 3 | direct | 3.57 | 1.00 | 0.70 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.58 | 1.00 | 1.16 | 0.91 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2 | direct | 0.99 | 1.00 | 0.82 | 0.67 | – | – | sumfact | sumfact 0.67 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 3 | direct | 3.58 | 1.00 | 0.70 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 4 | direct | 13.7 | 1.00 | 0.28 | 0.10 | – | – | sumfact | sumfact 0.10 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 5 | direct | 38.7 | 1.00 | 0.17 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 6 | direct | 92.4 | 1.00 | 0.15 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 7 | direct | 173 | 1.00 | 0.36 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 8 | direct | 311 | 1.00 | 0.13 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| FacetNormals | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.34 / 1.39 | 1.25 / 1.51 | 1.21 / 1.41 | 5.25 / 10.54 | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | Gpu | f32 | 2 | direct | 0.21 / 0.09 | 1.00 / 1.00 | 2.60 / 3.33 | 0.79 / 0.90 | 0.77 / 0.86 | 5.91 / 12.36 | shared | shared 0.77 / 0.86 of direct |
-| FacetNormals | Hexahedron | Gpu | f32 | 3 | direct | 1.07 / 0.71 | 1.00 / 1.00 | 1.76 / 1.58 | 0.23 / 0.17 | 0.23 / 0.18 | 3.15 / 4.00 | sumfact | sumfact 0.23 / 0.17 of direct |
-| FacetNormals | Hexahedron | Gpu | f32 | 4 | direct | 4.67 / 2.47 | 1.00 / 1.00 | 1.35 / 1.49 | 0.10 / 0.12 | 0.10 / 0.10 | 0.92 / 1.84 | shared | shared 0.10 / 0.10 of direct |
+| FacetNormals | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.28 / 1.39 | 1.19 / 1.51 | 1.15 / 1.41 | 5.00 / 10.54 | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | Gpu | f32 | 2 | direct | 0.21 / 0.09 | 1.00 / 1.00 | 2.61 / 3.34 | 0.80 / 0.90 | 0.77 / 0.86 | 5.95 / 12.39 | shared | shared 0.77 / 0.86 of direct |
+| FacetNormals | Hexahedron | Gpu | f32 | 3 | direct | 1.08 / 0.71 | 1.00 / 1.00 | 1.74 / 1.58 | 0.23 / 0.17 | 0.23 / 0.18 | 3.12 / 4.01 | sumfact | sumfact 0.23 / 0.17 of direct |
+| FacetNormals | Hexahedron | Gpu | f32 | 4 | direct | 4.50 / 2.48 | 1.00 / 1.00 | 1.40 / 1.49 | 0.11 / 0.12 | 0.10 / 0.10 | 0.95 / 1.84 | shared | shared 0.10 / 0.10 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 5 | direct | 13.2 / 8.60 | 1.00 / 1.00 | 1.16 / 0.91 | 0.05 / 0.04 | 0.05 / 0.04 | 0.54 / 0.78 | shared | shared 0.05 / 0.04 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 6 | direct | 28.3 / 20.2 | 1.00 / 1.00 | 1.18 / 0.74 | 0.04 / 0.03 | 0.08 / 0.05 | 0.34 / 0.49 | sumfact | sumfact 0.04 / 0.03 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 7 | direct | 61.9 / 44.3 | 1.00 / 1.00 | 0.93 / 0.57 | 0.05 / 0.03 | 0.05 / 0.03 | 0.26 / 0.33 | sumfact | sumfact 0.05 / 0.03 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 8 | loops | 99.6 / 42.6 | n.m.; T3: 1.03 / 1.67 | 1.00 / 1.00 | 0.04 / 0.04 | 0.04 / 0.04 | 0.25 / 0.45 | sumfact | sumfact 0.04 / 0.04 of loops |
-| FacetNormals | Hexahedron | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.38 / 1.28 | 1.77 / 1.96 | 1.60 / 1.79 | 5.45 / 10.23 | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | Gpu | f64 | 2 | direct | 0.11 / 0.05 | 1.00 / 1.00 | 2.90 / 3.62 | 1.03 / 1.14 | 1.01 / 1.06 | 6.92 / 13.59 | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | Gpu | f64 | 3 | direct | 0.69 / 0.30 | 1.00 / 1.00 | 1.89 / 1.65 | 0.30 / 0.37 | 0.31 / 0.47 | 2.58 / 5.34 | sumfact | sumfact 0.30 / 0.37 of direct |
-| FacetNormals | Hexahedron | Gpu | f64 | 4 | direct | 2.70 / 1.67 | 1.00 / 1.00 | 1.57 / 0.64 | 0.92 / 0.53 | 1.04 / 0.54 | 0.97 / 1.42 | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.40 / 1.26 | 1.79 / 1.93 | 1.63 / 1.77 | 5.53 / 10.08 | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | Gpu | f64 | 2 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 2.79 / 3.60 | 0.99 / 1.14 | 0.97 / 1.06 | 6.65 / 13.52 | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | Gpu | f64 | 3 | direct | 0.69 / 0.30 | 1.00 / 1.00 | 1.88 / 1.64 | 0.30 / 0.37 | 0.30 / 0.46 | 2.56 / 5.30 | sumfact | sumfact 0.30 / 0.37 of direct |
+| FacetNormals | Hexahedron | Gpu | f64 | 4 | direct | 2.79 / 1.62 | 1.00 / 1.00 | 1.52 / 0.66 | 0.89 / 0.55 | 1.01 / 0.55 | 0.94 / 1.46 | sumfact | sumfact 0.89 / 0.55 of direct |
 | FacetNormals | Hexahedron | Gpu | f64 | 5 | direct | 7.16 / 2.69 | 1.00 / 1.00 | 1.42 / 0.89 | 0.63 / 0.45 | 0.66 / 0.42 | 0.55 / 1.33 | shared | closest: shared 0.66 / 0.42 of direct, 5% slower than the fastest at one size |
 | FacetNormals | Hexahedron | Gpu | f64 | 6 | direct | 134 / 24.9 | 1.00 / 1.00 | 0.18 / 0.20 | 0.05 / 0.06 | 0.06 / 0.06 | 0.05 / 0.22 | sumfact | sumfact 0.05 / 0.06 of direct |
 | FacetNormals | Hexahedron | Gpu | f64 | 7 | direct | 48.5 / 11.2 | 1.00 / 1.00 | 1.04 / 0.80 | 0.21 / 0.18 | 0.28 / 0.21 | 0.17 / 0.69 | sumfact | closest: sumfact 0.21 / 0.18 of direct, 23% slower than the fastest at one size |
@@ -2342,18 +2341,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Prism | CpuSimd512 | f64 | 6 | loops | 6.15 | n.m.; T3: 6.03 | 1.00 | 1.07 | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Prism | CpuSimd512 | f64 | 7 | loops | 11.1 | n.m.; T3: 6.51 | 1.00 | 0.93 | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Prism | CpuSimd512 | f64 | 8 | direct | 131 | 1.00 | 0.16 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
-| FacetNormals | Prism | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.14 / 1.27 | 1.09 / 1.24 | 1.10 / 1.13 | 2.79 / 5.08 | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | Gpu | f32 | 2 | direct | 0.15 / 0.06 | 1.00 / 1.00 | 1.72 / 2.38 | 1.08 / 1.37 | 1.04 / 1.28 | 8.08 / 17.43 | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | Gpu | f32 | 3 | direct | 0.34 / 0.15 | 1.00 / 1.00 | 2.71 / 3.44 | 1.09 / 1.22 | 0.99 / 1.16 | 8.00 / 17.28 | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | Gpu | f32 | 4 | direct | 1.49 / 0.96 | 1.00 / 1.00 | 1.87 / 1.63 | 0.58 / 0.47 | 0.53 / 0.46 | 2.38 / 3.24 | shared | shared 0.53 / 0.46 of direct |
+| FacetNormals | Prism | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.10 / 1.27 | 1.05 / 1.24 | 1.06 / 1.13 | 2.69 / 5.09 | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | Gpu | f32 | 2 | direct | 0.15 / 0.06 | 1.00 / 1.00 | 1.70 / 2.42 | 1.07 / 1.39 | 1.03 / 1.30 | 8.01 / 17.74 | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | Gpu | f32 | 3 | direct | 0.33 / 0.15 | 1.00 / 1.00 | 2.78 / 3.39 | 1.12 / 1.20 | 1.02 / 1.14 | 8.21 / 17.01 | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | Gpu | f32 | 4 | direct | 1.49 / 0.96 | 1.00 / 1.00 | 1.87 / 1.64 | 0.58 / 0.47 | 0.53 / 0.46 | 2.38 / 3.25 | shared | shared 0.53 / 0.46 of direct |
 | FacetNormals | Prism | Gpu | f32 | 5 | direct | 4.39 / 2.42 | 1.00 / 1.00 | 1.36 / 1.62 | 0.40 / 0.39 | 0.35 / 0.38 | 1.02 / 1.66 | shared | shared 0.35 / 0.38 of direct |
 | FacetNormals | Prism | Gpu | f32 | 6 | direct | 12.6 / 7.94 | 1.00 / 1.00 | 1.10 / 0.98 | 0.28 / 0.29 | – | 0.50 / 0.69 | sumfact | sumfact 0.28 / 0.29 of direct |
 | FacetNormals | Prism | Gpu | f32 | 7 | direct | 22.2 / 14.3 | 1.00 / 1.00 | 1.17 / 0.90 | 0.31 / 0.21 | – | 0.42 / 0.59 | sumfact | sumfact 0.31 / 0.21 of direct |
 | FacetNormals | Prism | Gpu | f32 | 8 | direct | 76.9 / 53.9 | 1.00 / 1.00 | 0.61 / 0.39 | 0.13 / 0.08 | – | 0.14 / 0.19 | sumfact | sumfact 0.13 / 0.08 of direct |
-| FacetNormals | Prism | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.30 / 1.28 | 1.12 / 1.31 | 1.08 / 1.28 | 2.89 / 5.36 | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | Gpu | f64 | 2 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 2.20 / 1.83 | 0.91 / 1.02 | 0.80 / 0.88 | 7.50 / 14.54 | shared | shared 0.80 / 0.88 of direct |
-| FacetNormals | Prism | Gpu | f64 | 3 | direct | 0.29 / 0.11 | 1.00 / 1.00 | 2.46 / 2.49 | 0.68 / 0.64 | 0.62 / 0.56 | 5.03 / 11.52 | shared | shared 0.62 / 0.56 of direct |
-| FacetNormals | Prism | Gpu | f64 | 4 | direct | 1.38 / 0.78 | 1.00 / 1.00 | 1.36 / 0.82 | 0.37 / 0.29 | 0.31 / 0.30 | 1.37 / 2.25 | shared | closest: shared 0.31 / 0.30 of direct, 5% slower than the fastest at one size |
+| FacetNormals | Prism | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.23 / 1.27 | 1.05 / 1.30 | 1.01 / 1.27 | 2.72 / 5.31 | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | Gpu | f64 | 2 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 2.09 / 1.82 | 0.86 / 1.01 | 0.76 / 0.87 | 7.10 / 14.44 | shared | shared 0.76 / 0.87 of direct |
+| FacetNormals | Prism | Gpu | f64 | 3 | direct | 0.29 / 0.11 | 1.00 / 1.00 | 2.44 / 2.45 | 0.67 / 0.63 | 0.61 / 0.56 | 4.98 / 11.33 | shared | shared 0.61 / 0.56 of direct |
+| FacetNormals | Prism | Gpu | f64 | 4 | direct | 1.37 / 0.78 | 1.00 / 1.00 | 1.37 / 0.81 | 0.38 / 0.29 | 0.31 / 0.30 | 1.37 / 2.24 | shared | closest: shared 0.31 / 0.30 of direct, 5% slower than the fastest at one size |
 | FacetNormals | Prism | Gpu | f64 | 5 | direct | 3.19 / 1.40 | 1.00 / 1.00 | 1.58 / 0.93 | 0.38 / 0.36 | 0.32 / 0.35 | 0.88 / 1.70 | shared | shared 0.32 / 0.35 of direct |
 | FacetNormals | Prism | Gpu | f64 | 6 | direct | 6.10 / 2.45 | 1.00 / 1.00 | 1.65 / 1.03 | 0.37 / 0.36 | 0.29 / 0.34 | 0.68 / 1.37 | shared | shared 0.29 / 0.34 of direct |
 | FacetNormals | Prism | Gpu | f64 | 7 | direct | 13.0 / 3.95 | 1.00 / 1.00 | 1.47 / 1.13 | 0.31 / 0.26 | 0.23 / 0.24 | 0.42 / 1.14 | shared | shared 0.23 / 0.24 of direct |
@@ -2370,12 +2369,12 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.61 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.77 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
 | FacetNormals | Pyramid | CpuSimd512 | f64 | 3 | direct | 1.83 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | Gpu | f32 | 1 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 1.12 / 1.21 | – | 1.11 / 1.16 | 2.73 / 5.02 | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | Gpu | f32 | 2 | direct | 0.16 / 0.05 | 1.00 / 1.00 | 1.46 / 1.52 | – | 1.30 / 1.82 | 3.76 / 8.53 | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | Gpu | f32 | 3 | direct | 0.29 / 0.10 | 1.00 / 1.00 | 2.42 / 2.90 | – | 2.63 / 2.61 | 4.65 / 10.99 | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.31 / 1.20 | – | 1.14 / 1.16 | 2.98 / 5.07 | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | Gpu | f64 | 2 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.77 / 1.47 | – | 1.11 / 1.54 | 3.27 / 8.74 | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | Gpu | f64 | 3 | direct | 0.16 / 0.05 | 1.00 / 1.00 | 3.11 / 3.81 | – | 1.92 / 3.68 | 5.30 / 13.29 | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.16 / 1.21 | – | 1.15 / 1.16 | 2.83 / 5.02 | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | Gpu | f32 | 2 | direct | 0.15 / 0.06 | 1.00 / 1.00 | 1.52 / 1.48 | – | 1.35 / 1.77 | 3.90 / 8.29 | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | Gpu | f32 | 3 | direct | 0.29 / 0.10 | 1.00 / 1.00 | 2.41 / 2.90 | – | 2.63 / 2.60 | 4.64 / 10.98 | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | Gpu | f64 | 1 | direct | 0.06 / 0.02 | 1.00 / 1.00 | 1.14 / 1.24 | – | 0.99 / 1.19 | 2.59 / 5.22 | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | Gpu | f64 | 2 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.77 / 1.46 | – | 1.11 / 1.53 | 3.27 / 8.67 | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | Gpu | f64 | 3 | direct | 0.17 / 0.05 | 1.00 / 1.00 | 3.01 / 3.81 | – | 1.85 / 3.68 | 5.12 / 13.28 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 1 | direct | 3.68 | 1.00 | 4.31 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 2 | direct | 8.03 | 1.00 | 2.32 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 3 | direct | 12.6 | 1.00 | 2.17 | – | – | – | direct | no strategy 10% faster than direct |
@@ -2408,18 +2407,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Interval | CpuSimd512 | f64 | 6 | direct | 32.0 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f64 | 7 | direct | 40.1 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f64 | 8 | direct | 38.2 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 3.44 / 6.10 | – | 3.37 / 6.08 | 7.94 / 17.02 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f32 | 2 | direct | 0.11 / 0.05 | 1.00 / 1.00 | 3.45 / 5.92 | – | 3.35 / 5.95 | 7.66 / 15.78 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f32 | 3 | direct | 0.13 / 0.06 | 1.00 / 1.00 | 4.47 / 7.53 | – | 4.50 / 7.55 | 20.03 / 39.74 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f32 | 4 | direct | 0.16 / 0.09 | 1.00 / 1.00 | 3.88 / 6.09 | – | 3.85 / 6.08 | 17.04 / 31.16 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 3.45 / 6.28 | – | 3.39 / 6.25 | 7.99 / 17.52 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f32 | 2 | direct | 0.10 / 0.05 | 1.00 / 1.00 | 3.75 / 5.77 | – | 3.65 / 5.79 | 8.34 / 15.37 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f32 | 3 | direct | 0.12 / 0.06 | 1.00 / 1.00 | 4.52 / 7.48 | – | 4.55 / 7.50 | 20.27 / 39.46 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f32 | 4 | direct | 0.16 / 0.09 | 1.00 / 1.00 | 3.90 / 6.07 | – | 3.87 / 6.06 | 17.14 / 31.04 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f32 | 5 | direct | 0.18 / 0.11 | 1.00 / 1.00 | 4.06 / 5.43 | – | 3.96 / 5.44 | 17.38 / 27.21 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f32 | 6 | direct | 0.22 / 0.14 | 1.00 / 1.00 | 3.65 / 4.83 | – | 3.67 / 4.83 | 15.31 / 23.80 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f32 | 7 | direct | 0.24 / 0.16 | 1.00 / 1.00 | 3.29 / 4.12 | – | 3.30 / 4.12 | 32.46 / 47.55 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f32 | 8 | direct | 0.29 / 0.20 | 1.00 / 1.00 | 2.96 / 3.56 | – | 3.00 / 3.55 | 27.88 / 40.40 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f64 | 1 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 7.26 / 12.11 | – | 7.03 / 12.07 | 18.99 / 35.45 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f64 | 2 | direct | 0.05 / 0.03 | 1.00 / 1.00 | 6.21 / 9.05 | – | 6.18 / 9.06 | 15.83 / 25.53 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f64 | 3 | direct | 0.07 / 0.05 | 1.00 / 1.00 | 6.03 / 7.94 | – | 6.08 / 7.96 | 31.52 / 44.98 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | Gpu | f64 | 4 | direct | 0.10 / 0.08 | 1.00 / 1.00 | 4.74 / 5.43 | – | 4.73 / 5.43 | 23.79 / 29.91 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f64 | 1 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 6.51 / 12.64 | – | 6.31 / 12.61 | 17.04 / 37.02 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f64 | 2 | direct | 0.05 / 0.03 | 1.00 / 1.00 | 6.20 / 8.99 | – | 6.16 / 8.99 | 15.80 / 25.33 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f64 | 3 | direct | 0.08 / 0.05 | 1.00 / 1.00 | 5.73 / 7.98 | – | 5.78 / 8.00 | 29.96 / 45.21 | direct | no strategy 10% faster than direct |
+| PullBack | Interval | Gpu | f64 | 4 | direct | 0.10 / 0.08 | 1.00 / 1.00 | 4.75 / 5.44 | – | 4.73 / 5.44 | 23.80 / 29.98 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f64 | 5 | direct | 0.15 / 0.11 | 1.00 / 1.00 | 3.76 / 4.22 | – | 3.76 / 4.22 | 17.95 / 22.70 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f64 | 6 | direct | 0.18 / 0.13 | 1.00 / 1.00 | 3.39 / 3.90 | – | 3.42 / 3.90 | 15.16 / 20.62 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f64 | 7 | direct | 0.20 / 0.16 | 1.00 / 1.00 | 4.25 / 4.67 | – | 4.24 / 4.66 | 42.84 / 52.54 | direct | no strategy 10% faster than direct |
@@ -2456,18 +2455,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Triangle | CpuSimd512 | f64 | 6 | direct | 131 | 1.00 | 1.60 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f64 | 7 | direct | 232 | 1.00 | 1.51 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f64 | 8 | direct | 358 | 1.00 | 1.47 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f32 | 1 | direct | 0.14 / 0.08 | 1.00 / 1.00 | 3.50 / 5.06 | – | 3.50 / 5.08 | 8.58 / 14.29 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f32 | 2 | direct | 0.23 / 0.14 | 1.00 / 1.00 | 3.44 / 4.30 | – | 3.43 / 4.28 | 16.90 / 25.25 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f32 | 3 | direct | 0.36 / 0.28 | 1.00 / 1.00 | 2.99 / 3.27 | – | 2.99 / 3.26 | 37.14 / 46.81 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f32 | 4 | direct | 0.72 / 0.46 | 1.00 / 1.00 | 2.51 / 2.74 | – | 2.52 / 2.74 | 23.72 / 35.18 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f32 | 1 | direct | 0.14 / 0.07 | 1.00 / 1.00 | 3.51 / 5.12 | – | 3.50 / 5.13 | 8.59 / 14.45 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f32 | 2 | direct | 0.23 / 0.14 | 1.00 / 1.00 | 3.44 / 4.31 | – | 3.43 / 4.28 | 16.88 / 25.28 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f32 | 3 | direct | 0.36 / 0.28 | 1.00 / 1.00 | 2.96 / 3.27 | – | 2.97 / 3.27 | 36.84 / 46.83 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f32 | 4 | direct | 0.74 / 0.46 | 1.00 / 1.00 | 2.46 / 2.76 | – | 2.47 / 2.75 | 23.26 / 35.39 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f32 | 5 | direct | 0.97 / 0.85 | 1.00 / 1.00 | 2.62 / 2.06 | – | 2.63 / 2.07 | 50.57 / 55.74 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f32 | 6 | direct | 1.73 / 1.27 | 1.00 / 1.00 | 2.26 / 1.87 | – | 2.26 / 1.87 | 33.21 / 43.77 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f32 | 7 | direct | 2.48 / 1.71 | 1.00 / 1.00 | 2.28 / 1.71 | – | 2.27 / 1.71 | 65.26 / 92.47 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f32 | 8 | loops | 9.27 / 3.84 | n.m.; T3: 0.57 / 0.63 | 1.00 / 1.00 | – | 1.00 / 1.00 | 19.76 / 46.51 | loops | no strategy 10% faster than loops |
-| PullBack | Triangle | Gpu | f64 | 1 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 4.31 / 6.41 | – | 4.20 / 6.42 | 10.82 / 18.17 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f64 | 2 | direct | 0.18 / 0.13 | 1.00 / 1.00 | 3.35 / 3.66 | – | 3.34 / 3.66 | 15.98 / 21.11 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f64 | 3 | direct | 0.32 / 0.27 | 1.00 / 1.00 | 2.46 / 2.54 | – | 2.47 / 2.53 | 27.90 / 30.98 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f64 | 4 | direct | 0.84 / 0.53 | 1.00 / 1.00 | 2.03 / 1.83 | – | 2.02 / 1.83 | 13.11 / 18.95 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f64 | 1 | direct | 0.07 / 0.04 | 1.00 / 1.00 | 4.71 / 6.37 | – | 4.59 / 6.38 | 11.83 / 18.06 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f64 | 2 | direct | 0.17 / 0.13 | 1.00 / 1.00 | 3.50 / 3.63 | – | 3.49 / 3.63 | 16.70 / 20.96 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f64 | 3 | direct | 0.31 / 0.28 | 1.00 / 1.00 | 2.51 / 2.53 | – | 2.52 / 2.53 | 28.51 / 30.91 | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | Gpu | f64 | 4 | direct | 0.83 / 0.54 | 1.00 / 1.00 | 2.03 / 1.83 | – | 2.02 / 1.83 | 13.14 / 18.91 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 5 | direct | 1.22 / 0.90 | 1.00 / 1.00 | 2.40 / 1.59 | – | 2.38 / 1.58 | 27.93 / 29.97 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 6 | direct | 2.00 / 1.46 | 1.00 / 1.00 | 2.07 / 1.36 | – | 2.06 / 1.35 | 17.31 / 22.52 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 7 | direct | 3.78 / 1.95 | 1.00 / 1.00 | 1.86 / 1.24 | – | 1.86 / 1.23 | 23.42 / 43.59 | direct | no strategy 10% faster than direct |
@@ -2504,18 +2503,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 111 | 1.00 | 1.28 | 1.28 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 182 | 1.00 | 1.24 | 1.17 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f64 | 8 | direct | 295 | 1.00 | 1.12 | 1.09 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f32 | 1 | direct | 0.14 / 0.08 | 1.00 / 1.00 | 3.85 / 5.44 | 4.38 / 6.20 | 4.34 / 6.19 | 23.71 / 40.91 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f32 | 2 | direct | 0.23 / 0.15 | 1.00 / 1.00 | 4.04 / 4.83 | 3.98 / 4.74 | 3.97 / 4.73 | 55.89 / 84.34 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f32 | 3 | direct | 0.37 / 0.28 | 1.00 / 1.00 | 3.40 / 3.53 | 4.18 / 4.74 | 4.16 / 4.73 | 101.97 / 132.51 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f32 | 4 | direct | 0.71 / 0.59 | 1.00 / 1.00 | 3.13 / 2.45 | 3.67 / 3.77 | 3.67 / 3.77 | 61.12 / 70.40 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f32 | 1 | direct | 0.14 / 0.08 | 1.00 / 1.00 | 3.87 / 5.45 | 4.41 / 6.21 | 4.37 / 6.20 | 23.86 / 41.00 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f32 | 2 | direct | 0.23 / 0.15 | 1.00 / 1.00 | 3.92 / 4.82 | 3.86 / 4.73 | 3.86 / 4.72 | 54.24 / 84.07 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f32 | 3 | direct | 0.36 / 0.28 | 1.00 / 1.00 | 3.51 / 3.52 | 4.32 / 4.73 | 4.30 / 4.71 | 105.40 / 132.14 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f32 | 4 | direct | 0.71 / 0.59 | 1.00 / 1.00 | 3.12 / 2.46 | 3.65 / 3.79 | 3.65 / 3.78 | 60.76 / 70.65 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f32 | 5 | direct | 0.97 / 0.81 | 1.00 / 1.00 | 3.34 / 2.69 | 3.93 / 3.91 | 3.93 / 3.93 | 122.97 / 144.04 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f32 | 6 | direct | 2.77 / 1.81 | 1.00 / 1.00 | 2.05 / 2.40 | 2.16 / 3.07 | 2.17 / 3.04 | 50.39 / 75.01 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f32 | 7 | direct | 6.59 / 4.09 | 1.00 / 1.00 | 1.37 / 1.66 | 1.81 / 1.97 | 1.81 / 1.97 | 23.56 / 36.97 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f32 | 8 | direct | 12.8 / 7.57 | 1.00 / 1.00 | 1.00 / 1.11 | 1.35 / 1.46 | 1.35 / 1.45 | 14.73 / 24.14 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f64 | 1 | direct | 0.08 / 0.05 | 1.00 / 1.00 | 4.14 / 5.77 | 6.10 / 8.82 | 6.11 / 8.83 | 42.36 / 69.43 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f64 | 2 | direct | 0.14 / 0.09 | 1.00 / 1.00 | 4.24 / 5.00 | 4.98 / 6.00 | 4.98 / 5.98 | 74.29 / 116.06 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f64 | 3 | direct | 0.26 / 0.23 | 1.00 / 1.00 | 2.82 / 2.94 | 3.92 / 5.90 | 3.88 / 5.88 | 99.14 / 111.52 | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | Gpu | f64 | 4 | direct | 0.62 / 0.39 | 1.00 / 1.00 | 2.57 / 2.53 | 3.23 / 5.17 | 3.19 / 5.16 | 44.54 / 68.13 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f64 | 1 | direct | 0.08 / 0.05 | 1.00 / 1.00 | 4.08 / 5.74 | 6.01 / 8.77 | 6.02 / 8.79 | 41.74 / 69.06 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f64 | 2 | direct | 0.13 / 0.09 | 1.00 / 1.00 | 4.47 / 5.02 | 5.25 / 6.03 | 5.25 / 6.01 | 78.34 / 116.56 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f64 | 3 | direct | 0.27 / 0.23 | 1.00 / 1.00 | 2.77 / 2.93 | 3.85 / 5.88 | 3.81 / 5.87 | 97.31 / 111.26 | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | Gpu | f64 | 4 | direct | 0.62 / 0.39 | 1.00 / 1.00 | 2.58 / 2.55 | 3.24 / 5.21 | 3.20 / 5.20 | 44.64 / 68.66 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f64 | 5 | direct | 0.83 / 0.72 | 1.00 / 1.00 | 2.76 / 2.17 | 3.39 / 4.23 | 3.35 / 4.23 | 84.56 / 94.82 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f64 | 6 | direct | 1.54 / 1.06 | 1.00 / 1.00 | 2.88 / 3.09 | 3.52 / 3.64 | 3.50 / 3.63 | 50.34 / 70.01 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f64 | 7 | direct | 4.95 / 2.57 | 1.00 / 1.00 | 1.42 / 1.74 | 1.96 / 2.20 | 1.95 / 2.20 | 20.30 / 38.63 | direct | no strategy 10% faster than direct |
@@ -2552,17 +2551,17 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 8566 | n.m.; T3: 0.38 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 11594 | n.m.; T3: 0.61 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 8 | loops | 15482 | n.m.; T3: 0.60 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| PullBack | Tetrahedron | Gpu | f32 | 1 | direct | 0.23 / 0.17 | 1.00 / 1.00 | 3.95 / 4.90 | – | 3.95 / 4.90 | 28.18 / 37.89 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | Gpu | f32 | 2 | direct | 0.60 / 0.38 | 1.00 / 1.00 | 3.85 / 4.09 | – | 3.85 / 4.08 | 39.78 / 58.53 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | Gpu | f32 | 3 | direct | 1.53 / 1.05 | 1.00 / 1.00 | 3.34 / 2.65 | – | 3.34 / 2.65 | 49.23 / 69.84 | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | Gpu | f32 | 1 | direct | 0.23 / 0.17 | 1.00 / 1.00 | 3.95 / 4.88 | – | 3.95 / 4.88 | 28.18 / 37.75 | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | Gpu | f32 | 2 | direct | 0.60 / 0.38 | 1.00 / 1.00 | 3.84 / 4.09 | – | 3.84 / 4.09 | 39.62 / 58.63 | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | Gpu | f32 | 3 | direct | 1.53 / 1.05 | 1.00 / 1.00 | 3.32 / 2.65 | – | 3.32 / 2.65 | 48.97 / 69.87 | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | Gpu | f32 | 4 | loops | 13.0 / 5.28 | n.m.; T3: 0.69 / 0.69 | 1.00 / 1.00 | – | 1.00 / 1.00 | 18.56 / 43.83 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 5 | loops | 28.1 / 9.57 | – | 1.00 / 1.00 | – | 1.00 / 0.99 | 12.23 / 31.82 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 6 | loops | 56.5 / 18.5 | – | 1.00 / 1.00 | – | 1.00 / 1.00 | 7.64 / 21.58 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 7 | loops | 127 / 37.1 | – | 1.00 / 1.00 | – | – | 4.40 / 14.48 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 8 | loops | 270 / 66.6 | – | 1.00 / 1.00 | – | – | 3.40 / 10.59 | loops | no strategy 10% faster than loops |
-| PullBack | Tetrahedron | Gpu | f64 | 1 | direct | 0.13 / 0.10 | 1.00 / 1.00 | 6.20 / 7.72 | – | 6.16 / 7.72 | 53.50 / 69.02 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | Gpu | f64 | 2 | direct | 0.54 / 0.33 | 1.00 / 1.00 | 5.36 / 4.86 | – | 5.36 / 4.86 | 45.22 / 69.04 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | Gpu | f64 | 3 | direct | 1.33 / 0.75 | 1.00 / 1.00 | 4.27 / 3.68 | – | 4.28 / 3.68 | 50.28 / 86.77 | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | Gpu | f64 | 1 | direct | 0.13 / 0.10 | 1.00 / 1.00 | 6.28 / 7.71 | – | 6.24 / 7.71 | 54.20 / 68.91 | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | Gpu | f64 | 2 | direct | 0.54 / 0.32 | 1.00 / 1.00 | 5.32 / 4.87 | – | 5.32 / 4.88 | 44.94 / 69.29 | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | Gpu | f64 | 3 | direct | 1.33 / 0.75 | 1.00 / 1.00 | 4.27 / 3.67 | – | 4.28 / 3.68 | 50.24 / 86.70 | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | Gpu | f64 | 4 | loops | 18.6 / 5.35 | n.m.; T3: 0.78 / 0.52 | 1.00 / 1.00 | – | 1.01 / 1.00 | 10.98 / 36.23 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 5 | loops | 51.9 / 9.43 | – | 1.00 / 1.00 | – | 1.01 / 1.02 | 6.09 / 28.28 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 6 | loops | 106 / 17.8 | – | 1.00 / 1.00 | – | 1.00 / 1.01 | 3.41 / 19.77 | loops | no strategy 10% faster than loops |
@@ -2584,33 +2583,33 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Hexahedron | CpuSimd128 | f64 | 6 | direct | 4688 | 1.00 | 0.86 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 7 | loops | 9904 | n.m.; T3: 0.59 | 1.00 | 0.78 | – | – | sumfact | sumfact 0.78 of loops |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 8 | loops | 10920 | n.m.; T3: 0.76 | 1.00 | 0.52 | – | – | sumfact | sumfact 0.52 of loops |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 1 | direct | 23.3 | 1.00 | 2.03 | 1.87 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 2 | direct | 113 | 1.00 | 1.22 | 1.01 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 1 | direct | 23.1 | 1.00 | 2.05 | 1.89 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 2 | direct | 113 | 1.00 | 1.23 | 1.01 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 3 | direct | 767 | 1.00 | 0.73 | 0.56 | – | – | sumfact | sumfact 0.56 of direct |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 4 | direct | 2537 | 1.00 | 0.72 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 4 | direct | 2556 | 1.00 | 0.71 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 5 | direct | 9703 | 1.00 | 0.48 | 0.40 | – | – | sumfact | sumfact 0.40 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 6 | direct | 14073 | 1.00 | 0.65 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 7 | direct | 20818 | 1.00 | 0.59 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 8 | direct | 29911 | 1.00 | 0.57 | 0.46 | – | – | sumfact | sumfact 0.46 of direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 1 | direct | 28.0 | 1.00 | 2.03 | 1.96 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 2 | direct | 64.6 | 1.00 | 1.57 | 1.22 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 3 | direct | 389 | 1.00 | 0.88 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 4 | direct | 1299 | 1.00 | 0.87 | 0.71 | – | – | sumfact | sumfact 0.71 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 1 | direct | 27.6 | 1.00 | 2.06 | 1.99 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 2 | direct | 66.4 | 1.00 | 1.53 | 1.19 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 3 | direct | 390 | 1.00 | 0.88 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 4 | direct | 1306 | 1.00 | 0.86 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 5 | direct | 4823 | 1.00 | 0.57 | 0.44 | – | – | sumfact | sumfact 0.44 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 6 | direct | 13930 | 1.00 | 0.54 | 0.42 | – | – | sumfact | sumfact 0.42 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 7 | direct | 23815 | 1.00 | 0.59 | 0.44 | – | – | sumfact | sumfact 0.44 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 8 | direct | 34583 | 1.00 | 1.62 | 1.02 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f32 | 1 | direct | 0.30 / 0.23 | 1.00 / 1.00 | 3.58 / 4.08 | 3.88 / 3.98 | 3.89 / 3.97 | 70.65 / 90.34 | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f32 | 2 | direct | 1.23 / 0.83 | 1.00 / 1.00 | 3.37 / 3.15 | 3.29 / 3.78 | 3.55 / 3.78 | 55.93 / 80.54 | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f32 | 3 | direct | 18.2 / 11.3 | 1.00 / 1.00 | 0.86 / 0.88 | 0.85 / 1.05 | 0.85 / 1.05 | 13.83 / 21.90 | loops | loops 0.86 / 0.88 of direct |
+| PullBack | Hexahedron | Gpu | f32 | 1 | direct | 0.30 / 0.23 | 1.00 / 1.00 | 3.51 / 4.08 | 3.80 / 3.97 | 3.81 / 3.97 | 69.27 / 90.30 | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | Gpu | f32 | 2 | direct | 1.26 / 0.83 | 1.00 / 1.00 | 3.31 / 3.14 | 3.23 / 3.77 | 3.48 / 3.77 | 54.82 / 80.41 | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | Gpu | f32 | 3 | direct | 17.3 / 11.2 | 1.00 / 1.00 | 0.90 / 0.88 | 0.90 / 1.05 | 0.90 / 1.05 | 14.59 / 21.97 | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | Gpu | f32 | 4 | loops | 38.7 / 27.8 | n.m.; T3: 1.50 / 1.28 | 1.00 / 1.00 | 1.05 / 1.04 | 1.05 / 1.05 | 10.16 / 13.37 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 5 | loops | 92.6 / 53.2 | – | 1.00 / 1.00 | 1.02 / 1.24 | 1.02 / 1.24 | 6.95 / 10.69 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 6 | loops | 221 / 98.8 | – | 1.00 / 1.00 | 1.03 / 1.31 | 1.03 / 1.29 | 4.49 / 8.88 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 7 | loops | 629 / 246 | – | 1.00 / 1.00 | 0.86 / 1.01 | 0.86 / 1.01 | 2.59 / 5.47 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 8 | loops | 1271 / 412 | – | 1.00 / 1.00 | 0.74 / 0.94 | 0.74 / 0.94 | 2.15 / 5.52 | loops | no strategy 10% faster than loops |
-| PullBack | Hexahedron | Gpu | f64 | 1 | direct | 0.18 / 0.14 | 1.00 / 1.00 | 3.98 / 4.24 | 4.33 / 4.52 | 4.31 / 4.51 | 105.63 / 127.64 | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f64 | 2 | direct | 0.89 / 0.53 | 1.00 / 1.00 | 3.78 / 3.68 | 3.17 / 4.42 | 3.16 / 4.42 | 52.46 / 83.76 | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f64 | 3 | direct | 5.76 / 5.27 | 1.00 / 1.00 | 2.42 / 1.47 | 1.82 / 1.43 | 1.81 / 1.43 | 26.68 / 28.22 | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | Gpu | f64 | 1 | direct | 0.19 / 0.15 | 1.00 / 1.00 | 3.79 / 4.23 | 4.12 / 4.50 | 4.11 / 4.50 | 100.57 / 127.30 | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | Gpu | f64 | 2 | direct | 0.89 / 0.53 | 1.00 / 1.00 | 3.78 / 3.68 | 3.17 / 4.42 | 3.16 / 4.42 | 52.46 / 83.72 | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | Gpu | f64 | 3 | direct | 5.12 / 5.45 | 1.00 / 1.00 | 2.73 / 1.42 | 2.05 / 1.39 | 2.04 / 1.39 | 30.06 / 27.31 | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | Gpu | f64 | 4 | loops | 48.2 / 17.4 | n.m.; T3: 0.41 / 0.86 | 1.00 / 1.00 | 0.77 / 0.94 | 0.77 / 0.94 | 5.26 / 13.62 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f64 | 5 | loops | 126 / 30.4 | – | 1.00 / 1.00 | 0.77 / 0.88 | 0.77 / 0.88 | 3.30 / 12.57 | sumfact | sumfact 0.77 / 0.88 of loops |
 | PullBack | Hexahedron | Gpu | f64 | 6 | loops | 363 / 73.1 | – | 1.00 / 1.00 | 0.72 / 0.79 | 0.72 / 0.79 | 2.12 / 8.07 | sumfact | sumfact 0.72 / 0.79 of loops |
@@ -2648,17 +2647,17 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Prism | CpuSimd512 | f64 | 6 | loops | 12337 | n.m.; T3: 0.62 | 1.00 | 0.36 | – | – | sumfact | sumfact 0.36 of loops |
 | PullBack | Prism | CpuSimd512 | f64 | 7 | loops | 23010 | n.m.; T3: 0.53 | 1.00 | 0.33 | – | – | sumfact | sumfact 0.33 of loops |
 | PullBack | Prism | CpuSimd512 | f64 | 8 | direct | 17824 | 1.00 | 2.36 | 0.66 | – | – | sumfact | sumfact 0.66 of direct |
-| PullBack | Prism | Gpu | f32 | 1 | direct | 0.27 / 0.20 | 1.00 / 1.00 | 3.93 / 4.82 | 3.98 / 4.67 | 3.94 / 4.67 | 25.20 / 32.82 | direct | no strategy 10% faster than direct |
-| PullBack | Prism | Gpu | f32 | 2 | direct | 0.93 / 0.61 | 1.00 / 1.00 | 3.73 / 3.78 | 2.72 / 2.90 | 2.71 / 2.91 | 71.45 / 106.76 | direct | no strategy 10% faster than direct |
-| PullBack | Prism | Gpu | f32 | 3 | direct | 5.88 / 3.54 | 1.00 / 1.00 | 1.71 / 1.59 | 1.58 / 2.39 | 1.57 / 2.38 | 41.09 / 65.70 | direct | no strategy 10% faster than direct |
+| PullBack | Prism | Gpu | f32 | 1 | direct | 0.27 / 0.20 | 1.00 / 1.00 | 3.89 / 4.79 | 3.94 / 4.64 | 3.90 / 4.64 | 24.93 / 32.64 | direct | no strategy 10% faster than direct |
+| PullBack | Prism | Gpu | f32 | 2 | direct | 0.93 / 0.60 | 1.00 / 1.00 | 3.71 / 3.80 | 2.70 / 2.92 | 2.70 / 2.93 | 71.05 / 107.46 | direct | no strategy 10% faster than direct |
+| PullBack | Prism | Gpu | f32 | 3 | direct | 5.74 / 3.54 | 1.00 / 1.00 | 1.75 / 1.59 | 1.61 / 2.39 | 1.61 / 2.38 | 42.07 / 65.68 | direct | no strategy 10% faster than direct |
 | PullBack | Prism | Gpu | f32 | 4 | loops | 23.5 / 15.8 | n.m.; T3: 0.90 / 1.30 | 1.00 / 1.00 | 0.97 / 0.82 | 0.97 / 0.82 | 15.14 / 21.71 | loops | no strategy 10% faster than loops |
 | PullBack | Prism | Gpu | f32 | 5 | loops | 66.8 / 36.4 | – | 1.00 / 1.00 | 0.68 / 0.74 | 0.68 / 0.74 | 8.69 / 14.16 | sumfact | sumfact 0.68 / 0.74 of loops, within 3% of shared (0.68 / 0.74) |
 | PullBack | Prism | Gpu | f32 | 6 | loops | 158 / 72.9 | – | 1.00 / 1.00 | 0.64 / 0.75 | 0.64 / 0.75 | 5.29 / 10.26 | sumfact | sumfact 0.64 / 0.75 of loops, within 3% of shared (0.64 / 0.75) |
 | PullBack | Prism | Gpu | f32 | 7 | loops | 302 / 132 | – | 1.00 / 1.00 | 0.68 / 0.92 | 0.68 / 0.92 | 4.05 / 7.93 | loops | no strategy 10% faster than loops |
 | PullBack | Prism | Gpu | f32 | 8 | loops | 575 / 220 | – | 1.00 / 1.00 | 0.66 / 0.86 | 0.66 / 0.86 | 3.47 / 6.59 | sumfact | sumfact 0.66 / 0.86 of loops, within 3% of shared (0.66 / 0.86) |
-| PullBack | Prism | Gpu | f64 | 1 | direct | 0.16 / 0.13 | 1.00 / 1.00 | 6.46 / 7.31 | 5.91 / 6.27 | 5.94 / 6.26 | 39.78 / 45.28 | direct | no strategy 10% faster than direct |
-| PullBack | Prism | Gpu | f64 | 2 | direct | 0.65 / 0.37 | 1.00 / 1.00 | 7.54 / 6.72 | 3.50 / 4.36 | 3.47 / 4.36 | 72.45 / 121.32 | direct | no strategy 10% faster than direct |
-| PullBack | Prism | Gpu | f64 | 3 | direct | 4.56 / 2.31 | 1.00 / 1.00 | 2.54 / 2.56 | 1.86 / 3.00 | 1.85 / 3.00 | 34.50 / 64.01 | direct | no strategy 10% faster than direct |
+| PullBack | Prism | Gpu | f64 | 1 | direct | 0.17 / 0.13 | 1.00 / 1.00 | 6.16 / 7.28 | 5.64 / 6.24 | 5.66 / 6.24 | 37.92 / 45.12 | direct | no strategy 10% faster than direct |
+| PullBack | Prism | Gpu | f64 | 2 | direct | 0.65 / 0.37 | 1.00 / 1.00 | 7.48 / 6.72 | 3.47 / 4.36 | 3.44 / 4.36 | 71.82 / 121.36 | direct | no strategy 10% faster than direct |
+| PullBack | Prism | Gpu | f64 | 3 | direct | 4.63 / 2.34 | 1.00 / 1.00 | 2.50 / 2.53 | 1.83 / 2.97 | 1.82 / 2.98 | 34.01 / 63.42 | direct | no strategy 10% faster than direct |
 | PullBack | Prism | Gpu | f64 | 4 | loops | 42.2 / 17.0 | n.m.; T3: 0.34 / 0.69 | 1.00 / 1.00 | 0.54 / 0.72 | 0.53 / 0.72 | 5.64 / 13.42 | sumfact | sumfact 0.54 / 0.72 of loops, within 3% of shared (0.53 / 0.72) |
 | PullBack | Prism | Gpu | f64 | 5 | loops | 125 / 33.1 | – | 1.00 / 1.00 | 0.49 / 0.50 | 0.49 / 0.50 | 3.63 / 10.76 | sumfact | sumfact 0.49 / 0.50 of loops, within 3% of shared (0.49 / 0.50) |
 | PullBack | Prism | Gpu | f64 | 6 | loops | 314 / 48.7 | – | 1.00 / 1.00 | 0.46 / 0.67 | 0.46 / 0.67 | 2.25 / 10.90 | sumfact | sumfact 0.46 / 0.67 of loops, within 3% of shared (0.46 / 0.67) |
@@ -2676,12 +2675,12 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Pyramid | CpuSimd512 | f64 | 1 | direct | 28.1 | 1.00 | 3.27 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Pyramid | CpuSimd512 | f64 | 2 | direct | 45.3 | 1.00 | 3.48 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Pyramid | CpuSimd512 | f64 | 3 | direct | 202 | 1.00 | 2.50 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | Gpu | f32 | 1 | direct | 0.27 / 0.20 | 1.00 / 1.00 | 4.22 / 5.14 | – | 4.23 / 5.14 | 27.74 / 35.97 | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | Gpu | f32 | 2 | direct | 0.81 / 0.50 | 1.00 / 1.00 | 4.23 / 4.58 | – | 4.22 / 4.58 | 37.33 / 56.03 | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | Gpu | f32 | 3 | direct | 3.23 / 1.47 | 1.00 / 1.00 | 2.73 / 3.22 | – | 2.72 / 3.23 | 31.72 / 67.69 | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | Gpu | f64 | 1 | direct | 0.17 / 0.13 | 1.00 / 1.00 | 5.99 / 7.33 | – | 5.99 / 7.33 | 48.79 / 60.74 | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | Gpu | f64 | 2 | direct | 0.64 / 0.38 | 1.00 / 1.00 | 6.37 / 5.89 | – | 6.39 / 5.90 | 46.70 / 72.87 | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | Gpu | f64 | 3 | direct | 1.64 / 0.92 | 1.00 / 1.00 | 5.37 / 4.74 | – | 5.43 / 4.75 | 55.95 / 96.00 | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | Gpu | f32 | 1 | direct | 0.26 / 0.20 | 1.00 / 1.00 | 4.32 / 5.13 | – | 4.33 / 5.13 | 28.38 / 35.89 | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | Gpu | f32 | 2 | direct | 0.80 / 0.50 | 1.00 / 1.00 | 4.28 / 4.58 | – | 4.27 / 4.57 | 37.71 / 55.91 | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | Gpu | f32 | 3 | direct | 3.48 / 1.47 | 1.00 / 1.00 | 2.53 / 3.22 | – | 2.52 / 3.23 | 29.42 / 67.69 | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | Gpu | f64 | 1 | direct | 0.16 / 0.13 | 1.00 / 1.00 | 6.22 / 7.33 | – | 6.22 / 7.34 | 50.66 / 60.77 | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | Gpu | f64 | 2 | direct | 0.64 / 0.38 | 1.00 / 1.00 | 6.40 / 5.89 | – | 6.42 / 5.90 | 46.90 / 72.85 | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | Gpu | f64 | 3 | direct | 1.63 / 0.93 | 1.00 / 1.00 | 5.38 / 4.73 | – | 5.44 / 4.74 | 56.09 / 95.90 | direct | no strategy 10% faster than direct |
 
 ### Rule 1: p = 8 over p = 4 on tensor cells
 
@@ -2747,8 +2746,8 @@ The time per point at p = 8 over p = 4 of the strategy the policy selects at p =
 | CpuSimd512 | f64 | Hexahedron | DetJ | factor | sumfact | 10^6 | 12.25 | 3.00 | no | 83.4 |
 | CpuSimd512 | f64 | Hexahedron | Pinv | factor | sumfact | 10^6 | 5.66 | 3.00 | no | 57.1 |
 | CpuSimd512 | f64 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 3.93 | 3.00 | no | 59.9 |
-| CpuSimd512 | f64 | Hexahedron | PullBack | step | direct | 10^6 | 25.73 | 6.42 | no | 0.9 |
-| CpuSimd512 | f64 | Hexahedron | PullBack | set-up | direct | 10^6 | 35.37 | 3.00 | no | 1.0 |
+| CpuSimd512 | f64 | Hexahedron | PullBack | step | direct | 10^6 | 25.55 | 6.42 | no | 0.9 |
+| CpuSimd512 | f64 | Hexahedron | PullBack | set-up | direct | 10^6 | 35.61 | 3.00 | no | 1.0 |
 | Gpu | f32 | Quadrilateral | Points | factor | shared | 10^6 | 1.49 | 3.00 | yes | 1.6 |
 | Gpu | f32 | Quadrilateral | Points | factor | shared | 10^7 | 1.74 | 3.00 | yes | 1.5 |
 | Gpu | f32 | Quadrilateral | Jacobian | factor | shared | 10^6 | 1.53 | 3.00 | yes | 4.1 |
@@ -2761,10 +2760,10 @@ The time per point at p = 8 over p = 4 of the strategy the policy selects at p =
 | Gpu | f32 | Quadrilateral | FacetNormals | factor | shared | 10^7 | 1.89 | 3.00 | yes | 3.2 |
 | Gpu | f32 | Quadrilateral | Normals | factor | shared | 10^6 | 1.89 | 3.00 | yes | 6.3 |
 | Gpu | f32 | Quadrilateral | Normals | factor | shared | 10^7 | 1.99 | 3.00 | yes | 7.7 |
-| Gpu | f32 | Quadrilateral | PullBack | step | direct | 10^6 | 19.79 | 3.56 | no | 1.0 |
-| Gpu | f32 | Quadrilateral | PullBack | set-up | direct | 10^6 | 10.62 | 3.00 | no | 1.0 |
-| Gpu | f32 | Quadrilateral | PullBack | step | direct | 10^7 | 12.82 | 3.56 | no | 1.0 |
-| Gpu | f32 | Quadrilateral | PullBack | set-up | direct | 10^7 | 10.43 | 3.00 | no | 1.0 |
+| Gpu | f32 | Quadrilateral | PullBack | step | direct | 10^6 | 19.65 | 3.56 | no | 1.0 |
+| Gpu | f32 | Quadrilateral | PullBack | set-up | direct | 10^6 | 10.66 | 3.00 | no | 1.0 |
+| Gpu | f32 | Quadrilateral | PullBack | step | direct | 10^7 | 12.91 | 3.56 | no | 1.0 |
+| Gpu | f32 | Quadrilateral | PullBack | set-up | direct | 10^7 | 10.22 | 3.00 | no | 1.0 |
 | Gpu | f32 | Hexahedron | Points | factor | sumfact | 10^6 | 10.03 | 3.00 | no | 20.8 |
 | Gpu | f32 | Hexahedron | Points | factor | sumfact | 10^7 | 5.08 | 3.00 | no | 46.1 |
 | Gpu | f32 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 12.30 | 3.00 | no | 59.0 |
@@ -2791,10 +2790,10 @@ The time per point at p = 8 over p = 4 of the strategy the policy selects at p =
 | Gpu | f64 | Quadrilateral | FacetNormals | factor | shared | 10^7 | 4.15 | 3.00 | no | 1.6 |
 | Gpu | f64 | Quadrilateral | Normals | factor | sumfact | 10^6 | 3.78 | 3.00 | no | 26.7 |
 | Gpu | f64 | Quadrilateral | Normals | factor | sumfact | 10^7 | 5.16 | 3.00 | no | 14.2 |
-| Gpu | f64 | Quadrilateral | PullBack | step | direct | 10^6 | 17.08 | 3.56 | no | 1.0 |
-| Gpu | f64 | Quadrilateral | PullBack | set-up | direct | 10^6 | 5.93 | 3.00 | no | 1.0 |
-| Gpu | f64 | Quadrilateral | PullBack | step | direct | 10^7 | 10.14 | 3.56 | no | 1.0 |
-| Gpu | f64 | Quadrilateral | PullBack | set-up | direct | 10^7 | 5.49 | 3.00 | no | 1.0 |
+| Gpu | f64 | Quadrilateral | PullBack | step | direct | 10^6 | 16.95 | 3.56 | no | 1.0 |
+| Gpu | f64 | Quadrilateral | PullBack | set-up | direct | 10^6 | 6.13 | 3.00 | no | 1.0 |
+| Gpu | f64 | Quadrilateral | PullBack | step | direct | 10^7 | 10.20 | 3.56 | no | 1.0 |
+| Gpu | f64 | Quadrilateral | PullBack | set-up | direct | 10^7 | 5.55 | 3.00 | no | 1.0 |
 | Gpu | f64 | Hexahedron | Points | factor | sumfact | 10^6 | 10.27 | 3.00 | no | 15.9 |
 | Gpu | f64 | Hexahedron | Points | factor | sumfact | 10^7 | 4.61 | 3.00 | no | 16.5 |
 | Gpu | f64 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 41.70 | 3.00 | no | 60.7 |

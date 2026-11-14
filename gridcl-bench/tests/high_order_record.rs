@@ -340,6 +340,22 @@ fn time(records: &[DegreeRecord], c: Config, pick: impl Fn(&DegreeRecord) -> boo
         .map(DegreeRecord::time_per_point)
 }
 
+/// The strategy sweeps' records: `data.degree` without rule 11's paired runs (the runs with
+/// `policy` records), which check the policy and do not decide it.
+fn sweep_records(data: &HighOrderData) -> Vec<DegreeRecord> {
+    let paired: BTreeSet<&str> = data
+        .degree
+        .iter()
+        .filter(|r| r.strategy == "policy")
+        .map(|r| r.run_id.as_str())
+        .collect();
+    data.degree
+        .iter()
+        .filter(|r| !paired.contains(r.run_id.as_str()))
+        .cloned()
+        .collect()
+}
+
 // ---------------------------------------------------------------------------------------------
 // The degree policy.
 
@@ -649,7 +665,7 @@ fn tensor_cost_ratio_reported() {
     let data = data();
     let policy = policy();
     check_protocol(&data.degree);
-    let records = &data.degree;
+    let records = &sweep_records(&data);
     let text = read("docs/perf/high-order.md");
     let rows: Vec<Vec<&str>> = text.lines().filter_map(row_cells).collect();
     let factors = ["Points", "Jacobian", "DetJ", "Pinv", "FacetNormals"];
@@ -967,12 +983,11 @@ fn gpu_selectable(
 fn degree_policy_follows_the_decision_rule() {
     let data = data();
     let policy = policy();
-    let records: Vec<DegreeRecord> = data
-        .degree
-        .iter()
-        .filter(|r| r.strategy != "policy")
-        .cloned()
-        .collect();
+    let records = sweep_records(&data);
+    let data = HighOrderData {
+        degree: records.clone(),
+        ..data
+    };
     for ((class, family, cell, bytes), ranges) in &policy.0 {
         let at = format!("{class}.{family}.{cell}.{bytes}");
         assert_eq!(
