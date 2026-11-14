@@ -6,7 +6,7 @@
 #
 # Usage: scripts/bench/cuda-resources.sh [--families LIST] [--cells LIST] [--degrees LIST]
 #            [--types LIST] [--strategies LIST] [--timeout SECONDS] [--scalar-only] [--sanitize]
-#            [--out FILE]
+#            [--ptxas-only DIR] [--out FILE]
 #   --families, --cells, --degrees, --types, --strategies: comma-separated, as degree_sweep
 #       names them (default every family and cell type, degrees 1-8 with pyramids to 3, f32
 #       and f64, direct).
@@ -15,6 +15,9 @@
 #   --scalar-only: launch vector size 1 only, not also the policy's.
 #   --sanitize: run each configuration under compute-sanitizer, which names a failing driver
 #       call (cuFuncSetAttribute, cuLaunchKernel); slow.
+#   --ptxas-only: launch nothing; run `ptxas` again on the PTX and launch records an earlier
+#       run left in DIR (its `cuda-resources/` work directory), e.g. after a driver update made
+#       that run's `ptxas` too old.
 #   --out: the JSON file (default results/$JOB_ID/m9h-cuda-resources-<target>.json in a
 #       scripts/hpc job, else target/cuda-resources/m9h-cuda-resources-<target>.json).
 #
@@ -40,6 +43,9 @@
 # `[k/N]` before each configuration (shown by scripts/hpc/status.sh while the job runs),
 # then one line per kernel, and exits 1 if a configuration launched (status ok) without a
 # record.
+# `ptxas` is $PTXAS, else the one on PATH; it must be at least the driver's CUDA version, since
+# cubecl-cuda emits the newest PTX version the driver loads (Locust: /usr/local/cuda-13.5 for
+# driver 620.70, CUDA 13.5, from 2026-11; docs/dev-environment.md).
 # Needs bash 5 (EPOCHREALTIME, associative arrays).
 set -euo pipefail
 
@@ -58,10 +64,11 @@ strategies=direct
 time_limit=600
 sanitize=no
 scalar_only=no
+reuse=""
 out=""
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --families | --cells | --degrees | --types | --strategies | --timeout | --out)
+        --families | --cells | --degrees | --types | --strategies | --timeout | --out | --ptxas-only)
             [[ $# -ge 2 ]] || die "$1 needs a value"
             case $1 in
                 --families) families=$2 ;;
@@ -71,6 +78,7 @@ while [[ $# -gt 0 ]]; do
                 --strategies) strategies=$2 ;;
                 --timeout) time_limit=$2 ;;
                 --out) out=$2 ;;
+                --ptxas-only) reuse=$2 ;;
             esac
             shift 2
             ;;
@@ -98,18 +106,29 @@ fi
 work=$(dirname "$out")/cuda-resources
 mkdir -p "$work/ptx" "$work/rec" "$work/log" "$work/ptxas"
 
-command -v ptxas >/dev/null || die "ptxas not found"
+ptxas=${PTXAS:-ptxas}
+command -v "$ptxas" >/dev/null || die "$ptxas not found"
 command -v timeout >/dev/null || die "timeout not found"
 if [[ $sanitize == yes ]]; then
     command -v compute-sanitizer >/dev/null || die "compute-sanitizer not found"
 fi
+[[ -z "$reuse" || -d "$reuse/rec" ]] || die "--ptxas-only $reuse: no rec/ directory"
 echo "driver: $(nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader 2>/dev/null || echo unknown)"
-echo "driver CUDA: $(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9.]*\).*/\1/p' | head -n 1)"
-echo "ptxas: $(ptxas --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')"
+# `CUDA Version: 12.7` before driver 580, `CUDA UMD Version: 13.5` from then on.
+driver_cuda=$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA \(UMD \)\{0,1\}Version: *\([0-9.]*\).*/\2/p' | head -n 1)
+ptxas_cuda=$("$ptxas" --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')
+echo "driver CUDA: $driver_cuda"
+echo "ptxas: $ptxas_cuda ($(command -v "$ptxas"))"
+if [[ -n "$driver_cuda" && -n "$ptxas_cuda" ]] &&
+    [[ $(printf '%s\n%s\n' "$ptxas_cuda" "$driver_cuda" | sort -V | head -n 1) != "$driver_cuda" ]]; then
+    die "ptxas $ptxas_cuda is older than the driver's CUDA $driver_cuda; set PTXAS"
+fi
 
-cargo build --release -p gridcl-bench --bin degree_sweep --features gridcl-testing/cuda
 bin=${CARGO_TARGET_DIR:-target}/release/degree_sweep
-[[ -x "$bin" ]] || die "$bin not built"
+if [[ -z "$reuse" ]]; then
+    cargo build --release -p gridcl-bench --bin degree_sweep --features gridcl-testing/cuda
+    [[ -x "$bin" ]] || die "$bin not built"
+fi
 
 # The field `key` (a string or a number) of the first record in a degree_sweep file `file`.
 field() {
@@ -147,11 +166,17 @@ run_config() {
     if [[ $sanitize == yes ]]; then
         cmd+=(compute-sanitizer --tool memcheck --print-limit 20 --log-file "$work/log/$cfg.sanitizer.log")
     fi
-    rm -rf "$dump" "$rec"
     local start=$SECONDS rc=0
-    timeout -k 10 "$time_limit" "${cmd[@]}" "$bin" --launch-only --families "$family" \
-        --cells "$cell" --degrees "$degree" --types "$type" --strategies "$strategy" \
-        --vector-sizes "$sizes" --out "$rec" >"$log" 2>&1 || rc=$?
+    if [[ -n "$reuse" ]]; then
+        rec=$reuse/rec/$cfg.json
+        dump=$reuse/ptx/$cfg
+        [[ -s "$rec" ]] || rc=1
+    else
+        rm -rf "$dump" "$rec"
+        timeout -k 10 "$time_limit" "${cmd[@]}" "$bin" --launch-only --families "$family" \
+            --cells "$cell" --degrees "$degree" --types "$type" --strategies "$strategy" \
+            --vector-sizes "$sizes" --out "$rec" >"$log" 2>&1 || rc=$?
+    fi
     local status=ok
     [[ $rc -eq 0 ]] || status="exit $rc"
     [[ $rc -ne 124 ]] || status="timeout after $time_limit s"
@@ -179,7 +204,7 @@ run_config() {
         seen[$key]=1
         arch=$(sed -n 's/^\.target \([a-z0-9_]*\).*/\1/p' "$f" | head -n 1)
         t0=$EPOCHREALTIME
-        timeout -k 10 "$time_limit" ptxas "-arch=$arch" -v "$f" -o /dev/null \
+        timeout -k 10 "$time_limit" "$ptxas" "-arch=$arch" -v "$f" -o /dev/null \
             >"$work/ptxas/$cfg-$entry.txt" 2>&1 || true
         ptxas_s=$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.1f", b - a }')
         line=$(cat "$work/ptxas/$cfg-$entry.txt")
