@@ -2070,14 +2070,14 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `GRIDCL_VECTOR_SIZE` is for vector sizes);
 - C18 closed: its cause isolated with the CUDA kernel attributes, and reported upstream if it is CubeCL's.
 
-**Acceptance** (read as in ADR-0042: bullet 1 item 2, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 2, 8 and 9, bullet 6 item 12, and ADR-0050):
+**Acceptance** (read as in ADR-0042: bullet 1 item 2, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 2, 8 and 9, bullet 6 item 12, and ADR-0050 and ADR-0051):
 
 - every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (gridcl-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
 - every kernel variant up to p = 8 compiles, loads and launches on each backend, and the first-use compile and load time of each is at most 30 s on Locust;
 - for quadrilaterals and hexahedra, the time per quadrature point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every device class (direct evaluation: about 5.8 times);
 - no family is more than 5% slower than in M9 at p ≤ 4 on any device class;
 - the determinism, vector-size invariance and parallel invariance tests pass at p = 1–8: bitwise on the CPU runtime, to 10^−12 (f64) and 10^−5 (f32) on GPUs;
-- `docs/perf/high-order.md` lists, for every family, device class and degree range, the measured cost of each strategy, the chosen one and the reason, with benchmark JSON under `docs/perf/data/` from the targets of M3s.
+- `docs/perf/high-order.md` lists, for every family, device class and degree range, the measured cost of each strategy, the chosen one and the reason, with benchmark JSON under `docs/perf/data/` from the targets of M3s (Locust's Grace CPU: the drift baseline and the paired check only, ADR-0051).
 
 ### M10 Hardening
 

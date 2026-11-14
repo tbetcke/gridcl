@@ -1,6 +1,6 @@
 # ADR-0051: The degree sweep leaves out Locust's Grace CPU; it keeps the paired check
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Raised in:** M9h T11a (strategy sweeps)
 - **Design sections affected:** Roadmap M9h, acceptance bullets 2, 3 and 6 as read by ADR-0042 items 1, 7 and 12. Amends ADR-0042, items 1, 7 and 12.
@@ -40,4 +40,4 @@ Option 3. T11a does not sweep Grace, timed or launch-only. CpuSimd128's measurem
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-14, as proposed (option 3). Applied in `adr: 0051 apply`: docs/design.md, Roadmap M9h (bullet 6 and the acceptance line); ADR-0042's decision record; the M9h plan (T11a and the coverage table) and issue #37. The tests change with T11a's data commit.

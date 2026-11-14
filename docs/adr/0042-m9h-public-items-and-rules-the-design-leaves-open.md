@@ -217,3 +217,5 @@ Amended by ADR-0046 (items 2, 8 and 11: the pull-back clamps its iterates to the
 Amended by ADR-0049 (items 1 and 5: the tensor pull-back contracts modal coefficients formed by a sum-factorised set-up, a = (C₁′ ⊗ C₁′ ⊗ C₁′)x, prisms C′_tri ⊗ C₁′, so rule 1's set-up bound applies to it; it uploads C₁′, C′_tri and the node permutation instead of 1D nodes and barycentric weights), accepted 2026-11-12.
 
 Amended by ADR-0050 (items 7 and 12: the degree sweep, timed and launch-only, skips `direct` on hexahedra, prisms and tetrahedra at p ≥ 5; T3's baseline gives its cost there), accepted 2026-11-14.
+
+Amended by ADR-0051 (items 1, 7 and 12: the degree sweep, timed and launch-only, leaves out Locust's Grace CPU, so CpuSimd128 is measured on the Mac mini alone; Grace keeps the drift baseline and item 11's paired check), accepted 2026-11-14.
