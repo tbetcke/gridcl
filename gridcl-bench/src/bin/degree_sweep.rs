@@ -5,7 +5,7 @@
 //! cargo run --release -p gridcl-bench --bin degree_sweep -- [--target NAME] [--run-id ID]
 //!     [--families evector,points,...] [--cells hexahedron,...] [--degrees 1,2,...]
 //!     [--node-families equispaced,gll] [--types f32,f64] [--sizes 100000,...]
-//!     [--strategies direct,policy,...] [--skip family:strategy,...] [--launch-only]
+//!     [--strategies direct,policy,...] [--skip family:strategy,...] [--launch-only] [--interleave]
 //!     [--vector-sizes both|scalar|policy]
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]
 //! degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...
@@ -22,6 +22,11 @@
 //! - `--strategies`: default `direct`; `policy` runs the degree policy, a strategy's name forces
 //!   it on every family (or its fallback `loops`, which the records name). They run in the
 //!   given order.
+//! - `--interleave`: rule 11's paired timing. Each configuration's strategies get their
+//!   warm-up, check and calibration in turn, then their timed runs alternate (run 1 of each
+//!   strategy, then run 2, ...), so they sample the same machine state; on the Mac mini's CPU
+//!   a kernel's time per call can switch between two levels within seconds, which biases a
+//!   comparison of strategies timed one after the other.
 //! - `--skip`: (family, strategy) pairs neither run nor recorded, e.g. `pullback:direct` on
 //!   CUDA, whose first use from p = 5 exceeds any useful time limit (T2, T3; C18), so that it
 //!   does not stop the process of its (cell, degree) with every other configuration.
@@ -68,7 +73,7 @@ use serde_json::Value;
 
 const USAGE: &str = "usage: degree_sweep [--target NAME] [--run-id ID] [--families LIST] \
     [--cells LIST] [--degrees LIST] [--node-families LIST] [--types LIST] [--sizes LIST] \
-    [--strategies LIST] [--skip LIST] [--launch-only] [--vector-sizes both|scalar|policy] [--runs R] \
+    [--strategies LIST] [--skip LIST] [--launch-only] [--interleave] [--vector-sizes both|scalar|policy] [--runs R] \
     [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]\n       \
     degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...";
 
@@ -126,6 +131,7 @@ struct Args {
     launch_only: bool,
     launch_vector_sizes: Option<LaunchVectorSizes>,
     runs: usize,
+    interleave: bool,
     fallback_reason: Option<String>,
     out: Option<PathBuf>,
     resume: bool,
@@ -159,15 +165,17 @@ impl Args {
             launch_only: false,
             launch_vector_sizes: None,
             runs: RUNS,
+            interleave: false,
             fallback_reason: None,
             out: None,
             resume: false,
             stopped_after: None,
         };
         while let Some(flag) = args.next() {
-            if flag == "--launch-only" || flag == "--resume" {
+            if matches!(flag.as_str(), "--launch-only" | "--resume" | "--interleave") {
                 match flag.as_str() {
                     "--resume" => parsed.resume = true,
+                    "--interleave" => parsed.interleave = true,
                     _ => parsed.launch_only = true,
                 }
                 continue;
@@ -319,6 +327,7 @@ fn run(args: Args) -> Result<(), Failure> {
         launch_only: args.launch_only,
         launch_vector_sizes: args.launch_vector_sizes.unwrap_or_default(),
         runs: args.runs,
+        interleave: args.interleave,
         fallback_reason: args.fallback_reason,
         done,
         stopped_after: args.stopped_after,

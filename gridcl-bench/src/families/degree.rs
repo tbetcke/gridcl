@@ -249,6 +249,11 @@ pub struct DegreeOptions {
     /// The vector sizes of a launch-only run.
     pub launch_vector_sizes: LaunchVectorSizes,
     pub runs: usize,
+    /// Rule 11's paired timing: the strategies of a configuration each get their warm-up,
+    /// check and calibration, then their timed runs alternate (run 1 of every strategy, then
+    /// run 2, ...), so that they sample the same state of the machine. Without it each
+    /// strategy's runs follow its calibration directly.
+    pub interleave: bool,
     pub fallback_reason: Option<String>,
     /// Records of an earlier run of the sweep (`degree_sweep --resume`): their configurations
     /// are not run again, and their outcomes carry over to larger sizes as measured ones do.
@@ -386,6 +391,10 @@ struct Point {
 /// carried-over and extrapolated statuses.
 type History = HashMap<(DegreeFamily, String, Option<u32>, usize), (usize, f64, String)>;
 
+/// A configuration measured but not yet recorded: (strategy, vector size, strategy that ran,
+/// shape, outcome).
+type Pending = (String, usize, &'static str, Shape, Outcome);
+
 /// Host meshes of one (cell, degree, node family), by (lifted, side).
 type HostMeshes = HashMap<(bool, usize), Rc<HostMesh>>;
 
@@ -415,9 +424,13 @@ impl PointSweep<'_> {
                 (true, LaunchVectorSizes::Both) if policy_v != 1 => vec![1, policy_v],
                 (true, _) => vec![1],
             };
+            let interleave = options.interleave && !options.launch_only;
+            let runs = if interleave { 0 } else { options.runs };
             for iterations in family.iterations() {
                 // Built on the first configuration that runs, then shared.
                 let mut work: Option<Result<Work, String>> = None;
+                // With `interleave`: the measured configurations, timed after the loop.
+                let mut pending = Vec::new();
                 for strategy in &options.strategies {
                     if options.skip.contains(&(family, strategy.clone())) {
                         continue;
@@ -448,7 +461,7 @@ impl PointSweep<'_> {
                                             with_kind_vector_size(
                                                 kind,
                                                 VectorSizeOverride::Fixed(v),
-                                                || self.measure(kind, w),
+                                                || self.measure(kind, w, runs),
                                             )
                                         });
                                         (outcome, ran, Some(w.shape))
@@ -458,23 +471,77 @@ impl PointSweep<'_> {
                             }
                         };
                         let shape = shape.unwrap_or_else(|| self.shape_estimate());
-                        let time = if outcome.status == "ok" {
-                            outcome.median_s
-                        } else {
-                            outcome.calibration_s
-                        };
-                        self.history
-                            .insert(key, (p.nominal, time, outcome.status.clone()));
-                        let record = self.record(
-                            family, strategy, ran, iterations, v, policy_v, shape, outcome,
-                        );
-                        on_record(&record);
-                        out.push(record);
+                        pending.push((strategy.clone(), v, ran, shape, outcome));
+                        if !interleave {
+                            let rec = pending.pop().expect("pushed");
+                            out.push(self.finish(family, iterations, policy_v, rec, on_record));
+                        }
                     }
+                }
+                if interleave && let Some(Ok(w)) = work.as_mut() {
+                    self.interleaved_runs(kind, w, &mut pending);
+                }
+                for rec in pending {
+                    out.push(self.finish(family, iterations, policy_v, rec, on_record));
                 }
             }
         }
         out
+    }
+
+    /// Records a measured (or carried) configuration: its history entry and its record.
+    fn finish(
+        &mut self,
+        family: DegreeFamily,
+        iterations: Option<u32>,
+        policy_v: usize,
+        (strategy, v, ran, shape, outcome): Pending,
+        on_record: &mut dyn FnMut(&DegreeRecord),
+    ) -> DegreeRecord {
+        let key = (family, strategy.clone(), iterations, v);
+        let time = if outcome.status == "ok" {
+            outcome.median_s
+        } else {
+            outcome.calibration_s
+        };
+        self.history
+            .insert(key, (self.point.nominal, time, outcome.status.clone()));
+        let record = self.record(
+            family, &strategy, ran, iterations, v, policy_v, shape, outcome,
+        );
+        on_record(&record);
+        record
+    }
+
+    /// The timed runs of `pending`'s calibrated configurations (status `ok`, no runs yet),
+    /// alternating: run 1 of each, then run 2, ... (`DegreeOptions::interleave`).
+    fn interleaved_runs(&self, kind: KernelKind, work: &mut Work, pending: &mut [Pending]) {
+        for _ in 0..self.options.runs {
+            for (strategy, v, _, _, outcome) in pending.iter_mut() {
+                if outcome.status != "ok" || outcome.calls_per_run == 0 {
+                    continue;
+                }
+                let calls = outcome.calls_per_run;
+                let (result, _) = under_strategy(strategy, || {
+                    with_kind_vector_size(kind, VectorSizeOverride::Fixed(*v), || {
+                        catch_unwind(AssertUnwindSafe(|| timed_run(self.client, work, calls)))
+                    })
+                });
+                match result {
+                    Ok(Ok(t)) => outcome.times_s.push(t),
+                    Ok(Err(e)) => outcome.status = format!("failed: {e}"),
+                    Err(_) => outcome.status = "failed: panic in a timed run".to_owned(),
+                }
+            }
+        }
+        for (_, _, _, _, outcome) in pending.iter_mut() {
+            if outcome.status == "ok" && !outcome.times_s.is_empty() {
+                // The calibration call's compile estimate, now against the median.
+                let warmup = outcome.compile_s + outcome.calibration_s;
+                outcome.median_s = median(&outcome.times_s);
+                outcome.compile_s = (warmup - outcome.median_s).max(0.0);
+            }
+        }
     }
 
     /// The outcome of a configuration that is not run: a smaller size was too slow or too slow
@@ -548,7 +615,9 @@ impl PointSweep<'_> {
 
     /// The warm-up with its check, then the calibration call and the timed runs (or, in a
     /// launch-only run, one more call), as an outcome; errors and panics become `failed`.
-    fn measure(&self, kind: KernelKind, work: &mut Work) -> Outcome {
+    /// Warm-up, check, calibration and `runs` timed runs (none: the outcome holds the calls per
+    /// run for [`timed_run`]s later).
+    fn measure(&self, kind: KernelKind, work: &mut Work, runs: usize) -> Outcome {
         let mut out = Outcome::failed(String::new());
         out.status = "ok".to_owned();
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -558,6 +627,7 @@ impl PointSweep<'_> {
                 self.options,
                 is_cpu(self.machine.class),
                 work,
+                runs,
                 &mut out,
             )
         }));
@@ -1138,6 +1208,7 @@ fn measure_into(
     options: &DegreeOptions,
     cpu: bool,
     work: &mut Work,
+    runs: usize,
     out: &mut Outcome,
 ) -> Result<(), String> {
     (work.prepare)()?;
@@ -1185,19 +1256,24 @@ fn measure_into(
         return Ok(());
     }
     let calls = calls_per_run(Duration::from_secs_f64(calibration));
-    let mut times = Vec::with_capacity(options.runs);
-    for _ in 0..options.runs {
-        let mut run = Duration::ZERO;
-        for _ in 0..calls {
-            run += timed_call(client, work)?;
-        }
-        times.push(run.as_secs_f64() / calls as f64);
-    }
-    out.median_s = median(&times);
-    out.compile_s = (warmup - out.median_s).max(0.0);
     out.calls_per_run = calls;
-    out.times_s = times;
+    for _ in 0..runs {
+        out.times_s.push(timed_run(client, work, calls)?);
+    }
+    if !out.times_s.is_empty() {
+        out.median_s = median(&out.times_s);
+        out.compile_s = (warmup - out.median_s).max(0.0);
+    }
     Ok(())
+}
+
+/// One timed run of `calls` calls: the mean seconds per call.
+fn timed_run(client: &Client, work: &mut Work, calls: usize) -> Result<f64, String> {
+    let mut run = Duration::ZERO;
+    for _ in 0..calls {
+        run += timed_call(client, work)?;
+    }
+    Ok(run.as_secs_f64() / calls as f64)
 }
 
 /// One `run` after an untimed `prepare` and sync: the time of the `run` and its sync.
@@ -1546,6 +1622,7 @@ mod tests {
             launch_only,
             launch_vector_sizes: LaunchVectorSizes::Both,
             runs: 2,
+            interleave: false,
             fallback_reason: None,
             done: Vec::new(),
             stopped_after: None,
@@ -1719,6 +1796,38 @@ mod tests {
         o.stopped_after = Some(60.0);
         let stopped = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
         assert_eq!(pairs(&stopped), want);
+    }
+
+    /// With `interleave`, every strategy of a configuration is timed with `runs` runs, in the
+    /// strategy order of the options, and the records are those of a sequential sweep apart
+    /// from the times; the pull-back's two iteration counts are paired separately.
+    #[test]
+    fn interleaved_strategies_are_timed_alike() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        let families = [DegreeFamily::Jacobian, DegreeFamily::PullBack];
+        let mut o = options(&families, &[CellType::Quadrilateral], false);
+        o.degrees = vec![2];
+        o.node_families = vec![NodeFamily::Equispaced];
+        o.scalars = vec![Scalar::F32];
+        o.strategies = ["policy", "direct"].map(str::to_owned).to_vec();
+        o.runs = 3;
+        o.interleave = true;
+        let interleaved = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        o.interleave = false;
+        let sequential = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        let key = |r: &DegreeRecord| (r.family.clone(), r.iterations, r.strategy.clone());
+        assert_eq!(
+            interleaved.iter().map(key).collect::<Vec<_>>(),
+            sequential.iter().map(key).collect::<Vec<_>>()
+        );
+        assert_eq!(interleaved.len(), 6);
+        for r in &interleaved {
+            assert_eq!(r.status, "ok", "{r:?}");
+            assert_eq!(r.times_s.len(), 3, "{r:?}");
+            assert!(r.calls_per_run >= 1 && r.median_s > 0.0, "{r:?}");
+            assert_eq!(r.median_s, crate::protocol::median(&r.times_s));
+        }
     }
 
     #[test]
