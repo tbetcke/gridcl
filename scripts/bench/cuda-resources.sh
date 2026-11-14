@@ -32,7 +32,11 @@
 # register count (65536 registers per block, allocated per warp in units of 256, at most 1024
 # threads; compute capability 7.0 to 9.0).
 #
-# The work files (records, logs, PTX, ptxas output) stay in <out dir>/cuda-resources/. Prints
+# The work files (records, logs, PTX, ptxas output) stay in <out dir>/cuda-resources/; rec/
+# holds each configuration's launch record (`degree_sweep --launch-only`, one new kernel per
+# process, so with CUDA_CACHE_DISABLE=1 its compile time is that kernel's first use; a process
+# stopped by --timeout gets a `too slow to compile` record), which make the CUDA launch file
+# `m9h-launch-cuda-<target>.json` (docs/plans/M9h.md, T11a). Prints
 # `[k/N]` before each configuration (shown by scripts/hpc/status.sh while the job runs),
 # then one line per kernel, and exits 1 if a configuration launched (status ok) without a
 # record.
@@ -151,6 +155,12 @@ run_config() {
     local status=ok
     [[ $rc -eq 0 ]] || status="exit $rc"
     [[ $rc -ne 124 ]] || status="timeout after $time_limit s"
+    if [[ $rc -eq 124 && ! -s "$rec" ]]; then
+        # The launch record of a stopped process (`too slow to compile`), for the launch files.
+        "$bin" --launch-only --families "$family" --cells "$cell" --degrees "$degree" \
+            --types "$type" --strategies "$strategy" --vector-sizes "$sizes" --out "$rec" \
+            --stopped-after "$time_limit" >>"$log" 2>&1 || rm -f "$rec"
+    fi
     if [[ -s "$rec" ]]; then
         status=$(field "$rec" status)
         [[ $rc -eq 0 ]] || status="$status (exit $rc)"

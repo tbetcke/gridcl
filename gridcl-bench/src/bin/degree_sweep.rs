@@ -5,7 +5,8 @@
 //! cargo run --release -p gridcl-bench --bin degree_sweep -- [--target NAME] [--run-id ID]
 //!     [--families evector,points,...] [--cells hexahedron,...] [--degrees 1,2,...]
 //!     [--node-families equispaced,gll] [--types f32,f64] [--sizes 100000,...]
-//!     [--strategies direct,policy,...] [--launch-only] [--vector-sizes both|scalar|policy]
+//!     [--strategies direct,policy,...] [--skip family:strategy,...] [--launch-only]
+//!     [--vector-sizes both|scalar|policy]
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]
 //! degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...
 //! ```
@@ -18,8 +19,12 @@
 //!   so a run can be split by family; by default every family, cell type, degree 1–8
 //!   (pyramids to 3), node family where offered, f32 and f64, and 10^5, 10^6 and 10^7 points.
 //!   Names are the record names, in any case.
-//! - `--strategies`: default `direct`; `policy` runs the degree policy. Until T4 only these two
-//!   run.
+//! - `--strategies`: default `direct`; `policy` runs the degree policy, a strategy's name forces
+//!   it on every family (or its fallback `loops`, which the records name). They run in the
+//!   given order.
+//! - `--skip`: (family, strategy) pairs neither run nor recorded, e.g. `pullback:direct` on
+//!   CUDA, whose first use from p = 5 exceeds any useful time limit (T2, T3; C18), so that it
+//!   does not stop the process of its (cell, degree) with every other configuration.
 //! - `--launch-only` (rule 7): the warm-up with its check and one more call, at vector size 1
 //!   and at the policy's, no timed runs; by default equispaced nodes and 10^4 points.
 //! - `--vector-sizes` (launch-only): `both` (default), `scalar` (1 only) or `policy` (the
@@ -63,7 +68,7 @@ use serde_json::Value;
 
 const USAGE: &str = "usage: degree_sweep [--target NAME] [--run-id ID] [--families LIST] \
     [--cells LIST] [--degrees LIST] [--node-families LIST] [--types LIST] [--sizes LIST] \
-    [--strategies LIST] [--launch-only] [--vector-sizes both|scalar|policy] [--runs R] \
+    [--strategies LIST] [--skip LIST] [--launch-only] [--vector-sizes both|scalar|policy] [--runs R] \
     [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]\n       \
     degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...";
 
@@ -117,6 +122,7 @@ struct Args {
     scalars: Vec<Scalar>,
     sizes: Option<Vec<usize>>,
     strategies: Vec<String>,
+    skip: Vec<(DegreeFamily, String)>,
     launch_only: bool,
     launch_vector_sizes: Option<LaunchVectorSizes>,
     runs: usize,
@@ -149,6 +155,7 @@ impl Args {
             scalars: vec![Scalar::F32, Scalar::F64],
             sizes: None,
             strategies: vec!["direct".to_owned()],
+            skip: Vec::new(),
             launch_only: false,
             launch_vector_sizes: None,
             runs: RUNS,
@@ -202,6 +209,15 @@ impl Args {
                     parsed.strategies = list(&flag, &value()?, |v| {
                         let v = v.to_lowercase();
                         (STRATEGIES.contains(&v.as_str()) || v == "policy").then_some(v)
+                    })?
+                }
+                "--skip" => {
+                    parsed.skip = list(&flag, &value()?, |v| {
+                        let (family, strategy) = v.split_once(':')?;
+                        let strategy = strategy.to_lowercase();
+                        STRATEGIES
+                            .contains(&strategy.as_str())
+                            .then_some((DegreeFamily::named(family)?, strategy))
                     })?
                 }
                 "--vector-sizes" => {
@@ -299,6 +315,7 @@ fn run(args: Args) -> Result<(), Failure> {
         degrees: args.degrees,
         scalars: args.scalars,
         strategies: args.strategies,
+        skip: args.skip,
         launch_only: args.launch_only,
         launch_vector_sizes: args.launch_vector_sizes.unwrap_or_default(),
         runs: args.runs,
@@ -453,6 +470,8 @@ mod tests {
             "10000000,1000000",
             "--strategies",
             "policy,direct",
+            "--skip",
+            "pullback:Direct,evector:loops",
             "--launch-only",
             "--vector-sizes",
             "Scalar",
@@ -476,6 +495,13 @@ mod tests {
         assert_eq!(parsed.scalars, [Scalar::F32]);
         assert_eq!(parsed.sizes(), [1_000_000, 10_000_000]);
         assert_eq!(parsed.strategies, ["policy", "direct"]);
+        assert_eq!(
+            parsed.skip,
+            [
+                (DegreeFamily::PullBack, "direct".to_owned()),
+                (DegreeFamily::EVector, "loops".to_owned())
+            ]
+        );
         assert!(parsed.launch_only);
         assert_eq!(parsed.launch_vector_sizes, Some(LaunchVectorSizes::Scalar));
         let stopped = args(&["--out", "x.json", "--stopped-after", "600"])
@@ -497,6 +523,9 @@ mod tests {
             &["--node-families", "gauss"],
             &["--types", "u32"],
             &["--strategies", "fast"],
+            &["--skip", "pullback"],
+            &["--skip", "pullback:policy"],
+            &["--skip", "geomfactors:direct"],
             &["--launch-only", "--vector-sizes", "2"],
             &["--vector-sizes", "policy"],
             &["--resume"],

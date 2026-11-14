@@ -242,6 +242,9 @@ pub struct DegreeOptions {
     pub sizes: Vec<usize>,
     /// Strategy names: [`STRATEGIES`](crate::record::STRATEGIES) or `policy`.
     pub strategies: Vec<String>,
+    /// (family, strategy) pairs not run and not recorded: on CUDA, `direct`'s pull-back where
+    /// its first use takes longer than a process's time limit (T2, T3; C18).
+    pub skip: Vec<(DegreeFamily, String)>,
     pub launch_only: bool,
     /// The vector sizes of a launch-only run.
     pub launch_vector_sizes: LaunchVectorSizes,
@@ -416,6 +419,9 @@ impl PointSweep<'_> {
                 // Built on the first configuration that runs, then shared.
                 let mut work: Option<Result<Work, String>> = None;
                 for strategy in &options.strategies {
+                    if options.skip.contains(&(family, strategy.clone())) {
+                        continue;
+                    }
                     for &v in &vector_sizes {
                         let key = (family, strategy.clone(), iterations, v);
                         if let Some(r) = self.done(family, strategy, iterations, v) {
@@ -1536,6 +1542,7 @@ mod tests {
             scalars: vec![Scalar::F32, Scalar::F64],
             sizes: vec![10_000],
             strategies: vec!["direct".to_owned()],
+            skip: Vec::new(),
             launch_only,
             launch_vector_sizes: LaunchVectorSizes::Both,
             runs: 2,
@@ -1603,8 +1610,8 @@ mod tests {
         }
     }
 
-    /// A timed run of J and the pull-back (1 and 9 iterations) on quadrilaterals at p = 2, twice:
-    /// two timed runs each, and the second identical run compiles nothing.
+    /// A timed run of J and the pull-back (1 and 9 iterations) on quadrilaterals at p = 2 and
+    /// 10^5 points, twice: two timed runs each, and the second identical run compiles nothing.
     #[test]
     fn timed_smoke_and_second_call_compile_time() {
         let client = gridcl_testing::test_client();
@@ -1617,6 +1624,9 @@ mod tests {
         o.degrees = vec![2];
         o.node_families = vec![NodeFamily::Equispaced];
         o.scalars = vec![Scalar::F32];
+        // 10^5 points, so the Newton iterations outweigh the per-call synchronisation even
+        // while the other tests load the machine.
+        o.sizes = vec![100_000];
         let first = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
         let second = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
         assert_eq!(first.len(), 3);
@@ -1677,6 +1687,38 @@ mod tests {
         let want = "too slow to compile (process stopped after 60 s)";
         assert_eq!(statuses, [want, want]);
         assert!(none.iter().all(|r| r.cells >= 1 && r.times_s.is_empty()));
+    }
+
+    /// Skipped (family, strategy) pairs are neither run nor recorded, also by `--stopped-after`.
+    #[test]
+    fn skipped_pairs_have_no_records() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        let families = [DegreeFamily::Points, DegreeFamily::Jacobian];
+        let mut o = options(&families, &[CellType::Interval], true);
+        o.degrees = vec![1];
+        o.node_families = vec![NodeFamily::Equispaced];
+        o.scalars = vec![Scalar::F32];
+        o.launch_vector_sizes = LaunchVectorSizes::Scalar;
+        o.strategies = ["direct", "loops"].map(str::to_owned).to_vec();
+        o.skip = vec![(DegreeFamily::Jacobian, "direct".to_owned())];
+        let pairs = |records: &[DegreeRecord]| -> Vec<(String, String)> {
+            records
+                .iter()
+                .map(|r| (r.family.clone(), r.strategy.clone()))
+                .collect()
+        };
+        let want = [
+            ("Points", "direct"),
+            ("Points", "loops"),
+            ("Jacobian", "loops"),
+        ]
+        .map(|(f, s)| (f.to_owned(), s.to_owned()));
+        let records = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        assert_eq!(pairs(&records), want);
+        o.stopped_after = Some(60.0);
+        let stopped = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        assert_eq!(pairs(&stopped), want);
     }
 
     #[test]

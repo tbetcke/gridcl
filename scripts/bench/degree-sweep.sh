@@ -21,7 +21,7 @@
 #   --families, --cells, --degrees, --types: comma-separated, as degree_sweep names them
 #       (default every family and cell type, degrees 1-8 with pyramids to 3, f32 and f64; f64
 #       is skipped by degree_sweep on a device without it).
-#   After `--`: further degree_sweep options (--sizes, --node-families, --strategies,
+#   After `--`: further degree_sweep options (--sizes, --node-families, --strategies, --skip,
 #       --fallback-reason, ...), passed to every process.
 #
 # The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching gridcl-testing
