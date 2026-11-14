@@ -18,9 +18,11 @@
 //!
 //! **Targets** (as M3s, ADR-0034): the local Mac (`macmini`: CPU as CpuSimd128 and Metal as
 //! Gpu), Locust (Grace CPU as CpuSimd128, H100 as Gpu) and one Kathleen socket (CpuSimd512; a
-//! Myriad D node as the fallback). Times are per quadrature point at 10^6 and 10^7 points
-//! (Gauss degree 2p) on the equispaced meshes; classes with several devices use the geometric
-//! mean of the per-device ratios (ADR-0015, item 5).
+//! Myriad D node as the fallback). The degree sweep leaves out the Grace CPU, which keeps T3's
+//! baseline and rule 11's paired check (ADR-0051). Times are per quadrature point (Gauss degree
+//! 2p) on the equispaced meshes, at 10^6 and 10^7 points on the Gpu class and at 10^6 points on
+//! the CPU classes (ADR-0052); classes with several devices use the geometric mean of the
+//! per-device ratios (ADR-0015, item 5).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -31,8 +33,35 @@ use gridcl_bench::record::{
 use gridcl_bench::report::{BEGIN_MARKER, END_MARKER};
 use gridcl_device::DeviceClass;
 
-/// The decision rule's problem sizes, in quadrature points (rule 12).
-const RULE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
+/// The baseline's problem sizes, in quadrature points (rule 11).
+const BASELINE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
+
+/// The problem sizes of the rules of a class, in quadrature points (rule 12): 10^6 and 10^7 on
+/// the Gpu class, 10^6 on the CPU classes (ADR-0052).
+fn rule_sizes(class: DeviceClass) -> &'static [usize] {
+    if class == DeviceClass::Gpu {
+        &[1_000_000, 10_000_000]
+    } else {
+        &[1_000_000]
+    }
+}
+
+/// The strategies the policy of a class chooses among: all on the Gpu class; `direct`, `loops`
+/// and `sumfact` on the CPU classes, where `shared` and `cooperative` reduce to `loops`
+/// (ADR-0052).
+fn candidates(class: DeviceClass) -> &'static [&'static str] {
+    if class == DeviceClass::Gpu {
+        &STRATEGIES
+    } else {
+        &["direct", "loops", "sumfact"]
+    }
+}
+
+/// Whether the degree sweep measures `strategy` on `cell` at `degree`: not `direct` on
+/// tetrahedra, hexahedra and prisms at p ≥ 5 (ADR-0050).
+fn swept(cell: &str, degree: u32, strategy: &str) -> bool {
+    !(strategy == "direct" && degree >= 5 && matches!(cell, "Tetrahedron" | "Hexahedron" | "Prism"))
+}
 
 /// Every cell type, by its `CellType` name.
 const CELLS: [&str; 7] = [
@@ -146,7 +175,7 @@ fn scalars_of(backend: &str) -> Vec<Scalar> {
 }
 
 /// The required (target, backend, class) of `records`: CpuSimd512 on Kathleen, or on a Myriad
-/// D node where Kathleen has no record (ADR-0016).
+/// D node where Kathleen has no record (ADR-0016). The baseline and the paired runs use these.
 fn required(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, DeviceClass)> {
     let avx512 = if records
         .iter()
@@ -165,13 +194,22 @@ fn required(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, Device
     ]
 }
 
-/// The devices of `class` that measure `scalar`.
+/// The (target, backend, class) of the degree sweep: [`required`] without the Grace CPU
+/// (ADR-0051).
+fn sweep_targets(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, DeviceClass)> {
+    required(records)
+        .into_iter()
+        .filter(|&(target, backend, _)| (target, backend) != ("locust", "cpu"))
+        .collect()
+}
+
+/// The devices among `targets` of `class` that measure `scalar`.
 fn devices(
-    records: &[DegreeRecord],
+    targets: Vec<(&'static str, &'static str, DeviceClass)>,
     class: DeviceClass,
     scalar: Scalar,
 ) -> Vec<(&'static str, &'static str)> {
-    required(records)
+    targets
         .into_iter()
         .filter(|&(_, backend, c)| c == class && scalars_of(backend).contains(&scalar))
         .map(|(t, b, _)| (t, b))
@@ -221,8 +259,8 @@ fn describe(r: &DegreeRecord) -> String {
     )
 }
 
-/// The protocol of every timed record: release builds, ten timed runs, idle Locust, a fallback
-/// reason on Myriad, one Kathleen socket (ADR-0020).
+/// The protocol of every timed record: release builds, ten timed runs (five or ten on CPUs,
+/// ADR-0052), idle Locust, a fallback reason on Myriad, one Kathleen socket (ADR-0020).
 fn check_protocol(records: &[DegreeRecord]) {
     for r in records {
         let what = describe(r);
@@ -230,7 +268,14 @@ fn check_protocol(records: &[DegreeRecord]) {
         if r.launch_only || r.status != "ok" {
             continue;
         }
-        assert_eq!(r.times_s.len(), 10, "{what}: ten timed runs");
+        if r.backend == "cpu" {
+            assert!(
+                matches!(r.times_s.len(), 5 | 10),
+                "{what}: five or ten timed runs"
+            );
+        } else {
+            assert_eq!(r.times_s.len(), 10, "{what}: ten timed runs");
+        }
         check_idle(r, &what);
         if r.target == "kathleen" {
             assert_eq!(
@@ -434,7 +479,7 @@ fn baseline_covers_every_target_and_degree() {
             for &cell in cells_of(family) {
                 for degree in baseline_degrees(target, backend, family, cell) {
                     for scalar in scalars_of(backend) {
-                        for size in RULE_SIZES {
+                        for size in BASELINE_SIZES {
                             for iterations in iterations_of(family) {
                                 let c = Config {
                                     target,
@@ -462,7 +507,8 @@ fn baseline_covers_every_target_and_degree() {
 /// Bullet 2 (rule 7): every (family, cell type, degree, precision, strategy) compiles, loads and
 /// launches on each backend, at vector size 1 and at the vector policy's size: a
 /// `degree_sweep --launch-only` record with status `ok`, which ran the strategy or its fallback
-/// `loops`.
+/// `loops`. Not `direct` on tetrahedra, hexahedra and prisms at p ≥ 5 (ADR-0050), nor on the
+/// Grace CPU (ADR-0051).
 #[test]
 fn every_variant_launched() {
     let data = data();
@@ -471,12 +517,15 @@ fn every_variant_launched() {
         "no launch records (m9h-launch-*.json)"
     );
     check_protocol(&data.launch);
-    for (target, backend, _) in required(&data.launch) {
+    for (target, backend, _) in sweep_targets(&data.launch) {
         for family in DEGREE_FAMILIES {
             for &cell in cells_of(family) {
                 for degree in 1..=max_degree(cell) {
                     for scalar in scalars_of(backend) {
                         for strategy in STRATEGIES {
+                            if !swept(cell, degree, strategy) {
+                                continue;
+                            }
                             let what = format!(
                                 "{target} {backend} {family} {cell} p={degree} {} {strategy}",
                                 scalar.name()
@@ -589,7 +638,7 @@ fn compile_and_load_within_30_s_on_locust() {
 }
 
 /// Bullet 3 (rule 1): on quadrilaterals and hexahedra, the time per point at p = 8 over p = 4
-/// of the strategy the policy selects at p = 8, at 10^6 and 10^7 points, by class: at most 3
+/// of the strategy the policy selects at p = 8, at the class's rule sizes: at most 3
 /// for the geometric factors and for the pull-back's set-up per point (where the strategy has
 /// one: not `sumfact`), and at most 1.1 · (9/5)^d for a Newton step, with step =
 /// (t(9) − t(1)) / 8 and set-up = t(1) − step.
@@ -602,7 +651,7 @@ fn tensor_cost_ratio_p8_over_p4() {
     let factors = ["Points", "Jacobian", "DetJ", "Pinv", "FacetNormals"];
     for class in MEASURED_CLASSES {
         for (scalar, bytes) in SCALARS {
-            let devices = devices(records, class, scalar);
+            let devices = devices(sweep_targets(records), class, scalar);
             if devices.is_empty() {
                 continue;
             }
@@ -614,7 +663,7 @@ fn tensor_cost_ratio_p8_over_p4() {
                 families.push("PullBack");
                 for family in families {
                     let s = policy.strategy(class, policy_family(family), cell, bytes, 8);
-                    for size in RULE_SIZES {
+                    for &size in rule_sizes(class) {
                         let what = format!(
                             "{class:?} {} {family} {cell} {s} at {size} points",
                             scalar.name()
@@ -691,8 +740,9 @@ fn paired_run<'a>(records: &'a [DegreeRecord], target: &str, backend: &str) -> &
         .unwrap_or_else(|| panic!("{target} {backend}: no paired policy run"))
 }
 
-/// Bullet 4 (rule 11): in one job per target, the policy against `direct` at p ≤ 4, per bench
-/// family, cell type, scalar type and size: the class ratio is at most 1.05.
+/// Bullet 4 (rule 11): in one job per target, the Grace CPU included (ADR-0051), the policy
+/// against `direct` at p ≤ 4, per bench family, cell type, scalar type and the class's rule
+/// sizes: the class ratio is at most 1.05.
 #[test]
 fn no_family_slower_than_m9_at_low_degree() {
     let data = data();
@@ -700,14 +750,14 @@ fn no_family_slower_than_m9_at_low_degree() {
     let records = &data.degree;
     for class in MEASURED_CLASSES {
         for (scalar, _) in SCALARS {
-            let devices = devices(records, class, scalar);
+            let devices = devices(required(records), class, scalar);
             if devices.is_empty() {
                 continue;
             }
             for family in DEGREE_FAMILIES {
                 for &cell in cells_of(family) {
                     for degree in 1..=max_degree(cell).min(4) {
-                        for size in RULE_SIZES {
+                        for &size in rule_sizes(class) {
                             for iterations in iterations_of(family) {
                                 let ratios: Vec<f64> = devices
                                     .iter()
@@ -859,12 +909,13 @@ fn gpu_selectable(
 /// - a family's time is the sum of its bench families' (J + det J + K for `Jacobian`; the
 ///   pull-back at 9 iterations for `PullBack`), on the codimension-0 meshes (codimension 1 for
 ///   `Normals`);
+/// - the sizes are the class's rule sizes, and the strategies its candidates (ADR-0052);
 /// - the baseline is `direct`, or `loops` where `direct` is not selectable (a device without an
-///   `ok` record at 10^6 or 10^7 points; on the Gpu class also a failed launch or a compile over
-///   30 s on Locust);
-/// - a strategy is admitted if it is the baseline or selectable and at least 10% faster at both
-///   sizes (class ratio ≤ 0.9); among the admitted within 3% of the fastest at both sizes the
-///   simplest wins; if none is, the one with the smallest worst ratio to the fastest;
+///   `ok` record at a rule size, as where the sweep leaves `direct` out (ADR-0050); on the Gpu
+///   class also a failed launch or a compile over 30 s on Locust);
+/// - a strategy is admitted if it is the baseline or selectable and at least 10% faster at every
+///   rule size (class ratio ≤ 0.9); among the admitted within 3% of the fastest at every size
+///   the simplest wins; if none is, the one with the smallest worst ratio to the fastest;
 /// - ranges are maximal runs of equal choices, the last range (p ≥ 9 included) is not `direct`,
 ///   and CpuSimd256 has CpuSimd512's table.
 #[test]
@@ -909,7 +960,8 @@ fn degree_policy_follows_the_decision_rule() {
     }
     for class in MEASURED_CLASSES {
         for (scalar, bytes) in SCALARS {
-            let devices = devices(&records, class, scalar);
+            let devices = devices(sweep_targets(&records), class, scalar);
+            let sizes = rule_sizes(class);
             if devices.is_empty() {
                 continue;
             }
@@ -928,7 +980,7 @@ fn degree_policy_follows_the_decision_rule() {
                             )
                         };
                         let selectable = |s: &str| {
-                            RULE_SIZES.iter().all(|&n| ratio(s, s, n).is_some())
+                            sizes.iter().all(|&n| ratio(s, s, n).is_some())
                                 && (class != DeviceClass::Gpu
                                     || gpu_selectable(&data, &members, cell, degree, scalar, s))
                         };
@@ -938,22 +990,32 @@ fn degree_policy_follows_the_decision_rule() {
                             assert!(selectable("loops"), "{at}: neither direct nor loops ran");
                             "loops"
                         };
-                        let ratios: Vec<(&str, [f64; 2])> = STRATEGIES
-                            .into_iter()
+                        let ratios: Vec<(&str, Vec<f64>)> = candidates(class)
+                            .iter()
+                            .copied()
                             .filter(|&s| selectable(s))
                             .map(|s| {
-                                let r = RULE_SIZES.map(|n| ratio(s, base, n).expect("selectable"));
-                                (s, r)
+                                let r = sizes
+                                    .iter()
+                                    .map(|&n| ratio(s, base, n).expect("selectable"));
+                                (s, r.collect::<Vec<f64>>())
                             })
-                            .filter(|&(s, r)| s == base || r.iter().all(|&x| x <= 0.9))
+                            .filter(|(s, r)| *s == base || r.iter().all(|&x| x <= 0.9))
                             .collect();
-                        let fastest = [0, 1].map(|i| {
-                            ratios
-                                .iter()
-                                .map(|(_, r)| r[i])
-                                .fold(f64::INFINITY, f64::min)
-                        });
-                        let worst = |r: &[f64; 2]| (r[0] / fastest[0]).max(r[1] / fastest[1]);
+                        let fastest: Vec<f64> = (0..sizes.len())
+                            .map(|i| {
+                                ratios
+                                    .iter()
+                                    .map(|(_, r)| r[i])
+                                    .fold(f64::INFINITY, f64::min)
+                            })
+                            .collect();
+                        let worst = |r: &[f64]| {
+                            r.iter()
+                                .zip(&fastest)
+                                .map(|(x, f)| x / f)
+                                .fold(0.0, f64::max)
+                        };
                         let want = ratios
                             .iter()
                             .find(|(_, r)| worst(r) <= 1.03)
