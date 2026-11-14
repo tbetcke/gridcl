@@ -1,6 +1,6 @@
 # ADR-0055: Rule 11 compares policy families where `direct` is selectable, and counts consistent slowdowns
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Raised in:** M9h T11b (rule 11's paired runs)
 - **Design sections affected:** Roadmap M9h, acceptance bullet 4 (read as ADR-0042 item 11, amended by ADR-0043, ADR-0046 and ADR-0052); "Benchmarks" (**Degree sweep (M9h)**). Amends ADR-0042, items 11 and 12.
@@ -59,7 +59,7 @@ That leaves 0 of 294 configurations on CpuSimd128, 1 of 294 on CpuSimd512, and 0
    - (b) **Selectability.** Only configurations where `direct` is selectable for the class (rule 7, ADR-0050) are bounded. The others are reported with their ratio to M9's `direct`; at p ≤ 4 they are the Gpu pull-back on tetrahedra, hexahedra and prisms at p = 4.
    - (c) **Consistency.** A class fails a configuration if the geometric mean over its devices of the lower quartile of the per-run ratios exceeds 1.05, that is, if the policy is over 5% slower in at least three quarters of the paired runs. The median ratio is reported.
    - (d) **CPU re-timing.** T11b re-times the CPU classes' sweep at p ≤ 4 with `degree_sweep --interleave`: the Mac mini and one Kathleen socket, `direct`, `loops` and `sumfact`, 10^5 and 10^6 points, ten runs. These records replace T11a's at p ≤ 4 in the decision rule. The policy is then regenerated, and the CPU paired runs repeated. The Gpu class keeps T11a's sweep: its paired check passes under (a)–(c), and Metal showed no order effect.
-3. **Option 2 without (d).** Kathleen's tetrahedron E-vector at p = 1 (f32) stays `loops`, 1.57 times slower than M9. Bullet 4 is then not met for one configuration, and the report says so. Saves about 2–3 h of machine time.
+3. **Option 2 without (d).** Kathleen's tetrahedron E-vector at p = 1 (f32) stays `loops`, 1.57 times slower than M9. Bullet 4 is then not met for one configuration, and the report says so. Saves about 1–1.5 h of wall-clock time (corrected at acceptance from 2–3 h: the CPU re-timing takes about 15–20 min on the Mac mini and 20–25 min on Kathleen, the repeated CPU paired runs about 15–20 min in parallel).
 4. **Option 2 with (d) on every device, the Gpu class included.** Metal and the H100 are re-timed interleaved at p ≤ 4 as well, about 4–5 h more on Locust. The Gpu policy at p ≤ 4 would rest on interleaved data, at the cost of a further paired run there.
 
 ## Proposed decision
@@ -87,4 +87,4 @@ Option 2.
 
 ## Decision record
 
-<Filled by the maintainer.>
+Accepted by the maintainer on 2026-11-14, as proposed (option 2), after the time estimate of option 3's saving was corrected to about 1–1.5 h. Applied in `adr: 0055 apply`: docs/design.md, Roadmap M9h (bullet 4 and the acceptance line) and "Benchmarks" (**Degree sweep (M9h)**); ADR-0042's decision record; the M9h plan (T11b and the coverage table) and issue #37. The tests and the report change with T11b.
