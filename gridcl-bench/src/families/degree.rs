@@ -688,6 +688,7 @@ impl PointSweep<'_> {
             units_per_group: outcome.units_per_group,
             status: outcome.status,
             launch_only: self.options.launch_only,
+            interleaved: self.options.interleave && !self.options.launch_only,
             check_error: outcome.check.map(|c| c.error),
             check_tolerance: outcome.check.map(|c| c.tolerance),
             times_s: outcome.times_s,

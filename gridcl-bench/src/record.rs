@@ -760,6 +760,9 @@ pub struct DegreeRecord {
     pub status: String,
     /// A `degree_sweep --launch-only` record: one call, no timing (rule 7).
     pub launch_only: bool,
+    /// Timed with `degree_sweep --interleave`: the timed runs of the configuration's strategies
+    /// alternated (ADR-0055). Absent in older records, read as `false`.
+    pub interleaved: bool,
     /// The warm-up's check against the f64 host reference on a sample of cells: the relative
     /// error per quantity (ADR-0042, item 2), the largest over the family's quantities, and the
     /// tolerance it was held to; `None` where no check ran.
@@ -906,6 +909,7 @@ impl DegreeRecord {
             "units_per_group": self.units_per_group,
             "status": self.status,
             "launch_only": self.launch_only,
+            "interleaved": self.interleaved,
             "check_error": self.check_error,
             "check_tolerance": self.check_tolerance,
             "times_s": self.times_s,
@@ -954,6 +958,9 @@ impl DegreeRecord {
             units_per_group: o.u32("units_per_group")?,
             status: o.string("status")?,
             launch_only: o.typed("launch_only", "a boolean", Value::as_bool)?,
+            interleaved: o
+                .opt_typed("interleaved", "a boolean", Value::as_bool)?
+                .unwrap_or(false),
             check_error: o.opt_f64("check_error")?,
             check_tolerance: o.opt_f64("check_tolerance")?,
             times_s: o.times("times_s")?,
@@ -1233,6 +1240,7 @@ mod tests {
             units_per_group: 1,
             status: "ok".to_owned(),
             launch_only: false,
+            interleaved: true,
             check_error: Some(1e-13),
             check_tolerance: Some(2e-12),
             times_s: vec![0.5, 0.25],
@@ -1285,9 +1293,14 @@ mod tests {
             times_s: Vec::new(),
             node_load: None,
             fallback_reason: Some("Locust busy".to_owned()),
+            interleaved: false,
             ..degree()
         };
         assert_eq!(DegreeRecord::from_json(&r.to_json()).unwrap(), r);
+        // Records before ADR-0055 have no `interleaved` field.
+        let mut old = r.to_json();
+        old.as_object_mut().unwrap().remove("interleaved");
+        assert_eq!(DegreeRecord::from_json(&old).unwrap(), r);
         assert_eq!(
             CudaResources::from_json(&resources().to_json()).unwrap(),
             resources()

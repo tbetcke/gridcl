@@ -205,7 +205,8 @@ type TimeKey<'a> = (
 
 /// The timed records of a sweep, indexed: the time per point of the last `ok` record of each
 /// configuration on the codimension-0 meshes (codimension 1 for `Normals`) with equispaced
-/// nodes that ran its strategy, T3's baseline likewise, and Locust's CUDA compile and launch
+/// nodes that ran its strategy, an interleaved one if there is one (the CPU classes at p ≤ 4,
+/// ADR-0055), T3's baseline likewise, and Locust's CUDA compile and launch
 /// outcomes.
 pub struct Times<'a> {
     times: HashMap<TimeKey<'a>, f64>,
@@ -228,7 +229,7 @@ impl<'a> Times<'a> {
             .map(|r| r.run_id.as_str())
             .collect();
         let index = |records: &'a [DegreeRecord]| {
-            let mut times = HashMap::new();
+            let mut times: HashMap<TimeKey<'a>, (f64, bool)> = HashMap::new();
             for r in records {
                 if paired.contains(r.run_id.as_str())
                     || r.strategy_ran != r.strategy
@@ -250,9 +251,15 @@ impl<'a> Times<'a> {
                     r.iterations,
                     r.strategy.as_str(),
                 );
-                times.insert(key, r.time_per_point());
+                // The last record, interleaved ones before sequential ones (ADR-0055).
+                if times
+                    .get(&key)
+                    .is_none_or(|&(_, interleaved)| r.interleaved || !interleaved)
+                {
+                    times.insert(key, (r.time_per_point(), r.interleaved));
+                }
             }
-            times
+            times.into_iter().map(|(k, (t, _))| (k, t)).collect()
         };
         let times = index(&data.degree);
         let baseline = index(&data.baseline);
@@ -897,22 +904,6 @@ pub fn paired_devices(
     out
 }
 
-/// Rule 11's paired check of one (class, scalar): the worst class ratio of the policy over
-/// `direct` ([`paired_ratio`]) at p ≤ 4 in each device's newest paired run, over bench families, cell types,
-/// degrees, rule sizes and pull-back iterations.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PairedCheck {
-    pub class: DeviceClass,
-    pub scalar: Scalar,
-    /// (target, backend, run id) of each device with a paired run.
-    pub runs: Vec<(String, String, String)>,
-    /// Configurations compared, and those without records on every device.
-    pub compared: usize,
-    pub missing: usize,
-    /// The worst ratio and its configuration.
-    pub worst: Option<(f64, String)>,
-}
-
 /// The paired ratio of two records of one configuration: the median over the timed runs of
 /// `a`'s run i over `b`'s run i (with `degree_sweep --interleave`, adjacent in time); the ratio
 /// of the medians where the run counts differ.
@@ -929,8 +920,69 @@ pub fn paired_ratio(a: &DegreeRecord, b: &DegreeRecord) -> f64 {
     crate::protocol::median(&r)
 }
 
-/// Rule 11's paired checks, per measured class and scalar type.
-pub fn paired_checks(data: &HighOrderData) -> Vec<PairedCheck> {
+/// Rule 11's paired check of one (class, scalar), read as in ADR-0055: per policy family (the
+/// members' times summed per run, the pull-back at 9 iterations), cell type, degree p ≤ 4 and
+/// rule size where `direct` is selectable for the class, the class ratios over each device's
+/// newest paired run of the policy's run i over `direct`'s run i: their median, and their lower
+/// quartile, which must not exceed [`PAIRED_BOUND`] (the policy over 5% slower in at least three
+/// quarters of the run pairs).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PairedCheck {
+    pub class: DeviceClass,
+    pub scalar: Scalar,
+    /// (target, backend, run id) of each device with a paired run.
+    pub runs: Vec<(String, String, String)>,
+    /// Configurations compared, left out because `direct` is not selectable for the class, and
+    /// without records on every device.
+    pub compared: usize,
+    pub excluded: usize,
+    pub missing: usize,
+    /// The largest median and lower-quartile class ratios, with their configurations.
+    pub worst_median: Option<(f64, String)>,
+    pub worst_lower: Option<(f64, String)>,
+    /// The configurations whose lower-quartile class ratio exceeds [`PAIRED_BOUND`].
+    pub failures: Vec<String>,
+    /// Reported, not bounded: per bench family the policy family does not decide alone
+    /// (BasisEval; J, det J and K; the pull-back at 1 iteration), the largest median class ratio
+    /// over every compared configuration.
+    pub reported: Vec<(String, f64, String)>,
+}
+
+/// Bench families with their Newton iterations (`None` outside the pull-back).
+type Members = Vec<(&'static str, Option<u32>)>;
+
+/// Rule 11's bound on the lower quartile of a class's paired ratios (ADR-0055).
+pub const PAIRED_BOUND: f64 = 1.05;
+
+/// The lower quartile of `v` (linear interpolation between order statistics).
+pub fn lower_quartile(v: &[f64]) -> f64 {
+    let mut v = v.to_vec();
+    v.sort_by(f64::total_cmp);
+    let i = (v.len() - 1) as f64 * 0.25;
+    let lo = i.floor() as usize;
+    let hi = (lo + 1).min(v.len() - 1);
+    v[lo] + (v[hi] - v[lo]) * (i - lo as f64)
+}
+
+/// The per-run ratios of the summed times of `a` over those of `b` (records of the members of
+/// one policy family, in the same order).
+fn run_ratios(a: &[&DegreeRecord], b: &[&DegreeRecord]) -> Option<Vec<f64>> {
+    let n = a.first()?.times_s.len();
+    if n == 0 || a.iter().chain(b).any(|r| r.times_s.len() != n) {
+        return None;
+    }
+    Some(
+        (0..n)
+            .map(|i| {
+                a.iter().map(|r| r.times_s[i]).sum::<f64>()
+                    / b.iter().map(|r| r.times_s[i]).sum::<f64>()
+            })
+            .collect(),
+    )
+}
+
+/// Rule 11's paired checks, per measured class and scalar type (ADR-0055).
+pub fn paired_checks(data: &HighOrderData, decision: &DegreeDecision) -> Vec<PairedCheck> {
     let mut out = Vec::new();
     for class in MEASURED_CLASSES {
         for (scalar, _) in SCALARS {
@@ -954,8 +1006,12 @@ pub fn paired_checks(data: &HighOrderData) -> Vec<PairedCheck> {
                     .map(|&(t, b, r)| (t.to_owned(), b.to_owned(), r.to_owned()))
                     .collect(),
                 compared: 0,
+                excluded: 0,
                 missing: 0,
-                worst: None,
+                worst_median: None,
+                worst_lower: None,
+                failures: Vec::new(),
+                reported: Vec::new(),
             };
             if devices.is_empty() || runs.len() < devices.len() {
                 out.push(check);
@@ -983,43 +1039,95 @@ pub fn paired_checks(data: &HighOrderData) -> Vec<PairedCheck> {
                     index.insert(key, r);
                 }
             }
-            for family in crate::record::DEGREE_FAMILIES {
-                let iterations: &[Option<u32>] = if family == "PullBack" {
-                    &[Some(1), Some(9)]
-                } else {
-                    &[None]
-                };
+            // The class's median and lower-quartile ratios of `members` at one configuration.
+            let class_ratios = |members: &[(&str, Option<u32>)], cell, degree, size| {
+                let mut medians = Vec::new();
+                let mut lowers = Vec::new();
+                for &(t, b, _) in &runs {
+                    let get = |s| -> Option<Vec<&DegreeRecord>> {
+                        members
+                            .iter()
+                            .map(|&(f, it)| {
+                                index.get(&(t, b, f, cell, degree, size, it, s)).copied()
+                            })
+                            .collect()
+                    };
+                    let r = run_ratios(&get("policy")?, &get("direct")?)?;
+                    medians.push(crate::protocol::median(&r));
+                    lowers.push(lower_quartile(&r));
+                }
+                Some((geomean(&medians), geomean(&lowers)))
+            };
+            let mut reported: Vec<(String, f64, String)> = Vec::new();
+            for family in POLICY_FAMILIES {
+                let mut parts: Vec<(String, Members)> = Vec::new();
+                match family {
+                    "Jacobian" => {
+                        for f in ["Jacobian", "DetJ", "Pinv"] {
+                            parts.push((f.to_owned(), vec![(f, None)]));
+                        }
+                    }
+                    "PullBack" => {
+                        parts.push(("PullBack 1 it.".to_owned(), vec![("PullBack", Some(1))]));
+                        parts.push(("BasisEval".to_owned(), vec![("BasisEval", None)]));
+                    }
+                    _ => {}
+                }
                 for &cell in cells_of(family) {
+                    let entry = decision
+                        .entry(class, family, cell, scalar)
+                        .expect("an entry per class, family, cell and scalar");
                     for degree in 1..=max_degree(cell).min(4) {
+                        let at = |size: usize| format!("{family} {cell} p={degree} n={size}");
                         for &size in rule_sizes(class) {
-                            for &it in iterations {
-                                let ratios: Option<Vec<f64>> = runs
-                                    .iter()
-                                    .map(|&(t, b, _)| {
-                                        let get = |s| {
-                                            index.get(&(t, b, family, cell, degree, size, it, s))
-                                        };
-                                        Some(paired_ratio(get("policy")?, get("direct")?))
-                                    })
-                                    .collect();
-                                let Some(ratios) = ratios else {
-                                    check.missing += 1;
-                                    continue;
-                                };
-                                check.compared += 1;
-                                let ratio = geomean(&ratios);
-                                if check.worst.as_ref().is_none_or(|w| ratio > w.0) {
-                                    let at = format!(
-                                        "{family} {cell} p={degree} n={size}{}",
-                                        it.map(|i| format!(" {i} it.")).unwrap_or_default()
-                                    );
-                                    check.worst = Some((ratio, at));
+                            for (name, m) in &parts {
+                                if let Some((median, _)) = class_ratios(m, cell, degree, size) {
+                                    let worse = match reported.iter().position(|r| &r.0 == name) {
+                                        Some(i) if reported[i].1 >= median => None,
+                                        Some(i) => Some(i),
+                                        None => {
+                                            reported.push((name.clone(), 0.0, String::new()));
+                                            Some(reported.len() - 1)
+                                        }
+                                    };
+                                    if let Some(i) = worse {
+                                        reported[i].1 = median;
+                                        reported[i].2 = at(size).replacen(family, name, 1);
+                                    }
                                 }
+                            }
+                            let selectable = entry
+                                .choices
+                                .get(degree as usize - 1)
+                                .is_some_and(|c| c.base == "direct");
+                            if !selectable {
+                                check.excluded += 1;
+                                continue;
+                            }
+                            let Some((median, lower)) =
+                                class_ratios(&members(family), cell, degree, size)
+                            else {
+                                check.missing += 1;
+                                continue;
+                            };
+                            check.compared += 1;
+                            if check.worst_median.as_ref().is_none_or(|w| median > w.0) {
+                                check.worst_median = Some((median, at(size)));
+                            }
+                            if check.worst_lower.as_ref().is_none_or(|w| lower > w.0) {
+                                check.worst_lower = Some((lower, at(size)));
+                            }
+                            if lower > PAIRED_BOUND {
+                                check.failures.push(format!(
+                                    "{} (median {median:.3}, lower quartile {lower:.3})",
+                                    at(size)
+                                ));
                             }
                         }
                     }
                 }
             }
+            check.reported = reported;
             out.push(check);
         }
     }

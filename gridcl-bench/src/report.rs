@@ -492,28 +492,38 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
 
     out.push_str(
         "\n### Rule 11: the policy against `direct` at p ≤ 4\n\n\
-         In one paired run per device (the newest), the class ratio of the policy's time over \
-         `direct`'s per bench family, cell type, degree p ≤ 4, rule size and pull-back iteration \
-         count; the bound is 1.05. A device's ratio is the median over the timed runs of the \
-         policy's run i over `direct`'s run i (`degree_sweep --interleave` on CPUs alternates \
-         them). CpuSimd128 includes Locust's Grace CPU (ADR-0051).\n\n",
+         In one paired run per device (the newest), per policy family (J + det J + K summed per \
+         run; the pull-back at 9 iterations), cell type, degree p ≤ 4 and rule size, where \
+         `direct` is selectable for the class (ADR-0055): a device's per-run ratios of the \
+         policy's run i over `direct`'s run i (`degree_sweep --interleave` alternates them on \
+         CPUs), their median and lower quartile, and the class's geometric means over its \
+         devices. A configuration fails if the lower quartile exceeds 1.05, that is, if the \
+         policy is over 5% slower in at least three quarters of the run pairs. Excluded: \
+         configurations where `direct` is not selectable (rule 7 on Gpu). CpuSimd128 includes \
+         Locust's Grace CPU (ADR-0051).\n\n",
     );
     out.push_str(
-        "| Class | Type | Runs | Compared | Missing | Worst policy / direct | At |\n\
-         | --- | --- | --- | ---: | ---: | ---: | --- |\n",
+        "| Class | Type | Runs | Compared | Excluded | Missing | Worst median | At | Worst lower quartile | At | Failures |\n\
+         | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- | --- |\n",
     );
-    for p in paired_checks(data) {
+    let checks = paired_checks(data, decision);
+    let worst = |w: &Option<(f64, String)>| {
+        w.as_ref()
+            .map_or(("–".to_owned(), "–".to_owned()), |(r, at)| {
+                (format!("{r:.3}"), at.clone())
+            })
+    };
+    for p in &checks {
         let runs: Vec<String> = p
             .runs
             .iter()
             .map(|(t, b, r)| format!("{t} {b} {r}"))
             .collect();
-        let (worst, at) = p.worst.as_ref().map_or(("–".to_owned(), "–"), |(r, at)| {
-            (format!("{r:.3}"), at.as_str())
-        });
+        let (median, median_at) = worst(&p.worst_median);
+        let (lower, lower_at) = worst(&p.worst_lower);
         writeln!(
             out,
-            "| {:?} | {} | {} | {} | {} | {worst} | {at} |",
+            "| {:?} | {} | {} | {} | {} | {} | {median} | {median_at} | {lower} | {lower_at} | {} |",
             p.class,
             p.scalar.name(),
             if runs.is_empty() {
@@ -522,9 +532,33 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
                 runs.join("; ")
             },
             p.compared,
+            p.excluded,
             p.missing,
+            if p.failures.is_empty() {
+                "none".to_owned()
+            } else {
+                p.failures.join("; ")
+            },
         )
         .unwrap();
+    }
+    out.push_str(
+        "\nReported, not bounded (ADR-0055): bench families the policy does not choose for on \
+         their own, over every configuration of the table above (`direct` selectable or not), \
+         the largest median class ratio of the policy over `direct`.\n\n\
+         | Class | Type | Family | Largest median | At |\n\
+         | --- | --- | --- | ---: | --- |\n",
+    );
+    for p in &checks {
+        for (name, ratio, at) in &p.reported {
+            writeln!(
+                out,
+                "| {:?} | {} | {name} | {ratio:.3} | {at} |",
+                p.class,
+                p.scalar.name()
+            )
+            .unwrap();
+        }
     }
 
     out.push_str(

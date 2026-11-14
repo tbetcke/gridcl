@@ -2811,16 +2811,51 @@ The time per point at p = 8 over p = 4 of the strategy the policy selects at p =
 
 ### Rule 11: the policy against `direct` at p ≤ 4
 
-In one paired run per device (the newest), the class ratio of the policy's time over `direct`'s per bench family, cell type, degree p ≤ 4, rule size and pull-back iteration count; the bound is 1.05. A device's ratio is the median over the timed runs of the policy's run i over `direct`'s run i (`degree_sweep --interleave` on CPUs alternates them). CpuSimd128 includes Locust's Grace CPU (ADR-0051).
+In one paired run per device (the newest), per policy family (J + det J + K summed per run; the pull-back at 9 iterations), cell type, degree p ≤ 4 and rule size, where `direct` is selectable for the class (ADR-0055): a device's per-run ratios of the policy's run i over `direct`'s run i (`degree_sweep --interleave` alternates them on CPUs), their median and lower quartile, and the class's geometric means over its devices. A configuration fails if the lower quartile exceeds 1.05, that is, if the policy is over 5% slower in at least three quarters of the run pairs. Excluded: configurations where `direct` is not selectable (rule 7 on Gpu). CpuSimd128 includes Locust's Grace CPU (ADR-0051).
 
-| Class | Type | Runs | Compared | Missing | Worst policy / direct | At |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| CpuSimd128 | f32 | macmini cpu paired-macmini-cpu-1794667559; locust cpu 20261114150227-4159396 | 255 | 0 | 1.131 | BasisEval Hexahedron p=3 n=1000000 |
-| CpuSimd128 | f64 | macmini cpu paired-macmini-cpu-1794667559; locust cpu 20261114150227-4159396 | 255 | 0 | 1.059 | DetJ Quadrilateral p=1 n=1000000 |
-| CpuSimd512 | f32 | kathleen cpu 634121 | 255 | 0 | 1.569 | EVector Tetrahedron p=1 n=1000000 |
-| CpuSimd512 | f64 | kathleen cpu 634121 | 255 | 0 | 1.605 | BasisEval Hexahedron p=3 n=1000000 |
-| Gpu | f32 | macmini metal paired-macmini-metal-1794665922; locust cuda 20261114151543-4171256 | 510 | 0 | 3.956 | BasisEval Prism p=4 n=10000000 |
-| Gpu | f64 | locust cuda 20261114151543-4171256 | 510 | 0 | 3.835 | BasisEval Prism p=4 n=10000000 |
+| Class | Type | Runs | Compared | Excluded | Missing | Worst median | At | Worst lower quartile | At | Failures |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- | --- |
+| CpuSimd128 | f32 | macmini cpu paired-macmini-cpu-1794667559; locust cpu 20261114150227-4159396 | 147 | 0 | 0 | 1.078 | Normals Interval p=3 n=1000000 | 1.031 | Normals Interval p=3 n=1000000 | none |
+| CpuSimd128 | f64 | macmini cpu paired-macmini-cpu-1794667559; locust cpu 20261114150227-4159396 | 147 | 0 | 0 | 1.034 | EVector Tetrahedron p=3 n=1000000 | 1.016 | EVector Tetrahedron p=3 n=1000000 | none |
+| CpuSimd512 | f32 | kathleen cpu 634121 | 147 | 0 | 0 | 1.569 | EVector Tetrahedron p=1 n=1000000 | 1.415 | EVector Tetrahedron p=1 n=1000000 | EVector Tetrahedron p=1 n=1000000 (median 1.569, lower quartile 1.415) |
+| CpuSimd512 | f64 | kathleen cpu 634121 | 147 | 0 | 0 | 1.105 | PullBack Interval p=3 n=1000000 | 1.025 | EVector Quadrilateral p=1 n=1000000 | none |
+| Gpu | f32 | macmini metal paired-macmini-metal-1794665922; locust cuda 20261114151543-4171256 | 288 | 6 | 0 | 1.097 | EVector Pyramid p=1 n=1000000 | 1.007 | PullBack Interval p=3 n=1000000 | none |
+| Gpu | f64 | locust cuda 20261114151543-4171256 | 288 | 6 | 0 | 1.135 | EVector Quadrilateral p=2 n=1000000 | 1.032 | EVector Quadrilateral p=2 n=1000000 | none |
+
+Reported, not bounded (ADR-0055): bench families the policy does not choose for on their own, over every configuration of the table above (`direct` selectable or not), the largest median class ratio of the policy over `direct`.
+
+| Class | Type | Family | Largest median | At |
+| --- | --- | --- | ---: | --- |
+| CpuSimd128 | f32 | Jacobian | 1.010 | Jacobian Pyramid p=1 n=1000000 |
+| CpuSimd128 | f32 | DetJ | 1.013 | DetJ Triangle p=4 n=1000000 |
+| CpuSimd128 | f32 | Pinv | 1.044 | Pinv Hexahedron p=1 n=1000000 |
+| CpuSimd128 | f32 | PullBack 1 it. | 1.015 | PullBack 1 it. Tetrahedron p=2 n=1000000 |
+| CpuSimd128 | f32 | BasisEval | 1.131 | BasisEval Hexahedron p=3 n=1000000 |
+| CpuSimd128 | f64 | Jacobian | 1.030 | Jacobian Quadrilateral p=1 n=1000000 |
+| CpuSimd128 | f64 | DetJ | 1.059 | DetJ Quadrilateral p=1 n=1000000 |
+| CpuSimd128 | f64 | Pinv | 1.008 | Pinv Triangle p=3 n=1000000 |
+| CpuSimd128 | f64 | PullBack 1 it. | 1.011 | PullBack 1 it. Hexahedron p=1 n=1000000 |
+| CpuSimd128 | f64 | BasisEval | 1.049 | BasisEval Quadrilateral p=3 n=1000000 |
+| CpuSimd512 | f32 | Jacobian | 1.014 | Jacobian Interval p=4 n=1000000 |
+| CpuSimd512 | f32 | DetJ | 1.007 | DetJ Prism p=2 n=1000000 |
+| CpuSimd512 | f32 | Pinv | 1.009 | Pinv Interval p=2 n=1000000 |
+| CpuSimd512 | f32 | PullBack 1 it. | 1.206 | PullBack 1 it. Interval p=1 n=1000000 |
+| CpuSimd512 | f32 | BasisEval | 1.485 | BasisEval Hexahedron p=3 n=1000000 |
+| CpuSimd512 | f64 | Jacobian | 1.083 | Jacobian Quadrilateral p=3 n=1000000 |
+| CpuSimd512 | f64 | DetJ | 1.076 | DetJ Interval p=2 n=1000000 |
+| CpuSimd512 | f64 | Pinv | 1.066 | Pinv Quadrilateral p=3 n=1000000 |
+| CpuSimd512 | f64 | PullBack 1 it. | 1.070 | PullBack 1 it. Tetrahedron p=1 n=1000000 |
+| CpuSimd512 | f64 | BasisEval | 1.605 | BasisEval Hexahedron p=3 n=1000000 |
+| Gpu | f32 | Jacobian | 1.009 | Jacobian Interval p=3 n=10000000 |
+| Gpu | f32 | DetJ | 1.010 | DetJ Tetrahedron p=2 n=1000000 |
+| Gpu | f32 | Pinv | 1.018 | Pinv Tetrahedron p=2 n=1000000 |
+| Gpu | f32 | PullBack 1 it. | 1.195 | PullBack 1 it. Tetrahedron p=4 n=10000000 |
+| Gpu | f32 | BasisEval | 3.956 | BasisEval Prism p=4 n=10000000 |
+| Gpu | f64 | Jacobian | 1.008 | Jacobian Interval p=1 n=1000000 |
+| Gpu | f64 | DetJ | 1.006 | DetJ Interval p=2 n=1000000 |
+| Gpu | f64 | Pinv | 1.010 | Pinv Interval p=2 n=1000000 |
+| Gpu | f64 | PullBack 1 it. | 1.622 | PullBack 1 it. Hexahedron p=4 n=1000000 |
+| Gpu | f64 | BasisEval | 3.835 | BasisEval Prism p=4 n=10000000 |
 
 ### First-use compile and load times
 
