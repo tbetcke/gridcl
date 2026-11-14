@@ -70,7 +70,7 @@ jobs:
           scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
 
-  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the eight
+  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the ten
   # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review). Shard 1,
   # the shortest (6 min), also runs gridcl-geometry's integration tests.
   cpu-gridcl:
@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust toolchain from rust-toolchain.toml
@@ -186,10 +186,11 @@ jobs:
   vulkan:
     name: vulkan-${{ matrix.shard }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1", "2", "3,4", "5,6,7,8", other]
+        shard: ["1", "2", "3", "4", "5,7,8", "6", "9", "10", h5, h6, h7, h8, other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)

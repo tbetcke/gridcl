@@ -10,7 +10,7 @@
 //! Every check runs under the degree policy and under every strategy forced
 //! ([`for_each_strategy!`]; under `GRIDCL_GEOM_STRATEGY` only that setting). The references are
 //! computed once per mesh and precision; each run uses a copy of the mesh with an empty E-vector
-//! cache, so the E-vector is built under the run's strategy too. p ≥ 5 runs in release builds only ([`max_degree`]).
+//! cache, so the E-vector is built under the run's strategy too. One test per degree ([`degree_tests!`]); p ≥ 5 runs in release builds only.
 
 use crate::common;
 
@@ -126,16 +126,15 @@ impl MeshVisitor for Factors<'_> {
     }
 }
 
-fn factors<F: Real>(client: &Client) {
-    for p in degrees(false) {
-        visit_high_order_meshes::<F>(MeshSet::Accuracy, p, &mut Factors { client });
-    }
+fn factors<F: Real>(client: &Client, p: u32) {
+    visit_high_order_meshes::<F>(MeshSet::Accuracy, p, &mut Factors { client });
 }
 
-#[test]
-fn factors_match_host_reference() {
-    for_each_precision!(client(), factors);
+fn factors_at(p: u32) {
+    for_each_precision!(client(), factors, p);
 }
+
+crate::degree_tests!(factors_match_host_reference, factors_at);
 
 /// The pull-back of the device's X at the Gauss points of degree 2p recovers those points.
 struct PullBacks<'a> {
@@ -187,13 +186,12 @@ impl MeshVisitor for PullBacks<'_> {
     }
 }
 
-fn pull_backs<F: Real>(client: &Client) {
-    for p in degrees(false) {
-        visit_high_order_meshes::<F>(MeshSet::Accuracy, p, &mut PullBacks { client });
-    }
+fn pull_backs<F: Real>(client: &Client, p: u32) {
+    visit_high_order_meshes::<F>(MeshSet::Accuracy, p, &mut PullBacks { client });
 }
 
-#[test]
-fn pull_back_recovers_reference_points() {
-    for_each_precision!(client(), pull_backs);
+fn pull_backs_at(p: u32) {
+    for_each_precision!(client(), pull_backs, p);
 }
+
+crate::degree_tests!(pull_back_recovers_reference_points, pull_backs_at);

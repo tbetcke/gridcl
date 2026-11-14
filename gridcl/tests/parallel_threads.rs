@@ -1,7 +1,7 @@
 //! The M6 acceptance checks on `ThreadComm` with 1–4 ranks, so `cargo test` covers them
 //! (docs/plans/M6.md, T0); the MPI versions are in gridcl-mpi-tests. From M9h also the parallel
-//! invariance of geometric factors and the pull-back at p = 1–8 (ADR-0042, item 9; p ≥ 5 in
-//! release builds only).
+//! invariance of geometric factors and the pull-back at p = 1–8 (ADR-0042, item 9; one test per
+//! degree, p ≥ 5 in release builds only).
 
 use gridcl_testing::ThreadComm;
 use gridcl_testing::parallel::{self, Coverage};
@@ -21,19 +21,22 @@ fn parallel_invariance() {
 }
 
 /// M9h acceptance (rule 9): factors and pull-back results per (cell origin id, point) equal one
-/// rank's on 1–4 thread ranks, every ghost mode at p ≤ 2 and one per case above.
-#[test]
-fn high_order_parallel_invariance() {
-    let degrees: Vec<u32> = (1..=crate::common::max_degree()).collect();
+/// rank's on 1–4 thread ranks, every ghost mode at p ≤ 2 and one per case above; at degree `p`.
+fn high_order_parallel_invariance_at(p: u32) {
     for n in RANKS {
         ThreadComm::run(n, |comm| {
             let client = gridcl_testing::test_client();
-            for case in parallel::high_order_cases(&degrees) {
+            for case in parallel::high_order_cases(&[p]) {
                 parallel::high_order_invariance(&comm, &client, &case);
             }
         });
     }
 }
+
+crate::degree_tests!(
+    high_order_parallel_invariance,
+    high_order_parallel_invariance_at
+);
 
 #[test]
 fn scatter() {

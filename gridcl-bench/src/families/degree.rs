@@ -1706,25 +1706,33 @@ mod tests {
         // while the other tests load the machine.
         o.sizes = vec![100_000];
         let first = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
-        let second = degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap();
+        // Three cached runs: on a loaded hosted runner one warm-up call can take 0.09 s longer
+        // than the median, as long as a CPU compile at p = 2 (0.01-0.07 s), and load only adds.
+        let cached: Vec<_> = (0..3)
+            .map(|_| degree_sweep(&client, &machine, &o, &mut |_| ()).unwrap())
+            .collect();
         assert_eq!(first.len(), 3);
         assert_eq!(
             first.iter().map(|r| r.iterations).collect::<Vec<_>>(),
             [None, Some(1), Some(9)]
         );
-        for (a, b) in first.iter().zip(&second) {
-            for r in [a, b] {
+        for (i, a) in first.iter().enumerate() {
+            for r in std::iter::once(a).chain(cached.iter().map(|c| &c[i])) {
                 assert_eq!(r.status, "ok", "{r:?}");
                 assert_eq!(r.times_s.len(), 2, "{r:?}");
                 assert!(r.median_s > 0.0 && r.calls_per_run >= 1, "{r:?}");
                 assert_eq!(r.vector_size, r.policy_vector_size);
             }
             // The kernels of the first run are cached: no compile time is left.
+            let b = cached
+                .iter()
+                .map(|c| c[i].compile_s)
+                .fold(f64::INFINITY, f64::min);
             assert!(
-                b.compile_s <= 0.05 + 0.5 * a.compile_s.min(0.1),
-                "first {} s, second {} s",
+                b <= 0.05 + 0.5 * a.compile_s.min(0.1),
+                "first {} s, least of the cached runs {} s",
                 a.compile_s,
-                b.compile_s
+                b
             );
         }
         // Nine iterations take longer than one.

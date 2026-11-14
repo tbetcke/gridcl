@@ -17,7 +17,8 @@
 //! of the precision scaled by max(1, A / A_ref) on GPUs; the pull-back's last step is compared
 //! on the CPU runtime only (on GPUs a converged step is rounding noise, see pull_back.rs). Every
 //! check runs under the degree policy and every strategy ([`for_each_strategy!`]); each run
-//! builds its own E-vector on a copy of the mesh. p ≥ 5 runs in release builds only.
+//! builds its own E-vector on a copy of the mesh. One test per degree ([`degree_tests!`]); p ≥ 5
+//! runs in release builds only.
 
 use crate::common;
 
@@ -381,24 +382,23 @@ where
     });
 }
 
-fn vector_sizes_all<F: Real>(client: &Client) {
-    for p in degrees(false) {
-        visit_high_order_meshes::<F>(MeshSet::Invariance, p, &mut VectorSizes { client });
-        if p >= 3 {
-            let quads = gridcl_testing::square_box(Cell2::Quadrilateral, 129, p).perturbed(0.05);
-            large::<F, D2, D2>(client, "large quadrilateral box", &quads, p);
-            if !cfg!(debug_assertions) {
-                let hexes = gridcl_testing::cube_box(Cell3::Hexahedron, 26, p).perturbed(0.05);
-                large::<F, D3, D3>(client, "large hexahedron box", &hexes, p);
-            }
+fn vector_size_checks<F: Real>(client: &Client, p: u32) {
+    visit_high_order_meshes::<F>(MeshSet::Invariance, p, &mut VectorSizes { client });
+    if p >= 3 {
+        let quads = gridcl_testing::square_box(Cell2::Quadrilateral, 129, p).perturbed(0.05);
+        large::<F, D2, D2>(client, "large quadrilateral box", &quads, p);
+        if !cfg!(debug_assertions) {
+            let hexes = gridcl_testing::cube_box(Cell3::Hexahedron, 26, p).perturbed(0.05);
+            large::<F, D3, D3>(client, "large hexahedron box", &hexes, p);
         }
     }
 }
 
-#[test]
-fn vector_size_invariance() {
-    for_each_precision!(client(), vector_sizes_all);
+fn vector_sizes_at(p: u32) {
+    for_each_precision!(client(), vector_size_checks, p);
 }
+
+crate::degree_tests!(vector_size_invariance, vector_sizes_at);
 
 /// Tile widths 1 and 16 give the same results (rule 8).
 struct Tiles<'a> {
@@ -452,16 +452,15 @@ impl MeshVisitor for Tiles<'_> {
     }
 }
 
-fn tiles_all<F: Real>(client: &Client) {
-    for p in degrees(false) {
-        visit_high_order_meshes::<F>(MeshSet::Invariance, p, &mut Tiles { client });
-    }
+fn tiles<F: Real>(client: &Client, p: u32) {
+    visit_high_order_meshes::<F>(MeshSet::Invariance, p, &mut Tiles { client });
 }
 
-#[test]
-fn tile_invariance() {
-    for_each_precision!(client(), tiles_all);
+fn tiles_at(p: u32) {
+    for_each_precision!(client(), tiles, p);
 }
+
+crate::degree_tests!(tile_invariance, tiles_at);
 
 /// Two builds and runs give bitwise identical arrays on every device ("Determinism").
 struct Twice<'a> {
@@ -514,13 +513,12 @@ impl MeshVisitor for Twice<'_> {
     }
 }
 
-fn twice_all<F: Real>(client: &Client) {
-    for p in degrees(false) {
-        visit_high_order_meshes::<F>(MeshSet::Accuracy, p, &mut Twice { client });
-    }
+fn twice<F: Real>(client: &Client, p: u32) {
+    visit_high_order_meshes::<F>(MeshSet::Accuracy, p, &mut Twice { client });
 }
 
-#[test]
-fn two_runs_are_bitwise_identical() {
-    for_each_precision!(client(), twice_all);
+fn twice_at(p: u32) {
+    for_each_precision!(client(), twice, p);
 }
+
+crate::degree_tests!(two_runs_are_bitwise_identical, twice_at);

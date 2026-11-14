@@ -19,14 +19,15 @@ pub fn client() -> Client {
     gridcl_testing::test_client()
 }
 
-/// Runs `$f::<f32>(&client)` and, where the device supports f64, `$f::<f64>(&client)`.
+/// Runs `$f::<f32>(&client, args...)` and, where the device supports f64,
+/// `$f::<f64>(&client, args...)`.
 #[macro_export]
 macro_rules! for_each_precision {
-    ($client:expr, $f:ident) => {{
+    ($client:expr, $f:ident $(, $arg:expr)*) => {{
         let client = $client;
-        $f::<f32>(&client);
+        $f::<f32>(&client $(, $arg)*);
         if gridcl_testing::supports::<f64>(&client) {
-            $f::<f64>(&client);
+            $f::<f64>(&client $(, $arg)*);
         } else {
             eprintln!(
                 "{}: f64 is not supported on this device; skipped",
@@ -645,16 +646,32 @@ macro_rules! for_each_strategy {
     }};
 }
 
-/// The highest geometry degree of the M9h tests: 8, and 4 in debug builds (p ≥ 5 is
-/// release-only, docs/plans/M9h.md, T0b).
-pub const fn max_degree() -> u32 {
-    if cfg!(debug_assertions) { 4 } else { 8 }
-}
-
-/// The degrees of the M9h tests for meshes with or without pyramids: 1 to [`max_degree`], and
-/// at most 3 with pyramids (ADR-0041).
-pub fn degrees(has_pyramids: bool) -> std::ops::RangeInclusive<u32> {
-    1..=if has_pyramids { 3 } else { max_degree() }
+/// A module `$name` of M9h tests, one per degree, `p1` to `p8`, each calling `$run(p)` from
+/// the enclosing module; p ≥ 5 is ignored in debug builds (release-only, docs/plans/M9h.md,
+/// T0b). One test per degree lets scripts/ci-gridcl-shard.sh share a test's degrees out over
+/// shards (T12); meshes with pyramids stop at p = 3 (ADR-0041) in `$run`.
+#[macro_export]
+macro_rules! degree_tests {
+    ($name:ident, $run:ident) => {
+        mod $name {
+            $crate::degree_tests!(@ $run; p1 1, p2 2, p3 3, p4 4; p5 5, p6 6, p7 7, p8 8);
+        }
+    };
+    (@ $run:ident; $($low:ident $pl:literal),*; $($high:ident $ph:literal),*) => {
+        $(
+            #[test]
+            fn $low() {
+                super::$run($pl);
+            }
+        )*
+        $(
+            #[test]
+            #[cfg_attr(debug_assertions, ignore = "p ≥ 5 runs in release builds only")]
+            fn $high() {
+                super::$run($ph);
+            }
+        )*
+    };
 }
 
 pub use gridcl_testing::reference::Amplification;
