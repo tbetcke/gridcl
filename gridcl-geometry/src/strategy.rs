@@ -531,13 +531,15 @@ mod tests {
                 }
             }
         }
-        // T4: M9's kernels everywhere.
-        assert!(
-            policy
-                .ranges
-                .values()
-                .all(|r| r.as_slice() == [(1, Strategy::Direct)])
-        );
+        // The open-ended last range compiles at every degree: `loops` or better, never `direct`
+        // (ADR-0042, item 3; written by gridcl-bench's `high_order_report`, T11b).
+        for (key, ranges) in &policy.ranges {
+            assert_ne!(
+                ranges.last().map(|r| r.1),
+                Some(Strategy::Direct),
+                "{key:?}: {ranges:?}"
+            );
+        }
     }
 
     #[test]

@@ -456,18 +456,26 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
     out.push_str(
         "\n### Rule 1: p = 8 over p = 4 on tensor cells\n\n\
          The time per point at p = 8 over p = 4 of the strategy the policy selects at p = 8, \
-         the geometric mean over the class's devices, at each rule size: at most 3 for the \
-         geometric factors and the pull-back's set-up, at most 1.1 · (9/5)^d for a Newton step \
-         (ADR-0042, item 1; ADR-0049). Step = (t(9) − t(1)) / 8, set-up = t(1) − step.\n\n",
+         the geometric mean over the class's devices, at each rule size, against the bounds of \
+         ADR-0042 item 1: 3 for the geometric factors and the pull-back's set-up, 1.1 · (9/5)^d \
+         for a Newton step (ADR-0049). Step = (t(9) − t(1)) / 8, set-up = t(1) − step. The \
+         bounds are reported, not enforced, in M9h; M10 takes them as its target (ADR-0053). \
+         Over M9: T3's `direct` time at p = 8 over the strategy's (\"–\" where `direct` has no \
+         baseline record, as Locust's hexahedron pull-back at p = 8, which did not compile).\n\n",
     );
     out.push_str(
-        "| Class | Type | Cell | Family | Part | Strategy | Points | p = 8 / p = 4 | Bound |\n\
-         | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |\n",
+        "| Class | Type | Cell | Family | Part | Strategy | Points | p = 8 / p = 4 | Bound | Within | Over M9 at p = 8 |\n\
+         | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: |\n",
     );
     for t in tensor_ratios(data, decision) {
+        let within = match t.ratio {
+            Some(r) if r <= t.bound => "yes",
+            Some(_) => "no",
+            None => "–",
+        };
         writeln!(
             out,
-            "| {:?} | {} | {} | {} | {} | {} | 10^{} | {} | {:.2} |",
+            "| {:?} | {} | {} | {} | {} | {} | 10^{} | {} | {:.2} | {within} | {} |",
             t.class,
             t.scalar.name(),
             t.cell,
@@ -476,7 +484,8 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
             t.strategy,
             t.size.ilog10(),
             t.ratio.map_or("–".to_owned(), |r| format!("{r:.2}")),
-            t.bound
+            t.bound,
+            t.speedup_m9.map_or("–".to_owned(), |r| format!("{r:.1}")),
         )
         .unwrap();
     }

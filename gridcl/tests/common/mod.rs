@@ -357,8 +357,28 @@ pub fn flat_f64<F: Real, S: FieldShape>(fields: &BlockFields<F, S>) -> Vec<Vec<f
 /// that reorders the sums of the node-order references ([`environment_reorders_sums`]), the
 /// CPU runtime is held to the tolerance too.
 pub fn assert_matches<F: Real>(got: &[F], want: &[F], what: &str) {
+    assert_matches_if(got, want, what, !environment_reorders_sums());
+}
+
+/// [`assert_matches`] for a launch whose strategies `ran` were recorded
+/// (`testing::record_strategies`): bitwise on the CPU runtime only where every strategy that
+/// ran sums in the node order of the references ([`reorders_sums`]), within the tolerance
+/// otherwise (ADR-0054).
+pub fn assert_matches_ran<F: Real>(
+    got: &[F],
+    want: &[F],
+    what: &str,
+    ran: &[(StrategyFamily, Strategy)],
+) {
+    let in_order = !environment_reorders_sums() && !ran.iter().any(|&(_, s)| reorders_sums(s));
+    assert_matches_if(got, want, &format!("{what}, ran {ran:?}"), in_order);
+}
+
+/// Bitwise up to the sign of zero if `bitwise` and the device is the CPU runtime, else within
+/// the tolerance of `F`.
+fn assert_matches_if<F: Real>(got: &[F], want: &[F], what: &str, bitwise: bool) {
     assert_eq!(got.len(), want.len(), "{what}: lengths");
-    if gridcl_testing::bitwise_device() && !environment_reorders_sums() {
+    if gridcl_testing::bitwise_device() && bitwise {
         for (i, (a, b)) in got.iter().zip(want).enumerate() {
             let (a, b) = (a.widen(), b.widen());
             assert!(
@@ -518,24 +538,29 @@ pub use gridcl_geometry::testing::{Strategy, StrategyFamily, StrategyOverride};
 /// The environment variable of the degree policy's override (ADR-0042, item 3).
 pub const GEOM_STRATEGY_VAR: &str = "GRIDCL_GEOM_STRATEGY";
 
-/// Whether `GRIDCL_GEOM_STRATEGY` forces, for some family, a strategy that sums in another
-/// order than the scalar node-order references: `sumfact` (one direction at a time), `shared`
-/// (`sumfact`'s kernels on tensor rules, T9) or `cooperative` (trees over units). `direct` and `loops` sum in node order, and the policy
-/// stays bitwise M9's kernels (ADR-0042, item 11), so the references' bitwise comparisons hold
-/// under them (docs/plans/M9h.md, Deviations log, T7b).
+/// Whether strategy `s` sums in another order than the scalar node-order references:
+/// `sumfact` (one direction at a time), `shared` (`sumfact`'s kernels on tensor rules, T9) or
+/// `cooperative` (trees over units). `direct` and `loops` sum in node order, so the references'
+/// bitwise comparisons hold under them (docs/plans/M9h.md, Deviations log, T7b; ADR-0054).
+pub fn reorders_sums(s: Strategy) -> bool {
+    matches!(
+        s,
+        Strategy::SumFactorised | Strategy::Shared | Strategy::Cooperative
+    )
+}
+
+/// Whether `GRIDCL_GEOM_STRATEGY` forces, for some family, a strategy that [`reorders_sums`].
+/// The degree policy may select one too; tests that compare with a reference under the policy
+/// record what ran ([`assert_matches_ran`], ADR-0054).
 pub fn environment_reorders_sums() -> bool {
     let Some(value) = std::env::var_os(GEOM_STRATEGY_VAR) else {
         return false;
     };
     value.to_string_lossy().split(',').any(|entry| {
         let name = entry.rsplit('=').next().unwrap_or_default().trim();
-        [
-            Strategy::SumFactorised,
-            Strategy::Shared,
-            Strategy::Cooperative,
-        ]
-        .iter()
-        .any(|s| s.name() == name)
+        Strategy::ALL
+            .into_iter()
+            .any(|s| reorders_sums(s) && s.name() == name)
     })
 }
 

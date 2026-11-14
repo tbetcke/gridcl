@@ -294,6 +294,24 @@ impl<'a> Times<'a> {
         self.times.get(&key).copied()
     }
 
+    /// The time per point of one device's configuration in T3's baseline (`direct`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_baseline(
+        &self,
+        device: (&str, &str),
+        family: &str,
+        cell: &str,
+        degree: u32,
+        scalar: Scalar,
+        size: usize,
+        iterations: Option<u32>,
+    ) -> Option<f64> {
+        let key = (
+            device.0, device.1, family, cell, degree, scalar, size, iterations, "direct",
+        );
+        self.baseline.get(&key).copied()
+    }
+
     /// The summed time per point of a policy family's members on one device in T3's baseline
     /// (`direct` at a88ab2a), if it has `ok` records.
     pub fn baseline_family_time(
@@ -764,9 +782,13 @@ pub struct TensorRatio {
     /// `None` where a device lacks a record.
     pub ratio: Option<f64>,
     pub bound: f64,
+    /// The speedup at p = 8 over M9's kernels: T3's `direct` time over the strategy's, the
+    /// geometric mean over the devices; `None` where a device has no baseline record (ADR-0053).
+    pub speedup_m9: Option<f64>,
 }
 
-/// Rule 1's ratios under `decision`: step = (t(9) − t(1)) / 8, set-up = t(1) − step.
+/// Rule 1's ratios under `decision`: step = (t(9) − t(1)) / 8, set-up = t(1) − step; measured
+/// and reported, not enforced (ADR-0053).
 pub fn tensor_ratios(data: &HighOrderData, decision: &DegreeDecision) -> Vec<TensorRatio> {
     let times = Times::new(data);
     let mut out = Vec::new();
@@ -788,18 +810,26 @@ pub fn tensor_ratios(data: &HighOrderData, decision: &DegreeDecision) -> Vec<Ten
                         .expect("an entry")
                         .strategy(8);
                     for &size in rule_sizes(class) {
-                        let t = |device: (&str, &str), degree, iterations| {
-                            times.get(
-                                device, family, cell, degree, scalar, size, iterations, strategy,
-                            )
+                        // `m9`: T3's baseline instead of the strategy's records.
+                        let t = |m9: bool, device: (&str, &str), degree, iterations| {
+                            if m9 {
+                                times.get_baseline(
+                                    device, family, cell, degree, scalar, size, iterations,
+                                )
+                            } else {
+                                times.get(
+                                    device, family, cell, degree, scalar, size, iterations,
+                                    strategy,
+                                )
+                            }
                         };
-                        let step = |device, p| {
-                            Some((t(device, p, Some(9))? - t(device, p, Some(1))?) / 8.0)
+                        let step = |m9, device, p| {
+                            Some((t(m9, device, p, Some(9))? - t(m9, device, p, Some(1))?) / 8.0)
                         };
-                        let part_time = |part, device, p| match part {
-                            "step" => step(device, p),
-                            "set-up" => Some(t(device, p, Some(1))? - step(device, p)?),
-                            _ => t(device, p, None),
+                        let part_time = |m9, part, device, p| match part {
+                            "step" => step(m9, device, p),
+                            "set-up" => Some(t(m9, device, p, Some(1))? - step(m9, device, p)?),
+                            _ => t(m9, device, p, None),
                         };
                         let parts: &[&'static str] = if family == "PullBack" {
                             &["step", "set-up"]
@@ -809,7 +839,21 @@ pub fn tensor_ratios(data: &HighOrderData, decision: &DegreeDecision) -> Vec<Ten
                         for &part in parts {
                             let r: Option<Vec<f64>> = devices
                                 .iter()
-                                .map(|&dv| Some(part_time(part, dv, 8)? / part_time(part, dv, 4)?))
+                                .map(|&dv| {
+                                    Some(
+                                        part_time(false, part, dv, 8)?
+                                            / part_time(false, part, dv, 4)?,
+                                    )
+                                })
+                                .collect();
+                            let speedup: Option<Vec<f64>> = devices
+                                .iter()
+                                .map(|&dv| {
+                                    Some(
+                                        part_time(true, part, dv, 8)?
+                                            / part_time(false, part, dv, 8)?,
+                                    )
+                                })
                                 .collect();
                             out.push(TensorRatio {
                                 class,
@@ -821,6 +865,7 @@ pub fn tensor_ratios(data: &HighOrderData, decision: &DegreeDecision) -> Vec<Ten
                                 size,
                                 ratio: r.map(|r| geomean(&r)),
                                 bound: tensor_bound(part, d),
+                                speedup_m9: speedup.map(|r| geomean(&r)),
                             });
                         }
                     }

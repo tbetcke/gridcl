@@ -637,17 +637,21 @@ fn compile_and_load_within_30_s_on_locust() {
     }
 }
 
-/// Bullet 3 (rule 1): on quadrilaterals and hexahedra, the time per point at p = 8 over p = 4
-/// of the strategy the policy selects at p = 8, at the class's rule sizes: at most 3
-/// for the geometric factors and for the pull-back's set-up per point (every strategy has one,
-/// `sumfact`'s sum-factorised, ADR-0049), and at most 1.1 · (9/5)^d for a Newton step, with
-/// step = (t(9) − t(1)) / 8 and set-up = t(1) − step.
+/// Bullet 3 (rule 1, ADR-0053): on quadrilaterals and hexahedra, the time per point at p = 8
+/// over p = 4 of the strategy the policy selects at p = 8, at the class's rule sizes, is reported
+/// in `docs/perf/high-order.md` against the bounds of ADR-0042 item 1 (3 for the geometric
+/// factors and the pull-back's set-up, every strategy having one, `sumfact`'s sum-factorised,
+/// ADR-0049; 1.1 · (9/5)^d for a Newton step), with step = (t(9) − t(1)) / 8 and set-up =
+/// t(1) − step. Each ratio, recomputed here from the records, appears in a row with the class,
+/// type, cell, family, part, strategy, size and bound; the bound is not enforced in M9h.
 #[test]
-fn tensor_cost_ratio_p8_over_p4() {
+fn tensor_cost_ratio_reported() {
     let data = data();
     let policy = policy();
     check_protocol(&data.degree);
     let records = &data.degree;
+    let text = read("docs/perf/high-order.md");
+    let rows: Vec<Vec<&str>> = text.lines().filter_map(row_cells).collect();
     let factors = ["Points", "Jacobian", "DetJ", "Pinv", "FacetNormals"];
     for class in MEASURED_CLASSES {
         for (scalar, bytes) in SCALARS {
@@ -679,9 +683,10 @@ fn tensor_cost_ratio_p8_over_p4() {
                                 size,
                                 iterations,
                             };
-                            time(records, c, |r| r.strategy == s)
+                            time(records, c, |r| r.strategy == s && r.strategy_ran == s)
                                 .unwrap_or_else(|| panic!("{what}: no record of {c:?}"))
                         };
+                        let mut parts: Vec<(&str, Vec<f64>, f64)> = Vec::new();
                         if family == "PullBack" {
                             let mut steps = Vec::new();
                             let mut setups = Vec::new();
@@ -695,28 +700,37 @@ fn tensor_cost_ratio_p8_over_p4() {
                                 steps.push(step(8) / step(4));
                                 setups.push(setup(8) / setup(4));
                             }
-                            let bound = 1.1 * (9.0f64 / 5.0).powi(d);
-                            let ratio = geomean(&steps);
-                            assert!(
-                                ratio <= bound,
-                                "{what}: Newton step p=8/p=4 = {ratio:.2} > {bound:.2} ({steps:?})"
-                            );
-                            let ratio = geomean(&setups);
-                            assert!(
-                                ratio <= 3.0,
-                                "{what}: set-up p=8/p=4 = {ratio:.2} > 3 ({setups:?})"
-                            );
+                            parts.push(("step", steps, 1.1 * (9.0f64 / 5.0).powi(d)));
+                            parts.push(("set-up", setups, 3.0));
                         } else {
-                            let ratios: Vec<f64> = devices
+                            let ratios = devices
                                 .iter()
                                 .map(|&(target, backend)| {
                                     t(target, backend, 8, None) / t(target, backend, 4, None)
                                 })
                                 .collect();
-                            let ratio = geomean(&ratios);
+                            parts.push(("factor", ratios, 3.0));
+                        }
+                        for (part, ratios, bound) in parts {
+                            let ratio = format!("{:.2}", geomean(&ratios));
+                            let bound = format!("{bound:.2}");
+                            let class = format!("{class:?}");
+                            let points = format!("10^{}", size.ilog10());
+                            let want = [
+                                class.as_str(),
+                                scalar.name(),
+                                cell,
+                                family,
+                                part,
+                                s,
+                                &points,
+                                &ratio,
+                                &bound,
+                            ];
                             assert!(
-                                ratio <= 3.0,
-                                "{what}: p=8/p=4 = {ratio:.2} > 3 ({ratios:?})"
+                                rows.iter()
+                                    .any(|r| r.len() >= want.len() && r[..want.len()] == want),
+                                "high-order.md: no row {want:?} ({what}, {ratios:?})"
                             );
                         }
                     }

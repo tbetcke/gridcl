@@ -5,205 +5,205 @@
 # 1; the last range is open-ended. Families: EVector, Points, Jacobian (J, det J and the
 # pseudo-inverse), Normals (codimension 1: intervals, triangles and quadrilaterals),
 # FacetNormals and PullBack (with the device basis evaluator). Strategies: direct, loops,
-# sumfact, shared, cooperative. Until T11b (docs/plans/M9h.md) every entry is `direct`, M9's
-# kernels.
+# sumfact, shared, cooperative. Written by `cargo run -p gridcl-bench --bin high_order_report`
+# from docs/perf/data/ with the decision rule of docs/perf/high-order.md; do not edit by hand.
 
 [CpuSimd128.EVector]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [6, "loops"]], 8 = [[1, "direct"], [8, "loops"]] }
+Prism = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [CpuSimd128.Points]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [4, "loops"], [5, "direct"], [6, "loops"], [7, "direct"], [8, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "loops"], [2, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [2, "loops"]], 8 = [[1, "direct"], [2, "loops"]] }
+Hexahedron = { 4 = [[1, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [2, "loops"]], 8 = [[1, "loops"], [2, "direct"], [3, "loops"]] }
 
 [CpuSimd128.Jacobian]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [5, "loops"], [6, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "loops"], [2, "direct"], [3, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [2, "loops"], [4, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [3, "loops"]] }
 
 [CpuSimd128.Normals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [2, "loops"], [5, "direct"], [9, "loops"]], 8 = [[1, "direct"], [2, "loops"], [4, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [5, "loops"], [6, "direct"], [7, "loops"]], 8 = [[1, "direct"], [6, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"]] }
 
 [CpuSimd128.FacetNormals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [CpuSimd128.PullBack]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [8, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [5, "sumfact"]], 8 = [[1, "direct"], [5, "sumfact"], [6, "direct"], [7, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [3, "sumfact"], [4, "direct"], [5, "sumfact"], [7, "direct"], [8, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"], [4, "direct"], [5, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [5, "sumfact"]], 8 = [[1, "direct"], [5, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [CpuSimd256.EVector]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [6, "loops"], [7, "direct"], [8, "loops"]], 8 = [[1, "direct"], [6, "loops"], [7, "direct"], [8, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "loops"], [4, "direct"], [9, "loops"]], 8 = [[1, "loops"], [2, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "loops"], [2, "direct"], [5, "loops"]], 8 = [[1, "direct"], [3, "loops"], [4, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Prism = { 4 = [[1, "direct"], [5, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [5, "loops"], [8, "direct"], [9, "loops"]] }
+Pyramid = { 4 = [[1, "direct"], [3, "loops"]], 8 = [[1, "direct"], [3, "loops"]] }
 
 [CpuSimd256.Points]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [4, "loops"], [5, "direct"], [9, "loops"]], 8 = [[1, "direct"], [3, "loops"], [4, "direct"], [5, "loops"], [6, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "loops"]], 8 = [[1, "direct"], [8, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "loops"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [2, "loops"]], 8 = [[1, "direct"], [2, "loops"], [4, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [2, "loops"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [4, "loops"]] }
 
 [CpuSimd256.Jacobian]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [6, "loops"], [7, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [2, "loops"], [3, "direct"], [9, "loops"]], 8 = [[1, "direct"], [7, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [CpuSimd256.Normals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [3, "loops"], [5, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "loops"], [2, "direct"], [3, "loops"], [4, "direct"], [9, "loops"]], 8 = [[1, "direct"], [2, "loops"], [4, "direct"], [5, "loops"], [6, "direct"], [7, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [4, "sumfact"]] }
 
 [CpuSimd256.FacetNormals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "loops"], [3, "direct"], [4, "loops"], [6, "direct"], [8, "loops"]], 8 = [[1, "direct"], [6, "loops"], [7, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [3, "loops"], [5, "direct"], [9, "loops"]], 8 = [[1, "direct"], [4, "loops"], [5, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "loops"], [4, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "loops"], [2, "direct"], [3, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [4, "sumfact"], [5, "loops"], [7, "sumfact"]], 8 = [[1, "loops"], [2, "direct"], [3, "loops"], [4, "sumfact"], [5, "loops"], [8, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [4, "loops"]] }
 
 [CpuSimd256.PullBack]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"], [8, "direct"], [9, "loops"]] }
+Prism = { 4 = [[1, "direct"], [5, "sumfact"]], 8 = [[1, "direct"], [5, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [CpuSimd512.EVector]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [6, "loops"], [7, "direct"], [8, "loops"]], 8 = [[1, "direct"], [6, "loops"], [7, "direct"], [8, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "loops"], [4, "direct"], [9, "loops"]], 8 = [[1, "loops"], [2, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "loops"], [2, "direct"], [5, "loops"]], 8 = [[1, "direct"], [3, "loops"], [4, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Prism = { 4 = [[1, "direct"], [5, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [5, "loops"], [8, "direct"], [9, "loops"]] }
+Pyramid = { 4 = [[1, "direct"], [3, "loops"]], 8 = [[1, "direct"], [3, "loops"]] }
 
 [CpuSimd512.Points]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [4, "loops"], [5, "direct"], [9, "loops"]], 8 = [[1, "direct"], [3, "loops"], [4, "direct"], [5, "loops"], [6, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "loops"]], 8 = [[1, "direct"], [8, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "loops"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [2, "loops"]], 8 = [[1, "direct"], [2, "loops"], [4, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [2, "loops"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [4, "loops"]] }
 
 [CpuSimd512.Jacobian]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [6, "loops"], [7, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [2, "loops"], [3, "direct"], [9, "loops"]], 8 = [[1, "direct"], [7, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [CpuSimd512.Normals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [3, "loops"], [5, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]], 8 = [[1, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "loops"], [2, "direct"], [3, "loops"], [4, "direct"], [9, "loops"]], 8 = [[1, "direct"], [2, "loops"], [4, "direct"], [5, "loops"], [6, "direct"], [7, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [4, "sumfact"]] }
 
 [CpuSimd512.FacetNormals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "loops"], [3, "direct"], [4, "loops"], [6, "direct"], [8, "loops"]], 8 = [[1, "direct"], [6, "loops"], [7, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [3, "loops"], [5, "direct"], [9, "loops"]], 8 = [[1, "direct"], [4, "loops"], [5, "direct"], [7, "loops"], [8, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [2, "loops"], [4, "sumfact"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "loops"], [2, "direct"], [3, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [2, "sumfact"]], 8 = [[1, "direct"], [2, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [4, "sumfact"], [5, "loops"], [7, "sumfact"]], 8 = [[1, "loops"], [2, "direct"], [3, "loops"], [4, "sumfact"], [5, "loops"], [8, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [2, "loops"], [3, "direct"], [4, "loops"]] }
 
 [CpuSimd512.PullBack]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [5, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [3, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"], [8, "direct"], [9, "loops"]] }
+Prism = { 4 = [[1, "direct"], [5, "sumfact"]], 8 = [[1, "direct"], [5, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [Gpu.EVector]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [8, "loops"]], 8 = [[1, "direct"], [8, "loops"]] }
+Prism = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [Gpu.Points]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [4, "shared"]], 8 = [[1, "direct"], [3, "sumfact"], [4, "shared"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"], [7, "cooperative"]], 8 = [[1, "direct"], [5, "loops"], [6, "cooperative"]] }
+Hexahedron = { 4 = [[1, "direct"], [3, "shared"], [4, "sumfact"], [5, "shared"], [6, "sumfact"]], 8 = [[1, "direct"], [2, "shared"], [3, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [4, "sumfact"], [5, "shared"], [8, "sumfact"]], 8 = [[1, "direct"], [2, "shared"], [5, "sumfact"], [6, "shared"], [8, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [Gpu.Jacobian]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [4, "shared"]], 8 = [[1, "direct"], [4, "sumfact"], [6, "shared"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"], [8, "cooperative"]], 8 = [[1, "direct"], [5, "loops"], [6, "cooperative"]] }
+Hexahedron = { 4 = [[1, "direct"], [2, "shared"], [6, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"], [5, "shared"], [6, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [2, "shared"], [3, "sumfact"], [4, "shared"], [5, "sumfact"], [6, "shared"], [8, "sumfact"]], 8 = [[1, "direct"], [2, "shared"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [Gpu.Normals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [5, "shared"]], 8 = [[1, "direct"], [4, "shared"], [8, "sumfact"]] }
 
 [Gpu.FacetNormals]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [6, "shared"]], 8 = [[1, "direct"], [4, "shared"]] }
+Tetrahedron = { 4 = [[1, "direct"], [5, "loops"], [8, "cooperative"]], 8 = [[1, "direct"], [5, "shared"], [6, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [2, "shared"], [3, "sumfact"], [4, "shared"], [6, "sumfact"]], 8 = [[1, "direct"], [3, "sumfact"], [5, "shared"], [6, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [4, "shared"], [6, "sumfact"]], 8 = [[1, "direct"], [2, "shared"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
 
 [Gpu.PullBack]
-Interval = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Triangle = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Quadrilateral = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Tetrahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Hexahedron = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Prism = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
-Pyramid = { 4 = [[1, "direct"]], 8 = [[1, "direct"]] }
+Interval = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Triangle = { 4 = [[1, "direct"], [8, "loops"]], 8 = [[1, "direct"], [8, "loops"]] }
+Quadrilateral = { 4 = [[1, "direct"], [9, "loops"]], 8 = [[1, "direct"], [9, "loops"]] }
+Tetrahedron = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }
+Hexahedron = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"], [5, "sumfact"]] }
+Prism = { 4 = [[1, "direct"], [4, "loops"], [5, "sumfact"], [7, "loops"], [8, "sumfact"]], 8 = [[1, "direct"], [4, "sumfact"]] }
+Pyramid = { 4 = [[1, "direct"], [4, "loops"]], 8 = [[1, "direct"], [4, "loops"]] }

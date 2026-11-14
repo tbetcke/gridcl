@@ -7,6 +7,11 @@
 //! and normals in codimension 1, at p = 2 with 0, 1, 15, 16 and 17 cells; J and det J also on
 //! 10^6 + 3 P1 triangles. Factor kernels plan with max_vector = tile, so tile width 1 runs at
 //! size 1 (ADR-0012); each run asserts its size through `record_plans`.
+//!
+//! Each configuration runs twice (ADR-0054): with `direct` forced on every family, bitwise on
+//! the CPU runtime; and under the degree policy, bitwise where every strategy that ran sums in
+//! node order and within the tolerances where one reorders the sums (`sumfact`, `shared`,
+//! `cooperative`). Under `GRIDCL_GEOM_STRATEGY` only the environment's setting runs.
 
 use crate::common;
 
@@ -20,13 +25,28 @@ use gridcl::{
 };
 use gridcl_device::testing::with_quad_tile;
 use gridcl_device::{KernelKind, VectorPolicy};
+use gridcl_geometry::testing::record_strategies;
 use gridcl_testing::HostMesh;
 
 const P: u32 = 2;
 const RULE_DEGREE: u32 = 3;
 
+/// The settings of each comparison (ADR-0054): `direct` forced and the degree policy, or the
+/// environment's alone when `GRIDCL_GEOM_STRATEGY` is set.
+fn runs() -> Vec<StrategyRun> {
+    if std::env::var_os(GEOM_STRATEGY_VAR).is_some() {
+        vec![StrategyRun::Environment]
+    } else {
+        vec![
+            StrategyRun::Hook(StrategyOverride::Fixed(Strategy::Direct)),
+            StrategyRun::Hook(StrategyOverride::Policy),
+        ]
+    }
+}
+
 /// Runs `compute` at every vector size the device offers within `tile`, for tile widths 1 and
-/// 16 and the tile the policy ships, and compares each result with `want`.
+/// 16 and the tile the policy ships, under each of [`runs`], and compares each result with
+/// `want`.
 fn sweep<F: Real, S: FieldShape>(
     client: &Client,
     what: &str,
@@ -43,16 +63,23 @@ fn sweep<F: Real, S: FieldShape>(
     tiles.dedup();
     for tile in tiles {
         for n in vector_sizes(client, size_of::<F>(), tile) {
-            let field = with_quad_tile(tile, || {
-                at_vector_size(n, KernelKind::GeomFactors, num_cells > 0, &compute)
-            });
-            assert_eq!(field.tile(), tile);
-            assert_eq!(field.num_cells(), num_cells);
-            assert_matches(
-                &flat(&field),
-                want,
-                &format!("{what}, tile {tile}, vector size {n}"),
-            );
+            for run in runs() {
+                let (field, ran) = record_strategies(|| {
+                    under_strategy(run, || {
+                        with_quad_tile(tile, || {
+                            at_vector_size(n, KernelKind::GeomFactors, num_cells > 0, &compute)
+                        })
+                    })
+                });
+                assert_eq!(field.tile(), tile);
+                assert_eq!(field.num_cells(), num_cells);
+                assert_matches_ran(
+                    &flat(&field),
+                    want,
+                    &format!("{what}, tile {tile}, vector size {n}, {run}"),
+                    &ran,
+                );
+            }
         }
     }
 }
