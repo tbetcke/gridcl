@@ -244,15 +244,13 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Quadrilateral | CpuSimd256 | f32 | 3–3 | loops | – | as CpuSimd512 |
 | EVector | Quadrilateral | CpuSimd256 | f32 | 4–8 | direct | – | as CpuSimd512 |
 | EVector | Quadrilateral | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
-| EVector | Quadrilateral | CpuSimd256 | f64 | 1–1 | loops | – | as CpuSimd512 |
-| EVector | Quadrilateral | CpuSimd256 | f64 | 2–8 | direct | – | as CpuSimd512 |
+| EVector | Quadrilateral | CpuSimd256 | f64 | 1–8 | direct | – | as CpuSimd512 |
 | EVector | Quadrilateral | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| EVector | Quadrilateral | CpuSimd512 | f32 | 3–3 | loops | 0.84 | at least 10% faster than the baseline; within 3% of the fastest |
+| EVector | Quadrilateral | CpuSimd512 | f32 | 3–3 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 4–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| EVector | Quadrilateral | CpuSimd512 | f64 | 1–1 | loops | 0.84 | at least 10% faster than the baseline; within 3% of the fastest |
-| EVector | Quadrilateral | CpuSimd512 | f64 | 2–8 | direct | 1.00 | no strategy 10% faster |
+| EVector | Quadrilateral | CpuSimd512 | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Quadrilateral | CpuSimd512 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | EVector | Quadrilateral | Gpu | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Quadrilateral | Gpu | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
@@ -262,18 +260,16 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Tetrahedron | CpuSimd128 | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | EVector | Tetrahedron | CpuSimd128 | f64 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | EVector | Tetrahedron | CpuSimd128 | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
-| EVector | Tetrahedron | CpuSimd256 | f32 | 1–1 | loops | – | as CpuSimd512 |
-| EVector | Tetrahedron | CpuSimd256 | f32 | 2–4 | direct | – | as CpuSimd512 |
-| EVector | Tetrahedron | CpuSimd256 | f32 | 5– | loops | – | as CpuSimd512 |
+| EVector | Tetrahedron | CpuSimd256 | f32 | 1–3 | direct | – | as CpuSimd512 |
+| EVector | Tetrahedron | CpuSimd256 | f32 | 4– | loops | – | as CpuSimd512 |
 | EVector | Tetrahedron | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | EVector | Tetrahedron | CpuSimd256 | f64 | 3–3 | loops | – | as CpuSimd512 |
 | EVector | Tetrahedron | CpuSimd256 | f64 | 4–4 | direct | – | as CpuSimd512 |
 | EVector | Tetrahedron | CpuSimd256 | f64 | 5– | loops | – | as CpuSimd512 |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 1–1 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 2–4 | direct | 1.00 | no strategy 10% faster |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
+| EVector | Tetrahedron | CpuSimd512 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
+| EVector | Tetrahedron | CpuSimd512 | f32 | 4– | loops | 0.89–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| EVector | Tetrahedron | CpuSimd512 | f64 | 3–3 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
+| EVector | Tetrahedron | CpuSimd512 | f64 | 3–3 | loops | 0.89 | at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | EVector | Tetrahedron | Gpu | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
@@ -304,9 +300,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Prism | CpuSimd256 | f32 | 5–7 | loops | – | as CpuSimd512 |
 | EVector | Prism | CpuSimd256 | f32 | 8–8 | direct | – | as CpuSimd512 |
 | EVector | Prism | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
-| EVector | Prism | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| EVector | Prism | CpuSimd256 | f64 | 2–2 | loops | – | as CpuSimd512 |
-| EVector | Prism | CpuSimd256 | f64 | 3–4 | direct | – | as CpuSimd512 |
+| EVector | Prism | CpuSimd256 | f64 | 1–4 | direct | – | as CpuSimd512 |
 | EVector | Prism | CpuSimd256 | f64 | 5–7 | loops | – | as CpuSimd512 |
 | EVector | Prism | CpuSimd256 | f64 | 8–8 | direct | – | as CpuSimd512 |
 | EVector | Prism | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
@@ -314,9 +308,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Prism | CpuSimd512 | f32 | 5–7 | loops | 1.00 | direct not selectable at p = 5, 6, 7; no strategy 10% faster |
 | EVector | Prism | CpuSimd512 | f32 | 8–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Prism | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| EVector | Prism | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| EVector | Prism | CpuSimd512 | f64 | 2–2 | loops | 0.86 | at least 10% faster than the baseline; within 3% of the fastest |
-| EVector | Prism | CpuSimd512 | f64 | 3–4 | direct | 1.00 | no strategy 10% faster |
+| EVector | Prism | CpuSimd512 | f64 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | EVector | Prism | CpuSimd512 | f64 | 5–7 | loops | 1.00 | direct not selectable at p = 5, 6, 7; no strategy 10% faster |
 | EVector | Prism | CpuSimd512 | f64 | 8–8 | direct | 1.00 | no strategy 10% faster |
 | EVector | Prism | CpuSimd512 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
@@ -333,7 +325,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Pyramid | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | EVector | Pyramid | CpuSimd256 | f64 | 3– | loops | – | as CpuSimd512 |
 | EVector | Pyramid | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| EVector | Pyramid | CpuSimd512 | f32 | 3– | loops | 0.82 | at least 10% faster than the baseline; within 3% of the fastest |
+| EVector | Pyramid | CpuSimd512 | f32 | 3– | loops | 0.80 | at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Pyramid | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | EVector | Pyramid | CpuSimd512 | f64 | 3– | loops | 0.89 | at least 10% faster than the baseline; within 3% of the fastest |
 | EVector | Pyramid | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -344,24 +336,16 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Interval | CpuSimd128 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Points | Interval | CpuSimd128 | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Points | Interval | CpuSimd128 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| Points | Interval | CpuSimd256 | f32 | 1–3 | direct | – | as CpuSimd512 |
-| Points | Interval | CpuSimd256 | f32 | 4–4 | loops | – | as CpuSimd512 |
-| Points | Interval | CpuSimd256 | f32 | 5–8 | direct | – | as CpuSimd512 |
+| Points | Interval | CpuSimd256 | f32 | 1–8 | direct | – | as CpuSimd512 |
 | Points | Interval | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
-| Points | Interval | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
-| Points | Interval | CpuSimd256 | f64 | 3–3 | loops | – | as CpuSimd512 |
-| Points | Interval | CpuSimd256 | f64 | 4–4 | direct | – | as CpuSimd512 |
-| Points | Interval | CpuSimd256 | f64 | 5–5 | loops | – | as CpuSimd512 |
+| Points | Interval | CpuSimd256 | f64 | 1–3 | direct | – | as CpuSimd512 |
+| Points | Interval | CpuSimd256 | f64 | 4–5 | loops | – | as CpuSimd512 |
 | Points | Interval | CpuSimd256 | f64 | 6–8 | direct | – | as CpuSimd512 |
 | Points | Interval | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
-| Points | Interval | CpuSimd512 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| Points | Interval | CpuSimd512 | f32 | 4–4 | loops | 0.69 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Interval | CpuSimd512 | f32 | 5–8 | direct | 1.00 | no strategy 10% faster |
+| Points | Interval | CpuSimd512 | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Points | Interval | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| Points | Interval | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Points | Interval | CpuSimd512 | f64 | 3–3 | loops | 0.78 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Interval | CpuSimd512 | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
-| Points | Interval | CpuSimd512 | f64 | 5–5 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Interval | CpuSimd512 | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
+| Points | Interval | CpuSimd512 | f64 | 4–5 | loops | 0.87–0.90 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Interval | CpuSimd512 | f64 | 6–8 | direct | 1.00 | no strategy 10% faster |
 | Points | Interval | CpuSimd512 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Points | Interval | Gpu | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
@@ -369,46 +353,52 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Interval | Gpu | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Points | Interval | Gpu | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Points | Triangle | CpuSimd128 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| Points | Triangle | CpuSimd128 | f32 | 4–4 | loops | 0.70 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Triangle | CpuSimd128 | f32 | 4–4 | loops | 0.81 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Triangle | CpuSimd128 | f32 | 5–5 | direct | 1.00 | no strategy 10% faster |
 | Points | Triangle | CpuSimd128 | f32 | 6–6 | loops | 0.89 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Triangle | CpuSimd128 | f32 | 7–7 | direct | 1.00 | no strategy 10% faster |
 | Points | Triangle | CpuSimd128 | f32 | 8– | loops | 0.73 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Triangle | CpuSimd128 | f64 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | Points | Triangle | CpuSimd128 | f64 | 5– | loops | 0.71–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Triangle | CpuSimd256 | f32 | 1– | loops | – | as CpuSimd512 |
-| Points | Triangle | CpuSimd256 | f64 | 1–7 | direct | – | as CpuSimd512 |
+| Points | Triangle | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
+| Points | Triangle | CpuSimd256 | f32 | 2– | loops | – | as CpuSimd512 |
+| Points | Triangle | CpuSimd256 | f64 | 1–3 | direct | – | as CpuSimd512 |
+| Points | Triangle | CpuSimd256 | f64 | 4–4 | loops | – | as CpuSimd512 |
+| Points | Triangle | CpuSimd256 | f64 | 5–7 | direct | – | as CpuSimd512 |
 | Points | Triangle | CpuSimd256 | f64 | 8– | loops | – | as CpuSimd512 |
-| Points | Triangle | CpuSimd512 | f32 | 1– | loops | 0.60–0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Triangle | CpuSimd512 | f64 | 1–7 | direct | 1.00 | no strategy 10% faster |
+| Points | Triangle | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Points | Triangle | CpuSimd512 | f32 | 2– | loops | 0.60–0.82 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Triangle | CpuSimd512 | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
+| Points | Triangle | CpuSimd512 | f64 | 4–4 | loops | 0.83 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Triangle | CpuSimd512 | f64 | 5–7 | direct | 1.00 | no strategy 10% faster |
 | Points | Triangle | CpuSimd512 | f64 | 8– | loops | 0.88 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Triangle | Gpu | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Points | Triangle | Gpu | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Points | Triangle | Gpu | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Points | Triangle | Gpu | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Points | Quadrilateral | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Quadrilateral | CpuSimd128 | f32 | 2– | sumfact | 0.15–0.52 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Quadrilateral | CpuSimd128 | f64 | 1–1 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Quadrilateral | CpuSimd128 | f64 | 2– | sumfact | 0.12–0.59 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Quadrilateral | CpuSimd128 | f32 | 2– | sumfact | 0.15–0.82 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Quadrilateral | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Points | Quadrilateral | CpuSimd128 | f64 | 2– | sumfact | 0.12–0.72 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
 | Points | Quadrilateral | CpuSimd256 | f32 | 2–2 | loops | – | as CpuSimd512 |
 | Points | Quadrilateral | CpuSimd256 | f32 | 3– | sumfact | – | as CpuSimd512 |
-| Points | Quadrilateral | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| Points | Quadrilateral | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
+| Points | Quadrilateral | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
+| Points | Quadrilateral | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
 | Points | Quadrilateral | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Quadrilateral | CpuSimd512 | f32 | 2–2 | loops | 0.81 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Quadrilateral | CpuSimd512 | f32 | 2–2 | loops | 0.69 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | CpuSimd512 | f32 | 3– | sumfact | 0.17–0.49 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Quadrilateral | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Quadrilateral | CpuSimd512 | f64 | 2– | sumfact | 0.20–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Quadrilateral | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Points | Quadrilateral | CpuSimd512 | f64 | 3– | sumfact | 0.20–0.65 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Points | Quadrilateral | Gpu | f32 | 4– | shared | 0.54–0.83 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | Gpu | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | Points | Quadrilateral | Gpu | f64 | 3–3 | sumfact | 0.73–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Quadrilateral | Gpu | f64 | 4– | shared | 0.17–0.74 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Tetrahedron | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Tetrahedron | CpuSimd128 | f32 | 2– | loops | 0.75–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Tetrahedron | CpuSimd128 | f32 | 2– | loops | 0.74–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Tetrahedron | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Tetrahedron | CpuSimd128 | f64 | 2– | loops | 0.82–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Tetrahedron | CpuSimd128 | f64 | 2– | loops | 0.83–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Tetrahedron | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
 | Points | Tetrahedron | CpuSimd256 | f32 | 2– | loops | – | as CpuSimd512 |
 | Points | Tetrahedron | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
@@ -416,9 +406,9 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Tetrahedron | CpuSimd256 | f64 | 4–4 | direct | – | as CpuSimd512 |
 | Points | Tetrahedron | CpuSimd256 | f64 | 5– | loops | – | as CpuSimd512 |
 | Points | Tetrahedron | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Tetrahedron | CpuSimd512 | f32 | 2– | loops | 0.53–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Tetrahedron | CpuSimd512 | f32 | 2– | loops | 0.52–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Tetrahedron | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Tetrahedron | CpuSimd512 | f64 | 2–3 | loops | 0.69–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Tetrahedron | CpuSimd512 | f64 | 2–3 | loops | 0.73–0.76 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Tetrahedron | CpuSimd512 | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
 | Points | Tetrahedron | CpuSimd512 | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | Points | Tetrahedron | Gpu | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
@@ -428,14 +418,15 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Tetrahedron | Gpu | f64 | 5–5 | loops | 1.00 | direct not selectable at p = 5; no strategy 10% faster |
 | Points | Tetrahedron | Gpu | f64 | 6– | cooperative | 0.08–0.47 | direct not selectable at p = 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | CpuSimd128 | f32 | 1– | sumfact | 0.02–0.74 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Hexahedron | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Hexahedron | CpuSimd128 | f64 | 2– | sumfact | 0.02–0.29 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Hexahedron | CpuSimd256 | f32 | 1– | sumfact | – | as CpuSimd512 |
+| Points | Hexahedron | CpuSimd128 | f64 | 1– | sumfact | 0.02–0.81 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
+| Points | Hexahedron | CpuSimd256 | f32 | 2– | sumfact | – | as CpuSimd512 |
 | Points | Hexahedron | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
 | Points | Hexahedron | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
-| Points | Hexahedron | CpuSimd512 | f32 | 1– | sumfact | 0.02–0.85 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Points | Hexahedron | CpuSimd512 | f32 | 2– | sumfact | 0.02–0.37 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.03–0.69 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.03–0.82 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | Points | Hexahedron | Gpu | f32 | 3–3 | shared | 0.48–0.51 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f32 | 4–4 | sumfact | 0.12 | at least 10% faster than the baseline; within 3% of the fastest |
@@ -445,14 +436,18 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Hexahedron | Gpu | f64 | 2–2 | shared | 0.74–0.90 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Hexahedron | Gpu | f64 | 3– | sumfact | 0.06–0.41 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Prism | CpuSimd128 | f32 | 2– | sumfact | 0.12–0.47 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Prism | CpuSimd128 | f64 | 1– | sumfact | 0.12–0.60 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Prism | CpuSimd256 | f32 | 1– | sumfact | – | as CpuSimd512 |
+| Points | Prism | CpuSimd128 | f32 | 2– | sumfact | 0.12–0.46 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | CpuSimd128 | f64 | 1– | sumfact | 0.12–0.55 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
+| Points | Prism | CpuSimd256 | f32 | 2– | sumfact | – | as CpuSimd512 |
 | Points | Prism | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| Points | Prism | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
-| Points | Prism | CpuSimd512 | f32 | 1– | sumfact | 0.10–0.86 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | CpuSimd256 | f64 | 2–2 | loops | – | as CpuSimd512 |
+| Points | Prism | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
+| Points | Prism | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Points | Prism | CpuSimd512 | f32 | 2– | sumfact | 0.10–0.50 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Prism | CpuSimd512 | f64 | 2– | sumfact | 0.16–0.70 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | CpuSimd512 | f64 | 2–2 | loops | 0.89 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Prism | CpuSimd512 | f64 | 3– | sumfact | 0.16–0.41 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Points | Prism | Gpu | f32 | 4–4 | sumfact | 0.76–0.79 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f32 | 5–7 | shared | 0.11–0.37 | at least 10% faster than the baseline; closest to the fastest at p = 6, 7 |
@@ -463,22 +458,17 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Points | Prism | Gpu | f64 | 6–7 | shared | 0.05–0.06 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Prism | Gpu | f64 | 8– | sumfact | 0.04–0.05 | at least 10% faster than the baseline; closest to the fastest at p = 8 |
 | Points | Pyramid | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Pyramid | CpuSimd128 | f32 | 2– | loops | 0.65–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Pyramid | CpuSimd128 | f64 | 1–1 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Pyramid | CpuSimd128 | f64 | 2–2 | direct | 1.00 | no strategy 10% faster |
-| Points | Pyramid | CpuSimd128 | f64 | 3– | loops | 0.88 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Pyramid | CpuSimd128 | f32 | 2– | loops | 0.62–0.76 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Pyramid | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Points | Pyramid | CpuSimd128 | f64 | 3– | loops | 0.79 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Pyramid | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
 | Points | Pyramid | CpuSimd256 | f32 | 2– | loops | – | as CpuSimd512 |
 | Points | Pyramid | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| Points | Pyramid | CpuSimd256 | f64 | 2–2 | loops | – | as CpuSimd512 |
-| Points | Pyramid | CpuSimd256 | f64 | 3–3 | direct | – | as CpuSimd512 |
-| Points | Pyramid | CpuSimd256 | f64 | 4– | loops | – | as CpuSimd512 |
+| Points | Pyramid | CpuSimd256 | f64 | 2– | loops | – | as CpuSimd512 |
 | Points | Pyramid | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Pyramid | CpuSimd512 | f32 | 2– | loops | 0.53–0.63 | at least 10% faster than the baseline; within 3% of the fastest |
+| Points | Pyramid | CpuSimd512 | f32 | 2– | loops | 0.52–0.66 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Pyramid | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Points | Pyramid | CpuSimd512 | f64 | 2–2 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Points | Pyramid | CpuSimd512 | f64 | 3–3 | direct | 1.00 | no strategy 10% faster |
-| Points | Pyramid | CpuSimd512 | f64 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
+| Points | Pyramid | CpuSimd512 | f64 | 2– | loops | 0.72–0.82 | at least 10% faster than the baseline; within 3% of the fastest |
 | Points | Pyramid | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Points | Pyramid | Gpu | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
 | Points | Pyramid | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -511,15 +501,11 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Triangle | CpuSimd128 | f64 | 5–5 | loops | 0.90 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Triangle | CpuSimd128 | f64 | 6–8 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Triangle | CpuSimd128 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| Jacobian | Triangle | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
-| Jacobian | Triangle | CpuSimd256 | f32 | 2–2 | loops | – | as CpuSimd512 |
-| Jacobian | Triangle | CpuSimd256 | f32 | 3–8 | direct | – | as CpuSimd512 |
+| Jacobian | Triangle | CpuSimd256 | f32 | 1–8 | direct | – | as CpuSimd512 |
 | Jacobian | Triangle | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
 | Jacobian | Triangle | CpuSimd256 | f64 | 1–6 | direct | – | as CpuSimd512 |
 | Jacobian | Triangle | CpuSimd256 | f64 | 7– | loops | – | as CpuSimd512 |
-| Jacobian | Triangle | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Triangle | CpuSimd512 | f32 | 2–2 | loops | 0.90 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Triangle | CpuSimd512 | f32 | 3–8 | direct | 1.00 | no strategy 10% faster |
+| Jacobian | Triangle | CpuSimd512 | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Triangle | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Jacobian | Triangle | CpuSimd512 | f64 | 1–6 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Triangle | CpuSimd512 | f64 | 7– | loops | 0.85–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
@@ -528,29 +514,26 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Triangle | Gpu | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Triangle | Gpu | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Jacobian | Quadrilateral | CpuSimd128 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Quadrilateral | CpuSimd128 | f32 | 3– | sumfact | 0.24–0.60 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 1–1 | loops | 0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 2–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 3– | sumfact | 0.19–0.79 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Quadrilateral | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
-| Jacobian | Quadrilateral | CpuSimd256 | f32 | 3– | sumfact | – | as CpuSimd512 |
-| Jacobian | Quadrilateral | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| Jacobian | Quadrilateral | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
-| Jacobian | Quadrilateral | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Quadrilateral | CpuSimd512 | f32 | 3– | sumfact | 0.40–0.70 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Quadrilateral | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Quadrilateral | CpuSimd512 | f64 | 2– | sumfact | 0.38–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Quadrilateral | CpuSimd128 | f32 | 3– | sumfact | 0.24–0.62 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Quadrilateral | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Jacobian | Quadrilateral | CpuSimd128 | f64 | 3– | sumfact | 0.19–0.77 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Quadrilateral | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
+| Jacobian | Quadrilateral | CpuSimd256 | f32 | 2– | sumfact | – | as CpuSimd512 |
+| Jacobian | Quadrilateral | CpuSimd256 | f64 | 1–3 | direct | – | as CpuSimd512 |
+| Jacobian | Quadrilateral | CpuSimd256 | f64 | 4– | sumfact | – | as CpuSimd512 |
+| Jacobian | Quadrilateral | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Jacobian | Quadrilateral | CpuSimd512 | f32 | 2– | sumfact | 0.40–0.90 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Quadrilateral | CpuSimd512 | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
+| Jacobian | Quadrilateral | CpuSimd512 | f64 | 4– | sumfact | 0.38–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Quadrilateral | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Quadrilateral | Gpu | f32 | 4– | shared | 0.19–0.78 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Quadrilateral | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Quadrilateral | Gpu | f64 | 4–5 | sumfact | 0.48–0.81 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Quadrilateral | Gpu | f64 | 6– | shared | 0.14–0.51 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Tetrahedron | CpuSimd128 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Tetrahedron | CpuSimd128 | f32 | 4– | loops | 0.86–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 2–3 | loops | 0.81–0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
+| Jacobian | Tetrahedron | CpuSimd128 | f32 | 4– | loops | 0.87–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Tetrahedron | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Jacobian | Tetrahedron | CpuSimd128 | f64 | 3– | loops | 0.87–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Tetrahedron | CpuSimd256 | f32 | 1–4 | direct | – | as CpuSimd512 |
 | Jacobian | Tetrahedron | CpuSimd256 | f32 | 5– | loops | – | as CpuSimd512 |
 | Jacobian | Tetrahedron | CpuSimd256 | f64 | 1–4 | direct | – | as CpuSimd512 |
@@ -566,9 +549,9 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Tetrahedron | Gpu | f64 | 5–5 | loops | 1.00 | direct not selectable at p = 5; no strategy 10% faster |
 | Jacobian | Tetrahedron | Gpu | f64 | 6– | cooperative | 0.10–0.73 | direct not selectable at p = 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd128 | f32 | 2– | sumfact | 0.02–0.54 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd128 | f32 | 2– | sumfact | 0.02–0.51 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd128 | f64 | 2– | sumfact | 0.02–0.50 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd128 | f64 | 2– | sumfact | 0.02–0.47 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
 | Jacobian | Hexahedron | CpuSimd256 | f32 | 3– | sumfact | – | as CpuSimd512 |
 | Jacobian | Hexahedron | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
@@ -576,7 +559,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 3– | sumfact | 0.01–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 3– | sumfact | 0.02–0.48 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 3– | sumfact | 0.02–0.49 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Hexahedron | Gpu | f32 | 2–5 | shared | 0.03–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f32 | 6– | sumfact | 0.02–0.06 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
@@ -585,17 +568,17 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Hexahedron | Gpu | f64 | 5–5 | shared | 0.25–0.31 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f64 | 6– | sumfact | 0.04–0.15 | direct not selectable at p = 8; at least 10% faster than the baseline; closest to the fastest at p = 7 |
 | Jacobian | Prism | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Prism | CpuSimd128 | f32 | 2– | sumfact | 0.13–0.71 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | CpuSimd128 | f32 | 2– | sumfact | 0.13–0.70 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Prism | CpuSimd128 | f64 | 2– | sumfact | 0.14–0.61 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | CpuSimd128 | f64 | 2– | sumfact | 0.14–0.60 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
 | Jacobian | Prism | CpuSimd256 | f32 | 3– | sumfact | – | as CpuSimd512 |
 | Jacobian | Prism | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | Jacobian | Prism | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
 | Jacobian | Prism | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Prism | CpuSimd512 | f32 | 3– | sumfact | 0.03–0.71 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | CpuSimd512 | f32 | 3– | sumfact | 0.03–0.70 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Prism | CpuSimd512 | f64 | 3– | sumfact | 0.05–0.80 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Prism | CpuSimd512 | f64 | 3– | sumfact | 0.05–0.74 | direct not selectable at p = 5, 6, 7; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Prism | Gpu | f32 | 2–2 | shared | 0.88–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f32 | 3–3 | sumfact | 0.71 | at least 10% faster than the baseline; within 3% of the fastest |
@@ -605,10 +588,10 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Prism | Gpu | f32 | 8– | sumfact | 0.02 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Prism | Gpu | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Prism | Gpu | f64 | 2– | shared | 0.01–0.80 | at least 10% faster than the baseline; within 3% of the fastest |
-| Jacobian | Pyramid | CpuSimd128 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Pyramid | CpuSimd128 | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
+| Jacobian | Pyramid | CpuSimd128 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Jacobian | Pyramid | CpuSimd128 | f32 | 3– | loops | 0.88 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Pyramid | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Pyramid | CpuSimd128 | f64 | 3– | loops | 0.80 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Pyramid | CpuSimd128 | f64 | 3– | loops | 0.81 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Pyramid | CpuSimd256 | f32 | 1–3 | direct | – | as CpuSimd512 |
 | Jacobian | Pyramid | CpuSimd256 | f32 | 4– | loops | – | as CpuSimd512 |
 | Jacobian | Pyramid | CpuSimd256 | f64 | 1–3 | direct | – | as CpuSimd512 |
@@ -621,17 +604,11 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Pyramid | Gpu | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
 | Jacobian | Pyramid | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Pyramid | Gpu | f64 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
-| Normals | Interval | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Normals | Interval | CpuSimd128 | f32 | 2–4 | loops | 0.62–0.67 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Interval | CpuSimd128 | f32 | 5–8 | direct | 1.00 | no strategy 10% faster |
+| Normals | Interval | CpuSimd128 | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Normals | Interval | CpuSimd128 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| Normals | Interval | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Normals | Interval | CpuSimd128 | f64 | 2–3 | loops | 0.87–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Interval | CpuSimd128 | f64 | 4–8 | direct | 1.00 | no strategy 10% faster |
+| Normals | Interval | CpuSimd128 | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Normals | Interval | CpuSimd128 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| Normals | Interval | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
-| Normals | Interval | CpuSimd256 | f32 | 3–4 | loops | – | as CpuSimd512 |
-| Normals | Interval | CpuSimd256 | f32 | 5–6 | direct | – | as CpuSimd512 |
+| Normals | Interval | CpuSimd256 | f32 | 1–6 | direct | – | as CpuSimd512 |
 | Normals | Interval | CpuSimd256 | f32 | 7–7 | loops | – | as CpuSimd512 |
 | Normals | Interval | CpuSimd256 | f32 | 8–8 | direct | – | as CpuSimd512 |
 | Normals | Interval | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
@@ -639,9 +616,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Normals | Interval | CpuSimd256 | f64 | 7–7 | loops | – | as CpuSimd512 |
 | Normals | Interval | CpuSimd256 | f64 | 8–8 | direct | – | as CpuSimd512 |
 | Normals | Interval | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
-| Normals | Interval | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Normals | Interval | CpuSimd512 | f32 | 3–4 | loops | 0.58–0.63 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Interval | CpuSimd512 | f32 | 5–6 | direct | 1.00 | no strategy 10% faster |
+| Normals | Interval | CpuSimd512 | f32 | 1–6 | direct | 1.00 | no strategy 10% faster |
 | Normals | Interval | CpuSimd512 | f32 | 7–7 | loops | 0.79 | at least 10% faster than the baseline; within 3% of the fastest |
 | Normals | Interval | CpuSimd512 | f32 | 8–8 | direct | 1.00 | no strategy 10% faster |
 | Normals | Interval | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
@@ -659,25 +634,15 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Normals | Triangle | CpuSimd128 | f32 | 7– | loops | 0.87–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
 | Normals | Triangle | CpuSimd128 | f64 | 1–5 | direct | 1.00 | no strategy 10% faster |
 | Normals | Triangle | CpuSimd128 | f64 | 6– | loops | 0.81–0.85 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Triangle | CpuSimd256 | f32 | 1–1 | loops | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd256 | f32 | 2–2 | direct | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd256 | f32 | 3–3 | loops | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd256 | f32 | 4–8 | direct | – | as CpuSimd512 |
+| Normals | Triangle | CpuSimd256 | f32 | 1–8 | direct | – | as CpuSimd512 |
 | Normals | Triangle | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd256 | f64 | 2–3 | loops | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd256 | f64 | 4–4 | direct | – | as CpuSimd512 |
+| Normals | Triangle | CpuSimd256 | f64 | 1–4 | direct | – | as CpuSimd512 |
 | Normals | Triangle | CpuSimd256 | f64 | 5–5 | loops | – | as CpuSimd512 |
 | Normals | Triangle | CpuSimd256 | f64 | 6–6 | direct | – | as CpuSimd512 |
 | Normals | Triangle | CpuSimd256 | f64 | 7– | loops | – | as CpuSimd512 |
-| Normals | Triangle | CpuSimd512 | f32 | 1–1 | loops | 0.81 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Triangle | CpuSimd512 | f32 | 2–2 | direct | 1.00 | no strategy 10% faster |
-| Normals | Triangle | CpuSimd512 | f32 | 3–3 | loops | 0.90 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Triangle | CpuSimd512 | f32 | 4–8 | direct | 1.00 | no strategy 10% faster |
+| Normals | Triangle | CpuSimd512 | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | Normals | Triangle | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| Normals | Triangle | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Normals | Triangle | CpuSimd512 | f64 | 2–3 | loops | 0.86–0.87 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Triangle | CpuSimd512 | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
+| Normals | Triangle | CpuSimd512 | f64 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | Normals | Triangle | CpuSimd512 | f64 | 5–5 | loops | 0.83 | at least 10% faster than the baseline; within 3% of the fastest |
 | Normals | Triangle | CpuSimd512 | f64 | 6–6 | direct | 1.00 | no strategy 10% faster |
 | Normals | Triangle | CpuSimd512 | f64 | 7– | loops | 0.78–0.80 | at least 10% faster than the baseline; within 3% of the fastest |
@@ -687,20 +652,16 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Normals | Triangle | Gpu | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 2– | sumfact | 0.24–0.84 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Quadrilateral | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Normals | Quadrilateral | CpuSimd128 | f64 | 3– | sumfact | 0.19–0.80 | at least 10% faster than the baseline; within 3% of the fastest |
+| Normals | Quadrilateral | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
+| Normals | Quadrilateral | CpuSimd128 | f64 | 2– | sumfact | 0.19–0.90 | at least 10% faster than the baseline; within 3% of the fastest |
 | Normals | Quadrilateral | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
 | Normals | Quadrilateral | CpuSimd256 | f32 | 2– | sumfact | – | as CpuSimd512 |
-| Normals | Quadrilateral | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| Normals | Quadrilateral | CpuSimd256 | f64 | 2–2 | loops | – | as CpuSimd512 |
-| Normals | Quadrilateral | CpuSimd256 | f64 | 3–3 | direct | – | as CpuSimd512 |
-| Normals | Quadrilateral | CpuSimd256 | f64 | 4– | sumfact | – | as CpuSimd512 |
+| Normals | Quadrilateral | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
+| Normals | Quadrilateral | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
 | Normals | Quadrilateral | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Normals | Quadrilateral | CpuSimd512 | f32 | 2– | sumfact | 0.51–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 2–2 | loops | 0.79 | at least 10% faster than the baseline; within 3% of the fastest |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 3–3 | direct | 1.00 | no strategy 10% faster |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 4– | sumfact | 0.30–0.60 | at least 10% faster than the baseline; within 3% of the fastest |
+| Normals | Quadrilateral | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| Normals | Quadrilateral | CpuSimd512 | f64 | 3– | sumfact | 0.30–0.81 | at least 10% faster than the baseline; within 3% of the fastest |
 | Normals | Quadrilateral | Gpu | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | Normals | Quadrilateral | Gpu | f32 | 5– | shared | 0.13–0.85 | at least 10% faster than the baseline; within 3% of the fastest |
 | Normals | Quadrilateral | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -712,18 +673,16 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Interval | CpuSimd128 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | FacetNormals | Interval | CpuSimd128 | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Interval | CpuSimd128 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| FacetNormals | Interval | CpuSimd256 | f32 | 1–2 | loops | – | as CpuSimd512 |
-| FacetNormals | Interval | CpuSimd256 | f32 | 3–3 | direct | – | as CpuSimd512 |
-| FacetNormals | Interval | CpuSimd256 | f32 | 4–5 | loops | – | as CpuSimd512 |
+| FacetNormals | Interval | CpuSimd256 | f32 | 1–4 | direct | – | as CpuSimd512 |
+| FacetNormals | Interval | CpuSimd256 | f32 | 5–5 | loops | – | as CpuSimd512 |
 | FacetNormals | Interval | CpuSimd256 | f32 | 6–7 | direct | – | as CpuSimd512 |
 | FacetNormals | Interval | CpuSimd256 | f32 | 8– | loops | – | as CpuSimd512 |
 | FacetNormals | Interval | CpuSimd256 | f64 | 1–5 | direct | – | as CpuSimd512 |
 | FacetNormals | Interval | CpuSimd256 | f64 | 6–6 | loops | – | as CpuSimd512 |
 | FacetNormals | Interval | CpuSimd256 | f64 | 7–8 | direct | – | as CpuSimd512 |
 | FacetNormals | Interval | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
-| FacetNormals | Interval | CpuSimd512 | f32 | 1–2 | loops | 0.74–0.76 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Interval | CpuSimd512 | f32 | 3–3 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Interval | CpuSimd512 | f32 | 4–5 | loops | 0.78–0.84 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Interval | CpuSimd512 | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Interval | CpuSimd512 | f32 | 5–5 | loops | 0.84 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Interval | CpuSimd512 | f32 | 6–7 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Interval | CpuSimd512 | f32 | 8– | loops | 0.78 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Interval | CpuSimd512 | f64 | 1–5 | direct | 1.00 | no strategy 10% faster |
@@ -740,23 +699,15 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Triangle | CpuSimd128 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
 | FacetNormals | Triangle | CpuSimd128 | f64 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Triangle | CpuSimd128 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| FacetNormals | Triangle | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
-| FacetNormals | Triangle | CpuSimd256 | f32 | 3–4 | loops | – | as CpuSimd512 |
-| FacetNormals | Triangle | CpuSimd256 | f32 | 5–8 | direct | – | as CpuSimd512 |
+| FacetNormals | Triangle | CpuSimd256 | f32 | 1–8 | direct | – | as CpuSimd512 |
 | FacetNormals | Triangle | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
-| FacetNormals | Triangle | CpuSimd256 | f64 | 1–3 | direct | – | as CpuSimd512 |
-| FacetNormals | Triangle | CpuSimd256 | f64 | 4–4 | loops | – | as CpuSimd512 |
-| FacetNormals | Triangle | CpuSimd256 | f64 | 5–6 | direct | – | as CpuSimd512 |
+| FacetNormals | Triangle | CpuSimd256 | f64 | 1–6 | direct | – | as CpuSimd512 |
 | FacetNormals | Triangle | CpuSimd256 | f64 | 7–7 | loops | – | as CpuSimd512 |
 | FacetNormals | Triangle | CpuSimd256 | f64 | 8–8 | direct | – | as CpuSimd512 |
 | FacetNormals | Triangle | CpuSimd256 | f64 | 9– | loops | – | as CpuSimd512 |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 3–4 | loops | 0.84–0.89 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 5–8 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Triangle | CpuSimd512 | f32 | 1–8 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Triangle | CpuSimd512 | f32 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 4–4 | loops | 0.80 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 5–6 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Triangle | CpuSimd512 | f64 | 1–6 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 7–7 | loops | 0.80 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 8–8 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 9– | loops | – | beyond p = 8: loops compiles at every degree |
@@ -770,14 +721,12 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Quadrilateral | CpuSimd128 | f64 | 3– | sumfact | 0.21–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Quadrilateral | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
 | FacetNormals | Quadrilateral | CpuSimd256 | f32 | 3– | sumfact | – | as CpuSimd512 |
-| FacetNormals | Quadrilateral | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| FacetNormals | Quadrilateral | CpuSimd256 | f64 | 2–3 | loops | – | as CpuSimd512 |
-| FacetNormals | Quadrilateral | CpuSimd256 | f64 | 4– | sumfact | – | as CpuSimd512 |
+| FacetNormals | Quadrilateral | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
+| FacetNormals | Quadrilateral | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
 | FacetNormals | Quadrilateral | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 3– | sumfact | 0.42–0.65 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 2–3 | loops | 0.83–0.84 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 4– | sumfact | 0.39–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 3– | sumfact | 0.42–0.68 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 3– | sumfact | 0.39–0.88 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Quadrilateral | Gpu | f32 | 1–5 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Quadrilateral | Gpu | f32 | 6– | shared | 0.32–0.68 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Quadrilateral | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -788,13 +737,11 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Tetrahedron | CpuSimd128 | f64 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | FacetNormals | Tetrahedron | CpuSimd256 | f32 | 1–4 | direct | – | as CpuSimd512 |
 | FacetNormals | Tetrahedron | CpuSimd256 | f32 | 5– | loops | – | as CpuSimd512 |
-| FacetNormals | Tetrahedron | CpuSimd256 | f64 | 1–1 | loops | – | as CpuSimd512 |
-| FacetNormals | Tetrahedron | CpuSimd256 | f64 | 2–2 | direct | – | as CpuSimd512 |
+| FacetNormals | Tetrahedron | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | FacetNormals | Tetrahedron | CpuSimd256 | f64 | 3– | loops | – | as CpuSimd512 |
 | FacetNormals | Tetrahedron | CpuSimd512 | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Tetrahedron | CpuSimd512 | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
-| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 1–1 | loops | 0.65 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 2–2 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 3– | loops | 0.63–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Tetrahedron | Gpu | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Tetrahedron | Gpu | f32 | 5–7 | loops | 1.00 | direct not selectable at p = 5, 6, 7; no strategy 10% faster |
@@ -803,15 +750,12 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Tetrahedron | Gpu | f64 | 5–5 | shared | 0.57–0.90 | direct not selectable at p = 5; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Tetrahedron | Gpu | f64 | 6– | loops | 1.00 | direct not selectable at p = 6, 7, 8; no strategy 10% faster |
 | FacetNormals | Hexahedron | CpuSimd128 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Hexahedron | CpuSimd128 | f32 | 2– | sumfact | 0.02–0.56 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Hexahedron | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Hexahedron | CpuSimd128 | f64 | 2– | sumfact | 0.03–0.52 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Hexahedron | CpuSimd256 | f32 | 1–1 | direct | – | as CpuSimd512 |
-| FacetNormals | Hexahedron | CpuSimd256 | f32 | 2– | sumfact | – | as CpuSimd512 |
+| FacetNormals | Hexahedron | CpuSimd128 | f32 | 2– | sumfact | 0.02–0.54 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd128 | f64 | 1– | sumfact | 0.03–0.85 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd256 | f32 | 1– | sumfact | – | as CpuSimd512 |
 | FacetNormals | Hexahedron | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
 | FacetNormals | Hexahedron | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2– | sumfact | 0.01–0.74 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1– | sumfact | 0.01–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.02–0.67 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
@@ -824,15 +768,14 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Hexahedron | Gpu | f64 | 5–5 | shared | 0.42–0.66 | at least 10% faster than the baseline; closest to the fastest at p = 5 |
 | FacetNormals | Hexahedron | Gpu | f64 | 6– | sumfact | 0.05–0.21 | direct not selectable at p = 8; at least 10% faster than the baseline; closest to the fastest at p = 7 |
 | FacetNormals | Prism | CpuSimd128 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Prism | CpuSimd128 | f32 | 3– | sumfact | 0.52–0.82 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Prism | CpuSimd128 | f32 | 3– | sumfact | 0.52–0.85 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | CpuSimd128 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Prism | CpuSimd128 | f64 | 2– | sumfact | 0.56–0.90 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | CpuSimd256 | f32 | 1–3 | direct | – | as CpuSimd512 |
 | FacetNormals | Prism | CpuSimd256 | f32 | 4–4 | sumfact | – | as CpuSimd512 |
 | FacetNormals | Prism | CpuSimd256 | f32 | 5–6 | loops | – | as CpuSimd512 |
 | FacetNormals | Prism | CpuSimd256 | f32 | 7– | sumfact | – | as CpuSimd512 |
-| FacetNormals | Prism | CpuSimd256 | f64 | 1–1 | loops | – | as CpuSimd512 |
-| FacetNormals | Prism | CpuSimd256 | f64 | 2–2 | direct | – | as CpuSimd512 |
+| FacetNormals | Prism | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | FacetNormals | Prism | CpuSimd256 | f64 | 3–3 | loops | – | as CpuSimd512 |
 | FacetNormals | Prism | CpuSimd256 | f64 | 4–4 | sumfact | – | as CpuSimd512 |
 | FacetNormals | Prism | CpuSimd256 | f64 | 5–7 | loops | – | as CpuSimd512 |
@@ -841,10 +784,9 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Prism | CpuSimd512 | f32 | 4–4 | sumfact | 0.58 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | CpuSimd512 | f32 | 5–6 | loops | 1.00 | direct not selectable at p = 5, 6; no strategy 10% faster |
 | FacetNormals | Prism | CpuSimd512 | f32 | 7– | sumfact | 0.12–0.86 | direct not selectable at p = 7; at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Prism | CpuSimd512 | f64 | 1–1 | loops | 0.78 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Prism | CpuSimd512 | f64 | 2–2 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Prism | CpuSimd512 | f64 | 3–3 | loops | 0.81 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Prism | CpuSimd512 | f64 | 4–4 | sumfact | 0.55 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Prism | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Prism | CpuSimd512 | f64 | 3–3 | loops | 0.84 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Prism | CpuSimd512 | f64 | 4–4 | sumfact | 0.54 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | CpuSimd512 | f64 | 5–7 | loops | 1.00 | direct not selectable at p = 5, 6, 7; no strategy 10% faster |
 | FacetNormals | Prism | CpuSimd512 | f64 | 8– | sumfact | 0.13 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Prism | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -858,16 +800,12 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Pyramid | CpuSimd128 | f64 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
 | FacetNormals | Pyramid | CpuSimd256 | f32 | 1–3 | direct | – | as CpuSimd512 |
 | FacetNormals | Pyramid | CpuSimd256 | f32 | 4– | loops | – | as CpuSimd512 |
-| FacetNormals | Pyramid | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
-| FacetNormals | Pyramid | CpuSimd256 | f64 | 2–2 | loops | – | as CpuSimd512 |
-| FacetNormals | Pyramid | CpuSimd256 | f64 | 3–3 | direct | – | as CpuSimd512 |
-| FacetNormals | Pyramid | CpuSimd256 | f64 | 4– | loops | – | as CpuSimd512 |
+| FacetNormals | Pyramid | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
+| FacetNormals | Pyramid | CpuSimd256 | f64 | 3– | loops | – | as CpuSimd512 |
 | FacetNormals | Pyramid | CpuSimd512 | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Pyramid | CpuSimd512 | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 2–2 | loops | 0.75 | at least 10% faster than the baseline; within 3% of the fastest |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 3–3 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
+| FacetNormals | Pyramid | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
+| FacetNormals | Pyramid | CpuSimd512 | f64 | 3– | loops | 0.85 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Pyramid | Gpu | f32 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Pyramid | Gpu | f32 | 4– | loops | – | beyond p = 3: loops compiles at every degree |
 | FacetNormals | Pyramid | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
@@ -938,14 +876,12 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | PullBack | Tetrahedron | Gpu | f32 | 4– | loops | 1.00 | direct not selectable at p = 4, 5, 6, 7, 8; no strategy 10% faster |
 | PullBack | Tetrahedron | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Tetrahedron | Gpu | f64 | 4– | loops | 1.00 | direct not selectable at p = 4, 5, 6, 7, 8; no strategy 10% faster |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 3–3 | sumfact | 0.89 | at least 10% faster than the baseline; within 3% of the fastest |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 4–4 | direct | 1.00 | no strategy 10% faster |
+| PullBack | Hexahedron | CpuSimd128 | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 5–6 | sumfact | 0.50–0.69 | at least 10% faster than the baseline; within 3% of the fastest |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 7–7 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 8– | sumfact | 0.60 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| PullBack | Hexahedron | CpuSimd128 | f64 | 3–3 | sumfact | 0.71 | at least 10% faster than the baseline; within 3% of the fastest |
+| PullBack | Hexahedron | CpuSimd128 | f64 | 3–3 | sumfact | 0.66 | at least 10% faster than the baseline; within 3% of the fastest |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 4–4 | direct | 1.00 | no strategy 10% faster |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 5– | sumfact | 0.50–0.78 | direct not selectable at p = 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
 | PullBack | Hexahedron | CpuSimd256 | f32 | 1–2 | direct | – | as CpuSimd512 |
@@ -1007,34 +943,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 
 | Family | Cell | Class | Type | p | Base | ns per point | direct | loops | sumfact | shared | cooperative | Choice | Reason |
 | --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| EVector | Interval | CpuSimd128 | f32 | 1 | direct | 0.11 | 1.00 | 1.09 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd128 | f32 | 2 | direct | 0.11 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd128 | f32 | 3 | direct | 0.12 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd128 | f32 | 4 | direct | 0.11 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f32 | 1 | direct | 0.11 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f32 | 2 | direct | 0.11 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f32 | 3 | direct | 0.12 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f32 | 4 | direct | 0.11 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f32 | 5 | direct | 0.10 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f32 | 6 | direct | 0.11 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f32 | 7 | direct | 0.11 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f32 | 8 | direct | 0.12 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd128 | f64 | 1 | direct | 0.15 | 1.00 | 1.14 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd128 | f64 | 2 | direct | 0.15 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd128 | f64 | 3 | direct | 0.16 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f64 | 1 | direct | 0.14 | 1.00 | 1.17 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f64 | 2 | direct | 0.16 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd128 | f64 | 3 | direct | 0.16 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f64 | 4 | direct | 0.17 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f64 | 5 | direct | 0.18 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f64 | 6 | direct | 0.18 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f64 | 7 | direct | 0.18 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd128 | f64 | 8 | direct | 0.18 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f32 | 1 | direct | 0.43 | 1.00 | 1.58 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f32 | 2 | direct | 0.18 | 1.00 | 3.07 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f32 | 3 | direct | 0.14 | 1.00 | 2.41 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f32 | 4 | direct | 0.15 | 1.00 | 2.16 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f32 | 1 | direct | 0.45 | 1.00 | 1.50 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f32 | 2 | direct | 0.16 | 1.00 | 2.62 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f32 | 3 | direct | 0.13 | 1.00 | 2.45 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f32 | 4 | direct | 0.13 | 1.00 | 2.25 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f32 | 5 | direct | 0.17 | 1.00 | 2.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f32 | 6 | direct | 0.16 | 1.00 | 2.32 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f32 | 7 | direct | 0.17 | 1.00 | 2.27 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f32 | 8 | direct | 0.19 | 1.00 | 2.07 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f64 | 1 | direct | 0.44 | 1.00 | 2.04 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f64 | 2 | direct | 0.21 | 1.00 | 2.93 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f64 | 3 | direct | 0.17 | 1.00 | 3.55 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Interval | CpuSimd512 | f64 | 4 | direct | 0.18 | 1.00 | 2.12 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f64 | 1 | direct | 0.48 | 1.00 | 1.82 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f64 | 2 | direct | 0.19 | 1.00 | 2.72 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f64 | 3 | direct | 0.15 | 1.00 | 2.13 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Interval | CpuSimd512 | f64 | 4 | direct | 0.17 | 1.00 | 1.89 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f64 | 5 | direct | 0.16 | 1.00 | 1.79 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f64 | 6 | direct | 0.19 | 1.00 | 1.30 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | CpuSimd512 | f64 | 7 | direct | 0.16 | 1.00 | 1.35 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1055,34 +991,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Interval | Gpu | f64 | 6 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.06 / 1.11 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f64 | 7 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 0.99 / 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Interval | Gpu | f64 | 8 | direct | 0.02 / 0.01 | 1.00 / 1.00 | 1.01 / 1.07 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f32 | 1 | direct | 0.12 | 1.00 | 1.19 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f32 | 2 | direct | 0.13 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f32 | 3 | direct | 0.18 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f32 | 4 | direct | 0.21 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f32 | 1 | direct | 0.12 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f32 | 2 | direct | 0.11 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f32 | 3 | direct | 0.18 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f32 | 4 | direct | 0.21 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f32 | 5 | direct | 0.25 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f32 | 6 | direct | 0.28 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f32 | 7 | direct | 0.32 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f32 | 8 | direct | 0.32 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f64 | 1 | direct | 0.18 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f64 | 2 | direct | 0.17 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f64 | 3 | direct | 0.17 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd128 | f64 | 4 | direct | 0.19 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f64 | 1 | direct | 0.16 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f64 | 2 | direct | 0.16 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f64 | 3 | direct | 0.16 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd128 | f64 | 4 | direct | 0.18 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f64 | 5 | direct | 0.19 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f64 | 6 | direct | 0.20 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f64 | 7 | direct | 0.20 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd128 | f64 | 8 | direct | 0.18 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f32 | 1 | direct | 0.15 | 1.00 | 1.96 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd512 | f32 | 2 | direct | 0.20 | 1.00 | 1.51 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd512 | f32 | 3 | direct | 0.28 | 1.00 | 1.30 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd512 | f32 | 4 | direct | 0.45 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f32 | 2 | direct | 0.18 | 1.00 | 1.50 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f32 | 3 | direct | 0.28 | 1.00 | 1.19 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f32 | 4 | direct | 0.38 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f32 | 5 | direct | 0.70 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f32 | 6 | direct | 1.09 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
 | EVector | Triangle | CpuSimd512 | f32 | 7 | direct | 1.96 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f32 | 8 | direct | 1.27 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
-| EVector | Triangle | CpuSimd512 | f64 | 1 | direct | 0.17 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd512 | f64 | 2 | direct | 0.14 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd512 | f64 | 3 | direct | 0.22 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Triangle | CpuSimd512 | f64 | 4 | direct | 0.30 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f64 | 1 | direct | 0.14 | 1.00 | 1.09 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f64 | 2 | direct | 0.13 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f64 | 3 | direct | 0.20 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Triangle | CpuSimd512 | f64 | 4 | direct | 0.30 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f64 | 5 | direct | 0.59 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | CpuSimd512 | f64 | 6 | direct | 0.86 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
 | EVector | Triangle | CpuSimd512 | f64 | 7 | direct | 2.01 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1103,8 +1039,8 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Triangle | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.59 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 0.96 / 1.06 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Triangle | Gpu | f64 | 8 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.13 / 1.27 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.15 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.17 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.16 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.17 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 0.25 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 0.31 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f32 | 5 | direct | 0.35 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1112,25 +1048,25 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Quadrilateral | CpuSimd128 | f32 | 7 | direct | 0.52 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f32 | 8 | direct | 0.56 | 1.00 | 0.90 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.21 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.22 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 0.30 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 0.27 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.23 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 0.24 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 0.27 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f64 | 5 | direct | 0.34 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f64 | 6 | direct | 0.29 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f64 | 7 | direct | 0.30 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd128 | f64 | 8 | direct | 0.29 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.27 | 1.00 | 1.21 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.29 | 1.00 | 1.35 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 0.68 | 1.00 | 0.84 | – | – | – | loops | loops 0.84 of direct |
-| EVector | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 1.11 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.15 | 1.00 | 1.81 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.29 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 0.64 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
+| EVector | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 0.87 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 5 | direct | 3.29 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 6 | direct | 1.99 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 7 | direct | 2.39 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f32 | 8 | direct | 2.32 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.25 | 1.00 | 0.84 | – | – | – | loops | loops 0.84 of direct |
-| EVector | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.27 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.73 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 1.11 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.21 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.25 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.73 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 1.09 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f64 | 5 | direct | 2.58 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 2.07 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 2.66 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1151,34 +1087,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Quadrilateral | Gpu | f64 | 6 | direct | 0.03 / 0.02 | 1.00 / 1.00 | 1.09 / 2.07 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f64 | 7 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.15 / 1.62 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Quadrilateral | Gpu | f64 | 8 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.11 / 1.41 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 0.12 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 0.21 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 0.27 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 0.25 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 0.10 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 0.20 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 0.27 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 0.25 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Tetrahedron | CpuSimd128 | f32 | 5 | loops | 0.25 | n.m.; T3: 1.00 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd128 | f32 | 6 | loops | 0.24 | n.m.; T3: 0.94 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd128 | f32 | 7 | loops | 0.23 | n.m.; T3: 0.95 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd128 | f32 | 8 | loops | 0.23 | n.m.; T3: 0.94 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 0.16 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 0.13 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 0.13 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 0.14 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 0.15 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 0.11 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 0.13 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 0.13 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Tetrahedron | CpuSimd128 | f64 | 5 | loops | 0.20 | n.m.; T3: 0.95 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd128 | f64 | 6 | loops | 0.40 | n.m.; T3: 0.99 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd128 | f64 | 7 | loops | 0.22 | n.m.; T3: 1.09 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd128 | f64 | 8 | loops | 0.23 | n.m.; T3: 0.94 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 0.25 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 0.36 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 0.83 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 0.79 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 0.15 | 1.00 | 1.61 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 0.39 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 0.85 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 0.80 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
 | EVector | Tetrahedron | CpuSimd512 | f32 | 5 | loops | 0.63 | n.m.; T3: 1.24 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f32 | 6 | loops | 2.81 | n.m.; T3: 0.98 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f32 | 7 | loops | 0.58 | n.m.; T3: 1.26 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f32 | 8 | loops | 0.86 | n.m.; T3: 1.22 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 0.09 | 1.00 | 1.20 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 0.24 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 0.61 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| EVector | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 1.94 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 0.11 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 0.25 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 0.60 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
+| EVector | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 2.00 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 5 | loops | 1.58 | n.m.; T3: 1.05 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 3.33 | n.m.; T3: 0.97 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 1.34 | n.m.; T3: 1.04 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -1199,34 +1135,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Tetrahedron | Gpu | f64 | 6 | loops | 0.05 / 0.01 | n.m.; T3: 0.81 / 0.79 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f64 | 7 | loops | 0.07 / 0.01 | n.m.; T3: 0.81 / 0.74 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Tetrahedron | Gpu | f64 | 8 | loops | 0.09 / 0.01 | n.m.; T3: 0.83 / 0.67 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Hexahedron | CpuSimd128 | f32 | 1 | direct | 0.20 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f32 | 2 | direct | 0.38 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f32 | 3 | direct | 0.69 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f32 | 4 | direct | 0.73 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f32 | 1 | direct | 0.20 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f32 | 2 | direct | 0.39 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f32 | 3 | direct | 0.67 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f32 | 4 | direct | 0.72 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 5 | direct | 0.70 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 6 | direct | 0.81 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 7 | loops | 0.68 | – | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f32 | 8 | loops | 0.70 | – | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Hexahedron | CpuSimd128 | f64 | 1 | direct | 0.28 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f64 | 2 | direct | 0.34 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f64 | 3 | direct | 0.50 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f64 | 4 | direct | 0.62 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f64 | 1 | direct | 0.28 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f64 | 2 | direct | 0.35 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f64 | 3 | direct | 0.51 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f64 | 4 | direct | 0.65 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 5 | direct | 0.83 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 6 | direct | 1.04 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 7 | direct | 1.21 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 8 | loops | 1.30 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.33 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f32 | 2 | direct | 1.42 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f32 | 3 | direct | 3.52 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f32 | 4 | direct | 6.82 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.37 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 2 | direct | 1.57 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 3 | direct | 3.62 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f32 | 4 | direct | 6.78 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 5 | direct | 7.01 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 6 | direct | 7.37 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 7 | direct | 7.04 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 8 | direct | 7.14 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.29 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.64 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 3 | direct | 4.19 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd512 | f64 | 4 | direct | 11.9 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.29 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.66 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 3 | direct | 4.18 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd512 | f64 | 4 | direct | 12.0 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 5 | direct | 12.0 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 6 | direct | 11.6 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f64 | 7 | direct | 11.8 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1247,34 +1183,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | Gpu | f64 | 6 | direct | 0.14 / 0.04 | 1.00 / 1.00 | 1.51 / 1.24 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 7 | direct | 0.27 / 0.05 | 1.00 / 1.00 | 1.33 / 1.33 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 8 | loops | 0.47 / 0.07 | n.m.; T3: 0.83 / 0.79 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Prism | CpuSimd128 | f32 | 1 | direct | 0.15 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd128 | f32 | 2 | direct | 0.30 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd128 | f32 | 3 | direct | 0.41 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f32 | 1 | direct | 0.15 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f32 | 2 | direct | 0.30 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f32 | 3 | direct | 0.42 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd128 | f32 | 4 | direct | 0.83 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd128 | f32 | 5 | loops | 0.43 | n.m.; T3: 1.05 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f32 | 6 | loops | 0.42 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f32 | 7 | loops | 0.41 | n.m.; T3: 1.12 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f32 | 8 | loops | 0.40 | n.m.; T3: 1.35 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Prism | CpuSimd128 | f64 | 1 | direct | 0.34 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd128 | f64 | 2 | direct | 0.23 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd128 | f64 | 3 | direct | 0.25 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd128 | f64 | 4 | direct | 0.49 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f64 | 1 | direct | 0.33 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f64 | 2 | direct | 0.22 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f64 | 3 | direct | 0.26 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd128 | f64 | 4 | direct | 0.48 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd128 | f64 | 5 | loops | 0.32 | n.m.; T3: 0.98 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f64 | 6 | loops | 0.38 | n.m.; T3: 1.01 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f64 | 7 | loops | 0.46 | n.m.; T3: 1.03 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f64 | 8 | loops | 0.51 | n.m.; T3: 0.98 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Prism | CpuSimd512 | f32 | 1 | direct | 0.92 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd512 | f32 | 2 | direct | 0.83 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd512 | f32 | 3 | direct | 4.56 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd512 | f32 | 4 | direct | 8.22 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f32 | 1 | direct | 1.06 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f32 | 2 | direct | 0.84 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f32 | 3 | direct | 4.27 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f32 | 4 | direct | 8.17 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd512 | f32 | 5 | loops | 1.45 | n.m.; T3: 1.23 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f32 | 6 | loops | 2.36 | n.m.; T3: 1.06 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f32 | 7 | loops | 2.28 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f32 | 8 | direct | 3.20 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd512 | f64 | 1 | direct | 0.49 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd512 | f64 | 2 | direct | 1.04 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
-| EVector | Prism | CpuSimd512 | f64 | 3 | direct | 3.67 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Prism | CpuSimd512 | f64 | 4 | direct | 9.99 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f64 | 1 | direct | 0.63 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f64 | 2 | direct | 0.87 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f64 | 3 | direct | 3.39 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Prism | CpuSimd512 | f64 | 4 | direct | 10.2 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd512 | f64 | 5 | loops | 4.63 | n.m.; T3: 1.03 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f64 | 6 | loops | 4.26 | n.m.; T3: 1.01 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd512 | f64 | 7 | loops | 4.51 | n.m.; T3: 1.00 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -1295,18 +1231,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Prism | Gpu | f64 | 6 | direct | 0.08 / 0.01 | 1.00 / 1.00 | 1.32 / 1.40 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f64 | 7 | direct | 0.14 / 0.02 | 1.00 / 1.00 | 1.18 / 1.55 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | Gpu | f64 | 8 | direct | 0.19 / 0.02 | 1.00 / 1.00 | 1.12 / 1.45 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd128 | f32 | 1 | direct | 0.13 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd128 | f32 | 2 | direct | 0.27 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd128 | f32 | 1 | direct | 0.12 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd128 | f32 | 2 | direct | 0.26 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Pyramid | CpuSimd128 | f32 | 3 | direct | 0.34 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd128 | f64 | 1 | direct | 0.19 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd128 | f64 | 2 | direct | 0.20 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd128 | f64 | 3 | direct | 0.19 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd512 | f32 | 1 | direct | 0.22 | 1.00 | 1.37 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd512 | f32 | 2 | direct | 0.70 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd512 | f32 | 3 | direct | 1.26 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
-| EVector | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.17 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.51 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Pyramid | CpuSimd512 | f64 | 3 | direct | 0.90 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
+| EVector | Pyramid | CpuSimd128 | f64 | 1 | direct | 0.18 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd128 | f64 | 2 | direct | 0.18 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd128 | f64 | 3 | direct | 0.18 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd512 | f32 | 1 | direct | 0.23 | 1.00 | 1.22 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd512 | f32 | 2 | direct | 0.68 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd512 | f32 | 3 | direct | 1.28 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
+| EVector | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.16 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.48 | 1.00 | 0.90 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Pyramid | CpuSimd512 | f64 | 3 | direct | 0.91 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
 | EVector | Pyramid | Gpu | f32 | 1 | direct | 0.12 / 0.03 | 1.00 / 1.00 | 0.87 / 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Pyramid | Gpu | f32 | 2 | direct | 0.09 / 0.02 | 1.00 / 1.00 | 1.04 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Pyramid | Gpu | f32 | 3 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.04 / 1.07 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1314,33 +1250,33 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Pyramid | Gpu | f64 | 2 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.09 / 1.29 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Pyramid | Gpu | f64 | 3 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.17 / 1.39 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 1 | direct | 0.04 | 1.00 | 1.22 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd128 | f32 | 2 | direct | 0.05 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd128 | f32 | 3 | direct | 0.05 | 1.00 | 1.18 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd128 | f32 | 4 | direct | 0.07 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd128 | f32 | 2 | direct | 0.05 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd128 | f32 | 3 | direct | 0.05 | 1.00 | 1.17 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd128 | f32 | 4 | direct | 0.07 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 5 | direct | 0.07 | 1.00 | 1.24 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 6 | direct | 0.08 | 1.00 | 1.20 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 7 | direct | 0.08 | 1.00 | 1.35 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f32 | 8 | direct | 0.09 | 1.00 | 1.31 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f64 | 1 | direct | 0.07 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f64 | 2 | direct | 0.08 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd128 | f64 | 3 | direct | 0.09 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd128 | f64 | 4 | direct | 0.10 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd128 | f64 | 3 | direct | 0.09 | 1.00 | 1.09 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd128 | f64 | 4 | direct | 0.10 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f64 | 5 | direct | 0.11 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f64 | 6 | direct | 0.16 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f64 | 7 | direct | 0.16 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd128 | f64 | 8 | direct | 0.19 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f32 | 2 | direct | 0.08 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f32 | 3 | direct | 0.07 | 1.00 | 1.35 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f32 | 4 | direct | 0.09 | 1.00 | 0.69 | – | – | – | loops | loops 0.69 of direct |
+| Points | Interval | CpuSimd512 | f32 | 1 | direct | 0.07 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f32 | 2 | direct | 0.08 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f32 | 3 | direct | 0.10 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f32 | 4 | direct | 0.07 | 1.00 | 1.48 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f32 | 5 | direct | 0.08 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f32 | 6 | direct | 0.05 | 1.00 | 1.31 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f32 | 7 | direct | 0.07 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f32 | 8 | direct | 0.08 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f64 | 1 | direct | 0.09 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f64 | 2 | direct | 0.10 | 1.00 | 1.46 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Interval | CpuSimd512 | f64 | 3 | direct | 0.12 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
-| Points | Interval | CpuSimd512 | f64 | 4 | direct | 0.13 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f64 | 1 | direct | 0.10 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f64 | 2 | direct | 0.10 | 1.00 | 1.13 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f64 | 3 | direct | 0.11 | 1.00 | 1.13 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Interval | CpuSimd512 | f64 | 4 | direct | 0.12 | 1.00 | 0.90 | – | – | – | loops | loops 0.90 of direct |
 | Points | Interval | CpuSimd512 | f64 | 5 | direct | 0.13 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | Points | Interval | CpuSimd512 | f64 | 6 | direct | 0.09 | 1.00 | 1.39 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Interval | CpuSimd512 | f64 | 7 | direct | 0.11 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1361,34 +1297,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Interval | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.06 / 1.13 | – | 1.14 / 1.17 | 1.55 / 2.87 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.02 / 1.17 | – | 0.95 / 1.20 | 1.83 / 4.79 | direct | no strategy 10% faster than direct |
 | Points | Interval | Gpu | f64 | 8 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.24 / 1.32 | – | 1.02 / 1.17 | 2.25 / 5.94 | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f32 | 1 | direct | 0.09 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f32 | 2 | direct | 0.13 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f32 | 3 | direct | 0.18 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f32 | 4 | direct | 0.41 | 1.00 | 0.70 | – | – | – | loops | loops 0.70 of direct |
+| Points | Triangle | CpuSimd128 | f32 | 1 | direct | 0.08 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd128 | f32 | 2 | direct | 0.12 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd128 | f32 | 3 | direct | 0.25 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd128 | f32 | 4 | direct | 0.33 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
 | Points | Triangle | CpuSimd128 | f32 | 5 | direct | 0.54 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd128 | f32 | 6 | direct | 0.85 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
 | Points | Triangle | CpuSimd128 | f32 | 7 | direct | 0.94 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd128 | f32 | 8 | direct | 1.29 | 1.00 | 0.73 | – | – | – | loops | loops 0.73 of direct |
 | Points | Triangle | CpuSimd128 | f64 | 1 | direct | 0.18 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f64 | 2 | direct | 0.24 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f64 | 3 | direct | 0.45 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd128 | f64 | 4 | direct | 0.68 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd128 | f64 | 2 | direct | 0.23 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd128 | f64 | 3 | direct | 0.42 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd128 | f64 | 4 | direct | 0.69 | 1.00 | 0.90 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd128 | f64 | 5 | direct | 1.34 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
 | Points | Triangle | CpuSimd128 | f64 | 6 | direct | 2.18 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
 | Points | Triangle | CpuSimd128 | f64 | 7 | direct | 3.65 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
 | Points | Triangle | CpuSimd128 | f64 | 8 | direct | 5.64 | 1.00 | 0.71 | – | – | – | loops | loops 0.71 of direct |
-| Points | Triangle | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Points | Triangle | CpuSimd512 | f32 | 2 | direct | 0.15 | 1.00 | 0.79 | – | – | – | loops | loops 0.79 of direct |
-| Points | Triangle | CpuSimd512 | f32 | 3 | direct | 0.28 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
-| Points | Triangle | CpuSimd512 | f32 | 4 | direct | 0.62 | 1.00 | 0.69 | – | – | – | loops | loops 0.69 of direct |
+| Points | Triangle | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd512 | f32 | 2 | direct | 0.14 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
+| Points | Triangle | CpuSimd512 | f32 | 3 | direct | 0.28 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
+| Points | Triangle | CpuSimd512 | f32 | 4 | direct | 0.63 | 1.00 | 0.71 | – | – | – | loops | loops 0.71 of direct |
 | Points | Triangle | CpuSimd512 | f32 | 5 | direct | 1.35 | 1.00 | 0.60 | – | – | – | loops | loops 0.60 of direct |
 | Points | Triangle | CpuSimd512 | f32 | 6 | direct | 2.69 | 1.00 | 0.70 | – | – | – | loops | loops 0.70 of direct |
 | Points | Triangle | CpuSimd512 | f32 | 7 | direct | 4.17 | 1.00 | 0.66 | – | – | – | loops | loops 0.66 of direct |
 | Points | Triangle | CpuSimd512 | f32 | 8 | direct | 4.88 | 1.00 | 0.61 | – | – | – | loops | loops 0.61 of direct |
-| Points | Triangle | CpuSimd512 | f64 | 1 | direct | 0.14 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd512 | f64 | 2 | direct | 0.15 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd512 | f64 | 3 | direct | 0.19 | 1.00 | 1.28 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Triangle | CpuSimd512 | f64 | 4 | direct | 0.19 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd512 | f64 | 1 | direct | 0.13 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd512 | f64 | 2 | direct | 0.14 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd512 | f64 | 3 | direct | 0.18 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Triangle | CpuSimd512 | f64 | 4 | direct | 0.24 | 1.00 | 0.83 | – | – | – | loops | loops 0.83 of direct |
 | Points | Triangle | CpuSimd512 | f64 | 5 | direct | 0.22 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd512 | f64 | 6 | direct | 0.45 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Triangle | CpuSimd512 | f64 | 7 | direct | 0.55 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1409,34 +1345,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Triangle | Gpu | f64 | 6 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 3.52 / 7.88 | – | 5.75 / 8.66 | 7.38 / 19.46 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f64 | 7 | direct | 0.06 / 0.02 | 1.00 / 1.00 | 6.51 / 9.30 | – | 10.81 / 10.38 | 9.18 / 26.09 | direct | no strategy 10% faster than direct |
 | Points | Triangle | Gpu | f64 | 8 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 6.16 / 9.27 | – | 11.82 / 10.89 | 7.22 / 22.06 | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.10 | 1.00 | 0.98 | 1.16 | – | – | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.25 | 1.00 | 0.67 | 0.52 | – | – | sumfact | sumfact 0.52 of direct |
-| Points | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 0.34 | 1.00 | 0.74 | 0.46 | – | – | sumfact | sumfact 0.46 of direct |
-| Points | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 0.65 | 1.00 | 0.84 | 0.40 | – | – | sumfact | sumfact 0.40 of direct |
+| Points | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.10 | 1.00 | 0.99 | 1.16 | – | – | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.16 | 1.00 | 0.98 | 0.82 | – | – | sumfact | sumfact 0.82 of direct |
+| Points | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 0.34 | 1.00 | 0.74 | 0.45 | – | – | sumfact | sumfact 0.45 of direct |
+| Points | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 0.64 | 1.00 | 0.83 | 0.41 | – | – | sumfact | sumfact 0.41 of direct |
 | Points | Quadrilateral | CpuSimd128 | f32 | 5 | direct | 1.15 | 1.00 | 0.94 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
 | Points | Quadrilateral | CpuSimd128 | f32 | 6 | direct | 1.39 | 1.00 | 0.78 | 0.23 | – | – | sumfact | sumfact 0.23 of direct |
 | Points | Quadrilateral | CpuSimd128 | f32 | 7 | direct | 1.90 | 1.00 | 0.67 | 0.19 | – | – | sumfact | sumfact 0.19 of direct |
 | Points | Quadrilateral | CpuSimd128 | f32 | 8 | direct | 2.49 | 1.00 | 0.69 | 0.15 | – | – | sumfact | sumfact 0.15 of direct |
-| Points | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.23 | 1.00 | 0.87 | 0.92 | – | – | loops | loops 0.87 of direct |
-| Points | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.36 | 1.00 | 0.79 | 0.59 | – | – | sumfact | sumfact 0.59 of direct |
-| Points | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 0.71 | 1.00 | 0.80 | 0.48 | – | – | sumfact | sumfact 0.48 of direct |
-| Points | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 1.16 | 1.00 | 0.86 | 0.38 | – | – | sumfact | sumfact 0.38 of direct |
+| Points | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.22 | 1.00 | 0.97 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.31 | 1.00 | 0.91 | 0.72 | – | – | sumfact | sumfact 0.72 of direct |
+| Points | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 0.69 | 1.00 | 0.82 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
+| Points | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 1.21 | 1.00 | 0.85 | 0.38 | – | – | sumfact | sumfact 0.38 of direct |
 | Points | Quadrilateral | CpuSimd128 | f64 | 5 | direct | 3.91 | 1.00 | 1.05 | 0.26 | – | – | sumfact | sumfact 0.26 of direct |
 | Points | Quadrilateral | CpuSimd128 | f64 | 6 | direct | 5.03 | 1.00 | 0.74 | 0.18 | – | – | sumfact | sumfact 0.18 of direct |
 | Points | Quadrilateral | CpuSimd128 | f64 | 7 | direct | 7.44 | 1.00 | 0.74 | 0.15 | – | – | sumfact | sumfact 0.15 of direct |
 | Points | Quadrilateral | CpuSimd128 | f64 | 8 | direct | 13.5 | 1.00 | 0.74 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
-| Points | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 1.34 | 0.96 | – | – | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.18 | 1.00 | 0.81 | 0.80 | – | – | loops | loops 0.81 of direct, within 3% of sumfact (0.80) |
-| Points | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 0.47 | 1.00 | 0.68 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
-| Points | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 1.51 | 1.00 | 0.57 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
+| Points | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.09 | 1.00 | 1.30 | 1.13 | – | – | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.21 | 1.00 | 0.69 | 0.87 | – | – | loops | loops 0.69 of direct |
+| Points | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 0.47 | 1.00 | 0.73 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
+| Points | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 1.48 | 1.00 | 0.59 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
 | Points | Quadrilateral | CpuSimd512 | f32 | 5 | direct | 2.97 | 1.00 | 0.79 | 0.31 | – | – | sumfact | sumfact 0.31 of direct |
 | Points | Quadrilateral | CpuSimd512 | f32 | 6 | direct | 4.22 | 1.00 | 0.61 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
 | Points | Quadrilateral | CpuSimd512 | f32 | 7 | direct | 7.46 | 1.00 | 0.56 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
 | Points | Quadrilateral | CpuSimd512 | f32 | 8 | direct | 9.81 | 1.00 | 0.55 | 0.17 | – | – | sumfact | sumfact 0.17 of direct |
-| Points | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.17 | 1.00 | 1.06 | 1.09 | – | – | direct | no strategy 10% faster than direct |
-| Points | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.21 | 1.00 | 0.99 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
-| Points | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.32 | 1.00 | 0.95 | 0.62 | – | – | sumfact | sumfact 0.62 of direct |
-| Points | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 0.33 | 1.00 | 1.06 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| Points | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.18 | 1.00 | 0.99 | 1.01 | – | – | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.20 | 1.00 | 1.02 | 0.92 | – | – | direct | no strategy 10% faster than direct |
+| Points | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.30 | 1.00 | 0.99 | 0.65 | – | – | sumfact | sumfact 0.65 of direct |
+| Points | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 0.36 | 1.00 | 0.95 | 0.58 | – | – | sumfact | sumfact 0.58 of direct |
 | Points | Quadrilateral | CpuSimd512 | f64 | 5 | direct | 0.65 | 1.00 | 0.91 | 0.36 | – | – | sumfact | sumfact 0.36 of direct |
 | Points | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 0.74 | 1.00 | 0.76 | 0.39 | – | – | sumfact | sumfact 0.39 of direct |
 | Points | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 1.15 | 1.00 | 0.58 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
@@ -1457,34 +1393,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Quadrilateral | Gpu | f64 | 6 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 5.36 / 9.03 | 0.57 / 0.53 | 0.53 / 0.53 | 9.12 / 23.18 | shared | shared 0.53 / 0.53 of direct |
 | Points | Quadrilateral | Gpu | f64 | 7 | direct | 0.19 / 0.07 | 1.00 / 1.00 | 3.62 / 4.36 | 0.25 / 0.26 | 0.19 / 0.24 | 3.83 / 10.17 | shared | shared 0.19 / 0.24 of direct |
 | Points | Quadrilateral | Gpu | f64 | 8 | direct | 0.33 / 0.10 | 1.00 / 1.00 | 3.68 / 4.26 | 0.18 / 0.24 | 0.17 / 0.21 | 2.77 / 8.53 | shared | shared 0.17 / 0.21 of direct |
-| Points | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 0.16 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 0.33 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
-| Points | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 0.82 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
-| Points | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 1.71 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
+| Points | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 0.15 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 0.27 | 1.00 | 0.83 | – | – | – | loops | loops 0.83 of direct |
+| Points | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 0.98 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
+| Points | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 1.70 | 1.00 | 0.74 | – | – | – | loops | loops 0.74 of direct |
 | Points | Tetrahedron | CpuSimd128 | f32 | 5 | loops | 3.53 | n.m.; T3: 1.18 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd128 | f32 | 6 | loops | 16.5 | n.m.; T3: 1.04 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd128 | f32 | 7 | loops | 11.7 | n.m.; T3: 1.66 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd128 | f32 | 8 | loops | 20.2 | n.m.; T3: 2.29 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Points | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 0.29 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 0.83 | 1.00 | 0.84 | – | – | – | loops | loops 0.84 of direct |
-| Points | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 3.68 | 1.00 | 0.85 | – | – | – | loops | loops 0.85 of direct |
-| Points | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 9.20 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
+| Points | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 0.26 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 0.80 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
+| Points | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 3.67 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
+| Points | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 9.00 | 1.00 | 0.83 | – | – | – | loops | loops 0.83 of direct |
 | Points | Tetrahedron | CpuSimd128 | f64 | 5 | loops | 18.5 | n.m.; T3: 1.02 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd128 | f64 | 6 | loops | 61.3 | n.m.; T3: 1.01 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd128 | f64 | 7 | loops | 40.0 | n.m.; T3: 1.20 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd128 | f64 | 8 | loops | 48.1 | n.m.; T3: 1.50 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Points | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 0.13 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 0.70 | 1.00 | 0.67 | – | – | – | loops | loops 0.67 of direct |
-| Points | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 3.25 | 1.00 | 0.56 | – | – | – | loops | loops 0.56 of direct |
-| Points | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 5.58 | 1.00 | 0.53 | – | – | – | loops | loops 0.53 of direct |
+| Points | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 0.16 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 0.64 | 1.00 | 0.68 | – | – | – | loops | loops 0.68 of direct |
+| Points | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 3.29 | 1.00 | 0.63 | – | – | – | loops | loops 0.63 of direct |
+| Points | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 5.93 | 1.00 | 0.52 | – | – | – | loops | loops 0.52 of direct |
 | Points | Tetrahedron | CpuSimd512 | f32 | 5 | loops | 4.47 | n.m.; T3: 2.07 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f32 | 6 | loops | 21.9 | n.m.; T3: 1.27 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f32 | 7 | loops | 9.07 | n.m.; T3: 2.50 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f32 | 8 | loops | 13.4 | n.m.; T3: 2.42 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Points | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 0.21 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 0.26 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
-| Points | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 0.31 | 1.00 | 0.69 | – | – | – | loops | loops 0.69 of direct |
-| Points | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 0.72 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 0.22 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 0.27 | 1.00 | 0.76 | – | – | – | loops | loops 0.76 of direct |
+| Points | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 0.39 | 1.00 | 0.73 | – | – | – | loops | loops 0.73 of direct |
+| Points | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 0.73 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
 | Points | Tetrahedron | CpuSimd512 | f64 | 5 | loops | 1.83 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 14.0 | n.m.; T3: 0.61 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Points | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 5.30 | n.m.; T3: 1.36 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -1506,33 +1442,33 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Tetrahedron | Gpu | f64 | 7 | loops | 19.6 / 4.55 | n.m.; T3: 0.61 / 0.65 | 1.00 / 1.00 | – | – | 0.08 / 0.34 | cooperative | cooperative 0.08 / 0.34 of loops |
 | Points | Tetrahedron | Gpu | f64 | 8 | loops | 42.9 / 7.66 | n.m.; T3: 0.61 / 0.74 | 1.00 / 1.00 | – | – | 0.08 / 0.28 | cooperative | cooperative 0.08 / 0.28 of loops |
 | Points | Hexahedron | CpuSimd128 | f32 | 1 | direct | 0.23 | 1.00 | 0.88 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
-| Points | Hexahedron | CpuSimd128 | f32 | 2 | direct | 0.98 | 1.00 | 0.67 | 0.23 | – | – | sumfact | sumfact 0.23 of direct |
-| Points | Hexahedron | CpuSimd128 | f32 | 3 | direct | 2.87 | 1.00 | 0.72 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
-| Points | Hexahedron | CpuSimd128 | f32 | 4 | direct | 9.31 | 1.00 | 0.78 | 0.07 | – | – | sumfact | sumfact 0.07 of direct |
+| Points | Hexahedron | CpuSimd128 | f32 | 2 | direct | 1.05 | 1.00 | 0.65 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
+| Points | Hexahedron | CpuSimd128 | f32 | 3 | direct | 3.02 | 1.00 | 0.72 | 0.14 | – | – | sumfact | sumfact 0.14 of direct |
+| Points | Hexahedron | CpuSimd128 | f32 | 4 | direct | 9.23 | 1.00 | 0.78 | 0.07 | – | – | sumfact | sumfact 0.07 of direct |
 | Points | Hexahedron | CpuSimd128 | f32 | 5 | direct | 24.5 | 1.00 | 0.88 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | Points | Hexahedron | CpuSimd128 | f32 | 6 | direct | 65.6 | 1.00 | 0.79 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Points | Hexahedron | CpuSimd128 | f32 | 7 | direct | 158 | 1.00 | 0.76 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Points | Hexahedron | CpuSimd128 | f32 | 8 | loops | 218 | n.m.; T3: 1.39 | 1.00 | 0.02 | – | – | sumfact | sumfact 0.02 of loops |
-| Points | Hexahedron | CpuSimd128 | f64 | 1 | direct | 0.46 | 1.00 | 0.93 | 0.92 | – | – | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | CpuSimd128 | f64 | 2 | direct | 2.08 | 1.00 | 0.89 | 0.29 | – | – | sumfact | sumfact 0.29 of direct |
-| Points | Hexahedron | CpuSimd128 | f64 | 3 | direct | 13.1 | 1.00 | 0.90 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
-| Points | Hexahedron | CpuSimd128 | f64 | 4 | direct | 68.7 | 1.00 | 0.88 | 0.06 | – | – | sumfact | sumfact 0.06 of direct |
+| Points | Hexahedron | CpuSimd128 | f64 | 1 | direct | 0.48 | 1.00 | 0.93 | 0.81 | – | – | sumfact | sumfact 0.81 of direct |
+| Points | Hexahedron | CpuSimd128 | f64 | 2 | direct | 2.19 | 1.00 | 0.92 | 0.28 | – | – | sumfact | sumfact 0.28 of direct |
+| Points | Hexahedron | CpuSimd128 | f64 | 3 | direct | 13.2 | 1.00 | 0.93 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
+| Points | Hexahedron | CpuSimd128 | f64 | 4 | direct | 68.7 | 1.00 | 0.88 | 0.07 | – | – | sumfact | sumfact 0.07 of direct |
 | Points | Hexahedron | CpuSimd128 | f64 | 5 | direct | 120 | 1.00 | 0.88 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | Points | Hexahedron | CpuSimd128 | f64 | 6 | direct | 192 | 1.00 | 0.86 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Points | Hexahedron | CpuSimd128 | f64 | 7 | direct | 294 | 1.00 | 0.82 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Points | Hexahedron | CpuSimd128 | f64 | 8 | loops | 339 | n.m.; T3: 1.30 | 1.00 | 0.02 | – | – | sumfact | sumfact 0.02 of loops |
-| Points | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 0.91 | 0.85 | – | – | sumfact | sumfact 0.85 of direct |
-| Points | Hexahedron | CpuSimd512 | f32 | 2 | direct | 2.17 | 1.00 | 0.50 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
-| Points | Hexahedron | CpuSimd512 | f32 | 3 | direct | 11.1 | 1.00 | 0.47 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
-| Points | Hexahedron | CpuSimd512 | f32 | 4 | direct | 25.1 | 1.00 | 0.64 | 0.11 | – | – | sumfact | sumfact 0.11 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 0.99 | 0.93 | – | – | direct | no strategy 10% faster than direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 2 | direct | 2.47 | 1.00 | 0.60 | 0.37 | – | – | sumfact | sumfact 0.37 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 3 | direct | 11.4 | 1.00 | 0.47 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
+| Points | Hexahedron | CpuSimd512 | f32 | 4 | direct | 25.0 | 1.00 | 0.64 | 0.09 | – | – | sumfact | sumfact 0.09 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 5 | direct | 43.7 | 1.00 | 0.62 | 0.07 | – | – | sumfact | sumfact 0.07 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 6 | direct | 71.2 | 1.00 | 0.59 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 7 | direct | 107 | 1.00 | 0.58 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Points | Hexahedron | CpuSimd512 | f32 | 8 | direct | 153 | 1.00 | 0.57 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.39 | 1.00 | 1.03 | 1.07 | – | – | direct | no strategy 10% faster than direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 2 | direct | 0.63 | 1.00 | 0.76 | 0.69 | – | – | sumfact | sumfact 0.69 of direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 3 | direct | 1.29 | 1.00 | 0.62 | 0.36 | – | – | sumfact | sumfact 0.36 of direct |
-| Points | Hexahedron | CpuSimd512 | f64 | 4 | direct | 2.72 | 1.00 | 0.85 | 0.18 | – | – | sumfact | sumfact 0.18 of direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.38 | 1.00 | 0.99 | 1.04 | – | – | direct | no strategy 10% faster than direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 2 | direct | 0.54 | 1.00 | 0.85 | 0.82 | – | – | sumfact | sumfact 0.82 of direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 3 | direct | 1.30 | 1.00 | 0.61 | 0.34 | – | – | sumfact | sumfact 0.34 of direct |
+| Points | Hexahedron | CpuSimd512 | f64 | 4 | direct | 2.70 | 1.00 | 0.86 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 5 | direct | 6.26 | 1.00 | 0.84 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 6 | direct | 14.8 | 1.00 | 0.86 | 0.10 | – | – | sumfact | sumfact 0.10 of direct |
 | Points | Hexahedron | CpuSimd512 | f64 | 7 | direct | 38.2 | 1.00 | 0.73 | 0.06 | – | – | sumfact | sumfact 0.06 of direct |
@@ -1553,34 +1489,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Hexahedron | Gpu | f64 | 6 | direct | 24.8 / 4.51 | 1.00 / 1.00 | 1.67 / 2.04 | 0.11 / 0.11 | 0.17 / 0.15 | 0.19 / 0.96 | sumfact | sumfact 0.11 / 0.11 of direct |
 | Points | Hexahedron | Gpu | f64 | 7 | direct | 58.0 / 8.61 | 1.00 / 1.00 | 1.69 / 2.40 | 0.08 / 0.09 | 0.14 / 0.15 | 0.13 / 0.74 | sumfact | sumfact 0.08 / 0.09 of direct |
 | Points | Hexahedron | Gpu | f64 | 8 | direct | 111 / 17.6 | 1.00 / 1.00 | 1.64 / 2.35 | 0.06 / 0.06 | 0.13 / 0.12 | 0.13 / 0.53 | sumfact | sumfact 0.06 / 0.06 of direct |
-| Points | Prism | CpuSimd128 | f32 | 1 | direct | 0.22 | 1.00 | 0.96 | 0.90 | – | – | direct | no strategy 10% faster than direct |
-| Points | Prism | CpuSimd128 | f32 | 2 | direct | 0.67 | 1.00 | 0.69 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
-| Points | Prism | CpuSimd128 | f32 | 3 | direct | 1.87 | 1.00 | 0.81 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
-| Points | Prism | CpuSimd128 | f32 | 4 | direct | 15.0 | 1.00 | 1.08 | 0.23 | – | – | sumfact | sumfact 0.23 of direct |
+| Points | Prism | CpuSimd128 | f32 | 1 | direct | 0.20 | 1.00 | 0.97 | 0.92 | – | – | direct | no strategy 10% faster than direct |
+| Points | Prism | CpuSimd128 | f32 | 2 | direct | 0.66 | 1.00 | 0.66 | 0.46 | – | – | sumfact | sumfact 0.46 of direct |
+| Points | Prism | CpuSimd128 | f32 | 3 | direct | 1.70 | 1.00 | 0.76 | 0.30 | – | – | sumfact | sumfact 0.30 of direct |
+| Points | Prism | CpuSimd128 | f32 | 4 | direct | 13.7 | 1.00 | 1.03 | 0.21 | – | – | sumfact | sumfact 0.21 of direct |
 | Points | Prism | CpuSimd128 | f32 | 5 | loops | 7.36 | n.m.; T3: 1.60 | 1.00 | 0.22 | – | – | sumfact | sumfact 0.22 of loops |
 | Points | Prism | CpuSimd128 | f32 | 6 | loops | 15.0 | n.m.; T3: 2.04 | 1.00 | 0.17 | – | – | sumfact | sumfact 0.17 of loops |
 | Points | Prism | CpuSimd128 | f32 | 7 | loops | 29.1 | n.m.; T3: 2.21 | 1.00 | 0.14 | – | – | sumfact | sumfact 0.14 of loops |
 | Points | Prism | CpuSimd128 | f32 | 8 | loops | 111 | n.m.; T3: 1.27 | 1.00 | 0.12 | – | – | sumfact | sumfact 0.12 of loops |
-| Points | Prism | CpuSimd128 | f64 | 1 | direct | 0.75 | 1.00 | 0.97 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
-| Points | Prism | CpuSimd128 | f64 | 2 | direct | 1.43 | 1.00 | 0.90 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
-| Points | Prism | CpuSimd128 | f64 | 3 | direct | 7.39 | 1.00 | 0.83 | 0.28 | – | – | sumfact | sumfact 0.28 of direct |
-| Points | Prism | CpuSimd128 | f64 | 4 | direct | 78.0 | 1.00 | 1.01 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
+| Points | Prism | CpuSimd128 | f64 | 1 | direct | 0.76 | 1.00 | 0.97 | 0.55 | – | – | sumfact | sumfact 0.55 of direct |
+| Points | Prism | CpuSimd128 | f64 | 2 | direct | 1.45 | 1.00 | 0.90 | 0.43 | – | – | sumfact | sumfact 0.43 of direct |
+| Points | Prism | CpuSimd128 | f64 | 3 | direct | 7.29 | 1.00 | 0.88 | 0.29 | – | – | sumfact | sumfact 0.29 of direct |
+| Points | Prism | CpuSimd128 | f64 | 4 | direct | 82.8 | 1.00 | 1.04 | 0.23 | – | – | sumfact | sumfact 0.23 of direct |
 | Points | Prism | CpuSimd128 | f64 | 5 | loops | 41.9 | n.m.; T3: 1.24 | 1.00 | 0.18 | – | – | sumfact | sumfact 0.18 of loops |
 | Points | Prism | CpuSimd128 | f64 | 6 | loops | 65.3 | n.m.; T3: 1.35 | 1.00 | 0.15 | – | – | sumfact | sumfact 0.15 of loops |
 | Points | Prism | CpuSimd128 | f64 | 7 | loops | 95.2 | n.m.; T3: 1.45 | 1.00 | 0.13 | – | – | sumfact | sumfact 0.13 of loops |
 | Points | Prism | CpuSimd128 | f64 | 8 | loops | 189 | n.m.; T3: 1.22 | 1.00 | 0.12 | – | – | sumfact | sumfact 0.12 of loops |
-| Points | Prism | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 0.89 | 0.86 | – | – | sumfact | sumfact 0.86 of direct |
-| Points | Prism | CpuSimd512 | f32 | 2 | direct | 1.56 | 1.00 | 0.54 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
-| Points | Prism | CpuSimd512 | f32 | 3 | direct | 7.53 | 1.00 | 0.77 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
-| Points | Prism | CpuSimd512 | f32 | 4 | direct | 40.4 | 1.00 | 0.98 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
+| Points | Prism | CpuSimd512 | f32 | 1 | direct | 0.22 | 1.00 | 0.96 | 0.90 | – | – | direct | no strategy 10% faster than direct |
+| Points | Prism | CpuSimd512 | f32 | 2 | direct | 1.56 | 1.00 | 0.59 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
+| Points | Prism | CpuSimd512 | f32 | 3 | direct | 7.41 | 1.00 | 0.78 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
+| Points | Prism | CpuSimd512 | f32 | 4 | direct | 39.3 | 1.00 | 1.00 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
 | Points | Prism | CpuSimd512 | f32 | 5 | loops | 9.86 | n.m.; T3: 2.43 | 1.00 | 0.40 | – | – | sumfact | sumfact 0.40 of loops |
 | Points | Prism | CpuSimd512 | f32 | 6 | loops | 19.3 | n.m.; T3: 2.04 | 1.00 | 0.28 | – | – | sumfact | sumfact 0.28 of loops |
 | Points | Prism | CpuSimd512 | f32 | 7 | loops | 26.2 | n.m.; T3: 2.24 | 1.00 | 0.25 | – | – | sumfact | sumfact 0.25 of loops |
 | Points | Prism | CpuSimd512 | f32 | 8 | direct | 84.9 | 1.00 | 0.59 | 0.10 | – | – | sumfact | sumfact 0.10 of direct |
-| Points | Prism | CpuSimd512 | f64 | 1 | direct | 0.30 | 1.00 | 1.06 | 0.99 | – | – | direct | no strategy 10% faster than direct |
-| Points | Prism | CpuSimd512 | f64 | 2 | direct | 0.45 | 1.00 | 0.82 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
-| Points | Prism | CpuSimd512 | f64 | 3 | direct | 0.90 | 1.00 | 0.92 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
-| Points | Prism | CpuSimd512 | f64 | 4 | direct | 6.66 | 1.00 | 1.02 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
+| Points | Prism | CpuSimd512 | f64 | 1 | direct | 0.38 | 1.00 | 1.01 | 0.96 | – | – | direct | no strategy 10% faster than direct |
+| Points | Prism | CpuSimd512 | f64 | 2 | direct | 0.51 | 1.00 | 0.89 | 0.88 | – | – | loops | loops 0.89 of direct, within 3% of sumfact (0.88) |
+| Points | Prism | CpuSimd512 | f64 | 3 | direct | 0.99 | 1.00 | 0.81 | 0.41 | – | – | sumfact | sumfact 0.41 of direct |
+| Points | Prism | CpuSimd512 | f64 | 4 | direct | 6.94 | 1.00 | 1.02 | 0.21 | – | – | sumfact | sumfact 0.21 of direct |
 | Points | Prism | CpuSimd512 | f64 | 5 | loops | 3.13 | n.m.; T3: 1.29 | 1.00 | 0.30 | – | – | sumfact | sumfact 0.30 of loops |
 | Points | Prism | CpuSimd512 | f64 | 6 | loops | 7.18 | n.m.; T3: 1.23 | 1.00 | 0.29 | – | – | sumfact | sumfact 0.29 of loops |
 | Points | Prism | CpuSimd512 | f64 | 7 | loops | 12.2 | n.m.; T3: 1.41 | 1.00 | 0.24 | – | – | sumfact | sumfact 0.24 of loops |
@@ -1601,18 +1537,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Prism | Gpu | f64 | 6 | direct | 14.2 / 3.60 | 1.00 / 1.00 | 1.74 / 1.57 | 0.05 / 0.06 | 0.05 / 0.06 | 0.20 / 0.68 | shared | shared 0.05 / 0.06 of direct |
 | Points | Prism | Gpu | f64 | 7 | direct | 21.5 / 5.06 | 1.00 / 1.00 | 2.25 / 2.42 | 0.06 / 0.07 | 0.05 / 0.06 | 0.18 / 0.70 | shared | shared 0.05 / 0.06 of direct |
 | Points | Prism | Gpu | f64 | 8 | direct | 37.5 / 9.58 | 1.00 / 1.00 | 2.46 / 2.42 | 0.05 / 0.04 | 0.05 / 0.05 | 0.20 / 0.54 | sumfact | closest: sumfact 0.05 / 0.04 of direct, 7% slower than the fastest at one size |
-| Points | Pyramid | CpuSimd128 | f32 | 1 | direct | 0.20 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Pyramid | CpuSimd128 | f32 | 2 | direct | 0.53 | 1.00 | 0.65 | – | – | – | loops | loops 0.65 of direct |
-| Points | Pyramid | CpuSimd128 | f32 | 3 | direct | 1.31 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
-| Points | Pyramid | CpuSimd128 | f64 | 1 | direct | 0.35 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Points | Pyramid | CpuSimd128 | f64 | 2 | direct | 1.12 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Pyramid | CpuSimd128 | f64 | 3 | direct | 5.75 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
-| Points | Pyramid | CpuSimd512 | f32 | 1 | direct | 0.18 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Pyramid | CpuSimd512 | f32 | 2 | direct | 1.06 | 1.00 | 0.63 | – | – | – | loops | loops 0.63 of direct |
-| Points | Pyramid | CpuSimd512 | f32 | 3 | direct | 5.11 | 1.00 | 0.53 | – | – | – | loops | loops 0.53 of direct |
-| Points | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.26 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Points | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.36 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Points | Pyramid | CpuSimd512 | f64 | 3 | direct | 0.52 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Pyramid | CpuSimd128 | f32 | 1 | direct | 0.27 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Pyramid | CpuSimd128 | f32 | 2 | direct | 0.52 | 1.00 | 0.62 | – | – | – | loops | loops 0.62 of direct |
+| Points | Pyramid | CpuSimd128 | f32 | 3 | direct | 1.36 | 1.00 | 0.76 | – | – | – | loops | loops 0.76 of direct |
+| Points | Pyramid | CpuSimd128 | f64 | 1 | direct | 0.32 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Pyramid | CpuSimd128 | f64 | 2 | direct | 1.14 | 1.00 | 0.90 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Pyramid | CpuSimd128 | f64 | 3 | direct | 6.02 | 1.00 | 0.79 | – | – | – | loops | loops 0.79 of direct |
+| Points | Pyramid | CpuSimd512 | f32 | 1 | direct | 0.17 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Pyramid | CpuSimd512 | f32 | 2 | direct | 1.03 | 1.00 | 0.66 | – | – | – | loops | loops 0.66 of direct |
+| Points | Pyramid | CpuSimd512 | f32 | 3 | direct | 5.14 | 1.00 | 0.52 | – | – | – | loops | loops 0.52 of direct |
+| Points | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.27 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Points | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.37 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
+| Points | Pyramid | CpuSimd512 | f64 | 3 | direct | 0.55 | 1.00 | 0.72 | – | – | – | loops | loops 0.72 of direct |
 | Points | Pyramid | Gpu | f32 | 1 | direct | 0.09 / 0.04 | 1.00 / 1.00 | 1.18 / 1.09 | – | 0.99 / 1.02 | 1.34 / 1.86 | direct | no strategy 10% faster than direct |
 | Points | Pyramid | Gpu | f32 | 2 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.44 / 1.70 | – | 1.43 / 1.69 | 2.18 / 4.30 | direct | no strategy 10% faster than direct |
 | Points | Pyramid | Gpu | f32 | 3 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 4.90 / 5.30 | – | 3.96 / 5.66 | 3.97 / 7.23 | direct | no strategy 10% faster than direct |
@@ -1620,33 +1556,33 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Points | Pyramid | Gpu | f64 | 2 | direct | 0.04 / 0.01 | 1.00 / 1.00 | 2.44 / 5.19 | – | 2.47 / 5.92 | 3.89 / 9.23 | direct | no strategy 10% faster than direct |
 | Points | Pyramid | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 10.30 / 12.16 | – | 10.10 / 10.99 | 8.32 / 19.29 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 1 | direct | 0.12 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd128 | f32 | 2 | direct | 0.14 | 1.00 | 1.14 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd128 | f32 | 3 | direct | 0.15 | 1.00 | 1.21 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd128 | f32 | 4 | direct | 0.19 | 1.00 | 1.13 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd128 | f32 | 2 | direct | 0.14 | 1.00 | 1.13 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd128 | f32 | 3 | direct | 0.15 | 1.00 | 1.19 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd128 | f32 | 4 | direct | 0.19 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 5 | direct | 0.19 | 1.00 | 1.27 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 6 | direct | 0.21 | 1.00 | 1.25 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 7 | direct | 0.23 | 1.00 | 1.43 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f32 | 8 | direct | 0.25 | 1.00 | 1.37 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd128 | f64 | 1 | direct | 0.19 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd128 | f64 | 1 | direct | 0.21 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f64 | 2 | direct | 0.22 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f64 | 3 | direct | 0.25 | 1.00 | 1.09 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd128 | f64 | 4 | direct | 0.29 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd128 | f64 | 4 | direct | 0.29 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f64 | 5 | direct | 0.32 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f64 | 6 | direct | 0.41 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f64 | 7 | direct | 0.49 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd128 | f64 | 8 | direct | 0.54 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f32 | 1 | direct | 0.25 | 1.00 | 1.70 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f32 | 2 | direct | 0.25 | 1.00 | 1.30 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f32 | 3 | direct | 0.25 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f32 | 4 | direct | 0.28 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f32 | 1 | direct | 0.27 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f32 | 2 | direct | 0.30 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f32 | 3 | direct | 0.26 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f32 | 4 | direct | 0.22 | 1.00 | 1.09 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f32 | 5 | direct | 0.21 | 1.00 | 1.35 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f32 | 6 | direct | 0.15 | 1.00 | 1.63 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f32 | 7 | direct | 0.20 | 1.00 | 1.24 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f32 | 8 | direct | 0.25 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f64 | 1 | direct | 0.29 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f64 | 2 | direct | 0.31 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f64 | 3 | direct | 0.36 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Interval | CpuSimd512 | f64 | 4 | direct | 0.37 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f64 | 1 | direct | 0.27 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f64 | 2 | direct | 0.32 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f64 | 3 | direct | 0.34 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Interval | CpuSimd512 | f64 | 4 | direct | 0.33 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f64 | 5 | direct | 0.35 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | CpuSimd512 | f64 | 6 | direct | 0.38 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | Jacobian | Interval | CpuSimd512 | f64 | 7 | direct | 0.35 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1667,34 +1603,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Interval | Gpu | f64 | 6 | direct | 0.07 / 0.02 | 1.00 / 1.00 | 1.16 / 1.16 | – | 1.13 / 1.14 | 1.71 / 2.79 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f64 | 7 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 1.08 / 1.27 | – | 1.13 / 1.23 | 2.01 / 4.76 | direct | no strategy 10% faster than direct |
 | Jacobian | Interval | Gpu | f64 | 8 | direct | 0.08 / 0.02 | 1.00 / 1.00 | 1.16 / 1.22 | – | 1.07 / 1.15 | 2.37 / 5.32 | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f32 | 1 | direct | 0.33 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f32 | 2 | direct | 0.43 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f32 | 3 | direct | 0.68 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f32 | 4 | direct | 1.14 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f32 | 1 | direct | 0.33 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f32 | 2 | direct | 0.55 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f32 | 3 | direct | 0.65 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f32 | 4 | direct | 1.09 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd128 | f32 | 5 | direct | 1.63 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd128 | f32 | 6 | direct | 2.67 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd128 | f32 | 7 | direct | 3.58 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | Jacobian | Triangle | CpuSimd128 | f32 | 8 | direct | 3.94 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f64 | 1 | direct | 0.88 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f64 | 2 | direct | 1.01 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f64 | 3 | direct | 1.52 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd128 | f64 | 4 | direct | 2.27 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f64 | 1 | direct | 0.74 | 1.00 | 1.11 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f64 | 2 | direct | 0.97 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f64 | 3 | direct | 1.41 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd128 | f64 | 4 | direct | 2.27 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd128 | f64 | 5 | direct | 4.48 | 1.00 | 0.90 | – | – | – | loops | loops 0.90 of direct |
 | Jacobian | Triangle | CpuSimd128 | f64 | 6 | direct | 7.75 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd128 | f64 | 7 | direct | 13.0 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd128 | f64 | 8 | direct | 18.4 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f32 | 1 | direct | 0.35 | 1.00 | 1.10 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f32 | 2 | direct | 0.54 | 1.00 | 0.90 | – | – | – | loops | loops 0.90 of direct |
-| Jacobian | Triangle | CpuSimd512 | f32 | 3 | direct | 0.99 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f32 | 4 | direct | 1.94 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f32 | 1 | direct | 0.31 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f32 | 2 | direct | 0.54 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f32 | 3 | direct | 1.03 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f32 | 4 | direct | 2.00 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f32 | 5 | direct | 3.87 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f32 | 6 | direct | 6.83 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f32 | 7 | direct | 10.5 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f32 | 8 | direct | 11.3 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f64 | 1 | direct | 0.88 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f64 | 2 | direct | 0.77 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f64 | 3 | direct | 0.90 | 1.00 | 1.13 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Triangle | CpuSimd512 | f64 | 4 | direct | 1.17 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f64 | 1 | direct | 0.76 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f64 | 2 | direct | 0.75 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f64 | 3 | direct | 0.92 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Triangle | CpuSimd512 | f64 | 4 | direct | 1.07 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f64 | 5 | direct | 1.13 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f64 | 6 | direct | 1.78 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | CpuSimd512 | f64 | 7 | direct | 2.73 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
@@ -1715,34 +1651,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Triangle | Gpu | f64 | 6 | direct | 0.25 / 0.08 | 1.00 / 1.00 | 2.37 / 5.14 | – | 3.06 / 5.26 | 8.93 / 25.32 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f64 | 7 | direct | 0.24 / 0.09 | 1.00 / 1.00 | 4.37 / 5.41 | – | 5.14 / 5.21 | 16.29 / 40.71 | direct | no strategy 10% faster than direct |
 | Jacobian | Triangle | Gpu | f64 | 8 | direct | 0.44 / 0.12 | 1.00 / 1.00 | 3.31 / 5.40 | – | 4.34 / 6.35 | 9.59 / 32.54 | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.39 | 1.00 | 1.01 | 1.51 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.59 | 1.00 | 1.03 | 1.02 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 1.16 | 1.00 | 1.00 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 2.03 | 1.00 | 0.89 | 0.48 | – | – | sumfact | sumfact 0.48 of direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.39 | 1.00 | 1.05 | 1.55 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.59 | 1.00 | 1.04 | 1.03 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 1.12 | 1.00 | 1.02 | 0.62 | – | – | sumfact | sumfact 0.62 of direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 2.05 | 1.00 | 0.90 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f32 | 5 | direct | 3.28 | 1.00 | 0.90 | 0.39 | – | – | sumfact | sumfact 0.39 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f32 | 6 | direct | 4.09 | 1.00 | 0.97 | 0.34 | – | – | sumfact | sumfact 0.34 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f32 | 7 | direct | 4.99 | 1.00 | 0.92 | 0.27 | – | – | sumfact | sumfact 0.27 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f32 | 8 | direct | 6.53 | 1.00 | 0.94 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 1.10 | 1.00 | 0.87 | 1.19 | – | – | loops | loops 0.87 of direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 1.27 | 1.00 | 1.00 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 2.32 | 1.00 | 0.95 | 0.79 | – | – | sumfact | sumfact 0.79 of direct |
-| Jacobian | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 3.84 | 1.00 | 0.93 | 0.55 | – | – | sumfact | sumfact 0.55 of direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.93 | 1.00 | 0.98 | 1.25 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 1.22 | 1.00 | 1.00 | 1.01 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 2.34 | 1.00 | 0.95 | 0.77 | – | – | sumfact | sumfact 0.77 of direct |
+| Jacobian | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 4.09 | 1.00 | 0.92 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f64 | 5 | direct | 12.6 | 1.00 | 0.98 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f64 | 6 | direct | 16.0 | 1.00 | 0.80 | 0.28 | – | – | sumfact | sumfact 0.28 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f64 | 7 | direct | 22.9 | 1.00 | 0.85 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
 | Jacobian | Quadrilateral | CpuSimd128 | f64 | 8 | direct | 40.7 | 1.00 | 0.81 | 0.19 | – | – | sumfact | sumfact 0.19 of direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.35 | 1.00 | 0.95 | 1.04 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.71 | 1.00 | 0.93 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 1.45 | 1.00 | 0.99 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 4.62 | 1.00 | 0.84 | 0.53 | – | – | sumfact | sumfact 0.53 of direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.35 | 1.00 | 1.05 | 1.19 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.67 | 1.00 | 0.91 | 0.90 | – | – | sumfact | sumfact 0.90 of direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 1.49 | 1.00 | 1.01 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 3.65 | 1.00 | 0.99 | 0.66 | – | – | sumfact | sumfact 0.66 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f32 | 5 | direct | 8.34 | 1.00 | 0.95 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f32 | 6 | direct | 10.5 | 1.00 | 0.97 | 0.57 | – | – | sumfact | sumfact 0.57 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f32 | 7 | direct | 16.1 | 1.00 | 0.97 | 0.46 | – | – | sumfact | sumfact 0.46 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f32 | 8 | direct | 19.9 | 1.00 | 0.95 | 0.40 | – | – | sumfact | sumfact 0.40 of direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.97 | 1.00 | 0.98 | 1.10 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 1.07 | 1.00 | 1.04 | 0.89 | – | – | sumfact | sumfact 0.89 of direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 1.35 | 1.00 | 0.98 | 0.83 | – | – | sumfact | sumfact 0.83 of direct |
-| Jacobian | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 1.70 | 1.00 | 0.96 | 0.72 | – | – | sumfact | sumfact 0.72 of direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.93 | 1.00 | 0.99 | 1.09 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 1.02 | 1.00 | 1.03 | 1.05 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 1.29 | 1.00 | 0.99 | 0.94 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 1.50 | 1.00 | 0.94 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f64 | 5 | direct | 2.70 | 1.00 | 0.88 | 0.45 | – | – | sumfact | sumfact 0.45 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 3.34 | 1.00 | 0.88 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
 | Jacobian | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 2.90 | 1.00 | 1.03 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
@@ -1763,34 +1699,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Quadrilateral | Gpu | f64 | 6 | direct | 0.36 / 0.13 | 1.00 / 1.00 | 2.90 / 6.13 | 0.48 / 0.55 | 0.45 / 0.51 | 12.27 / 32.98 | shared | shared 0.45 / 0.51 of direct |
 | Jacobian | Quadrilateral | Gpu | f64 | 7 | direct | 1.03 / 0.32 | 1.00 / 1.00 | 1.89 / 2.79 | 0.23 / 0.27 | 0.18 / 0.25 | 4.53 / 14.18 | shared | shared 0.18 / 0.25 of direct |
 | Jacobian | Quadrilateral | Gpu | f64 | 8 | direct | 1.66 / 0.65 | 1.00 / 1.00 | 1.98 / 1.91 | 0.20 / 0.18 | 0.14 / 0.15 | 3.17 / 7.68 | shared | shared 0.14 / 0.15 of direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 1.02 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 1.47 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 3.15 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 5.44 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 1.02 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 1.39 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 2.76 | 1.00 | 0.90 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 5.40 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | Jacobian | Tetrahedron | CpuSimd128 | f32 | 5 | loops | 12.7 | n.m.; T3: 1.22 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd128 | f32 | 6 | loops | 51.3 | n.m.; T3: 1.05 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd128 | f32 | 7 | loops | 42.8 | n.m.; T3: 1.37 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd128 | f32 | 8 | loops | 83.3 | n.m.; T3: 1.68 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 2.47 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 4.36 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 17.5 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
-| Jacobian | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 40.0 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 2.42 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 4.15 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 16.2 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
+| Jacobian | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 39.7 | 1.00 | 0.90 | – | – | – | loops | loops 0.90 of direct |
 | Jacobian | Tetrahedron | CpuSimd128 | f64 | 5 | loops | 63.5 | n.m.; T3: 1.22 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd128 | f64 | 6 | loops | 177 | n.m.; T3: 1.20 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd128 | f64 | 7 | loops | 127 | n.m.; T3: 1.55 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd128 | f64 | 8 | loops | 159 | n.m.; T3: 1.90 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Jacobian | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 1.24 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 4.01 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 10.9 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 14.1 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 1.19 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 3.73 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 11.2 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 15.7 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Tetrahedron | CpuSimd512 | f32 | 5 | loops | 20.3 | n.m.; T3: 1.09 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f32 | 6 | loops | 78.3 | n.m.; T3: 0.95 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f32 | 7 | loops | 39.4 | n.m.; T3: 2.61 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f32 | 8 | loops | 60.2 | n.m.; T3: 4.66 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| Jacobian | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 2.85 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 2.61 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 2.74 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 3.47 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 2.93 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 2.88 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 2.88 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 4.08 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Tetrahedron | CpuSimd512 | f64 | 5 | loops | 7.02 | n.m.; T3: 1.17 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 43.7 | n.m.; T3: 1.06 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | Jacobian | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 21.9 | n.m.; T3: 4.48 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -1811,34 +1747,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Tetrahedron | Gpu | f64 | 6 | loops | 33.2 / 7.62 | n.m.; T3: 0.48 / 0.50 | 1.00 / 1.00 | – | – | 0.18 / 0.73 | cooperative | cooperative 0.18 / 0.73 of loops |
 | Jacobian | Tetrahedron | Gpu | f64 | 7 | loops | 66.7 / 15.3 | n.m.; T3: 0.46 / 0.52 | 1.00 / 1.00 | – | – | 0.11 / 0.47 | cooperative | cooperative 0.11 / 0.47 of loops |
 | Jacobian | Tetrahedron | Gpu | f64 | 8 | loops | 146 / 26.2 | n.m.; T3: 0.44 / 0.57 | 1.00 / 1.00 | – | – | 0.10 / 0.34 | cooperative | cooperative 0.10 / 0.34 of loops |
-| Jacobian | Hexahedron | CpuSimd128 | f32 | 1 | direct | 1.34 | 1.00 | 0.99 | 1.04 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd128 | f32 | 2 | direct | 3.21 | 1.00 | 0.96 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
-| Jacobian | Hexahedron | CpuSimd128 | f32 | 3 | direct | 9.76 | 1.00 | 0.77 | 0.23 | – | – | sumfact | sumfact 0.23 of direct |
-| Jacobian | Hexahedron | CpuSimd128 | f32 | 4 | direct | 31.8 | 1.00 | 0.78 | 0.11 | – | – | sumfact | sumfact 0.11 of direct |
+| Jacobian | Hexahedron | CpuSimd128 | f32 | 1 | direct | 1.33 | 1.00 | 1.01 | 1.06 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd128 | f32 | 2 | direct | 3.46 | 1.00 | 0.96 | 0.51 | – | – | sumfact | sumfact 0.51 of direct |
+| Jacobian | Hexahedron | CpuSimd128 | f32 | 3 | direct | 10.5 | 1.00 | 0.78 | 0.20 | – | – | sumfact | sumfact 0.20 of direct |
+| Jacobian | Hexahedron | CpuSimd128 | f32 | 4 | direct | 33.2 | 1.00 | 0.77 | 0.11 | – | – | sumfact | sumfact 0.11 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f32 | 5 | direct | 122 | 1.00 | 0.58 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f32 | 6 | direct | 320 | 1.00 | 0.51 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f32 | 7 | direct | 775 | 1.00 | 0.47 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f32 | 8 | loops | 656 | n.m.; T3: 2.18 | 1.00 | 0.03 | – | – | sumfact | sumfact 0.03 of loops |
-| Jacobian | Hexahedron | CpuSimd128 | f64 | 1 | direct | 2.89 | 1.00 | 0.98 | 1.02 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd128 | f64 | 2 | direct | 9.37 | 1.00 | 0.88 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
-| Jacobian | Hexahedron | CpuSimd128 | f64 | 3 | direct | 52.4 | 1.00 | 0.75 | 0.19 | – | – | sumfact | sumfact 0.19 of direct |
-| Jacobian | Hexahedron | CpuSimd128 | f64 | 4 | direct | 303 | 1.00 | 0.58 | 0.08 | – | – | sumfact | sumfact 0.08 of direct |
+| Jacobian | Hexahedron | CpuSimd128 | f64 | 1 | direct | 3.06 | 1.00 | 1.00 | 0.98 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd128 | f64 | 2 | direct | 10.6 | 1.00 | 0.86 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
+| Jacobian | Hexahedron | CpuSimd128 | f64 | 3 | direct | 56.5 | 1.00 | 0.74 | 0.18 | – | – | sumfact | sumfact 0.18 of direct |
+| Jacobian | Hexahedron | CpuSimd128 | f64 | 4 | direct | 298 | 1.00 | 0.62 | 0.09 | – | – | sumfact | sumfact 0.09 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 5 | direct | 667 | 1.00 | 0.49 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 6 | direct | 1115 | 1.00 | 0.46 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 7 | direct | 1681 | 1.00 | 0.45 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd128 | f64 | 8 | loops | 1080 | n.m.; T3: 2.32 | 1.00 | 0.04 | – | – | sumfact | sumfact 0.04 of loops |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.48 | 1.00 | 0.99 | 1.08 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 2 | direct | 7.57 | 1.00 | 0.97 | 1.03 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 3 | direct | 25.0 | 1.00 | 0.96 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 4 | direct | 121 | 1.00 | 0.48 | 0.17 | – | – | sumfact | sumfact 0.17 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.46 | 1.00 | 0.99 | 1.08 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 2 | direct | 7.77 | 1.00 | 0.95 | 1.01 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 3 | direct | 25.0 | 1.00 | 0.97 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 4 | direct | 120 | 1.00 | 0.48 | 0.17 | – | – | sumfact | sumfact 0.17 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 5 | direct | 471 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 6 | direct | 915 | 1.00 | 0.18 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 7 | direct | 1360 | 1.00 | 0.16 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 8 | direct | 2106 | 1.00 | 0.15 | 0.01 | – | – | sumfact | sumfact 0.01 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 1 | direct | 3.44 | 1.00 | 0.99 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 2 | direct | 3.70 | 1.00 | 0.99 | 0.97 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 3 | direct | 7.82 | 1.00 | 0.71 | 0.48 | – | – | sumfact | sumfact 0.48 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 4 | direct | 36.2 | 1.00 | 0.30 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 1 | direct | 3.38 | 1.00 | 1.01 | 1.05 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 2 | direct | 3.89 | 1.00 | 0.96 | 0.95 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 3 | direct | 7.95 | 1.00 | 0.71 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 4 | direct | 36.4 | 1.00 | 0.31 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 5 | direct | 118 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 6 | direct | 315 | 1.00 | 0.17 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 7 | direct | 813 | 1.00 | 0.13 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
@@ -1859,34 +1795,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | Gpu | f64 | 6 | direct | 470 / 72.9 | 1.00 / 1.00 | 0.32 / 0.42 | 0.04 / 0.05 | 0.04 / 0.05 | 0.04 / 0.22 | sumfact | sumfact 0.04 / 0.05 of direct |
 | Jacobian | Hexahedron | Gpu | f64 | 7 | direct | 217 / 38.9 | 1.00 / 1.00 | 1.66 / 1.78 | 0.15 / 0.14 | 0.19 / 0.17 | 0.13 / 0.59 | sumfact | closest: sumfact 0.15 / 0.14 of direct, 20% slower than the fastest at one size |
 | Jacobian | Hexahedron | Gpu | f64 | 8 | loops | 669 / 139 | n.m.; T3: 3.70 / 2.53 | 1.00 / 1.00 | 0.07 / 0.05 | 0.10 / 0.07 | 0.07 / 0.25 | sumfact | sumfact 0.07 / 0.05 of loops |
-| Jacobian | Prism | CpuSimd128 | f32 | 1 | direct | 1.26 | 1.00 | 0.98 | 0.99 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | CpuSimd128 | f32 | 2 | direct | 2.42 | 1.00 | 0.96 | 0.71 | – | – | sumfact | sumfact 0.71 of direct |
-| Jacobian | Prism | CpuSimd128 | f32 | 3 | direct | 5.96 | 1.00 | 0.85 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
-| Jacobian | Prism | CpuSimd128 | f32 | 4 | direct | 51.7 | 1.00 | 0.98 | 0.21 | – | – | sumfact | sumfact 0.21 of direct |
+| Jacobian | Prism | CpuSimd128 | f32 | 1 | direct | 1.23 | 1.00 | 0.97 | 0.99 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | CpuSimd128 | f32 | 2 | direct | 2.38 | 1.00 | 0.94 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
+| Jacobian | Prism | CpuSimd128 | f32 | 3 | direct | 5.69 | 1.00 | 0.83 | 0.41 | – | – | sumfact | sumfact 0.41 of direct |
+| Jacobian | Prism | CpuSimd128 | f32 | 4 | direct | 43.9 | 1.00 | 1.01 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
 | Jacobian | Prism | CpuSimd128 | f32 | 5 | loops | 26.4 | n.m.; T3: 1.45 | 1.00 | 0.26 | – | – | sumfact | sumfact 0.26 of loops |
 | Jacobian | Prism | CpuSimd128 | f32 | 6 | loops | 56.1 | n.m.; T3: 1.87 | 1.00 | 0.20 | – | – | sumfact | sumfact 0.20 of loops |
 | Jacobian | Prism | CpuSimd128 | f32 | 7 | loops | 107 | n.m.; T3: 2.45 | 1.00 | 0.17 | – | – | sumfact | sumfact 0.17 of loops |
 | Jacobian | Prism | CpuSimd128 | f32 | 8 | loops | 335 | n.m.; T3: 2.12 | 1.00 | 0.13 | – | – | sumfact | sumfact 0.13 of loops |
-| Jacobian | Prism | CpuSimd128 | f64 | 1 | direct | 3.27 | 1.00 | 1.02 | 0.98 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | CpuSimd128 | f64 | 2 | direct | 7.36 | 1.00 | 0.87 | 0.61 | – | – | sumfact | sumfact 0.61 of direct |
-| Jacobian | Prism | CpuSimd128 | f64 | 3 | direct | 34.3 | 1.00 | 0.82 | 0.36 | – | – | sumfact | sumfact 0.36 of direct |
-| Jacobian | Prism | CpuSimd128 | f64 | 4 | direct | 241 | 1.00 | 1.02 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
+| Jacobian | Prism | CpuSimd128 | f64 | 1 | direct | 3.11 | 1.00 | 1.03 | 1.01 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | CpuSimd128 | f64 | 2 | direct | 7.25 | 1.00 | 0.90 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
+| Jacobian | Prism | CpuSimd128 | f64 | 3 | direct | 34.4 | 1.00 | 0.83 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
+| Jacobian | Prism | CpuSimd128 | f64 | 4 | direct | 262 | 1.00 | 1.06 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
 | Jacobian | Prism | CpuSimd128 | f64 | 5 | loops | 133 | n.m.; T3: 1.57 | 1.00 | 0.27 | – | – | sumfact | sumfact 0.27 of loops |
 | Jacobian | Prism | CpuSimd128 | f64 | 6 | loops | 203 | n.m.; T3: 1.96 | 1.00 | 0.22 | – | – | sumfact | sumfact 0.22 of loops |
 | Jacobian | Prism | CpuSimd128 | f64 | 7 | loops | 296 | n.m.; T3: 2.59 | 1.00 | 0.19 | – | – | sumfact | sumfact 0.19 of loops |
 | Jacobian | Prism | CpuSimd128 | f64 | 8 | loops | 605 | n.m.; T3: 2.21 | 1.00 | 0.14 | – | – | sumfact | sumfact 0.14 of loops |
-| Jacobian | Prism | CpuSimd512 | f32 | 1 | direct | 1.44 | 1.00 | 1.02 | 1.02 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | CpuSimd512 | f32 | 2 | direct | 5.92 | 1.00 | 1.03 | 1.02 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | CpuSimd512 | f32 | 3 | direct | 22.2 | 1.00 | 1.03 | 0.71 | – | – | sumfact | sumfact 0.71 of direct |
-| Jacobian | Prism | CpuSimd512 | f32 | 4 | direct | 127 | 1.00 | 0.99 | 0.28 | – | – | sumfact | sumfact 0.28 of direct |
+| Jacobian | Prism | CpuSimd512 | f32 | 1 | direct | 1.42 | 1.00 | 1.01 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | CpuSimd512 | f32 | 2 | direct | 5.74 | 1.00 | 1.00 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | CpuSimd512 | f32 | 3 | direct | 22.2 | 1.00 | 1.03 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
+| Jacobian | Prism | CpuSimd512 | f32 | 4 | direct | 125 | 1.00 | 0.99 | 0.28 | – | – | sumfact | sumfact 0.28 of direct |
 | Jacobian | Prism | CpuSimd512 | f32 | 5 | loops | 40.0 | n.m.; T3: 2.99 | 1.00 | 0.53 | – | – | sumfact | sumfact 0.53 of loops |
 | Jacobian | Prism | CpuSimd512 | f32 | 6 | loops | 75.2 | n.m.; T3: 5.41 | 1.00 | 0.36 | – | – | sumfact | sumfact 0.36 of loops |
 | Jacobian | Prism | CpuSimd512 | f32 | 7 | loops | 105 | n.m.; T3: 6.83 | 1.00 | 0.32 | – | – | sumfact | sumfact 0.32 of loops |
 | Jacobian | Prism | CpuSimd512 | f32 | 8 | direct | 1169 | 1.00 | 0.16 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
-| Jacobian | Prism | CpuSimd512 | f64 | 1 | direct | 3.30 | 1.00 | 0.98 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | CpuSimd512 | f64 | 2 | direct | 3.15 | 1.00 | 0.96 | 1.00 | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Prism | CpuSimd512 | f64 | 3 | direct | 4.44 | 1.00 | 0.94 | 0.80 | – | – | sumfact | sumfact 0.80 of direct |
-| Jacobian | Prism | CpuSimd512 | f64 | 4 | direct | 30.3 | 1.00 | 0.91 | 0.23 | – | – | sumfact | sumfact 0.23 of direct |
+| Jacobian | Prism | CpuSimd512 | f64 | 1 | direct | 3.43 | 1.00 | 0.99 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | CpuSimd512 | f64 | 2 | direct | 3.14 | 1.00 | 1.00 | 1.00 | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Prism | CpuSimd512 | f64 | 3 | direct | 4.98 | 1.00 | 0.99 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
+| Jacobian | Prism | CpuSimd512 | f64 | 4 | direct | 31.3 | 1.00 | 0.85 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
 | Jacobian | Prism | CpuSimd512 | f64 | 5 | loops | 12.3 | n.m.; T3: 4.84 | 1.00 | 0.52 | – | – | sumfact | sumfact 0.52 of loops |
 | Jacobian | Prism | CpuSimd512 | f64 | 6 | loops | 31.2 | n.m.; T3: 5.16 | 1.00 | 0.37 | – | – | sumfact | sumfact 0.37 of loops |
 | Jacobian | Prism | CpuSimd512 | f64 | 7 | loops | 46.9 | n.m.; T3: 7.19 | 1.00 | 0.37 | – | – | sumfact | sumfact 0.37 of loops |
@@ -1907,52 +1843,52 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Prism | Gpu | f64 | 6 | direct | 37.2 / 10.5 | 1.00 / 1.00 | 2.41 / 1.81 | 0.09 / 0.07 | 0.07 / 0.07 | 0.33 / 0.97 | shared | shared 0.07 / 0.07 of direct |
 | Jacobian | Prism | Gpu | f64 | 7 | direct | 266 / 57.5 | 1.00 / 1.00 | 0.66 / 0.71 | 0.02 / 0.02 | 0.02 / 0.02 | 0.05 / 0.24 | shared | shared 0.02 / 0.02 of direct |
 | Jacobian | Prism | Gpu | f64 | 8 | direct | 1120 / 212 | 1.00 / 1.00 | 0.30 / 0.37 | 0.01 / 0.01 | 0.01 / 0.01 | 0.02 / 0.09 | shared | shared 0.01 / 0.01 of direct |
-| Jacobian | Pyramid | CpuSimd128 | f32 | 1 | direct | 1.18 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd128 | f32 | 2 | direct | 1.96 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd128 | f32 | 3 | direct | 4.52 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd128 | f64 | 1 | direct | 2.72 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd128 | f64 | 2 | direct | 6.16 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd128 | f64 | 3 | direct | 25.8 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
+| Jacobian | Pyramid | CpuSimd128 | f32 | 1 | direct | 1.12 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd128 | f32 | 2 | direct | 1.86 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd128 | f32 | 3 | direct | 4.33 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
+| Jacobian | Pyramid | CpuSimd128 | f64 | 1 | direct | 2.58 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd128 | f64 | 2 | direct | 5.76 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd128 | f64 | 3 | direct | 25.7 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
 | Jacobian | Pyramid | CpuSimd512 | f32 | 1 | direct | 1.28 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd512 | f32 | 2 | direct | 4.73 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd512 | f32 | 3 | direct | 13.5 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd512 | f64 | 1 | direct | 3.04 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd512 | f64 | 2 | direct | 2.85 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Jacobian | Pyramid | CpuSimd512 | f64 | 3 | direct | 3.62 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd512 | f32 | 2 | direct | 4.58 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd512 | f32 | 3 | direct | 13.5 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd512 | f64 | 1 | direct | 3.06 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd512 | f64 | 2 | direct | 2.89 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Jacobian | Pyramid | CpuSimd512 | f64 | 3 | direct | 3.37 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | Gpu | f32 | 1 | direct | 0.31 / 0.17 | 1.00 / 1.00 | 1.14 / 1.11 | – | 1.17 / 1.08 | 2.40 / 3.15 | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | Gpu | f32 | 2 | direct | 0.41 / 0.21 | 1.00 / 1.00 | 1.49 / 1.52 | – | 1.42 / 1.57 | 3.87 / 6.36 | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | Gpu | f32 | 3 | direct | 0.70 / 0.32 | 1.00 / 1.00 | 2.96 / 3.37 | – | 3.07 / 3.52 | 5.04 / 10.01 | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | Gpu | f64 | 1 | direct | 0.12 / 0.07 | 1.00 / 1.00 | 1.14 / 1.19 | – | 1.12 / 1.14 | 2.92 / 4.21 | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | Gpu | f64 | 2 | direct | 0.20 / 0.08 | 1.00 / 1.00 | 2.13 / 3.13 | – | 1.52 / 2.95 | 4.54 / 10.23 | direct | no strategy 10% faster than direct |
 | Jacobian | Pyramid | Gpu | f64 | 3 | direct | 0.37 / 0.13 | 1.00 / 1.00 | 5.00 / 6.06 | – | 2.61 / 4.98 | 6.27 / 16.64 | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd128 | f32 | 1 | direct | 0.17 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd128 | f32 | 2 | direct | 0.17 | 1.00 | 0.62 | – | – | – | loops | loops 0.62 of direct |
-| Normals | Interval | CpuSimd128 | f32 | 3 | direct | 0.18 | 1.00 | 0.64 | – | – | – | loops | loops 0.64 of direct |
-| Normals | Interval | CpuSimd128 | f32 | 4 | direct | 0.21 | 1.00 | 0.67 | – | – | – | loops | loops 0.67 of direct |
+| Normals | Interval | CpuSimd128 | f32 | 1 | direct | 0.10 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f32 | 2 | direct | 0.18 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f32 | 3 | direct | 0.11 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f32 | 4 | direct | 0.15 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f32 | 5 | direct | 0.15 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f32 | 6 | direct | 0.16 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f32 | 7 | direct | 0.18 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f32 | 8 | direct | 0.19 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd128 | f64 | 1 | direct | 0.24 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd128 | f64 | 2 | direct | 0.26 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
-| Normals | Interval | CpuSimd128 | f64 | 3 | direct | 0.27 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Normals | Interval | CpuSimd128 | f64 | 4 | direct | 0.25 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f64 | 1 | direct | 0.22 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f64 | 2 | direct | 0.24 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f64 | 3 | direct | 0.24 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd128 | f64 | 4 | direct | 0.24 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f64 | 5 | direct | 0.30 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f64 | 6 | direct | 0.33 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f64 | 7 | direct | 0.30 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd128 | f64 | 8 | direct | 0.36 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f32 | 2 | direct | 0.10 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f32 | 3 | direct | 0.23 | 1.00 | 0.58 | – | – | – | loops | loops 0.58 of direct |
-| Normals | Interval | CpuSimd512 | f32 | 4 | direct | 0.24 | 1.00 | 0.63 | – | – | – | loops | loops 0.63 of direct |
+| Normals | Interval | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 1.09 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f32 | 2 | direct | 0.10 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f32 | 3 | direct | 0.15 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f32 | 4 | direct | 0.14 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f32 | 5 | direct | 0.20 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f32 | 6 | direct | 0.20 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f32 | 7 | direct | 0.27 | 1.00 | 0.79 | – | – | – | loops | loops 0.79 of direct |
 | Normals | Interval | CpuSimd512 | f32 | 8 | direct | 0.27 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f64 | 1 | direct | 0.20 | 1.00 | 1.46 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f64 | 2 | direct | 0.32 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f64 | 3 | direct | 0.31 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Interval | CpuSimd512 | f64 | 4 | direct | 0.25 | 1.00 | 1.33 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f64 | 1 | direct | 0.28 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f64 | 2 | direct | 0.27 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f64 | 3 | direct | 0.31 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Interval | CpuSimd512 | f64 | 4 | direct | 0.32 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f64 | 5 | direct | 0.23 | 1.00 | 1.51 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f64 | 6 | direct | 0.22 | 1.00 | 1.59 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Interval | CpuSimd512 | f64 | 7 | direct | 0.39 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
@@ -1973,34 +1909,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Normals | Interval | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.15 / 1.19 | – | 1.12 / 1.20 | 2.33 / 4.22 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.16 / 1.29 | – | 1.13 / 1.24 | 4.09 / 8.91 | direct | no strategy 10% faster than direct |
 | Normals | Interval | Gpu | f64 | 8 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.24 / 1.38 | – | 1.16 / 1.23 | 4.31 / 9.46 | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f32 | 1 | direct | 0.19 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f32 | 2 | direct | 0.30 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f32 | 3 | direct | 0.42 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f32 | 4 | direct | 0.61 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f32 | 1 | direct | 0.18 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f32 | 2 | direct | 0.30 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f32 | 3 | direct | 0.42 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f32 | 4 | direct | 0.59 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd128 | f32 | 5 | direct | 0.84 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
 | Normals | Triangle | CpuSimd128 | f32 | 6 | direct | 1.20 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd128 | f32 | 7 | direct | 1.64 | 1.00 | 0.88 | – | – | – | loops | loops 0.88 of direct |
 | Normals | Triangle | CpuSimd128 | f32 | 8 | direct | 2.01 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Normals | Triangle | CpuSimd128 | f64 | 1 | direct | 0.41 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f64 | 2 | direct | 0.54 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f64 | 3 | direct | 0.92 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd128 | f64 | 4 | direct | 1.52 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f64 | 1 | direct | 0.40 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f64 | 2 | direct | 0.53 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f64 | 3 | direct | 0.93 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd128 | f64 | 4 | direct | 1.49 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd128 | f64 | 5 | direct | 2.66 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd128 | f64 | 6 | direct | 4.31 | 1.00 | 0.85 | – | – | – | loops | loops 0.85 of direct |
 | Normals | Triangle | CpuSimd128 | f64 | 7 | direct | 8.16 | 1.00 | 0.84 | – | – | – | loops | loops 0.84 of direct |
 | Normals | Triangle | CpuSimd128 | f64 | 8 | direct | 11.0 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
-| Normals | Triangle | CpuSimd512 | f32 | 1 | direct | 0.19 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
-| Normals | Triangle | CpuSimd512 | f32 | 2 | direct | 0.35 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd512 | f32 | 3 | direct | 0.75 | 1.00 | 0.90 | – | – | – | loops | loops 0.90 of direct |
-| Normals | Triangle | CpuSimd512 | f32 | 4 | direct | 1.70 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f32 | 1 | direct | 0.15 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f32 | 2 | direct | 0.35 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f32 | 3 | direct | 0.78 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f32 | 4 | direct | 1.71 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f32 | 5 | direct | 2.43 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f32 | 6 | direct | 3.64 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f32 | 7 | direct | 6.37 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f32 | 8 | direct | 5.52 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd512 | f64 | 1 | direct | 0.36 | 1.00 | 1.34 | – | – | – | direct | no strategy 10% faster than direct |
-| Normals | Triangle | CpuSimd512 | f64 | 2 | direct | 0.55 | 1.00 | 0.86 | – | – | – | loops | loops 0.86 of direct |
-| Normals | Triangle | CpuSimd512 | f64 | 3 | direct | 0.55 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
-| Normals | Triangle | CpuSimd512 | f64 | 4 | direct | 0.63 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f64 | 1 | direct | 0.43 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f64 | 2 | direct | 0.49 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f64 | 3 | direct | 0.56 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| Normals | Triangle | CpuSimd512 | f64 | 4 | direct | 0.57 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f64 | 5 | direct | 0.73 | 1.00 | 0.83 | – | – | – | loops | loops 0.83 of direct |
 | Normals | Triangle | CpuSimd512 | f64 | 6 | direct | 1.28 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | Normals | Triangle | CpuSimd512 | f64 | 7 | direct | 1.35 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
@@ -2021,34 +1957,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Normals | Triangle | Gpu | f64 | 6 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 2.46 / 4.17 | – | 6.11 / 5.95 | 9.87 / 18.88 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f64 | 7 | direct | 0.16 / 0.05 | 1.00 / 1.00 | 1.90 / 4.77 | – | 4.99 / 7.31 | 8.29 / 24.66 | direct | no strategy 10% faster than direct |
 | Normals | Triangle | Gpu | f64 | 8 | direct | 0.29 / 0.09 | 1.00 / 1.00 | 1.54 / 3.17 | – | 4.37 / 5.04 | 4.97 / 14.62 | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.22 | 1.00 | 1.01 | 1.31 | – | – | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.23 | 1.00 | 1.01 | 1.25 | – | – | direct | no strategy 10% faster than direct |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.41 | 1.00 | 1.00 | 0.84 | – | – | sumfact | sumfact 0.84 of direct |
-| Normals | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 0.60 | 1.00 | 0.98 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
-| Normals | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 0.97 | 1.00 | 0.85 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
+| Normals | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 0.60 | 1.00 | 0.98 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| Normals | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 1.05 | 1.00 | 0.83 | 0.52 | – | – | sumfact | sumfact 0.52 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 5 | direct | 2.17 | 1.00 | 0.88 | 0.37 | – | – | sumfact | sumfact 0.37 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 6 | direct | 1.83 | 1.00 | 0.93 | 0.40 | – | – | sumfact | sumfact 0.40 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 7 | direct | 2.70 | 1.00 | 0.85 | 0.34 | – | – | sumfact | sumfact 0.34 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f32 | 8 | direct | 3.59 | 1.00 | 0.78 | 0.24 | – | – | sumfact | sumfact 0.24 of direct |
-| Normals | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.49 | 1.00 | 1.02 | 1.21 | – | – | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.69 | 1.00 | 1.11 | 1.00 | – | – | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 1.28 | 1.00 | 0.94 | 0.80 | – | – | sumfact | sumfact 0.80 of direct |
-| Normals | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 2.16 | 1.00 | 0.95 | 0.53 | – | – | sumfact | sumfact 0.53 of direct |
+| Normals | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.46 | 1.00 | 1.00 | 1.13 | – | – | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.73 | 1.00 | 0.96 | 0.90 | – | – | sumfact | sumfact 0.90 of direct |
+| Normals | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 1.31 | 1.00 | 0.91 | 0.80 | – | – | sumfact | sumfact 0.80 of direct |
+| Normals | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 2.41 | 1.00 | 0.91 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f64 | 5 | direct | 7.97 | 1.00 | 0.93 | 0.30 | – | – | sumfact | sumfact 0.30 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f64 | 6 | direct | 8.83 | 1.00 | 0.78 | 0.29 | – | – | sumfact | sumfact 0.29 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f64 | 7 | direct | 15.0 | 1.00 | 0.76 | 0.22 | – | – | sumfact | sumfact 0.22 of direct |
 | Normals | Quadrilateral | CpuSimd128 | f64 | 8 | direct | 24.4 | 1.00 | 0.76 | 0.19 | – | – | sumfact | sumfact 0.19 of direct |
-| Normals | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 1.38 | 0.92 | – | – | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.44 | 1.00 | 0.93 | 0.88 | – | – | sumfact | sumfact 0.88 of direct |
-| Normals | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 1.07 | 1.00 | 0.85 | 0.79 | – | – | sumfact | sumfact 0.79 of direct |
-| Normals | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 2.06 | 1.00 | 1.00 | 0.82 | – | – | sumfact | sumfact 0.82 of direct |
+| Normals | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.18 | 1.00 | 0.99 | 1.11 | – | – | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.49 | 1.00 | 0.97 | 0.88 | – | – | sumfact | sumfact 0.88 of direct |
+| Normals | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 1.08 | 1.00 | 0.84 | 0.79 | – | – | sumfact | sumfact 0.79 of direct |
+| Normals | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 2.17 | 1.00 | 0.96 | 0.79 | – | – | sumfact | sumfact 0.79 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f32 | 5 | direct | 4.21 | 1.00 | 0.93 | 0.58 | – | – | sumfact | sumfact 0.58 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f32 | 6 | direct | 5.24 | 1.00 | 0.88 | 0.62 | – | – | sumfact | sumfact 0.62 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f32 | 7 | direct | 7.61 | 1.00 | 0.87 | 0.58 | – | – | sumfact | sumfact 0.58 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f32 | 8 | direct | 9.40 | 1.00 | 0.86 | 0.51 | – | – | sumfact | sumfact 0.51 of direct |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.51 | 1.00 | 0.99 | 1.09 | – | – | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.61 | 1.00 | 0.79 | 0.96 | – | – | loops | loops 0.79 of direct |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.74 | 1.00 | 0.98 | 0.96 | – | – | direct | no strategy 10% faster than direct |
-| Normals | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 1.23 | 1.00 | 0.90 | 0.59 | – | – | sumfact | sumfact 0.59 of direct |
+| Normals | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.44 | 1.00 | 1.06 | 1.15 | – | – | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.57 | 1.00 | 0.95 | 1.06 | – | – | direct | no strategy 10% faster than direct |
+| Normals | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.89 | 1.00 | 0.87 | 0.81 | – | – | sumfact | sumfact 0.81 of direct |
+| Normals | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 0.96 | 1.00 | 0.98 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f64 | 5 | direct | 1.50 | 1.00 | 0.81 | 0.46 | – | – | sumfact | sumfact 0.46 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 1.55 | 1.00 | 0.86 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
 | Normals | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 1.99 | 1.00 | 0.81 | 0.42 | – | – | sumfact | sumfact 0.42 of direct |
@@ -2070,33 +2006,33 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Normals | Quadrilateral | Gpu | f64 | 7 | direct | 3.57 / 1.59 | 1.00 / 1.00 | 0.16 / 0.28 | 0.05 / 0.08 | 0.04 / 0.10 | 0.47 / 1.01 | shared | closest: shared 0.04 / 0.10 of direct, 15% slower than the fastest at one size |
 | Normals | Quadrilateral | Gpu | f64 | 8 | direct | 6.47 / 2.06 | 1.00 / 1.00 | 0.13 / 0.26 | 0.04 / 0.07 | 0.05 / 0.08 | 0.30 / 0.90 | sumfact | sumfact 0.04 / 0.07 of direct |
 | FacetNormals | Interval | CpuSimd128 | f32 | 1 | direct | 0.08 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f32 | 2 | direct | 0.08 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f32 | 3 | direct | 0.09 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f32 | 4 | direct | 0.10 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f32 | 2 | direct | 0.08 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f32 | 3 | direct | 0.08 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f32 | 4 | direct | 0.09 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f32 | 5 | direct | 0.17 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f32 | 6 | direct | 0.12 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f32 | 7 | direct | 0.18 | 1.00 | 0.79 | – | – | – | loops | loops 0.79 of direct |
 | FacetNormals | Interval | CpuSimd128 | f32 | 8 | direct | 0.16 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f64 | 1 | direct | 0.15 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f64 | 2 | direct | 0.15 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f64 | 3 | direct | 0.16 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd128 | f64 | 4 | direct | 0.19 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f64 | 1 | direct | 0.15 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f64 | 2 | direct | 0.15 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f64 | 3 | direct | 0.16 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd128 | f64 | 4 | direct | 0.18 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f64 | 5 | direct | 0.23 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f64 | 6 | direct | 0.25 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f64 | 7 | direct | 0.31 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd128 | f64 | 8 | direct | 0.33 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd512 | f32 | 1 | direct | 0.10 | 1.00 | 0.74 | – | – | – | loops | loops 0.74 of direct |
-| FacetNormals | Interval | CpuSimd512 | f32 | 2 | direct | 0.09 | 1.00 | 0.76 | – | – | – | loops | loops 0.76 of direct |
-| FacetNormals | Interval | CpuSimd512 | f32 | 3 | direct | 0.09 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd512 | f32 | 4 | direct | 0.09 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
+| FacetNormals | Interval | CpuSimd512 | f32 | 1 | direct | 0.07 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f32 | 2 | direct | 0.09 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f32 | 3 | direct | 0.09 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f32 | 4 | direct | 0.09 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd512 | f32 | 5 | direct | 0.09 | 1.00 | 0.84 | – | – | – | loops | loops 0.84 of direct |
 | FacetNormals | Interval | CpuSimd512 | f32 | 6 | direct | 0.10 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd512 | f32 | 7 | direct | 0.10 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd512 | f32 | 8 | direct | 0.14 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
-| FacetNormals | Interval | CpuSimd512 | f64 | 1 | direct | 0.26 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd512 | f64 | 2 | direct | 0.17 | 1.00 | 1.44 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd512 | f64 | 3 | direct | 0.18 | 1.00 | 1.52 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Interval | CpuSimd512 | f64 | 4 | direct | 0.18 | 1.00 | 1.40 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f64 | 1 | direct | 0.25 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f64 | 2 | direct | 0.25 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f64 | 3 | direct | 0.25 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Interval | CpuSimd512 | f64 | 4 | direct | 0.25 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd512 | f64 | 5 | direct | 0.21 | 1.00 | 1.27 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | CpuSimd512 | f64 | 6 | direct | 0.35 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
 | FacetNormals | Interval | CpuSimd512 | f64 | 7 | direct | 0.33 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
@@ -2117,34 +2053,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Interval | Gpu | f64 | 6 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.12 / 1.14 | – | 1.15 / 1.16 | 1.76 / 2.43 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f64 | 7 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.14 / 1.16 | – | 1.20 / 1.24 | 2.43 / 3.60 | direct | no strategy 10% faster than direct |
 | FacetNormals | Interval | Gpu | f64 | 8 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.07 / 1.10 | – | 1.04 / 1.07 | 2.58 / 4.04 | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f32 | 1 | direct | 0.16 | 1.00 | 1.06 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f32 | 2 | direct | 0.26 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f32 | 3 | direct | 0.40 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f32 | 4 | direct | 0.50 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f32 | 1 | direct | 0.16 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f32 | 2 | direct | 0.24 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f32 | 3 | direct | 0.39 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f32 | 4 | direct | 0.49 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f32 | 5 | direct | 0.66 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f32 | 6 | direct | 0.89 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f32 | 7 | direct | 2.10 | 1.00 | 0.87 | – | – | – | loops | loops 0.87 of direct |
 | FacetNormals | Triangle | CpuSimd128 | f32 | 8 | direct | 1.40 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f64 | 1 | direct | 0.36 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f64 | 2 | direct | 0.45 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f64 | 3 | direct | 0.65 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd128 | f64 | 4 | direct | 0.93 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f64 | 1 | direct | 0.34 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f64 | 2 | direct | 0.45 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f64 | 3 | direct | 0.61 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd128 | f64 | 4 | direct | 0.91 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f64 | 5 | direct | 1.25 | 1.00 | 1.14 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f64 | 6 | direct | 1.66 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f64 | 7 | direct | 4.22 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd128 | f64 | 8 | direct | 3.95 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 1 | direct | 0.15 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 2 | direct | 0.27 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 3 | direct | 0.48 | 1.00 | 0.89 | – | – | – | loops | loops 0.89 of direct |
-| FacetNormals | Triangle | CpuSimd512 | f32 | 4 | direct | 0.81 | 1.00 | 0.84 | – | – | – | loops | loops 0.84 of direct |
+| FacetNormals | Triangle | CpuSimd512 | f32 | 1 | direct | 0.18 | 1.00 | 1.30 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd512 | f32 | 2 | direct | 0.32 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd512 | f32 | 3 | direct | 0.51 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd512 | f32 | 4 | direct | 0.83 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f32 | 5 | direct | 1.21 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f32 | 6 | direct | 1.82 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f32 | 7 | direct | 2.48 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f32 | 8 | direct | 3.00 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 1 | direct | 0.41 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 2 | direct | 0.33 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 3 | direct | 0.33 | 1.00 | 1.67 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Triangle | CpuSimd512 | f64 | 4 | direct | 0.59 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
+| FacetNormals | Triangle | CpuSimd512 | f64 | 1 | direct | 0.38 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd512 | f64 | 2 | direct | 0.38 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd512 | f64 | 3 | direct | 0.46 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Triangle | CpuSimd512 | f64 | 4 | direct | 0.52 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 5 | direct | 0.59 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 6 | direct | 0.69 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | CpuSimd512 | f64 | 7 | direct | 1.24 | 1.00 | 0.80 | – | – | – | loops | loops 0.80 of direct |
@@ -2165,34 +2101,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Triangle | Gpu | f64 | 6 | direct | 0.07 / 0.03 | 1.00 / 1.00 | 1.90 / 3.97 | – | 1.48 / 3.90 | 11.47 / 23.29 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f64 | 7 | direct | 0.08 / 0.04 | 1.00 / 1.00 | 2.35 / 4.82 | – | 1.70 / 4.26 | 17.30 / 35.50 | direct | no strategy 10% faster than direct |
 | FacetNormals | Triangle | Gpu | f64 | 8 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.25 / 5.21 | – | 1.63 / 4.98 | 13.06 / 33.18 | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.18 | 1.00 | 1.05 | 1.42 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.37 | 1.00 | 0.95 | 0.81 | – | – | sumfact | sumfact 0.81 of direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 0.19 | 1.00 | 1.04 | 1.39 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 0.39 | 1.00 | 0.98 | 0.81 | – | – | sumfact | sumfact 0.81 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 0.53 | 1.00 | 0.99 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 1.69 | 1.00 | 0.92 | 0.38 | – | – | sumfact | sumfact 0.38 of direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 1.59 | 1.00 | 0.97 | 0.39 | – | – | sumfact | sumfact 0.39 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f32 | 5 | direct | 1.02 | 1.00 | 0.98 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f32 | 6 | direct | 1.53 | 1.00 | 0.95 | 0.37 | – | – | sumfact | sumfact 0.37 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f32 | 7 | direct | 1.92 | 1.00 | 0.95 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f32 | 8 | direct | 5.78 | 1.00 | 0.96 | 0.18 | – | – | sumfact | sumfact 0.18 of direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.39 | 1.00 | 1.03 | 1.22 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.57 | 1.00 | 1.01 | 0.97 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 1.03 | 1.00 | 0.99 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
-| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 2.80 | 1.00 | 0.95 | 0.41 | – | – | sumfact | sumfact 0.41 of direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 0.35 | 1.00 | 1.00 | 1.25 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 0.56 | 1.00 | 1.01 | 0.97 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 1.05 | 1.00 | 0.99 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| FacetNormals | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 2.78 | 1.00 | 0.97 | 0.42 | – | – | sumfact | sumfact 0.42 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f64 | 5 | direct | 2.05 | 1.00 | 0.91 | 0.45 | – | – | sumfact | sumfact 0.45 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f64 | 6 | direct | 3.92 | 1.00 | 0.83 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f64 | 7 | direct | 5.87 | 1.00 | 0.82 | 0.27 | – | – | sumfact | sumfact 0.27 of direct |
 | FacetNormals | Quadrilateral | CpuSimd128 | f64 | 8 | direct | 11.9 | 1.00 | 0.92 | 0.21 | – | – | sumfact | sumfact 0.21 of direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.20 | 1.00 | 1.11 | 1.41 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.45 | 1.00 | 0.92 | 0.99 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 0.92 | 1.00 | 0.85 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 1.90 | 1.00 | 0.93 | 0.56 | – | – | sumfact | sumfact 0.56 of direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 0.21 | 1.00 | 1.03 | 1.31 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 0.49 | 1.00 | 0.93 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 0.93 | 1.00 | 0.96 | 0.68 | – | – | sumfact | sumfact 0.68 of direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 1.95 | 1.00 | 0.99 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f32 | 5 | direct | 2.42 | 1.00 | 0.92 | 0.65 | – | – | sumfact | sumfact 0.65 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f32 | 6 | direct | 3.04 | 1.00 | 0.94 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f32 | 7 | direct | 4.33 | 1.00 | 0.91 | 0.53 | – | – | sumfact | sumfact 0.53 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f32 | 8 | direct | 6.24 | 1.00 | 0.88 | 0.42 | – | – | sumfact | sumfact 0.42 of direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.36 | 1.00 | 1.11 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.49 | 1.00 | 0.83 | 0.93 | – | – | loops | loops 0.83 of direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.51 | 1.00 | 0.84 | 1.05 | – | – | loops | loops 0.84 of direct |
-| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 0.98 | 1.00 | 0.86 | 0.62 | – | – | sumfact | sumfact 0.62 of direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 0.39 | 1.00 | 1.02 | 1.15 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 0.44 | 1.00 | 1.11 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 0.51 | 1.00 | 1.05 | 0.88 | – | – | sumfact | sumfact 0.88 of direct |
+| FacetNormals | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 0.75 | 1.00 | 0.91 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f64 | 5 | direct | 0.79 | 1.00 | 1.20 | 0.86 | – | – | sumfact | sumfact 0.86 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 1.12 | 1.00 | 0.95 | 0.65 | – | – | sumfact | sumfact 0.65 of direct |
 | FacetNormals | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 1.58 | 1.00 | 0.92 | 0.52 | – | – | sumfact | sumfact 0.52 of direct |
@@ -2213,34 +2149,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Quadrilateral | Gpu | f64 | 6 | direct | 0.11 / 0.04 | 1.00 / 1.00 | 2.61 / 5.27 | 0.93 / 1.02 | 0.71 / 0.84 | 13.46 / 31.37 | shared | shared 0.71 / 0.84 of direct |
 | FacetNormals | Quadrilateral | Gpu | f64 | 7 | direct | 0.20 / 0.10 | 1.00 / 1.00 | 1.86 / 3.16 | 0.48 / 0.69 | 0.41 / 0.60 | 7.76 / 15.08 | shared | shared 0.41 / 0.60 of direct |
 | FacetNormals | Quadrilateral | Gpu | f64 | 8 | direct | 0.28 / 0.16 | 1.00 / 1.00 | 1.91 / 2.55 | 0.57 / 0.74 | 0.46 / 0.63 | 6.12 / 10.18 | shared | shared 0.46 / 0.63 of direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 0.43 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 0.65 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 1.29 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 1.87 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 0.43 | 1.00 | 1.07 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 0.64 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 1.08 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 1.86 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Tetrahedron | CpuSimd128 | f32 | 5 | loops | 3.19 | n.m.; T3: 1.11 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd128 | f32 | 6 | loops | 6.41 | n.m.; T3: 1.22 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd128 | f32 | 7 | loops | 9.06 | n.m.; T3: 1.33 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd128 | f32 | 8 | loops | 49.5 | n.m.; T3: 1.16 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 0.91 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 2.16 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 6.36 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 13.7 | 1.00 | 0.90 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 0.89 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 2.16 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 6.41 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 13.2 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Tetrahedron | CpuSimd128 | f64 | 5 | loops | 21.5 | n.m.; T3: 1.10 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd128 | f64 | 6 | loops | 34.6 | n.m.; T3: 1.25 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd128 | f64 | 7 | loops | 47.7 | n.m.; T3: 1.43 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd128 | f64 | 8 | loops | 165 | n.m.; T3: 1.16 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 0.62 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 2.19 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 4.76 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 7.03 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 0.68 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 2.05 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 4.94 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 7.67 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Tetrahedron | CpuSimd512 | f32 | 5 | loops | 7.66 | n.m.; T3: 1.16 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f32 | 6 | loops | 9.69 | n.m.; T3: 1.27 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f32 | 7 | loops | 15.0 | n.m.; T3: 2.69 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f32 | 8 | loops | 96.9 | n.m.; T3: 1.33 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 0.76 | 1.00 | 0.65 | – | – | – | loops | loops 0.65 of direct |
-| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 0.59 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 0.47 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 0.61 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 1.10 | 1.00 | 0.63 | – | – | – | loops | loops 0.63 of direct |
-| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 1.55 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
+| FacetNormals | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 1.79 | 1.00 | 0.78 | – | – | – | loops | loops 0.78 of direct |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 5 | loops | 1.68 | n.m.; T3: 1.33 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 3.29 | n.m.; T3: 2.09 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 4.18 | n.m.; T3: 4.07 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -2261,34 +2197,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Tetrahedron | Gpu | f64 | 6 | loops | 3.82 / 0.92 | n.m.; T3: 0.80 / 1.17 | 1.00 / 1.00 | – | – | 0.62 / 2.03 | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | Gpu | f64 | 7 | loops | 5.51 / 1.51 | n.m.; T3: 0.69 / 1.03 | 1.00 / 1.00 | – | – | 0.52 / 1.51 | loops | no strategy 10% faster than loops |
 | FacetNormals | Tetrahedron | Gpu | f64 | 8 | loops | 12.5 / 2.73 | n.m.; T3: 0.70 / 0.87 | 1.00 / 1.00 | – | – | 0.25 / 1.05 | loops | no strategy 10% faster than loops |
-| FacetNormals | Hexahedron | CpuSimd128 | f32 | 1 | direct | 0.58 | 1.00 | 1.00 | 0.97 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | CpuSimd128 | f32 | 2 | direct | 1.34 | 1.00 | 0.94 | 0.56 | – | – | sumfact | sumfact 0.56 of direct |
-| FacetNormals | Hexahedron | CpuSimd128 | f32 | 3 | direct | 3.43 | 1.00 | 0.77 | 0.26 | – | – | sumfact | sumfact 0.26 of direct |
-| FacetNormals | Hexahedron | CpuSimd128 | f32 | 4 | direct | 8.78 | 1.00 | 0.76 | 0.15 | – | – | sumfact | sumfact 0.15 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f32 | 1 | direct | 0.58 | 1.00 | 1.00 | 0.99 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f32 | 2 | direct | 1.50 | 1.00 | 0.95 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f32 | 3 | direct | 3.52 | 1.00 | 0.76 | 0.26 | – | – | sumfact | sumfact 0.26 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f32 | 4 | direct | 9.29 | 1.00 | 0.75 | 0.15 | – | – | sumfact | sumfact 0.15 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f32 | 5 | direct | 40.8 | 1.00 | 0.58 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f32 | 6 | direct | 66.8 | 1.00 | 0.42 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f32 | 7 | direct | 167 | 1.00 | 0.49 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f32 | 8 | loops | 129 | n.m.; T3: 2.24 | 1.00 | 0.04 | – | – | sumfact | sumfact 0.04 of loops |
-| FacetNormals | Hexahedron | CpuSimd128 | f64 | 1 | direct | 1.35 | 1.00 | 0.93 | 0.92 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | CpuSimd128 | f64 | 2 | direct | 6.31 | 1.00 | 1.01 | 0.52 | – | – | sumfact | sumfact 0.52 of direct |
-| FacetNormals | Hexahedron | CpuSimd128 | f64 | 3 | direct | 23.7 | 1.00 | 0.85 | 0.25 | – | – | sumfact | sumfact 0.25 of direct |
-| FacetNormals | Hexahedron | CpuSimd128 | f64 | 4 | direct | 67.6 | 1.00 | 0.65 | 0.14 | – | – | sumfact | sumfact 0.14 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f64 | 1 | direct | 1.50 | 1.00 | 0.91 | 0.85 | – | – | sumfact | sumfact 0.85 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f64 | 2 | direct | 7.02 | 1.00 | 0.99 | 0.51 | – | – | sumfact | sumfact 0.51 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f64 | 3 | direct | 25.3 | 1.00 | 0.85 | 0.25 | – | – | sumfact | sumfact 0.25 of direct |
+| FacetNormals | Hexahedron | CpuSimd128 | f64 | 4 | direct | 68.5 | 1.00 | 0.67 | 0.14 | – | – | sumfact | sumfact 0.14 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 5 | direct | 219 | 1.00 | 0.50 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 6 | direct | 330 | 1.00 | 0.37 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 7 | direct | 560 | 1.00 | 0.47 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd128 | f64 | 8 | loops | 377 | n.m.; T3: 2.26 | 1.00 | 0.05 | – | – | sumfact | sumfact 0.05 of loops |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.48 | 1.00 | 0.99 | 0.97 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2 | direct | 4.87 | 1.00 | 0.99 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 3 | direct | 9.68 | 1.00 | 1.05 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 4 | direct | 41.8 | 1.00 | 0.33 | 0.13 | – | – | sumfact | sumfact 0.13 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1 | direct | 1.68 | 1.00 | 0.98 | 0.86 | – | – | sumfact | sumfact 0.86 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 2 | direct | 5.13 | 1.00 | 0.96 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 3 | direct | 9.25 | 1.00 | 1.01 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 4 | direct | 41.2 | 1.00 | 0.32 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 5 | direct | 155 | 1.00 | 0.20 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 6 | direct | 310 | 1.00 | 0.13 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 7 | direct | 463 | 1.00 | 0.19 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 8 | direct | 695 | 1.00 | 0.14 | 0.01 | – | – | sumfact | sumfact 0.01 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.58 | 1.00 | 1.16 | 0.91 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2 | direct | 0.99 | 1.00 | 0.82 | 0.67 | – | – | sumfact | sumfact 0.67 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 3 | direct | 3.58 | 1.00 | 0.70 | 0.32 | – | – | sumfact | sumfact 0.32 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 4 | direct | 13.7 | 1.00 | 0.28 | 0.10 | – | – | sumfact | sumfact 0.10 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.62 | 1.00 | 0.92 | 1.10 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.02 | 1.00 | 0.77 | 0.67 | – | – | sumfact | sumfact 0.67 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 3 | direct | 3.53 | 1.00 | 0.73 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 4 | direct | 13.7 | 1.00 | 0.29 | 0.10 | – | – | sumfact | sumfact 0.10 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 5 | direct | 38.7 | 1.00 | 0.17 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 6 | direct | 92.4 | 1.00 | 0.15 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 7 | direct | 173 | 1.00 | 0.36 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
@@ -2309,34 +2245,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | Gpu | f64 | 6 | direct | 134 / 24.9 | 1.00 / 1.00 | 0.18 / 0.20 | 0.05 / 0.06 | 0.06 / 0.06 | 0.05 / 0.22 | sumfact | sumfact 0.05 / 0.06 of direct |
 | FacetNormals | Hexahedron | Gpu | f64 | 7 | direct | 48.5 / 11.2 | 1.00 / 1.00 | 1.04 / 0.80 | 0.21 / 0.18 | 0.28 / 0.21 | 0.17 / 0.69 | sumfact | closest: sumfact 0.21 / 0.18 of direct, 23% slower than the fastest at one size |
 | FacetNormals | Hexahedron | Gpu | f64 | 8 | loops | 117 / 17.4 | n.m.; T3: 4.12 / 4.66 | 1.00 / 1.00 | 0.12 / 0.15 | 0.14 / 0.17 | 0.13 / 0.66 | sumfact | sumfact 0.12 / 0.15 of loops |
-| FacetNormals | Prism | CpuSimd128 | f32 | 1 | direct | 0.54 | 1.00 | 0.95 | 1.03 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd128 | f32 | 2 | direct | 1.13 | 1.00 | 0.99 | 0.94 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd128 | f32 | 3 | direct | 2.01 | 1.00 | 0.94 | 0.82 | – | – | sumfact | sumfact 0.82 of direct |
-| FacetNormals | Prism | CpuSimd128 | f32 | 4 | direct | 17.1 | 1.00 | 0.97 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
+| FacetNormals | Prism | CpuSimd128 | f32 | 1 | direct | 0.53 | 1.00 | 0.95 | 1.03 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd128 | f32 | 2 | direct | 1.07 | 1.00 | 0.99 | 0.92 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd128 | f32 | 3 | direct | 1.85 | 1.00 | 0.96 | 0.85 | – | – | sumfact | sumfact 0.85 of direct |
+| FacetNormals | Prism | CpuSimd128 | f32 | 4 | direct | 14.5 | 1.00 | 1.02 | 0.55 | – | – | sumfact | sumfact 0.55 of direct |
 | FacetNormals | Prism | CpuSimd128 | f32 | 5 | loops | 7.35 | n.m.; T3: 1.37 | 1.00 | 0.68 | – | – | sumfact | sumfact 0.68 of loops |
 | FacetNormals | Prism | CpuSimd128 | f32 | 6 | loops | 13.5 | n.m.; T3: 1.68 | 1.00 | 0.66 | – | – | sumfact | sumfact 0.66 of loops |
 | FacetNormals | Prism | CpuSimd128 | f32 | 7 | loops | 48.8 | n.m.; T3: 1.65 | 1.00 | 0.52 | – | – | sumfact | sumfact 0.52 of loops |
 | FacetNormals | Prism | CpuSimd128 | f32 | 8 | loops | 44.5 | n.m.; T3: 2.26 | 1.00 | 0.55 | – | – | sumfact | sumfact 0.55 of loops |
-| FacetNormals | Prism | CpuSimd128 | f64 | 1 | direct | 1.07 | 1.00 | 1.01 | 1.15 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd128 | f64 | 2 | direct | 4.07 | 1.00 | 1.04 | 0.90 | – | – | sumfact | sumfact 0.90 of direct |
-| FacetNormals | Prism | CpuSimd128 | f64 | 3 | direct | 13.7 | 1.00 | 0.84 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
-| FacetNormals | Prism | CpuSimd128 | f64 | 4 | direct | 79.2 | 1.00 | 1.06 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
+| FacetNormals | Prism | CpuSimd128 | f64 | 1 | direct | 1.10 | 1.00 | 0.98 | 1.12 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd128 | f64 | 2 | direct | 4.11 | 1.00 | 1.06 | 0.90 | – | – | sumfact | sumfact 0.90 of direct |
+| FacetNormals | Prism | CpuSimd128 | f64 | 3 | direct | 13.3 | 1.00 | 0.89 | 0.74 | – | – | sumfact | sumfact 0.74 of direct |
+| FacetNormals | Prism | CpuSimd128 | f64 | 4 | direct | 85.7 | 1.00 | 1.08 | 0.60 | – | – | sumfact | sumfact 0.60 of direct |
 | FacetNormals | Prism | CpuSimd128 | f64 | 5 | loops | 46.5 | n.m.; T3: 1.47 | 1.00 | 0.67 | – | – | sumfact | sumfact 0.67 of loops |
 | FacetNormals | Prism | CpuSimd128 | f64 | 6 | loops | 71.1 | n.m.; T3: 1.84 | 1.00 | 0.63 | – | – | sumfact | sumfact 0.63 of loops |
 | FacetNormals | Prism | CpuSimd128 | f64 | 7 | loops | 151 | n.m.; T3: 1.99 | 1.00 | 0.56 | – | – | sumfact | sumfact 0.56 of loops |
 | FacetNormals | Prism | CpuSimd128 | f64 | 8 | loops | 165 | n.m.; T3: 2.45 | 1.00 | 0.56 | – | – | sumfact | sumfact 0.56 of loops |
-| FacetNormals | Prism | CpuSimd512 | f32 | 1 | direct | 0.92 | 1.00 | 0.96 | 1.16 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd512 | f32 | 2 | direct | 3.86 | 1.00 | 0.97 | 1.07 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd512 | f32 | 3 | direct | 6.54 | 1.00 | 0.97 | 1.19 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd512 | f32 | 4 | direct | 41.4 | 1.00 | 0.99 | 0.58 | – | – | sumfact | sumfact 0.58 of direct |
+| FacetNormals | Prism | CpuSimd512 | f32 | 1 | direct | 1.14 | 1.00 | 1.06 | 0.99 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd512 | f32 | 2 | direct | 3.54 | 1.00 | 0.95 | 1.07 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd512 | f32 | 3 | direct | 6.67 | 1.00 | 0.98 | 1.16 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd512 | f32 | 4 | direct | 41.5 | 1.00 | 1.00 | 0.58 | – | – | sumfact | sumfact 0.58 of direct |
 | FacetNormals | Prism | CpuSimd512 | f32 | 5 | loops | 14.8 | n.m.; T3: 2.55 | 1.00 | 1.16 | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Prism | CpuSimd512 | f32 | 6 | loops | 21.2 | n.m.; T3: 6.27 | 1.00 | 1.12 | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Prism | CpuSimd512 | f32 | 7 | loops | 39.7 | n.m.; T3: 5.55 | 1.00 | 0.86 | – | – | sumfact | sumfact 0.86 of loops |
 | FacetNormals | Prism | CpuSimd512 | f32 | 8 | direct | 390 | 1.00 | 0.13 | 0.12 | – | – | sumfact | sumfact 0.12 of direct |
-| FacetNormals | Prism | CpuSimd512 | f64 | 1 | direct | 0.77 | 1.00 | 0.78 | 0.86 | – | – | loops | loops 0.78 of direct |
-| FacetNormals | Prism | CpuSimd512 | f64 | 2 | direct | 1.00 | 1.00 | 0.97 | 0.97 | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Prism | CpuSimd512 | f64 | 3 | direct | 1.82 | 1.00 | 0.81 | 0.92 | – | – | loops | loops 0.81 of direct |
-| FacetNormals | Prism | CpuSimd512 | f64 | 4 | direct | 7.14 | 1.00 | 0.96 | 0.55 | – | – | sumfact | sumfact 0.55 of direct |
+| FacetNormals | Prism | CpuSimd512 | f64 | 1 | direct | 0.60 | 1.00 | 0.94 | 1.14 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd512 | f64 | 2 | direct | 0.89 | 1.00 | 1.08 | 1.08 | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Prism | CpuSimd512 | f64 | 3 | direct | 1.86 | 1.00 | 0.84 | 0.92 | – | – | loops | loops 0.84 of direct |
+| FacetNormals | Prism | CpuSimd512 | f64 | 4 | direct | 7.16 | 1.00 | 0.99 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
 | FacetNormals | Prism | CpuSimd512 | f64 | 5 | loops | 3.86 | n.m.; T3: 4.27 | 1.00 | 1.02 | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Prism | CpuSimd512 | f64 | 6 | loops | 6.15 | n.m.; T3: 6.03 | 1.00 | 1.07 | – | – | loops | no strategy 10% faster than loops |
 | FacetNormals | Prism | CpuSimd512 | f64 | 7 | loops | 11.1 | n.m.; T3: 6.51 | 1.00 | 0.93 | – | – | loops | no strategy 10% faster than loops |
@@ -2357,52 +2293,52 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Prism | Gpu | f64 | 6 | direct | 6.10 / 2.45 | 1.00 / 1.00 | 1.65 / 1.03 | 0.37 / 0.36 | 0.29 / 0.34 | 0.68 / 1.37 | shared | shared 0.29 / 0.34 of direct |
 | FacetNormals | Prism | Gpu | f64 | 7 | direct | 13.0 / 3.95 | 1.00 / 1.00 | 1.47 / 1.13 | 0.31 / 0.26 | 0.23 / 0.24 | 0.42 / 1.14 | shared | shared 0.23 / 0.24 of direct |
 | FacetNormals | Prism | Gpu | f64 | 8 | direct | 267 / 43.8 | 1.00 / 1.00 | 0.13 / 0.18 | 0.03 / 0.05 | 0.02 / 0.04 | 0.03 / 0.15 | shared | shared 0.02 / 0.04 of direct |
-| FacetNormals | Pyramid | CpuSimd128 | f32 | 1 | direct | 0.50 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd128 | f32 | 2 | direct | 0.96 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd128 | f32 | 3 | direct | 1.56 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd128 | f64 | 1 | direct | 1.09 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd128 | f64 | 2 | direct | 3.66 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd128 | f64 | 3 | direct | 10.5 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd512 | f32 | 1 | direct | 0.92 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd512 | f32 | 2 | direct | 3.42 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd128 | f32 | 1 | direct | 0.50 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd128 | f32 | 2 | direct | 0.92 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd128 | f32 | 3 | direct | 1.50 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd128 | f64 | 1 | direct | 1.07 | 1.00 | 0.96 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd128 | f64 | 2 | direct | 3.66 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd128 | f64 | 3 | direct | 10.5 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd512 | f32 | 1 | direct | 0.99 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd512 | f32 | 2 | direct | 3.33 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | CpuSimd512 | f32 | 3 | direct | 6.37 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.61 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.77 | 1.00 | 0.75 | – | – | – | loops | loops 0.75 of direct |
-| FacetNormals | Pyramid | CpuSimd512 | f64 | 3 | direct | 1.83 | 1.00 | 0.91 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd512 | f64 | 1 | direct | 0.55 | 1.00 | 0.93 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd512 | f64 | 2 | direct | 0.75 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
+| FacetNormals | Pyramid | CpuSimd512 | f64 | 3 | direct | 1.61 | 1.00 | 0.85 | – | – | – | loops | loops 0.85 of direct |
 | FacetNormals | Pyramid | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.16 / 1.21 | – | 1.15 / 1.16 | 2.83 / 5.02 | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | Gpu | f32 | 2 | direct | 0.15 / 0.06 | 1.00 / 1.00 | 1.52 / 1.48 | – | 1.35 / 1.77 | 3.90 / 8.29 | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | Gpu | f32 | 3 | direct | 0.29 / 0.10 | 1.00 / 1.00 | 2.41 / 2.90 | – | 2.63 / 2.60 | 4.64 / 10.98 | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | Gpu | f64 | 1 | direct | 0.06 / 0.02 | 1.00 / 1.00 | 1.14 / 1.24 | – | 0.99 / 1.19 | 2.59 / 5.22 | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | Gpu | f64 | 2 | direct | 0.10 / 0.03 | 1.00 / 1.00 | 1.77 / 1.46 | – | 1.11 / 1.53 | 3.27 / 8.67 | direct | no strategy 10% faster than direct |
 | FacetNormals | Pyramid | Gpu | f64 | 3 | direct | 0.17 / 0.05 | 1.00 / 1.00 | 3.01 / 3.81 | – | 1.85 / 3.68 | 5.12 / 13.28 | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f32 | 1 | direct | 3.68 | 1.00 | 4.31 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f32 | 2 | direct | 8.03 | 1.00 | 2.32 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f32 | 3 | direct | 12.6 | 1.00 | 2.17 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f32 | 4 | direct | 20.3 | 1.00 | 1.41 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f32 | 1 | direct | 3.68 | 1.00 | 3.80 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f32 | 2 | direct | 8.08 | 1.00 | 2.87 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f32 | 3 | direct | 12.6 | 1.00 | 2.10 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f32 | 4 | direct | 21.0 | 1.00 | 1.48 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 5 | direct | 25.1 | 1.00 | 1.37 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 6 | direct | 32.0 | 1.00 | 1.27 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 7 | direct | 37.5 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f32 | 8 | direct | 39.5 | 1.00 | 1.17 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f64 | 1 | direct | 3.75 | 1.00 | 4.25 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f64 | 2 | direct | 8.47 | 1.00 | 2.87 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f64 | 3 | direct | 13.7 | 1.00 | 1.84 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd128 | f64 | 4 | direct | 21.6 | 1.00 | 1.52 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f64 | 1 | direct | 3.66 | 1.00 | 3.56 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f64 | 2 | direct | 8.35 | 1.00 | 2.53 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f64 | 3 | direct | 13.5 | 1.00 | 1.79 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd128 | f64 | 4 | direct | 22.4 | 1.00 | 1.50 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f64 | 5 | direct | 27.4 | 1.00 | 1.14 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f64 | 6 | direct | 33.2 | 1.00 | 1.29 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f64 | 7 | direct | 39.1 | 1.00 | 1.22 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd128 | f64 | 8 | direct | 45.9 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f32 | 1 | direct | 5.54 | 1.00 | 2.39 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f32 | 2 | direct | 10.1 | 1.00 | 2.08 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f32 | 3 | direct | 18.0 | 1.00 | 1.28 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f32 | 4 | direct | 22.6 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f32 | 1 | direct | 7.08 | 1.00 | 1.24 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f32 | 2 | direct | 9.20 | 1.00 | 2.11 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f32 | 3 | direct | 16.4 | 1.00 | 1.26 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f32 | 4 | direct | 23.2 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f32 | 5 | direct | 29.5 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f32 | 6 | direct | 28.8 | 1.00 | 1.23 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f32 | 7 | direct | 35.8 | 1.00 | 1.17 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f32 | 8 | direct | 44.9 | 1.00 | 1.13 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f64 | 1 | direct | 6.51 | 1.00 | 2.16 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f64 | 2 | direct | 11.0 | 1.00 | 1.98 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f64 | 3 | direct | 15.8 | 1.00 | 1.36 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Interval | CpuSimd512 | f64 | 4 | direct | 22.3 | 1.00 | 1.14 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f64 | 1 | direct | 7.80 | 1.00 | 1.47 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f64 | 2 | direct | 11.0 | 1.00 | 1.88 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f64 | 3 | direct | 21.0 | 1.00 | 1.24 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Interval | CpuSimd512 | f64 | 4 | direct | 24.5 | 1.00 | 1.02 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f64 | 5 | direct | 31.0 | 1.00 | 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f64 | 6 | direct | 32.0 | 1.00 | 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Interval | CpuSimd512 | f64 | 7 | direct | 40.1 | 1.00 | 1.05 | – | – | – | direct | no strategy 10% faster than direct |
@@ -2423,34 +2359,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Interval | Gpu | f64 | 6 | direct | 0.18 / 0.13 | 1.00 / 1.00 | 3.39 / 3.90 | – | 3.42 / 3.90 | 15.16 / 20.62 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f64 | 7 | direct | 0.20 / 0.16 | 1.00 / 1.00 | 4.25 / 4.67 | – | 4.24 / 4.66 | 42.84 / 52.54 | direct | no strategy 10% faster than direct |
 | PullBack | Interval | Gpu | f64 | 8 | direct | 0.26 / 0.20 | 1.00 / 1.00 | 3.65 / 3.94 | – | 3.67 / 3.94 | 34.24 / 43.91 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f32 | 1 | direct | 15.7 | 1.00 | 1.76 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f32 | 2 | direct | 23.2 | 1.00 | 1.57 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f32 | 3 | direct | 34.4 | 1.00 | 1.48 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f32 | 4 | direct | 51.4 | 1.00 | 1.38 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f32 | 1 | direct | 15.4 | 1.00 | 1.81 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f32 | 2 | direct | 21.5 | 1.00 | 1.72 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f32 | 3 | direct | 37.5 | 1.00 | 1.50 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f32 | 4 | direct | 53.5 | 1.00 | 1.27 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f32 | 5 | direct | 89.8 | 1.00 | 1.15 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f32 | 6 | direct | 145 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f32 | 7 | direct | 247 | 1.00 | 0.92 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f32 | 8 | direct | 404 | 1.00 | 0.81 | – | – | – | loops | loops 0.81 of direct |
-| PullBack | Triangle | CpuSimd128 | f64 | 1 | direct | 15.1 | 1.00 | 2.00 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f64 | 2 | direct | 29.1 | 1.00 | 1.39 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f64 | 3 | direct | 45.3 | 1.00 | 1.21 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd128 | f64 | 4 | direct | 74.2 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f64 | 1 | direct | 15.6 | 1.00 | 1.84 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f64 | 2 | direct | 28.3 | 1.00 | 1.42 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f64 | 3 | direct | 43.6 | 1.00 | 1.26 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd128 | f64 | 4 | direct | 67.7 | 1.00 | 1.08 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f64 | 5 | direct | 77.7 | 1.00 | 1.16 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f64 | 6 | direct | 92.0 | 1.00 | 1.25 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f64 | 7 | direct | 125 | 1.00 | 1.31 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd128 | f64 | 8 | direct | 176 | 1.00 | 1.25 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f32 | 1 | direct | 16.6 | 1.00 | 1.69 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f32 | 2 | direct | 22.8 | 1.00 | 1.74 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f32 | 3 | direct | 29.7 | 1.00 | 1.98 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f32 | 4 | direct | 68.0 | 1.00 | 1.73 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f32 | 1 | direct | 13.6 | 1.00 | 1.96 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f32 | 2 | direct | 23.2 | 1.00 | 1.87 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f32 | 3 | direct | 29.7 | 1.00 | 1.97 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f32 | 4 | direct | 67.5 | 1.00 | 1.72 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f32 | 5 | direct | 136 | 1.00 | 1.54 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f32 | 6 | direct | 281 | 1.00 | 1.33 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f32 | 7 | direct | 513 | 1.00 | 1.19 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f32 | 8 | direct | 865 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f64 | 1 | direct | 18.0 | 1.00 | 1.53 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f64 | 2 | direct | 20.1 | 1.00 | 2.01 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f64 | 3 | direct | 33.8 | 1.00 | 2.25 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | CpuSimd512 | f64 | 4 | direct | 47.2 | 1.00 | 1.94 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f64 | 1 | direct | 14.9 | 1.00 | 1.99 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f64 | 2 | direct | 21.1 | 1.00 | 1.82 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f64 | 3 | direct | 34.0 | 1.00 | 1.80 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Triangle | CpuSimd512 | f64 | 4 | direct | 47.3 | 1.00 | 2.03 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f64 | 5 | direct | 74.1 | 1.00 | 1.69 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f64 | 6 | direct | 131 | 1.00 | 1.60 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | CpuSimd512 | f64 | 7 | direct | 232 | 1.00 | 1.51 | – | – | – | direct | no strategy 10% faster than direct |
@@ -2471,34 +2407,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Triangle | Gpu | f64 | 6 | direct | 2.00 / 1.46 | 1.00 / 1.00 | 2.07 / 1.36 | – | 2.06 / 1.35 | 17.31 / 22.52 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 7 | direct | 3.78 / 1.95 | 1.00 / 1.00 | 1.86 / 1.24 | – | 1.86 / 1.23 | 23.42 / 43.59 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 8 | loops | 10.8 / 2.84 | n.m.; T3: 0.85 / 1.54 | 1.00 / 1.00 | – | 1.00 / 0.99 | 9.46 / 35.02 | loops | no strategy 10% faster than loops |
-| PullBack | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 15.0 | 1.00 | 1.94 | 1.63 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 21.9 | 1.00 | 1.57 | 1.66 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 37.6 | 1.00 | 1.22 | 0.98 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 51.7 | 1.00 | 1.36 | 1.15 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 15.0 | 1.00 | 1.94 | 1.64 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 23.0 | 1.00 | 1.82 | 1.48 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 41.4 | 1.00 | 1.46 | 1.16 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f32 | 4 | direct | 51.8 | 1.00 | 1.36 | 1.17 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 5 | direct | 87.4 | 1.00 | 1.04 | 0.81 | – | – | sumfact | sumfact 0.81 of direct |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 6 | direct | 134 | 1.00 | 1.01 | 0.79 | – | – | sumfact | sumfact 0.79 of direct |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 7 | direct | 219 | 1.00 | 0.98 | 0.76 | – | – | sumfact | sumfact 0.76 of direct |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 8 | direct | 333 | 1.00 | 0.99 | 0.73 | – | – | sumfact | sumfact 0.73 of direct |
-| PullBack | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 15.9 | 1.00 | 1.87 | 1.86 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 25.1 | 1.00 | 1.62 | 1.35 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 38.7 | 1.00 | 1.38 | 1.22 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 53.8 | 1.00 | 1.30 | 1.10 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f64 | 1 | direct | 15.8 | 1.00 | 1.86 | 1.71 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f64 | 2 | direct | 25.3 | 1.00 | 1.57 | 1.46 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f64 | 3 | direct | 40.9 | 1.00 | 1.32 | 1.14 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd128 | f64 | 4 | direct | 54.4 | 1.00 | 1.20 | 1.07 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd128 | f64 | 5 | direct | 84.4 | 1.00 | 1.14 | 0.81 | – | – | sumfact | sumfact 0.81 of direct |
 | PullBack | Quadrilateral | CpuSimd128 | f64 | 6 | direct | 94.9 | 1.00 | 1.12 | 0.91 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd128 | f64 | 7 | direct | 136 | 1.00 | 1.06 | 0.86 | – | – | sumfact | sumfact 0.86 of direct |
 | PullBack | Quadrilateral | CpuSimd128 | f64 | 8 | direct | 189 | 1.00 | 0.98 | 0.82 | – | – | sumfact | sumfact 0.82 of direct |
-| PullBack | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 19.9 | 1.00 | 1.35 | 1.61 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 22.0 | 1.00 | 1.85 | 1.60 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 31.7 | 1.00 | 1.50 | 1.50 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 59.8 | 1.00 | 1.38 | 1.44 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f32 | 1 | direct | 14.2 | 1.00 | 1.83 | 1.72 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f32 | 2 | direct | 22.0 | 1.00 | 1.62 | 1.76 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f32 | 3 | direct | 31.9 | 1.00 | 1.51 | 1.50 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f32 | 4 | direct | 59.8 | 1.00 | 1.46 | 1.43 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f32 | 5 | direct | 127 | 1.00 | 1.32 | 1.35 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f32 | 6 | direct | 225 | 1.00 | 1.18 | 1.18 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f32 | 7 | direct | 351 | 1.00 | 1.18 | 1.07 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f32 | 8 | direct | 560 | 1.00 | 1.13 | 1.10 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 17.0 | 1.00 | 1.71 | 1.54 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 27.7 | 1.00 | 1.11 | 1.29 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 29.8 | 1.00 | 1.83 | 1.89 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 34.2 | 1.00 | 1.68 | 2.31 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f64 | 1 | direct | 17.4 | 1.00 | 1.52 | 1.45 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f64 | 2 | direct | 19.6 | 1.00 | 1.71 | 1.74 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f64 | 3 | direct | 30.1 | 1.00 | 1.66 | 1.80 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Quadrilateral | CpuSimd512 | f64 | 4 | direct | 36.3 | 1.00 | 1.56 | 1.71 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f64 | 5 | direct | 69.6 | 1.00 | 1.36 | 1.42 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f64 | 6 | direct | 111 | 1.00 | 1.28 | 1.28 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd512 | f64 | 7 | direct | 182 | 1.00 | 1.24 | 1.17 | – | – | direct | no strategy 10% faster than direct |
@@ -2519,34 +2455,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Quadrilateral | Gpu | f64 | 6 | direct | 1.54 / 1.06 | 1.00 / 1.00 | 2.88 / 3.09 | 3.52 / 3.64 | 3.50 / 3.63 | 50.34 / 70.01 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f64 | 7 | direct | 4.95 / 2.57 | 1.00 / 1.00 | 1.42 / 1.74 | 1.96 / 2.20 | 1.95 / 2.20 | 20.30 / 38.63 | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | Gpu | f64 | 8 | direct | 8.99 / 3.44 | 1.00 / 1.00 | 1.32 / 1.75 | 1.70 / 1.82 | 1.69 / 1.82 | 13.44 / 34.37 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 24.0 | 1.00 | 2.17 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 46.9 | 1.00 | 2.04 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 141 | 1.00 | 1.74 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 470 | 1.00 | 1.50 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f32 | 1 | direct | 26.8 | 1.00 | 1.91 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f32 | 2 | direct | 48.0 | 1.00 | 2.07 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f32 | 3 | direct | 144 | 1.00 | 1.71 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f32 | 4 | direct | 468 | 1.00 | 1.49 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | CpuSimd128 | f32 | 5 | loops | 1684 | n.m.; T3: 0.70 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd128 | f32 | 6 | loops | 2610 | n.m.; T3: 0.74 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd128 | f32 | 7 | loops | 3355 | n.m.; T3: 0.74 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd128 | f32 | 8 | loops | 4429 | n.m.; T3: 0.79 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| PullBack | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 24.6 | 1.00 | 2.04 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 41.7 | 1.00 | 2.40 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 89.2 | 1.00 | 1.83 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 243 | 1.00 | 1.62 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f64 | 1 | direct | 27.5 | 1.00 | 1.76 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f64 | 2 | direct | 44.3 | 1.00 | 2.18 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f64 | 3 | direct | 87.4 | 1.00 | 1.79 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd128 | f64 | 4 | direct | 242 | 1.00 | 1.59 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | CpuSimd128 | f64 | 5 | loops | 964 | n.m.; T3: 0.67 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd128 | f64 | 6 | loops | 2043 | n.m.; T3: 0.63 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd128 | f64 | 7 | loops | 3342 | n.m.; T3: 0.81 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd128 | f64 | 8 | loops | 4451 | n.m.; T3: 0.81 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| PullBack | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 19.0 | 1.00 | 12.21 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 60.6 | 1.00 | 9.55 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 337 | 1.00 | 5.04 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 973 | 1.00 | 4.58 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f32 | 1 | direct | 19.2 | 1.00 | 12.15 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f32 | 2 | direct | 60.7 | 1.00 | 9.53 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f32 | 3 | direct | 336 | 1.00 | 5.05 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f32 | 4 | direct | 966 | 1.00 | 4.62 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | CpuSimd512 | f32 | 5 | loops | 10500 | n.m.; T3: 0.28 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f32 | 6 | loops | 14452 | n.m.; T3: 0.34 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f32 | 7 | loops | 17880 | n.m.; T3: 0.39 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f32 | 8 | loops | 21963 | n.m.; T3: 0.43 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| PullBack | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 24.2 | 1.00 | 3.11 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 34.3 | 1.00 | 3.45 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f64 | 1 | direct | 24.2 | 1.00 | 2.96 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f64 | 2 | direct | 34.4 | 1.00 | 3.48 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 3 | direct | 137 | 1.00 | 2.53 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 510 | 1.00 | 2.02 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Tetrahedron | CpuSimd512 | f64 | 4 | direct | 508 | 1.00 | 2.06 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 5 | loops | 2802 | n.m.; T3: 0.52 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 6 | loops | 8566 | n.m.; T3: 0.38 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | CpuSimd512 | f64 | 7 | loops | 11594 | n.m.; T3: 0.61 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
@@ -2567,34 +2503,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Tetrahedron | Gpu | f64 | 6 | loops | 106 / 17.8 | – | 1.00 / 1.00 | – | 1.00 / 1.01 | 3.41 / 19.77 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 7 | loops | 218 / 36.2 | – | 1.00 / 1.00 | – | 1.00 / 1.01 | 2.20 / 13.45 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 8 | loops | 460 / 72.1 | – | 1.00 / 1.00 | – | 1.00 / 1.00 | 2.15 / 8.75 | loops | no strategy 10% faster than loops |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 1 | direct | 31.9 | 1.00 | 1.30 | 1.46 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 2 | direct | 77.7 | 1.00 | 1.19 | 1.05 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 3 | direct | 252 | 1.00 | 1.14 | 0.89 | – | – | sumfact | sumfact 0.89 of direct |
-| PullBack | Hexahedron | CpuSimd128 | f32 | 4 | direct | 829 | 1.00 | 1.18 | 0.99 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f32 | 1 | direct | 34.0 | 1.00 | 1.40 | 1.34 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f32 | 2 | direct | 78.8 | 1.00 | 1.29 | 1.03 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f32 | 3 | direct | 261 | 1.00 | 1.22 | 0.90 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f32 | 4 | direct | 826 | 1.00 | 1.21 | 1.01 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 5 | direct | 3244 | 1.00 | 0.73 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 6 | direct | 3875 | 1.00 | 1.09 | 0.69 | – | – | sumfact | sumfact 0.69 of direct |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 7 | direct | 5807 | 1.00 | 1.54 | 1.29 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | CpuSimd128 | f32 | 8 | loops | 8962 | n.m.; T3: 1.46 | 1.00 | 0.60 | – | – | sumfact | sumfact 0.60 of loops |
-| PullBack | Hexahedron | CpuSimd128 | f64 | 1 | direct | 31.5 | 1.00 | 1.54 | 1.46 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd128 | f64 | 2 | direct | 75.7 | 1.00 | 1.24 | 0.94 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd128 | f64 | 3 | direct | 207 | 1.00 | 0.97 | 0.71 | – | – | sumfact | sumfact 0.71 of direct |
-| PullBack | Hexahedron | CpuSimd128 | f64 | 4 | direct | 499 | 1.00 | 1.82 | 1.53 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f64 | 1 | direct | 32.0 | 1.00 | 1.53 | 1.45 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f64 | 2 | direct | 77.1 | 1.00 | 1.40 | 0.95 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd128 | f64 | 3 | direct | 226 | 1.00 | 0.94 | 0.66 | – | – | sumfact | sumfact 0.66 of direct |
+| PullBack | Hexahedron | CpuSimd128 | f64 | 4 | direct | 512 | 1.00 | 1.79 | 1.54 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 5 | direct | 1683 | 1.00 | 0.96 | 0.57 | – | – | sumfact | sumfact 0.57 of direct |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 6 | direct | 4688 | 1.00 | 0.86 | 0.50 | – | – | sumfact | sumfact 0.50 of direct |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 7 | loops | 9904 | n.m.; T3: 0.59 | 1.00 | 0.78 | – | – | sumfact | sumfact 0.78 of loops |
 | PullBack | Hexahedron | CpuSimd128 | f64 | 8 | loops | 10920 | n.m.; T3: 0.76 | 1.00 | 0.52 | – | – | sumfact | sumfact 0.52 of loops |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 1 | direct | 23.1 | 1.00 | 2.05 | 1.89 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 2 | direct | 113 | 1.00 | 1.23 | 1.01 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 3 | direct | 767 | 1.00 | 0.73 | 0.56 | – | – | sumfact | sumfact 0.56 of direct |
-| PullBack | Hexahedron | CpuSimd512 | f32 | 4 | direct | 2556 | 1.00 | 0.71 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 1 | direct | 23.4 | 1.00 | 1.98 | 1.85 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 2 | direct | 113 | 1.00 | 1.22 | 1.02 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 3 | direct | 767 | 1.00 | 0.73 | 0.55 | – | – | sumfact | sumfact 0.55 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f32 | 4 | direct | 2552 | 1.00 | 0.74 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 5 | direct | 9703 | 1.00 | 0.48 | 0.40 | – | – | sumfact | sumfact 0.40 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 6 | direct | 14073 | 1.00 | 0.65 | 0.54 | – | – | sumfact | sumfact 0.54 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 7 | direct | 20818 | 1.00 | 0.59 | 0.47 | – | – | sumfact | sumfact 0.47 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f32 | 8 | direct | 29911 | 1.00 | 0.57 | 0.46 | – | – | sumfact | sumfact 0.46 of direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 1 | direct | 27.6 | 1.00 | 2.06 | 1.99 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 2 | direct | 66.4 | 1.00 | 1.53 | 1.19 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 3 | direct | 390 | 1.00 | 0.88 | 0.64 | – | – | sumfact | sumfact 0.64 of direct |
-| PullBack | Hexahedron | CpuSimd512 | f64 | 4 | direct | 1306 | 1.00 | 0.86 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 1 | direct | 27.2 | 1.00 | 2.36 | 2.03 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 2 | direct | 64.8 | 1.00 | 1.57 | 1.23 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 3 | direct | 390 | 1.00 | 0.82 | 0.63 | – | – | sumfact | sumfact 0.63 of direct |
+| PullBack | Hexahedron | CpuSimd512 | f64 | 4 | direct | 1306 | 1.00 | 0.85 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 5 | direct | 4823 | 1.00 | 0.57 | 0.44 | – | – | sumfact | sumfact 0.44 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 6 | direct | 13930 | 1.00 | 0.54 | 0.42 | – | – | sumfact | sumfact 0.42 of direct |
 | PullBack | Hexahedron | CpuSimd512 | f64 | 7 | direct | 23815 | 1.00 | 0.59 | 0.44 | – | – | sumfact | sumfact 0.44 of direct |
@@ -2615,34 +2551,34 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Hexahedron | Gpu | f64 | 6 | loops | 363 / 73.1 | – | 1.00 / 1.00 | 0.72 / 0.79 | 0.72 / 0.79 | 2.12 / 8.07 | sumfact | sumfact 0.72 / 0.79 of loops |
 | PullBack | Hexahedron | Gpu | f64 | 7 | loops | 824 / 160 | – | 1.00 / 1.00 | 0.72 / 0.79 | 0.72 / 0.79 | 1.46 / 7.39 | sumfact | sumfact 0.72 / 0.79 of loops |
 | PullBack | Hexahedron | Gpu | f64 | 8 | loops | 1482 / 309 | – | 1.00 / 1.00 | 0.75 / 0.77 | 0.75 / 0.77 | 1.37 / 5.63 | sumfact | sumfact 0.75 / 0.77 of loops |
-| PullBack | Prism | CpuSimd128 | f32 | 1 | direct | 30.2 | 1.00 | 1.88 | 1.55 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd128 | f32 | 2 | direct | 63.2 | 1.00 | 2.07 | 1.30 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd128 | f32 | 3 | direct | 214 | 1.00 | 1.82 | 0.97 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd128 | f32 | 4 | direct | 617 | 1.00 | 3.16 | 3.04 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f32 | 1 | direct | 30.4 | 1.00 | 1.90 | 1.62 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f32 | 2 | direct | 61.9 | 1.00 | 2.01 | 1.29 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f32 | 3 | direct | 217 | 1.00 | 1.79 | 0.93 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f32 | 4 | direct | 601 | 1.00 | 3.39 | 3.26 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Prism | CpuSimd128 | f32 | 5 | loops | 3089 | n.m.; T3: 0.68 | 1.00 | 0.45 | – | – | sumfact | sumfact 0.45 of loops |
 | PullBack | Prism | CpuSimd128 | f32 | 6 | loops | 4899 | n.m.; T3: 0.71 | 1.00 | 0.43 | – | – | sumfact | sumfact 0.43 of loops |
 | PullBack | Prism | CpuSimd128 | f32 | 7 | loops | 6924 | n.m.; T3: 0.74 | 1.00 | 0.41 | – | – | sumfact | sumfact 0.41 of loops |
 | PullBack | Prism | CpuSimd128 | f32 | 8 | loops | 10122 | n.m.; T3: 0.73 | 1.00 | 0.38 | – | – | sumfact | sumfact 0.38 of loops |
-| PullBack | Prism | CpuSimd128 | f64 | 1 | direct | 27.4 | 1.00 | 2.08 | 1.90 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd128 | f64 | 2 | direct | 65.7 | 1.00 | 1.81 | 1.25 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd128 | f64 | 3 | direct | 142 | 1.00 | 1.94 | 1.43 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd128 | f64 | 4 | direct | 332 | 1.00 | 3.68 | 3.78 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f64 | 1 | direct | 27.5 | 1.00 | 2.07 | 1.76 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f64 | 2 | direct | 66.7 | 1.00 | 1.93 | 1.03 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f64 | 3 | direct | 144 | 1.00 | 1.89 | 1.32 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd128 | f64 | 4 | direct | 336 | 1.00 | 3.28 | 3.14 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Prism | CpuSimd128 | f64 | 5 | loops | 1879 | n.m.; T3: 0.49 | 1.00 | 0.45 | – | – | sumfact | sumfact 0.45 of loops |
 | PullBack | Prism | CpuSimd128 | f64 | 6 | loops | 4241 | n.m.; T3: 0.44 | 1.00 | 0.43 | – | – | sumfact | sumfact 0.43 of loops |
 | PullBack | Prism | CpuSimd128 | f64 | 7 | loops | 7697 | n.m.; T3: 0.43 | 1.00 | 0.45 | – | – | sumfact | sumfact 0.45 of loops |
 | PullBack | Prism | CpuSimd128 | f64 | 8 | loops | 11009 | n.m.; T3: 0.42 | 1.00 | 0.38 | – | – | sumfact | sumfact 0.38 of loops |
-| PullBack | Prism | CpuSimd512 | f32 | 1 | direct | 21.1 | 1.00 | 3.13 | 2.51 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd512 | f32 | 2 | direct | 87.6 | 1.00 | 2.36 | 1.33 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd512 | f32 | 3 | direct | 418 | 1.00 | 2.12 | 1.12 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd512 | f32 | 4 | direct | 1714 | 1.00 | 3.20 | 2.23 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f32 | 1 | direct | 21.1 | 1.00 | 2.78 | 2.38 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f32 | 2 | direct | 85.8 | 1.00 | 2.33 | 1.39 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f32 | 3 | direct | 416 | 1.00 | 2.01 | 1.13 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f32 | 4 | direct | 1730 | 1.00 | 3.05 | 2.18 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Prism | CpuSimd512 | f32 | 5 | loops | 8424 | n.m.; T3: 0.42 | 1.00 | 0.38 | – | – | sumfact | sumfact 0.38 of loops |
 | PullBack | Prism | CpuSimd512 | f32 | 6 | loops | 13944 | n.m.; T3: 0.43 | 1.00 | 0.37 | – | – | sumfact | sumfact 0.37 of loops |
 | PullBack | Prism | CpuSimd512 | f32 | 7 | loops | 19888 | n.m.; T3: 0.43 | 1.00 | 0.35 | – | – | sumfact | sumfact 0.35 of loops |
 | PullBack | Prism | CpuSimd512 | f32 | 8 | direct | 18155 | 1.00 | 1.53 | 0.75 | – | – | sumfact | sumfact 0.75 of direct |
-| PullBack | Prism | CpuSimd512 | f64 | 1 | direct | 25.9 | 1.00 | 2.84 | 2.34 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd512 | f64 | 2 | direct | 50.3 | 1.00 | 2.90 | 1.73 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd512 | f64 | 3 | direct | 216 | 1.00 | 2.39 | 1.23 | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Prism | CpuSimd512 | f64 | 4 | direct | 877 | 1.00 | 5.12 | 2.43 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f64 | 1 | direct | 25.3 | 1.00 | 3.40 | 2.34 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f64 | 2 | direct | 50.4 | 1.00 | 2.90 | 1.74 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f64 | 3 | direct | 213 | 1.00 | 2.42 | 1.25 | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Prism | CpuSimd512 | f64 | 4 | direct | 880 | 1.00 | 4.24 | 2.42 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Prism | CpuSimd512 | f64 | 5 | loops | 4993 | n.m.; T3: 0.53 | 1.00 | 0.36 | – | – | sumfact | sumfact 0.36 of loops |
 | PullBack | Prism | CpuSimd512 | f64 | 6 | loops | 12337 | n.m.; T3: 0.62 | 1.00 | 0.36 | – | – | sumfact | sumfact 0.36 of loops |
 | PullBack | Prism | CpuSimd512 | f64 | 7 | loops | 23010 | n.m.; T3: 0.53 | 1.00 | 0.33 | – | – | sumfact | sumfact 0.33 of loops |
@@ -2663,18 +2599,18 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Prism | Gpu | f64 | 6 | loops | 314 / 48.7 | – | 1.00 / 1.00 | 0.46 / 0.67 | 0.46 / 0.67 | 2.25 / 10.90 | sumfact | sumfact 0.46 / 0.67 of loops, within 3% of shared (0.46 / 0.67) |
 | PullBack | Prism | Gpu | f64 | 7 | loops | 598 / 104 | – | 1.00 / 1.00 | 0.50 / 0.69 | 0.50 / 0.69 | 1.33 / 7.23 | sumfact | sumfact 0.50 / 0.69 of loops, within 3% of shared (0.50 / 0.69) |
 | PullBack | Prism | Gpu | f64 | 8 | loops | 1129 / 195 | – | 1.00 / 1.00 | 0.47 / 0.63 | 0.47 / 0.63 | 1.32 / 5.54 | sumfact | sumfact 0.47 / 0.63 of loops, within 3% of shared (0.47 / 0.63) |
-| PullBack | Pyramid | CpuSimd128 | f32 | 1 | direct | 30.7 | 1.00 | 1.93 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd128 | f32 | 2 | direct | 56.0 | 1.00 | 2.27 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd128 | f32 | 3 | direct | 194 | 1.00 | 1.92 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd128 | f64 | 1 | direct | 30.4 | 1.00 | 1.90 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd128 | f64 | 2 | direct | 55.0 | 1.00 | 2.12 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd128 | f64 | 3 | direct | 113 | 1.00 | 2.01 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd512 | f32 | 1 | direct | 24.2 | 1.00 | 3.40 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd512 | f32 | 2 | direct | 81.7 | 1.00 | 2.81 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd512 | f32 | 3 | direct | 379 | 1.00 | 2.32 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd512 | f64 | 1 | direct | 28.1 | 1.00 | 3.27 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd512 | f64 | 2 | direct | 45.3 | 1.00 | 3.48 | – | – | – | direct | no strategy 10% faster than direct |
-| PullBack | Pyramid | CpuSimd512 | f64 | 3 | direct | 202 | 1.00 | 2.50 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd128 | f32 | 1 | direct | 32.8 | 1.00 | 1.75 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd128 | f32 | 2 | direct | 56.5 | 1.00 | 2.17 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd128 | f32 | 3 | direct | 195 | 1.00 | 1.85 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd128 | f64 | 1 | direct | 26.5 | 1.00 | 2.05 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd128 | f64 | 2 | direct | 60.1 | 1.00 | 1.88 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd128 | f64 | 3 | direct | 117 | 1.00 | 1.96 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd512 | f32 | 1 | direct | 28.4 | 1.00 | 2.45 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd512 | f32 | 2 | direct | 84.7 | 1.00 | 2.70 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd512 | f32 | 3 | direct | 379 | 1.00 | 2.31 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd512 | f64 | 1 | direct | 28.2 | 1.00 | 3.27 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd512 | f64 | 2 | direct | 47.0 | 1.00 | 3.33 | – | – | – | direct | no strategy 10% faster than direct |
+| PullBack | Pyramid | CpuSimd512 | f64 | 3 | direct | 199 | 1.00 | 2.27 | – | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Pyramid | Gpu | f32 | 1 | direct | 0.26 / 0.20 | 1.00 / 1.00 | 4.32 / 5.13 | – | 4.33 / 5.13 | 28.38 / 35.89 | direct | no strategy 10% faster than direct |
 | PullBack | Pyramid | Gpu | f32 | 2 | direct | 0.80 / 0.50 | 1.00 / 1.00 | 4.28 / 4.58 | – | 4.27 / 4.57 | 37.71 / 55.91 | direct | no strategy 10% faster than direct |
 | PullBack | Pyramid | Gpu | f32 | 3 | direct | 3.48 / 1.47 | 1.00 / 1.00 | 2.53 / 3.22 | – | 2.52 / 3.23 | 29.42 / 67.69 | direct | no strategy 10% faster than direct |
@@ -2688,66 +2624,66 @@ The time per point at p = 8 over p = 4 of the strategy the policy selects at p =
 
 | Class | Type | Cell | Family | Part | Strategy | Points | p = 8 / p = 4 | Bound | Within | Over M9 at p = 8 |
 | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: |
-| CpuSimd128 | f32 | Quadrilateral | Points | factor | sumfact | 10^6 | 1.43 | 3.00 | yes | 6.6 |
-| CpuSimd128 | f32 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 1.61 | 3.00 | yes | 4.4 |
-| CpuSimd128 | f32 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 1.66 | 3.00 | yes | 4.4 |
-| CpuSimd128 | f32 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 1.53 | 3.00 | yes | 4.2 |
-| CpuSimd128 | f32 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 1.59 | 3.00 | yes | 5.6 |
-| CpuSimd128 | f32 | Quadrilateral | Normals | factor | sumfact | 10^6 | 1.66 | 3.00 | yes | 4.1 |
-| CpuSimd128 | f32 | Quadrilateral | PullBack | step | sumfact | 10^6 | 4.63 | 3.56 | no | 1.3 |
+| CpuSimd128 | f32 | Quadrilateral | Points | factor | sumfact | 10^6 | 1.42 | 3.00 | yes | 6.6 |
+| CpuSimd128 | f32 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 1.57 | 3.00 | yes | 4.4 |
+| CpuSimd128 | f32 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 1.69 | 3.00 | yes | 4.4 |
+| CpuSimd128 | f32 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 1.56 | 3.00 | yes | 4.2 |
+| CpuSimd128 | f32 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 1.64 | 3.00 | yes | 5.6 |
+| CpuSimd128 | f32 | Quadrilateral | Normals | factor | sumfact | 10^6 | 1.60 | 3.00 | yes | 4.1 |
+| CpuSimd128 | f32 | Quadrilateral | PullBack | step | sumfact | 10^6 | 4.55 | 3.56 | no | 1.3 |
 | CpuSimd128 | f32 | Quadrilateral | PullBack | set-up | sumfact | 10^6 | 0.13 | 3.00 | yes | 26.7 |
-| CpuSimd128 | f32 | Hexahedron | Points | factor | sumfact | 10^6 | 5.46 | 3.00 | no | 82.3 |
-| CpuSimd128 | f32 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 5.48 | 3.00 | no | 75.4 |
-| CpuSimd128 | f32 | Hexahedron | DetJ | factor | sumfact | 10^6 | 5.65 | 3.00 | no | 77.0 |
-| CpuSimd128 | f32 | Hexahedron | Pinv | factor | sumfact | 10^6 | 5.30 | 3.00 | no | 72.8 |
-| CpuSimd128 | f32 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 3.61 | 3.00 | no | 59.9 |
-| CpuSimd128 | f32 | Hexahedron | PullBack | step | sumfact | 10^6 | 6.52 | 6.42 | no | 2.1 |
-| CpuSimd128 | f32 | Hexahedron | PullBack | set-up | sumfact | 10^6 | 16.95 | 3.00 | no | 35.2 |
-| CpuSimd128 | f64 | Quadrilateral | Points | factor | sumfact | 10^6 | 3.67 | 3.00 | no | 8.1 |
-| CpuSimd128 | f64 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 3.56 | 3.00 | no | 5.4 |
-| CpuSimd128 | f64 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 3.90 | 3.00 | no | 5.3 |
-| CpuSimd128 | f64 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 3.57 | 3.00 | no | 4.8 |
-| CpuSimd128 | f64 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 2.17 | 3.00 | yes | 4.7 |
-| CpuSimd128 | f64 | Quadrilateral | Normals | factor | sumfact | 10^6 | 4.02 | 3.00 | no | 5.6 |
-| CpuSimd128 | f64 | Quadrilateral | PullBack | step | sumfact | 10^6 | 2.90 | 3.56 | yes | 1.1 |
-| CpuSimd128 | f64 | Quadrilateral | PullBack | set-up | sumfact | 10^6 | 0.76 | 3.00 | yes | 3.2 |
-| CpuSimd128 | f64 | Hexahedron | Points | factor | sumfact | 10^6 | 1.77 | 3.00 | yes | 56.5 |
-| CpuSimd128 | f64 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 1.80 | 3.00 | yes | 55.4 |
-| CpuSimd128 | f64 | Hexahedron | DetJ | factor | sumfact | 10^6 | 1.85 | 3.00 | yes | 58.0 |
-| CpuSimd128 | f64 | Hexahedron | Pinv | factor | sumfact | 10^6 | 1.67 | 3.00 | yes | 53.7 |
-| CpuSimd128 | f64 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 1.80 | 3.00 | yes | 50.3 |
-| CpuSimd128 | f64 | Hexahedron | PullBack | step | sumfact | 10^6 | 7.37 | 6.42 | no | 1.2 |
-| CpuSimd128 | f64 | Hexahedron | PullBack | set-up | sumfact | 10^6 | 6.74 | 3.00 | no | 28.4 |
-| CpuSimd512 | f32 | Quadrilateral | Points | factor | sumfact | 10^6 | 3.16 | 3.00 | no | 5.8 |
-| CpuSimd512 | f32 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 3.11 | 3.00 | no | 2.3 |
+| CpuSimd128 | f32 | Hexahedron | Points | factor | sumfact | 10^6 | 5.54 | 3.00 | no | 82.3 |
+| CpuSimd128 | f32 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 5.33 | 3.00 | no | 75.4 |
+| CpuSimd128 | f32 | Hexahedron | DetJ | factor | sumfact | 10^6 | 5.53 | 3.00 | no | 77.0 |
+| CpuSimd128 | f32 | Hexahedron | Pinv | factor | sumfact | 10^6 | 5.18 | 3.00 | no | 72.8 |
+| CpuSimd128 | f32 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 3.50 | 3.00 | no | 59.9 |
+| CpuSimd128 | f32 | Hexahedron | PullBack | step | sumfact | 10^6 | 6.45 | 6.42 | no | 2.1 |
+| CpuSimd128 | f32 | Hexahedron | PullBack | set-up | sumfact | 10^6 | 8.50 | 3.00 | no | 35.2 |
+| CpuSimd128 | f64 | Quadrilateral | Points | factor | sumfact | 10^6 | 3.59 | 3.00 | no | 8.1 |
+| CpuSimd128 | f64 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 3.45 | 3.00 | no | 5.4 |
+| CpuSimd128 | f64 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 3.74 | 3.00 | no | 5.3 |
+| CpuSimd128 | f64 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 3.42 | 3.00 | no | 4.8 |
+| CpuSimd128 | f64 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 2.15 | 3.00 | yes | 4.7 |
+| CpuSimd128 | f64 | Quadrilateral | Normals | factor | sumfact | 10^6 | 3.85 | 3.00 | no | 5.6 |
+| CpuSimd128 | f64 | Quadrilateral | PullBack | step | sumfact | 10^6 | 3.09 | 3.56 | yes | 1.1 |
+| CpuSimd128 | f64 | Quadrilateral | PullBack | set-up | sumfact | 10^6 | 0.56 | 3.00 | yes | 3.2 |
+| CpuSimd128 | f64 | Hexahedron | Points | factor | sumfact | 10^6 | 1.67 | 3.00 | yes | 56.5 |
+| CpuSimd128 | f64 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 1.74 | 3.00 | yes | 55.4 |
+| CpuSimd128 | f64 | Hexahedron | DetJ | factor | sumfact | 10^6 | 1.79 | 3.00 | yes | 58.0 |
+| CpuSimd128 | f64 | Hexahedron | Pinv | factor | sumfact | 10^6 | 1.60 | 3.00 | yes | 53.7 |
+| CpuSimd128 | f64 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 1.78 | 3.00 | yes | 50.3 |
+| CpuSimd128 | f64 | Hexahedron | PullBack | step | sumfact | 10^6 | 7.11 | 6.42 | no | 1.2 |
+| CpuSimd128 | f64 | Hexahedron | PullBack | set-up | sumfact | 10^6 | 9.87 | 3.00 | no | 28.4 |
+| CpuSimd512 | f32 | Quadrilateral | Points | factor | sumfact | 10^6 | 3.22 | 3.00 | no | 5.8 |
+| CpuSimd512 | f32 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 3.21 | 3.00 | no | 2.3 |
 | CpuSimd512 | f32 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 3.54 | 3.00 | no | 2.6 |
-| CpuSimd512 | f32 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 3.17 | 3.00 | no | 2.4 |
-| CpuSimd512 | f32 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 2.47 | 3.00 | yes | 2.3 |
-| CpuSimd512 | f32 | Quadrilateral | Normals | factor | sumfact | 10^6 | 2.80 | 3.00 | yes | 2.1 |
-| CpuSimd512 | f32 | Quadrilateral | PullBack | step | direct | 10^6 | 8.67 | 3.56 | no | 1.0 |
-| CpuSimd512 | f32 | Quadrilateral | PullBack | set-up | direct | 10^6 | 32.66 | 3.00 | no | 1.0 |
-| CpuSimd512 | f32 | Hexahedron | Points | factor | sumfact | 10^6 | 1.35 | 3.00 | yes | 41.2 |
-| CpuSimd512 | f32 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 1.10 | 3.00 | yes | 144.5 |
-| CpuSimd512 | f32 | Hexahedron | DetJ | factor | sumfact | 10^6 | 1.79 | 3.00 | yes | 111.3 |
-| CpuSimd512 | f32 | Hexahedron | Pinv | factor | sumfact | 10^6 | 1.08 | 3.00 | yes | 77.9 |
-| CpuSimd512 | f32 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 1.81 | 3.00 | yes | 72.5 |
-| CpuSimd512 | f32 | Hexahedron | PullBack | step | sumfact | 10^6 | 8.45 | 6.42 | no | 1.3 |
-| CpuSimd512 | f32 | Hexahedron | PullBack | set-up | sumfact | 10^6 | 4.22 | 3.00 | no | 34.2 |
-| CpuSimd512 | f64 | Quadrilateral | Points | factor | sumfact | 10^6 | 1.47 | 3.00 | yes | 3.6 |
-| CpuSimd512 | f64 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 1.96 | 3.00 | yes | 2.3 |
-| CpuSimd512 | f64 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 1.62 | 3.00 | yes | 3.1 |
-| CpuSimd512 | f64 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 1.54 | 3.00 | yes | 2.4 |
-| CpuSimd512 | f64 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 1.34 | 3.00 | yes | 2.2 |
-| CpuSimd512 | f64 | Quadrilateral | Normals | factor | sumfact | 10^6 | 1.62 | 3.00 | yes | 3.3 |
-| CpuSimd512 | f64 | Quadrilateral | PullBack | step | direct | 10^6 | 7.98 | 3.56 | no | 1.0 |
-| CpuSimd512 | f64 | Quadrilateral | PullBack | set-up | direct | 10^6 | 31.90 | 3.00 | no | 1.0 |
-| CpuSimd512 | f64 | Hexahedron | Points | factor | sumfact | 10^6 | 9.63 | 3.00 | no | 29.5 |
-| CpuSimd512 | f64 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 6.16 | 3.00 | no | 54.5 |
-| CpuSimd512 | f64 | Hexahedron | DetJ | factor | sumfact | 10^6 | 12.25 | 3.00 | no | 83.4 |
-| CpuSimd512 | f64 | Hexahedron | Pinv | factor | sumfact | 10^6 | 5.66 | 3.00 | no | 57.1 |
-| CpuSimd512 | f64 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 3.93 | 3.00 | no | 59.9 |
-| CpuSimd512 | f64 | Hexahedron | PullBack | step | direct | 10^6 | 25.55 | 6.42 | no | 0.9 |
-| CpuSimd512 | f64 | Hexahedron | PullBack | set-up | direct | 10^6 | 35.61 | 3.00 | no | 1.0 |
+| CpuSimd512 | f32 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 3.23 | 3.00 | no | 2.4 |
+| CpuSimd512 | f32 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 2.23 | 3.00 | yes | 2.3 |
+| CpuSimd512 | f32 | Quadrilateral | Normals | factor | sumfact | 10^6 | 2.75 | 3.00 | yes | 2.1 |
+| CpuSimd512 | f32 | Quadrilateral | PullBack | step | direct | 10^6 | 8.65 | 3.56 | no | 1.0 |
+| CpuSimd512 | f32 | Quadrilateral | PullBack | set-up | direct | 10^6 | 34.99 | 3.00 | no | 1.0 |
+| CpuSimd512 | f32 | Hexahedron | Points | factor | sumfact | 10^6 | 1.57 | 3.00 | yes | 41.2 |
+| CpuSimd512 | f32 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 1.11 | 3.00 | yes | 144.5 |
+| CpuSimd512 | f32 | Hexahedron | DetJ | factor | sumfact | 10^6 | 1.87 | 3.00 | yes | 111.3 |
+| CpuSimd512 | f32 | Hexahedron | Pinv | factor | sumfact | 10^6 | 1.09 | 3.00 | yes | 77.9 |
+| CpuSimd512 | f32 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 1.96 | 3.00 | yes | 72.5 |
+| CpuSimd512 | f32 | Hexahedron | PullBack | step | sumfact | 10^6 | 8.51 | 6.42 | no | 1.3 |
+| CpuSimd512 | f32 | Hexahedron | PullBack | set-up | sumfact | 10^6 | 3.74 | 3.00 | no | 34.2 |
+| CpuSimd512 | f64 | Quadrilateral | Points | factor | sumfact | 10^6 | 1.74 | 3.00 | yes | 3.6 |
+| CpuSimd512 | f64 | Quadrilateral | Jacobian | factor | sumfact | 10^6 | 1.71 | 3.00 | yes | 2.3 |
+| CpuSimd512 | f64 | Quadrilateral | DetJ | factor | sumfact | 10^6 | 2.37 | 3.00 | yes | 3.1 |
+| CpuSimd512 | f64 | Quadrilateral | Pinv | factor | sumfact | 10^6 | 1.73 | 3.00 | yes | 2.4 |
+| CpuSimd512 | f64 | Quadrilateral | FacetNormals | factor | sumfact | 10^6 | 1.46 | 3.00 | yes | 2.2 |
+| CpuSimd512 | f64 | Quadrilateral | Normals | factor | sumfact | 10^6 | 1.64 | 3.00 | yes | 3.3 |
+| CpuSimd512 | f64 | Quadrilateral | PullBack | step | direct | 10^6 | 7.46 | 3.56 | no | 1.0 |
+| CpuSimd512 | f64 | Quadrilateral | PullBack | set-up | direct | 10^6 | 38.05 | 3.00 | no | 1.0 |
+| CpuSimd512 | f64 | Hexahedron | Points | factor | sumfact | 10^6 | 8.88 | 3.00 | no | 29.5 |
+| CpuSimd512 | f64 | Hexahedron | Jacobian | factor | sumfact | 10^6 | 5.97 | 3.00 | no | 54.5 |
+| CpuSimd512 | f64 | Hexahedron | DetJ | factor | sumfact | 10^6 | 11.05 | 3.00 | no | 83.4 |
+| CpuSimd512 | f64 | Hexahedron | Pinv | factor | sumfact | 10^6 | 5.72 | 3.00 | no | 57.1 |
+| CpuSimd512 | f64 | Hexahedron | FacetNormals | factor | sumfact | 10^6 | 3.92 | 3.00 | no | 59.9 |
+| CpuSimd512 | f64 | Hexahedron | PullBack | step | direct | 10^6 | 25.57 | 6.42 | no | 0.9 |
+| CpuSimd512 | f64 | Hexahedron | PullBack | set-up | direct | 10^6 | 35.67 | 3.00 | no | 1.0 |
 | Gpu | f32 | Quadrilateral | Points | factor | shared | 10^6 | 1.49 | 3.00 | yes | 1.6 |
 | Gpu | f32 | Quadrilateral | Points | factor | shared | 10^7 | 1.74 | 3.00 | yes | 1.5 |
 | Gpu | f32 | Quadrilateral | Jacobian | factor | shared | 10^6 | 1.53 | 3.00 | yes | 4.1 |
