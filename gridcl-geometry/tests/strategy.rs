@@ -41,8 +41,29 @@ fn families(ran: &[(StrategyFamily, Strategy)]) -> Vec<StrategyFamily> {
     out
 }
 
+/// Runs `f` with each family overridden by the strategy `ran` recorded for it (its last
+/// launch); families without a launch keep the policy.
+fn with_recorded<R>(ran: &[(StrategyFamily, Strategy)], f: impl FnOnce() -> R) -> R {
+    StrategyFamily::ALL.into_iter().rev().fold(
+        Box::new(f) as Box<dyn FnOnce() -> R>,
+        |f, family| {
+            let s = ran
+                .iter()
+                .rev()
+                .find(|(g, _)| *g == family)
+                .map_or(StrategyOverride::Policy, |&(_, s)| {
+                    StrategyOverride::Fixed(s)
+                });
+            Box::new(move || with_strategy(family, s, f))
+        },
+    )()
+}
+
+/// Under the policy every family's launches are recorded, the E-vector once per mesh (cached);
+/// forcing each family's recorded strategy records the same launches (the policy dispatches
+/// to the strategy it names, or its fallback).
 #[test]
-fn record_strategies_shows_direct() {
+fn record_strategies_shows_the_policy() {
     use StrategyFamily::*;
     let client = gridcl_testing::test_client();
     let square = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 3)
@@ -51,27 +72,42 @@ fn record_strategies_shows_direct() {
     let sphere = gridcl_testing::sphere(0, 2)
         .build::<f32, D2, D3>(&client)
         .unwrap();
-    let ((), ran) = record_strategies(|| {
+    let on_square = |m: &Mesh<f32, D2, D2>| {
+        every_family(m, |m, _| {
+            m.facet_normals(&FacetQuadRule::for_grid(m, 2)?).map(drop)
+        })
+        .unwrap()
+    };
+    let on_sphere =
+        |m: &Mesh<f32, D2, D3>| every_family(m, |m, rule| m.normals(rule).map(drop)).unwrap();
+    let ((ran_square, ran_sphere), ran) = record_strategies(|| {
         with_every(StrategyOverride::Policy, || {
-            every_family(&square, |m, _| {
-                m.facet_normals(&FacetQuadRule::for_grid(m, 2)?).map(drop)
-            })
-            .unwrap();
-            every_family(&sphere, |m, rule| m.normals(rule).map(drop)).unwrap();
+            let (((), a), ((), b)) = (
+                record_strategies(|| on_square(&square)),
+                record_strategies(|| on_sphere(&sphere)),
+            );
+            (a, b)
         })
     });
-    // The policy is `direct` everywhere until T11b; the E-vector is built at the first factor.
-    assert!(ran.iter().all(|(_, s)| *s == Strategy::Direct), "{ran:?}");
+    // The E-vector is built at the first factor.
     assert_eq!(
         families(&ran),
         [Points, EVector, Jacobian, FacetNormals, PullBack, Normals]
     );
     // The E-vector is cached: one build per mesh.
     assert_eq!(ran.iter().filter(|(f, _)| *f == EVector).count(), 2);
+    // Fresh meshes (empty E-vector caches) under each mesh's recorded strategies.
+    let square2 = square.try_clone().unwrap();
+    let ((), forced) = record_strategies(|| with_recorded(&ran_square, || on_square(&square2)));
+    assert_eq!(forced, ran_square);
+    let sphere2 = sphere.try_clone().unwrap();
+    let ((), forced) = record_strategies(|| with_recorded(&ran_sphere, || on_sphere(&sphere2)));
+    assert_eq!(forced, ran_sphere);
 }
 
+/// The policy's J equals, bitwise, J with the strategy the policy chose forced.
 #[test]
-fn forced_direct_matches_the_policy_bitwise() {
+fn policy_matches_its_forced_choice_bitwise() {
     let client = gridcl_testing::test_client();
     let run = |s| {
         let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 2)
@@ -79,17 +115,24 @@ fn forced_direct_matches_the_policy_bitwise() {
             .build::<f32, D3, D3>(&client)
             .unwrap();
         let rule = QuadRule::for_grid(&mesh, 4).unwrap();
-        with_every(s, || {
-            let j = mesh.jacobians(&rule).unwrap();
-            j.blocks[0].to_host_cell_major().unwrap()
+        record_strategies(|| {
+            with_every(s, || {
+                let j = mesh.jacobians(&rule).unwrap();
+                j.blocks[0].to_host_cell_major().unwrap()
+            })
         })
     };
-    let policy = run(StrategyOverride::Policy);
-    let direct = run(StrategyOverride::Fixed(Strategy::Direct));
+    let (policy, ran) = run(StrategyOverride::Policy);
+    let chosen = ran
+        .iter()
+        .find(|(f, _)| *f == StrategyFamily::Jacobian)
+        .map(|&(_, s)| s)
+        .expect("a Jacobian launch");
+    let (forced, _) = run(StrategyOverride::Fixed(chosen));
     let bits = |v: &Vec<[[f32; 3]; 3]>| -> Vec<u32> {
         v.iter().flatten().flatten().map(|x| x.to_bits()).collect()
     };
-    assert_eq!(bits(&policy), bits(&direct));
+    assert_eq!(bits(&policy), bits(&forced), "{}", chosen.name());
 }
 
 #[test]

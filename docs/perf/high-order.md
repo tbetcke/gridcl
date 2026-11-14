@@ -2751,10 +2751,10 @@ In one paired run per device (the newest), per policy family (J + det J + K summ
 
 | Class | Type | Runs | Compared | Excluded | Missing | Worst median | At | Worst lower quartile | At | Failures |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- | --- |
-| CpuSimd128 | f32 | macmini cpu paired-macmini-cpu-1794667559; locust cpu 20261114150227-4159396 | 147 | 0 | 0 | 1.078 | Normals Interval p=3 n=1000000 | 1.031 | Normals Interval p=3 n=1000000 | none |
-| CpuSimd128 | f64 | macmini cpu paired-macmini-cpu-1794667559; locust cpu 20261114150227-4159396 | 147 | 0 | 0 | 1.034 | EVector Tetrahedron p=3 n=1000000 | 1.016 | EVector Tetrahedron p=3 n=1000000 | none |
-| CpuSimd512 | f32 | kathleen cpu 634121 | 147 | 0 | 0 | 1.569 | EVector Tetrahedron p=1 n=1000000 | 1.415 | EVector Tetrahedron p=1 n=1000000 | EVector Tetrahedron p=1 n=1000000 (median 1.569, lower quartile 1.415) |
-| CpuSimd512 | f64 | kathleen cpu 634121 | 147 | 0 | 0 | 1.105 | PullBack Interval p=3 n=1000000 | 1.025 | EVector Quadrilateral p=1 n=1000000 | none |
+| CpuSimd128 | f32 | macmini cpu paired-macmini-cpu-1794677271; locust cpu 20261114172752-62674 | 147 | 0 | 0 | 1.140 | FacetNormals Quadrilateral p=1 n=1000000 | 1.021 | FacetNormals Quadrilateral p=1 n=1000000 | none |
+| CpuSimd128 | f64 | macmini cpu paired-macmini-cpu-1794677271; locust cpu 20261114172752-62674 | 147 | 0 | 0 | 1.052 | EVector Interval p=2 n=1000000 | 1.007 | Points Triangle p=2 n=1000000 | none |
+| CpuSimd512 | f32 | kathleen cpu 634161 | 147 | 0 | 0 | 1.040 | PullBack Interval p=3 n=1000000 | 1.006 | EVector Quadrilateral p=3 n=1000000 | none |
+| CpuSimd512 | f64 | kathleen cpu 634161 | 147 | 0 | 0 | 1.076 | FacetNormals Hexahedron p=1 n=1000000 | 1.004 | Jacobian Triangle p=1 n=1000000 | none |
 | Gpu | f32 | macmini metal paired-macmini-metal-1794665922; locust cuda 20261114151543-4171256 | 288 | 6 | 0 | 1.097 | EVector Pyramid p=1 n=1000000 | 1.007 | PullBack Interval p=3 n=1000000 | none |
 | Gpu | f64 | locust cuda 20261114151543-4171256 | 288 | 6 | 0 | 1.135 | EVector Quadrilateral p=2 n=1000000 | 1.032 | EVector Quadrilateral p=2 n=1000000 | none |
 
@@ -2762,26 +2762,26 @@ Reported, not bounded (ADR-0055): bench families the policy does not choose for 
 
 | Class | Type | Family | Largest median | At |
 | --- | --- | --- | ---: | --- |
-| CpuSimd128 | f32 | Jacobian | 1.010 | Jacobian Pyramid p=1 n=1000000 |
-| CpuSimd128 | f32 | DetJ | 1.013 | DetJ Triangle p=4 n=1000000 |
-| CpuSimd128 | f32 | Pinv | 1.044 | Pinv Hexahedron p=1 n=1000000 |
-| CpuSimd128 | f32 | PullBack 1 it. | 1.015 | PullBack 1 it. Tetrahedron p=2 n=1000000 |
-| CpuSimd128 | f32 | BasisEval | 1.131 | BasisEval Hexahedron p=3 n=1000000 |
-| CpuSimd128 | f64 | Jacobian | 1.030 | Jacobian Quadrilateral p=1 n=1000000 |
-| CpuSimd128 | f64 | DetJ | 1.059 | DetJ Quadrilateral p=1 n=1000000 |
-| CpuSimd128 | f64 | Pinv | 1.008 | Pinv Triangle p=3 n=1000000 |
-| CpuSimd128 | f64 | PullBack 1 it. | 1.011 | PullBack 1 it. Hexahedron p=1 n=1000000 |
-| CpuSimd128 | f64 | BasisEval | 1.049 | BasisEval Quadrilateral p=3 n=1000000 |
-| CpuSimd512 | f32 | Jacobian | 1.014 | Jacobian Interval p=4 n=1000000 |
-| CpuSimd512 | f32 | DetJ | 1.007 | DetJ Prism p=2 n=1000000 |
-| CpuSimd512 | f32 | Pinv | 1.009 | Pinv Interval p=2 n=1000000 |
-| CpuSimd512 | f32 | PullBack 1 it. | 1.206 | PullBack 1 it. Interval p=1 n=1000000 |
-| CpuSimd512 | f32 | BasisEval | 1.485 | BasisEval Hexahedron p=3 n=1000000 |
-| CpuSimd512 | f64 | Jacobian | 1.083 | Jacobian Quadrilateral p=3 n=1000000 |
-| CpuSimd512 | f64 | DetJ | 1.076 | DetJ Interval p=2 n=1000000 |
-| CpuSimd512 | f64 | Pinv | 1.066 | Pinv Quadrilateral p=3 n=1000000 |
-| CpuSimd512 | f64 | PullBack 1 it. | 1.070 | PullBack 1 it. Tetrahedron p=1 n=1000000 |
-| CpuSimd512 | f64 | BasisEval | 1.605 | BasisEval Hexahedron p=3 n=1000000 |
+| CpuSimd128 | f32 | Jacobian | 1.059 | Jacobian Hexahedron p=1 n=1000000 |
+| CpuSimd128 | f32 | DetJ | 1.010 | DetJ Pyramid p=2 n=1000000 |
+| CpuSimd128 | f32 | Pinv | 1.017 | Pinv Hexahedron p=1 n=1000000 |
+| CpuSimd128 | f32 | PullBack 1 it. | 1.016 | PullBack 1 it. Quadrilateral p=3 n=1000000 |
+| CpuSimd128 | f32 | BasisEval | 1.047 | BasisEval Pyramid p=3 n=1000000 |
+| CpuSimd128 | f64 | Jacobian | 1.029 | Jacobian Interval p=2 n=1000000 |
+| CpuSimd128 | f64 | DetJ | 1.021 | DetJ Triangle p=2 n=1000000 |
+| CpuSimd128 | f64 | Pinv | 1.009 | Pinv Interval p=1 n=1000000 |
+| CpuSimd128 | f64 | PullBack 1 it. | 1.018 | PullBack 1 it. Quadrilateral p=3 n=1000000 |
+| CpuSimd128 | f64 | BasisEval | 1.088 | BasisEval Prism p=1 n=1000000 |
+| CpuSimd512 | f32 | Jacobian | 1.113 | Jacobian Quadrilateral p=2 n=1000000 |
+| CpuSimd512 | f32 | DetJ | 1.009 | DetJ Interval p=2 n=1000000 |
+| CpuSimd512 | f32 | Pinv | 1.020 | Pinv Interval p=2 n=1000000 |
+| CpuSimd512 | f32 | PullBack 1 it. | 1.061 | PullBack 1 it. Interval p=1 n=1000000 |
+| CpuSimd512 | f32 | BasisEval | 1.341 | BasisEval Hexahedron p=3 n=1000000 |
+| CpuSimd512 | f64 | Jacobian | 1.019 | Jacobian Tetrahedron p=1 n=1000000 |
+| CpuSimd512 | f64 | DetJ | 1.044 | DetJ Triangle p=1 n=1000000 |
+| CpuSimd512 | f64 | Pinv | 1.013 | Pinv Pyramid p=2 n=1000000 |
+| CpuSimd512 | f64 | PullBack 1 it. | 1.123 | PullBack 1 it. Interval p=3 n=1000000 |
+| CpuSimd512 | f64 | BasisEval | 1.509 | BasisEval Hexahedron p=3 n=1000000 |
 | Gpu | f32 | Jacobian | 1.009 | Jacobian Interval p=3 n=10000000 |
 | Gpu | f32 | DetJ | 1.010 | DetJ Tetrahedron p=2 n=1000000 |
 | Gpu | f32 | Pinv | 1.018 | Pinv Tetrahedron p=2 n=1000000 |
