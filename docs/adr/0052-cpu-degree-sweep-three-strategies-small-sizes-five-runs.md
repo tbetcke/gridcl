@@ -1,6 +1,6 @@
 # ADR-0052: On CPUs the degree sweep times direct, loops and sumfact at 10^5 and 10^6 points, five runs
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Raised in:** M9h T11a (strategy sweeps)
 - **Design sections affected:** "Benchmarks" (the **Degree sweep (M9h)** bullet); Roadmap M9h, acceptance bullets 3, 4 and 6 as read by ADR-0042 items 1, 11 and 12. Amends ADR-0042, items 1, 11 and 12.
@@ -28,13 +28,13 @@ The maintainer asked for these to be cut substantially (2026-11-14). Measured on
 | `sumfact` | 303 of 907 | 40 of 72 |
 | `direct` | 244 of 879 | 2 of 72 |
 
-- **10^6 against 10^7.** The fastest strategy is the same at both sizes in 313 of 442 cases on the Mac mini and in 28 of 35 on Kathleen.
+- **10^6 against 10^7.** The raw fastest of the five strategies is the same at both sizes in 313 of 442 cases on the Mac mini and in 28 of 35 on Kathleen. Item 12's rule over `direct`, `loops` and `sumfact` chooses the same at 10^6 alone as at both sizes in 436 of 454 cases on the Mac mini and 35 of 36 on Kathleen. Every difference is a challenger at least 10% faster than `direct` at 10^6 but not at 10^7: `sumfact` (14 cases) or `loops` (5). At 10^7 points the 10^6-only choice is faster or equal in 10 of the 19 cases. It is more than 10% slower only for the hexahedron pull-back at 9 iterations: on the Mac mini +40% and +25% at p = 5 (f64, f32) and +17% and +14% at p = 6; on Kathleen +82% at p = 8 (f32).
 
 ## Options
 
 1. **Keep the design as written.** All five strategies, three sizes, ten runs. Not chosen: it would take until late tonight on the Mac mini and this evening on Kathleen.
 2. **Drop only `shared` and `cooperative` on CPUs, and take five runs.** This cuts the time by about −38% and −40%, keeps 10^7 points, and keeps the rule as it is. The time would roughly halve.
-3. **Option 2, and also drop 10^7 points on CPUs (chosen by the maintainer).** Runs at 10^7 points were 64–76% of the CPU time. The CPU decision then rests on 10^6 points alone. In about a quarter of the cases measured, the choice at 10^6 is not the one at 10^7, so the CPU policy is tuned for meshes of up to about 10^6 points per rank.
+3. **Option 2, and also drop 10^7 points on CPUs (chosen by the maintainer).** Runs at 10^7 points were 64–76% of the CPU time. The CPU decision then rests on 10^6 points alone. The rule's choice changes in about 4% of the cases measured. The known cost is the hexahedron pull-back on meshes of 10^7 points, where `sumfact` can be 14–82% slower than `direct`. The maintainer declined an exception that would keep 10^7 points for it.
 
 ## Proposed decision
 
@@ -60,4 +60,4 @@ Option 3, for the CPU classes CpuSimd128 and CpuSimd512. The Gpu class is unchan
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-14, as proposed (option 3), without an exception for the hexahedron pull-back at 10^7 points. Applied in `adr: 0052 apply`: docs/design.md, "Benchmarks" (**Degree sweep (M9h)**) and the Roadmap M9h acceptance line; ADR-0042's decision record; the M9h plan (T11a, T11b and the coverage table) and issue #37. The tests change with T11a's data commit.

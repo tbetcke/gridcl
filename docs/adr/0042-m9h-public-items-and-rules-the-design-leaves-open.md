@@ -219,3 +219,5 @@ Amended by ADR-0049 (items 1 and 5: the tensor pull-back contracts modal coeffic
 Amended by ADR-0050 (items 7 and 12: the degree sweep, timed and launch-only, skips `direct` on hexahedra, prisms and tetrahedra at p ≥ 5; T3's baseline gives its cost there), accepted 2026-11-14.
 
 Amended by ADR-0051 (items 1, 7 and 12: the degree sweep, timed and launch-only, leaves out Locust's Grace CPU, so CpuSimd128 is measured on the Mac mini alone; Grace keeps the drift baseline and item 11's paired check), accepted 2026-11-14.
+
+Amended by ADR-0052 (items 1, 11 and 12: on the CPU classes the degree sweep times `direct`, `loops` and `sumfact` only, at 10^5 and 10^6 points with medians of five runs, and the rules use 10^6 points), accepted 2026-11-14.
