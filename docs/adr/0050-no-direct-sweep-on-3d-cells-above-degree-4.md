@@ -1,6 +1,6 @@
 # ADR-0050: The degree sweep skips `direct` on hexahedra, prisms and tetrahedra at p ≥ 5
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Raised in:** M9h T11a (strategy sweeps)
 - **Design sections affected:** "Benchmarks" (the **Degree sweep (M9h)** bullet); Roadmap M9h, acceptance bullets 2 and 6 as read by ADR-0042 items 7 and 12. Amends ADR-0042, items 7 and 12.
@@ -53,4 +53,4 @@ Option 4. In the T11a sweeps, `direct` is neither timed nor launched on hexahedr
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-14, as proposed (option 4). Applied in `adr: 0050 apply`: docs/design.md, "Benchmarks" (**Degree sweep (M9h)**) and the Roadmap M9h acceptance line; ADR-0042's decision record; the M9h plan (T11a and the coverage table) and issue #37. `every_variant_launched` changes with T11a's data commit.
