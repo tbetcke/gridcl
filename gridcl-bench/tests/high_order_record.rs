@@ -750,9 +750,34 @@ fn paired_run<'a>(records: &'a [DegreeRecord], target: &str, backend: &str) -> &
         .unwrap_or_else(|| panic!("{target} {backend}: no paired policy run"))
 }
 
+/// The paired ratio of two records of one configuration: the median over the timed runs of
+/// `a`'s run i over `b`'s run i. With `degree_sweep --interleave` run i of each follows the
+/// other directly, so each ratio compares one state of the machine.
+fn paired_ratio(a: &DegreeRecord, b: &DegreeRecord) -> f64 {
+    assert_eq!(
+        a.times_s.len(),
+        b.times_s.len(),
+        "{}: paired records with different run counts",
+        describe(a)
+    );
+    let mut r: Vec<f64> = a
+        .times_s
+        .iter()
+        .zip(&b.times_s)
+        .map(|(x, y)| x / y)
+        .collect();
+    r.sort_by(f64::total_cmp);
+    let n = r.len();
+    if n % 2 == 1 {
+        r[n / 2]
+    } else {
+        (r[n / 2 - 1] + r[n / 2]) / 2.0
+    }
+}
+
 /// Bullet 4 (rule 11): in one job per target, the Grace CPU included (ADR-0051), the policy
 /// against `direct` at p ≤ 4, per bench family, cell type, scalar type and the class's rule
-/// sizes: the class ratio is at most 1.05.
+/// sizes: the class ratio of the paired ratios ([`paired_ratio`]) is at most 1.05.
 #[test]
 fn no_family_slower_than_m9_at_low_degree() {
     let data = data();
@@ -783,13 +808,21 @@ fn no_family_slower_than_m9_at_low_degree() {
                                             size,
                                             iterations,
                                         };
-                                        let t = |s: &str| {
-                                            time(records, c, |r| r.run_id == run && r.strategy == s)
+                                        let get = |s: &str| {
+                                            records
+                                                .iter()
+                                                .rev()
+                                                .find(|r| {
+                                                    c.matches(r)
+                                                        && r.status == "ok"
+                                                        && r.run_id == run
+                                                        && r.strategy == s
+                                                })
                                                 .unwrap_or_else(|| {
                                                     panic!("no {s} record of {c:?} in run {run}")
                                                 })
                                         };
-                                        t("policy") / t("direct")
+                                        paired_ratio(get("policy"), get("direct"))
                                     })
                                     .collect();
                                 let ratio = geomean(&ratios);

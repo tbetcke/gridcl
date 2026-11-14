@@ -494,7 +494,9 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
         "\n### Rule 11: the policy against `direct` at p ≤ 4\n\n\
          In one paired run per device (the newest), the class ratio of the policy's time over \
          `direct`'s per bench family, cell type, degree p ≤ 4, rule size and pull-back iteration \
-         count; the bound is 1.05. CpuSimd128 includes Locust's Grace CPU (ADR-0051).\n\n",
+         count; the bound is 1.05. A device's ratio is the median over the timed runs of the \
+         policy's run i over `direct`'s run i (`degree_sweep --interleave` on CPUs alternates \
+         them). CpuSimd128 includes Locust's Grace CPU (ADR-0051).\n\n",
     );
     out.push_str(
         "| Class | Type | Runs | Compared | Missing | Worst policy / direct | At |\n\

@@ -891,7 +891,7 @@ pub fn paired_devices(
 }
 
 /// Rule 11's paired check of one (class, scalar): the worst class ratio of the policy over
-/// `direct` at p ≤ 4 in each device's newest paired run, over bench families, cell types,
+/// `direct` ([`paired_ratio`]) at p ≤ 4 in each device's newest paired run, over bench families, cell types,
 /// degrees, rule sizes and pull-back iterations.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PairedCheck {
@@ -904,6 +904,22 @@ pub struct PairedCheck {
     pub missing: usize,
     /// The worst ratio and its configuration.
     pub worst: Option<(f64, String)>,
+}
+
+/// The paired ratio of two records of one configuration: the median over the timed runs of
+/// `a`'s run i over `b`'s run i (with `degree_sweep --interleave`, adjacent in time); the ratio
+/// of the medians where the run counts differ.
+pub fn paired_ratio(a: &DegreeRecord, b: &DegreeRecord) -> f64 {
+    if a.times_s.len() != b.times_s.len() || a.times_s.is_empty() {
+        return a.median_s / b.median_s;
+    }
+    let r: Vec<f64> = a
+        .times_s
+        .iter()
+        .zip(&b.times_s)
+        .map(|(x, y)| x / y)
+        .collect();
+    crate::protocol::median(&r)
 }
 
 /// Rule 11's paired checks, per measured class and scalar type.
@@ -938,7 +954,7 @@ pub fn paired_checks(data: &HighOrderData) -> Vec<PairedCheck> {
                 out.push(check);
                 continue;
             }
-            let mut index: HashMap<_, f64> = HashMap::new();
+            let mut index: HashMap<_, &DegreeRecord> = HashMap::new();
             for r in &data.degree {
                 if runs.contains(&(r.target.as_str(), r.backend.as_str(), r.run_id.as_str()))
                     && r.status == "ok"
@@ -957,7 +973,7 @@ pub fn paired_checks(data: &HighOrderData) -> Vec<PairedCheck> {
                         r.iterations,
                         r.strategy.as_str(),
                     );
-                    index.insert(key, r.time_per_point());
+                    index.insert(key, r);
                 }
             }
             for family in crate::record::DEGREE_FAMILIES {
@@ -974,11 +990,9 @@ pub fn paired_checks(data: &HighOrderData) -> Vec<PairedCheck> {
                                     .iter()
                                     .map(|&(t, b, _)| {
                                         let get = |s| {
-                                            index
-                                                .get(&(t, b, family, cell, degree, size, it, s))
-                                                .copied()
+                                            index.get(&(t, b, family, cell, degree, size, it, s))
                                         };
-                                        Some(get("policy")? / get("direct")?)
+                                        Some(paired_ratio(get("policy")?, get("direct")?))
                                     })
                                     .collect();
                                 let Some(ratios) = ratios else {
