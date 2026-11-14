@@ -639,9 +639,9 @@ fn compile_and_load_within_30_s_on_locust() {
 
 /// Bullet 3 (rule 1): on quadrilaterals and hexahedra, the time per point at p = 8 over p = 4
 /// of the strategy the policy selects at p = 8, at the class's rule sizes: at most 3
-/// for the geometric factors and for the pull-back's set-up per point (where the strategy has
-/// one: not `sumfact`), and at most 1.1 · (9/5)^d for a Newton step, with step =
-/// (t(9) − t(1)) / 8 and set-up = t(1) − step.
+/// for the geometric factors and for the pull-back's set-up per point (every strategy has one,
+/// `sumfact`'s sum-factorised, ADR-0049), and at most 1.1 · (9/5)^d for a Newton step, with
+/// step = (t(9) − t(1)) / 8 and set-up = t(1) − step.
 #[test]
 fn tensor_cost_ratio_p8_over_p4() {
     let data = data();
@@ -693,9 +693,7 @@ fn tensor_cost_ratio_p8_over_p4() {
                                 };
                                 let setup = |p| t(target, backend, p, Some(1)) - step(p);
                                 steps.push(step(8) / step(4));
-                                if s != "sumfact" {
-                                    setups.push(setup(8) / setup(4));
-                                }
+                                setups.push(setup(8) / setup(4));
                             }
                             let bound = 1.1 * (9.0f64 / 5.0).powi(d);
                             let ratio = geomean(&steps);
@@ -703,13 +701,11 @@ fn tensor_cost_ratio_p8_over_p4() {
                                 ratio <= bound,
                                 "{what}: Newton step p=8/p=4 = {ratio:.2} > {bound:.2} ({steps:?})"
                             );
-                            if !setups.is_empty() {
-                                let ratio = geomean(&setups);
-                                assert!(
-                                    ratio <= 3.0,
-                                    "{what}: set-up p=8/p=4 = {ratio:.2} > 3 ({setups:?})"
-                                );
-                            }
+                            let ratio = geomean(&setups);
+                            assert!(
+                                ratio <= 3.0,
+                                "{what}: set-up p=8/p=4 = {ratio:.2} > 3 ({setups:?})"
+                            );
                         } else {
                             let ratios: Vec<f64> = devices
                                 .iter()
@@ -820,7 +816,7 @@ fn report_covers_every_family_class_and_range() {
     let rows: Vec<Vec<&str>> = text.lines().filter_map(row_cells).collect();
     for class in POLICY_CLASSES {
         for family in POLICY_FAMILIES {
-            for cell in CELLS {
+            for &cell in cells_of(family) {
                 for (scalar, bytes) in SCALARS {
                     let ranges = policy.ranges(class, family, cell, bytes);
                     for (i, (first, s)) in ranges.iter().enumerate() {
@@ -870,7 +866,9 @@ fn class_ratio(
                     size,
                     iterations,
                 };
-                time(records, c, |r| r.strategy == strategy)
+                time(records, c, |r| {
+                    r.strategy == strategy && r.strategy_ran == strategy
+                })
             })
             .sum()
     };
@@ -908,7 +906,7 @@ fn gpu_selectable(
 ///
 /// - a family's time is the sum of its bench families' (J + det J + K for `Jacobian`; the
 ///   pull-back at 9 iterations for `PullBack`), on the codimension-0 meshes (codimension 1 for
-///   `Normals`);
+///   `Normals`), from records that ran the strategy itself, not its fallback `loops`;
 /// - the sizes are the class's rule sizes, and the strategies its candidates (ADR-0052);
 /// - the baseline is `direct`, or `loops` where `direct` is not selectable (a device without an
 ///   `ok` record at a rule size, as where the sweep leaves `direct` out (ADR-0050); on the Gpu

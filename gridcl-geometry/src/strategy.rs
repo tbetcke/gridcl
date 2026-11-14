@@ -496,6 +496,22 @@ mod hook {
 mod tests {
     use super::*;
 
+    /// A complete policy with `strategy` for every entry, independent of the generated file.
+    fn uniform(strategy: &str) -> String {
+        let mut out = String::new();
+        for (_, class) in CLASSES {
+            for family in StrategyFamily::ALL {
+                out.push_str(&format!("[{class}.{}]\n", family.name()));
+                for cell in family.cells() {
+                    out.push_str(&format!(
+                        "{cell:?} = {{ 4 = [[1, \"{strategy}\"]], 8 = [[1, \"{strategy}\"]] }}\n"
+                    ));
+                }
+            }
+        }
+        out
+    }
+
     #[test]
     fn degree_policy_covers_every_family_and_class() {
         let policy = DegreePolicy::parse(POLICY_TOML).unwrap();
@@ -526,7 +542,7 @@ mod tests {
 
     #[test]
     fn degree_ranges_resolve_by_their_first_degree() {
-        let text = POLICY_TOML.replace(
+        let text = uniform("direct").replace(
             "[Gpu.Points]\nInterval = { 4 = [[1, \"direct\"]],",
             "[Gpu.Points]\nInterval = { 4 = [[1, \"direct\"], [3, \"loops\"], [6, \"sumfact\"]],",
         );
@@ -562,7 +578,8 @@ mod tests {
     #[test]
     fn invalid_degree_policies_are_rejected() {
         let entry = "[Gpu.Points]\nInterval = { 4 = [[1, \"direct\"]],";
-        let with = |replacement: &str| POLICY_TOML.replace(entry, replacement);
+        let base = uniform("direct");
+        let with = |replacement: &str| base.replace(entry, replacement);
         for (text, want) in [
             ("[Gpu".to_owned(), "TOML parse error"),
             (
@@ -595,21 +612,18 @@ mod tests {
             ),
             (with("[Gpu.Points]\nInterval = {"), "Interval 4: missing"),
             (
-                POLICY_TOML.replace("[Gpu.Normals]\nInterval", "[Gpu.Normals]\nTetrahedron"),
+                base.replace("[Gpu.Normals]\nInterval", "[Gpu.Normals]\nTetrahedron"),
                 "unknown cell type Tetrahedron",
             ),
             (
-                POLICY_TOML.replace("[Gpu.Normals]\nInterval", "[Gpu.Normals]\n# Interval"),
+                base.replace("[Gpu.Normals]\nInterval", "[Gpu.Normals]\n# Interval"),
                 "no table Interval",
             ),
             (
-                POLICY_TOML.replace("[Gpu.Normals]", "[Gpu.Normal]"),
+                base.replace("[Gpu.Normals]", "[Gpu.Normal]"),
                 "unknown family",
             ),
-            (
-                POLICY_TOML.replace("[Gpu.", "[Tpu."),
-                "unknown device class [Tpu]",
-            ),
+            (base.replace("[Gpu.", "[Tpu."), "unknown device class [Tpu]"),
         ] {
             let e = DegreePolicy::parse(&text).unwrap_err();
             assert!(e.contains(want), "{want}: {e}");
