@@ -25,6 +25,7 @@
   - ADR-0042 (accepted 2026-11-08, applied in `adr: 0042 apply`): [M9h public items and rules](../adr/0042-m9h-public-items-and-rules-the-design-leaves-open.md), items 1–13 = the plan's rules 1–13 and questions 1–12.
   - ADR-0049 (accepted 2026-11-12, applied in `adr: 0049 apply`): [the tensor pull-back contracts modal coefficients](../adr/0049-modal-tensor-pull-back.md); amends rules 1 and 5 and T8.
   - ADR-0053 (accepted 2026-11-14): [bullet 3's ratios are reported, not enforced](../adr/0053-p8-over-p4-bound-reported-not-enforced.md); amends rule 1 and T11b.
+  - ADR-0054 (accepted 2026-11-14): [M3's reference comparison under a reordering policy](../adr/0054-l-vector-reference-comparison-under-a-reordering-policy.md); amends T11b.
 
 <!--
 Rules for this file (do not delete):
@@ -380,11 +381,11 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
   - Goal: `decide_degree` (rule 12) and a `high_order_report` binary that writes `degree-policy.toml` and the generated tables of `docs/perf/high-order.md`, with `--check`. The tables cover cost per strategy, family, cell type, device class and degree range, the choice and the reason, compile times, and CUDA registers and local memory.
   - Crates/files: `gridcl-bench/src/{decide_degree.rs, report.rs, bin/high_order_report.rs}`, `gridcl-geometry/degree-policy.toml`, `docs/perf/high-order.md`.
   - Public API added or changed: none.
-  - Tests: `high_order_record.rs::{tensor_cost_ratio_reported, no_family_slower_than_m9_at_low_degree, report_covers_every_family_class_and_range, degree_policy_follows_the_decision_rule}` pass (after T11a's paired re-run).
+  - Tests: `high_order_record.rs::{tensor_cost_ratio_reported, no_family_slower_than_m9_at_low_degree, report_covers_every_family_class_and_range, degree_policy_follows_the_decision_rule}` pass (after T11a's paired re-run); with the policy, `factor_invariance` compares bitwise with `direct` forced and, under the policy, within the tolerances where a strategy that reorders sums ran (ADR-0054).
   - Verify: `cargo test -p gridcl-bench`; `cargo run -p gridcl-bench --bin high_order_report -- --check`
   - After: T11a
   - Parallel with: –
-  - Risks / notes: if a bound fails on a class, stop and draft an ADR; never a silent policy edit. Bullet 3's bounds failed (ADR-0053: reported, not enforced).
+  - Risks / notes: if a bound fails on a class, stop and draft an ADR; never a silent policy edit. Bullet 3's bounds failed (ADR-0053: reported, not enforced); the policy's `sumfact` at p ≤ 2 on CPUs needs ADR-0054's comparison.
 - [ ] **T12 Acceptance on the chosen policy; CI budget**
   - Goal: the whole suite under the policy on the local Mac, hosted CI and Locust; new modules placed in shards 2 and 3 of `scripts/ci-gridcl-shard.sh` (and vulkan's groups) to stay under 20 min.
   - Crates/files: `scripts/ci-gridcl-shard.sh`, `.github/workflows/ci.yml` (only if a shard must be added), `docs/dev-environment.md`.
@@ -459,7 +460,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 | 23 | After ADR-0050, Locust's Grace CPU sweeps (launch-only and timed, about 15–18 h, one after another and after the GPU jobs) would move T11a's end by about a day; the M6 already covers ARM. | Roadmap M9h, bullets 2, 3 and 6; ADR-0042 items 1, 7 and 12 | No Grace sweep; CpuSimd128 from the Mac mini; Grace keeps T3's baseline and T11b's paired check. | answered (maintainer, 2026-11-14: drop the sweep, keep the paired check); ADR-0051 (accepted, applied) |
 | 24 | The remaining CPU sweeps (Mac mini about 10–14 h, Kathleen about 6–9 h): on CPUs `shared` and `cooperative` were never more than 5% better than the rest (0 of 907 and 5 of 904 cases on the Mac mini, none on Kathleen), and 10^7 points with ten runs take most of the time. | Benchmarks (Degree sweep); Roadmap M9h, bullets 3, 4 and 6; ADR-0042 items 1, 11 and 12 | CPU classes: `direct`, `loops`, `sumfact` only, 10^5 and 10^6 points, five runs; the rules use 10^6 points. | answered (maintainer, 2026-11-14: drop 10^7, no shared/cooperative on CPUs, five runs); ADR-0052 (accepted, applied) |
 | 25 | T11b's policy (the decision rule on T11a's data) misses bullet 3 on every class: 71 of 120 p = 8 / p = 4 ratios exceed ADR-0042 item 1's bounds (hexahedron factors up to 44 on Gpu f64, the pull-back 29 of 32), although p = 8 is 16–161 times faster than M9 for hexahedron factors. The sum-factorised kernels keep per-lane intermediates that spill at p = 8 (CUDA: 20–57 KB stack per thread). | Roadmap M9h, bullet 3; ADR-0042, item 1 | Report the ratios and the speedup over M9; M10 takes the bound as a target (options: more kernel work in M9h, GPU only, or a speedup bound). | answered (maintainer, 2026-11-14: report, M10 target); ADR-0053 (accepted, applied) |
-| 26 | With T11b's policy, the CPU classes run `sumfact` at p ≤ 2 for points and Jacobians on quadrilaterals, hexahedra and prisms, so M3's `factor_invariance::factor_kernels_match_lvector_reference` fails its bitwise comparison on the CPU runtime (T7b's row foresaw it). | Roadmap M3 acceptance; Testing and validation (reference comparisons, ADR-0013) | Compare with `direct` forced bitwise, and under the policy bitwise only where the strategy that ran sums in node order (`record_strategies`), within the tolerances elsewhere. | ADR-0054 (proposed) |
+| 26 | With T11b's policy, the CPU classes run `sumfact` at p ≤ 2 for points and Jacobians on quadrilaterals, hexahedra and prisms, so M3's `factor_invariance::factor_kernels_match_lvector_reference` fails its bitwise comparison on the CPU runtime (T7b's row foresaw it). | Roadmap M3 acceptance; Testing and validation (reference comparisons, ADR-0013) | Compare with `direct` forced bitwise, and under the policy bitwise only where the strategy that ran sums in node order (`record_strategies`), within the tolerances elsewhere. | answered (maintainer, 2026-11-14: as proposed); ADR-0054 (accepted, applied) |
 
 ## Deviations log
 

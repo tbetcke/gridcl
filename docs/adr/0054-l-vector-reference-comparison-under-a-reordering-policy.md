@@ -1,6 +1,6 @@
 # ADR-0054: M3's L-vector reference comparison under a degree policy that reorders sums
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Raised in:** M9h T11b (decision rule, policy and report)
 - **Design sections affected:** Roadmap M3, acceptance ("factor kernels on E-vectors agree with a scalar L-vector reference kernel … bitwise on the CPU runtime"); "Testing and validation" (vector-size invariance: "comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013)").
@@ -45,4 +45,4 @@ Option 2. M3's bitwise check keeps its purpose, catching vector-size and tile de
 
 ## Decision record
 
-<Filled by the maintainer.>
+Accepted by the maintainer on 2026-11-14, as proposed (option 2). Applied in `adr: 0054 apply`: docs/design.md, Roadmap M3 (acceptance, the factor-kernel bullet) and "Testing and validation" (vector-size invariance, reference kernels); the M9h plan (T11b) and issue #37. The tests change with T11b.
