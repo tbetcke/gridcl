@@ -1,6 +1,6 @@
 # ADR-0053: Bullet 3's p = 8 / p = 4 bound is not met by M9h's strategies
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Raised in:** M9h T11b (decision rule, policy and report)
 - **Design sections affected:** Roadmap M9h, acceptance bullet 3 (read as ADR-0042 item 1, amended by ADR-0049 and ADR-0052); "Benchmarks" (**Degree sweep (M9h)**); M10 Hardening (benchmarks). Amends ADR-0042, item 1.
@@ -62,4 +62,4 @@ Option 2. The strategies M9h set out to compare exist, are correct at p = 1–8 
 
 ## Decision record
 
-<Filled by the maintainer.>
+Accepted by the maintainer on 2026-11-14, as proposed (option 2). Applied in `adr: 0053 apply`: docs/design.md, Roadmap M9h (bullet 3 and the acceptance line), M10 Hardening (acceptance) and "Benchmarks" (**Degree sweep (M9h)**); ADR-0042's decision record; the M9h plan (T11b and the coverage table) and issue #37. `tensor_cost_ratio_p8_over_p4` becomes `tensor_cost_ratio_reported` with T11b.

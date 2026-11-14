@@ -221,3 +221,5 @@ Amended by ADR-0050 (items 7 and 12: the degree sweep, timed and launch-only, sk
 Amended by ADR-0051 (items 1, 7 and 12: the degree sweep, timed and launch-only, leaves out Locust's Grace CPU, so CpuSimd128 is measured on the Mac mini alone; Grace keeps the drift baseline and item 11's paired check), accepted 2026-11-14.
 
 Amended by ADR-0052 (items 1, 11 and 12: on the CPU classes the degree sweep times `direct`, `loops` and `sumfact` only, at 10^5 and 10^6 points with medians of five runs, and the rules use 10^6 points), accepted 2026-11-14.
+
+Amended by ADR-0053 (item 1: the p = 8 / p = 4 ratios of the selected strategies are measured and reported per class against the bounds, with the speedup over M9 at p = 8, and not enforced in M9h; M10 takes the bound as its target), accepted 2026-11-14.
