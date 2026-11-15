@@ -14,8 +14,8 @@
 # took shard 6 from 9 to 37 min, so they have shards of their own. M9h's tests are one test per
 # degree (`<test>::p<p>`, `degree_tests!`); M9h took shards 4 and 6 from 11 to 26-28 min, so
 # shards 2, 3, 6, 9, 10 and 11 share out p = 1-4 by their times (docs/plans/M9h.md, T12):
-# vector_size_invariance at p = 4 runs alone, as it slowed submesh's tests five- to tenfold on
-# lavapipe.
+# vector_size_invariance at p = 3 and 4 runs alone: on lavapipe it slowed submesh's tests
+# five- to tenfold, and io_threads' twofold.
 #   1-3. io_threads: the global_mesh_identical tests of $gmi;
 #   4.   the rest of io_threads, gmsh and parallel_threads;
 #   5.   compile (trybuild) and the doc tests;
@@ -58,12 +58,12 @@ pull_back=high_order::pull_back_recovers_reference_points
 parallel=parallel_threads::high_order_parallel_invariance
 ho_tests=("$sizes" "$tiles" "$twice" "$factors" "$pull_back" "$parallel")
 ho=(
-    [2]="$sizes::p1 $sizes::p3"
+    [2]="$sizes::p1"
     [3]="$sizes::p2 $tiles::p1 $tiles::p2 $twice::p1 $twice::p2"
     [6]="$factors::p1 $factors::p2 $factors::p3 $factors::p4 $pull_back::p1 $pull_back::p2"
     [9]="$parallel::p1 $parallel::p2 $parallel::p3 $parallel::p4 $tiles::p3 $tiles::p4"
     [10]="$twice::p3 $twice::p4 $pull_back::p3 $pull_back::p4"
-    [11]="$sizes::p4"
+    [11]="$sizes::p3 $sizes::p4"
 )
 # The modules of shards 4, 5, 7, 8 and 10.
 named=(io_threads gmsh parallel_threads compile submesh_threads submesh orient_threads)
