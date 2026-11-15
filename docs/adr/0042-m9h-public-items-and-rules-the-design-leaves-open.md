@@ -231,3 +231,4 @@ Amended by ADR-0056 (items 7 and 12: a strategy that fails, or takes over 30 s t
 Addenda at the M9h review (maintainer, 2026-11-15):
 
 - Item 3, inapplicable strategies: `cooperative` is also inapplicable, and falls back to `loops`, where the device's shared memory cannot hold one component per unit of a cube (the largest GPU cube at the device's widest vector; `cooperative::fits`). Before, such a launch returned `TooLarge`. No device of the test targets is affected (Metal: 4 KiB of 32 KiB); CPU classes plan one unit per group and use no shared memory.
+- Item 13 and "Cargo features": `gridcl_geometry::bench` holds the basis-evaluator timing hook only (`Interpolant`); the pull-back's set-up and Newton step are timed through the public call at 1 and 9 iterations, as item 1 defines them (M9h T1, Deviations log). docs/design.md's "basis-evaluator and pull-back timing hooks" is corrected to say so.

@@ -129,3 +129,5 @@ Option 2.
 ## Decision record
 
 Accepted by the maintainer on 2026-11-11, as proposed (option 2: the clamp with m = 0.1, the product (A / A_ref) · (n / n_ref) with max(1, R), and the page limit above the per-block tables). Applied in `adr: 0046 apply`: docs/design.md, "Pull-back" and "Tolerances", and the decision records of ADR-0042 and ADR-0044. The kernel clamp and the test-support changes follow as T6b's first step.
+
+Addendum at the M9h review (maintainer, 2026-11-15): the apply left "Testing and validation" saying that "the E-vector and fields span at least three chunks". The sentence now states the decision above: the E-vector at every degree, J wherever the page limit (at least the largest per-block table) allows, which excludes hexahedra from p = 6 (`gridcl/tests/high_order_invariance.rs`).
