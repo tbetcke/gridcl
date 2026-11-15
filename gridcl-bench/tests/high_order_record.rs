@@ -658,6 +658,46 @@ fn compile_and_load_within_30_s_on_locust() {
     }
 }
 
+/// ADR-0056: no variant the policy selects for a class failed or took over 30 s to compile and
+/// load on a sweep device of that class (the Mac mini for CpuSimd128, one Kathleen socket for
+/// CpuSimd512, Metal and Locust for Gpu), in any launch-only or timed record of the sweeps.
+#[test]
+fn policy_choices_first_use_within_30_s_on_every_class() {
+    let data = data();
+    let policy = policy();
+    let records = sweep_records(&data);
+    for class in MEASURED_CLASSES {
+        for (scalar, bytes) in SCALARS {
+            let devices = devices(sweep_targets(&records), class, scalar);
+            for family in DEGREE_FAMILIES {
+                for &cell in cells_of(family) {
+                    for degree in 1..=max_degree(cell) {
+                        let s = policy.strategy(class, policy_family(family), cell, bytes, degree);
+                        for r in data.launch.iter().chain(&records) {
+                            if devices.contains(&(r.target.as_str(), r.backend.as_str()))
+                                && r.family == family
+                                && r.cell == cell
+                                && r.degree == degree
+                                && r.scalar == scalar
+                                && r.strategy == s
+                            {
+                                assert!(
+                                    r.status == "ok" && r.compile_s <= 30.0,
+                                    "{}: the {class:?} choice has status {:?}, compile and load \
+                                     {:.1} s",
+                                    describe(r),
+                                    r.status,
+                                    r.compile_s
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Bullet 3 (rule 1, ADR-0053): on quadrilaterals and hexahedra, the time per point at p = 8
 /// over p = 4 of the strategy the policy selects at p = 8, at the class's rule sizes, is reported
 /// in `docs/perf/high-order.md` against the bounds of ADR-0042 item 1 (3 for the geometric
@@ -803,7 +843,8 @@ fn quantile(v: &[f64], q: f64) -> f64 {
 
 /// Whether `direct` is selectable for `class` at one (policy family, cell, degree, scalar), as
 /// the decision rule reads it: `ok` records of every member on every sweep device at every rule
-/// size, and on the Gpu class no failed launch or first use over 30 s on Locust (rule 7).
+/// size, and no failed record or first use over 30 s on the class's sweep devices (rule 7 on
+/// Locust; every class, ADR-0056).
 fn direct_selectable(
     data: &HighOrderData,
     sweep: &[DegreeRecord],
@@ -819,8 +860,7 @@ fn direct_selectable(
             sweep, &devices, members, cell, degree, scalar, n, "direct", "direct",
         )
         .is_some()
-    }) && (class != DeviceClass::Gpu
-        || gpu_selectable(data, members, cell, degree, scalar, "direct"))
+    }) && first_use_ok(data, &devices, members, cell, degree, scalar, "direct")
 }
 
 /// The members of a policy family: J, det J and K for `Jacobian`, the pull-back at 9 iterations
@@ -1009,19 +1049,28 @@ fn class_ratio(
     ratios.map(|r| geomean(&r))
 }
 
-/// Whether strategy `s` is selectable for the Gpu class (rule 7): every Locust CUDA record of
-/// its member families at `degree` launched and compiled within 30 s.
-fn gpu_selectable(
+/// Whether strategy `s` passes the first-use rule on a class's `devices` (rule 7 on Locust;
+/// every class's sweep devices, ADR-0056): every record of its member families at `degree`
+/// on those devices, launch-only or timed and outside the paired runs, launched and compiled
+/// within 30 s.
+fn first_use_ok(
     data: &HighOrderData,
+    devices: &[(&str, &str)],
     members: &[(&str, Option<u32>)],
     cell: &str,
     degree: u32,
     scalar: Scalar,
     s: &str,
 ) -> bool {
+    let paired: BTreeSet<&str> = data
+        .degree
+        .iter()
+        .filter(|r| r.strategy == "policy")
+        .map(|r| r.run_id.as_str())
+        .collect();
     data.launch.iter().chain(&data.degree).all(|r| {
-        !(r.target == "locust"
-            && r.backend == "cuda"
+        !(devices.contains(&(r.target.as_str(), r.backend.as_str()))
+            && !paired.contains(r.run_id.as_str())
             && r.strategy == s
             && r.cell == cell
             && r.degree == degree
@@ -1039,8 +1088,8 @@ fn gpu_selectable(
 ///   `Normals`), from records that ran the strategy itself, not its fallback `loops`;
 /// - the sizes are the class's rule sizes, and the strategies its candidates (ADR-0052);
 /// - the baseline is `direct`, or `loops` where `direct` is not selectable (a device without an
-///   `ok` record at a rule size, as where the sweep leaves `direct` out (ADR-0050); on the Gpu
-///   class also a failed launch or a compile over 30 s on Locust);
+///   `ok` record at a rule size, as where the sweep leaves `direct` out (ADR-0050); also a
+///   failed record or a compile over 30 s on a sweep device of the class, ADR-0056);
 /// - a strategy is admitted if it is the baseline or selectable and at least 10% faster at every
 ///   rule size (class ratio ≤ 0.9); among the admitted within 3% of the fastest at every size
 ///   the simplest wins; if none is, the one with the smallest worst ratio to the fastest;
@@ -1108,8 +1157,7 @@ fn degree_policy_follows_the_decision_rule() {
                         };
                         let selectable = |s: &str| {
                             sizes.iter().all(|&n| ratio(s, s, n).is_some())
-                                && (class != DeviceClass::Gpu
-                                    || gpu_selectable(&data, &members, cell, degree, scalar, s))
+                                && first_use_ok(&data, &devices, &members, cell, degree, scalar, s)
                         };
                         let base = if selectable("direct") {
                             "direct"

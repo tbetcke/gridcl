@@ -393,8 +393,9 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
          class time in ns per point and each selectable strategy's class ratio to it, at the \
          rule sizes (10^6 / 10^7 points on Gpu, 10^6 on the CPU classes, ADR-0052); \"–\" where \
          a strategy is not selectable (not measured on every device, not a candidate of the \
-         class, ran its fallback `loops`, or on Gpu a failed launch or a compile over 30 s on \
-         Locust). \"n.m.; T3\": `direct` not measured on tetrahedra, hexahedra and prisms at \
+         class, ran its fallback `loops`, or a failed record or a compile and load over 30 s \
+         on a sweep device of the class: rule 7 on Locust, every class by ADR-0056). \"n.m.; \
+         T3\": `direct` not measured on tetrahedra, hexahedra and prisms at \
          p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline. \
          Jacobian sums J, det J and K; PullBack is the pull-back at 9 Newton iterations.\n\n",
     );
@@ -499,7 +500,8 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
          CPUs), their median and lower quartile, and the class's geometric means over its \
          devices. A configuration fails if the lower quartile exceeds 1.05, that is, if the \
          policy is over 5% slower in at least three quarters of the run pairs. Excluded: \
-         configurations where `direct` is not selectable (rule 7 on Gpu). CpuSimd128 includes \
+         configurations where `direct` is not selectable (rule 7 on Gpu; the first-use bound \
+         of ADR-0056 on every class). CpuSimd128 includes \
          Locust's Grace CPU (ADR-0051).\n\n",
     );
     out.push_str(

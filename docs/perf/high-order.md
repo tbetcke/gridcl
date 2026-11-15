@@ -126,8 +126,10 @@ The largest ratio per degree, over every family and cell type: 0.03 (p = 1), 0.0
   reaches 0.91 of its tolerance (p = 6, 10^7 points, likewise on every device that ran p = 6). Rule 2's tolerance, which scales with the amplification and |K|, accepts both, and
   f64 is exact. Interval data at these sizes in f32 measures speed, not accuracy.
 - **CPU compile time at high degree** (Records above, C20): on CpuSimd128, f32 kernels at vector
-  size 16 compile in minutes from p = 6. The degree policy and T11a's strategies with runtime
-  loops avoid the fully unrolled kernels.
+  size 16 compile in minutes from p = 6. T11a's strategies with runtime loops avoid the fully
+  unrolled kernels, and the degree policy selects no strategy whose first use takes over 30 s
+  on a sweep device of its class (ADR-0056; before it, the CpuSimd128 policy kept `direct` for
+  the hexahedron E-vector at p = 5 in f32, 37 s, and p = 7 in f64, 64 s).
 
 ## Strategy sweeps (T11a)
 
@@ -160,8 +162,9 @@ the Mac mini's CPU; CpuSimd512: Kathleen; Gpu: Metal and the H100), scalar type 
   for `Normals`);
 - a strategy is selectable if every device of the class has `ok` records of it at every rule
   size (Gpu 10^6 and 10^7 points, CPU classes 10^6) that ran the strategy itself, not its
-  fallback `loops`; on the Gpu class, also no failed launch and no first use over 30 s on
-  Locust (rule 7). The CPU classes choose among `direct`, `loops` and `sumfact` (ADR-0052);
+  fallback `loops`, and no record of it on a sweep device of the class (launch-only or timed)
+  failed or took over 30 s to first use (rule 7 on Locust; every class, ADR-0056). The CPU
+  classes choose among `direct`, `loops` and `sumfact` (ADR-0052);
 - the baseline is `direct`, or `loops` where `direct` is not selectable; a strategy is admitted
   if its class ratio to the baseline (geometric mean of the device ratios) is at most 0.9 at
   every rule size; among the admitted within 3% of the fastest at every size the simplest wins
@@ -276,10 +279,10 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | EVector | Tetrahedron | Gpu | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
 | EVector | Tetrahedron | Gpu | f64 | 1–3 | direct | 1.00 | no strategy 10% faster |
 | EVector | Tetrahedron | Gpu | f64 | 4– | loops | 0.87–1.00 | direct not selectable at p = 5, 6, 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
-| EVector | Hexahedron | CpuSimd128 | f32 | 1–5 | direct | 1.00 | no strategy 10% faster |
-| EVector | Hexahedron | CpuSimd128 | f32 | 6– | loops | 0.82–1.00 | direct not selectable at p = 7, 8; at least 10% faster than the baseline; within 3% of the fastest |
-| EVector | Hexahedron | CpuSimd128 | f64 | 1–7 | direct | 1.00 | no strategy 10% faster |
-| EVector | Hexahedron | CpuSimd128 | f64 | 8– | loops | 1.00 | direct not selectable at p = 8; no strategy 10% faster |
+| EVector | Hexahedron | CpuSimd128 | f32 | 1–4 | direct | 1.00 | no strategy 10% faster |
+| EVector | Hexahedron | CpuSimd128 | f32 | 5– | loops | 1.00 | direct not selectable at p = 5, 6, 7, 8; no strategy 10% faster |
+| EVector | Hexahedron | CpuSimd128 | f64 | 1–6 | direct | 1.00 | no strategy 10% faster |
+| EVector | Hexahedron | CpuSimd128 | f64 | 7– | loops | 1.00 | direct not selectable at p = 7, 8; no strategy 10% faster |
 | EVector | Hexahedron | CpuSimd256 | f32 | 1–8 | direct | – | as CpuSimd512 |
 | EVector | Hexahedron | CpuSimd256 | f32 | 9– | loops | – | as CpuSimd512 |
 | EVector | Hexahedron | CpuSimd256 | f64 | 1–8 | direct | – | as CpuSimd512 |
@@ -557,9 +560,9 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | Jacobian | Hexahedron | CpuSimd256 | f64 | 1–2 | direct | – | as CpuSimd512 |
 | Jacobian | Hexahedron | CpuSimd256 | f64 | 3– | sumfact | – | as CpuSimd512 |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 3– | sumfact | 0.01–0.75 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 3– | sumfact | 0.02–0.75 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 1–2 | direct | 1.00 | no strategy 10% faster |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 3– | sumfact | 0.02–0.49 | at least 10% faster than the baseline; within 3% of the fastest |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 3– | sumfact | 0.03–0.49 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | Jacobian | Hexahedron | Gpu | f32 | 2–5 | shared | 0.03–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
 | Jacobian | Hexahedron | Gpu | f32 | 6– | sumfact | 0.02–0.06 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
@@ -755,9 +758,9 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 | FacetNormals | Hexahedron | CpuSimd256 | f32 | 1– | sumfact | – | as CpuSimd512 |
 | FacetNormals | Hexahedron | CpuSimd256 | f64 | 1–1 | direct | – | as CpuSimd512 |
 | FacetNormals | Hexahedron | CpuSimd256 | f64 | 2– | sumfact | – | as CpuSimd512 |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1– | sumfact | 0.01–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 1– | sumfact | 0.02–0.86 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 1–1 | direct | 1.00 | no strategy 10% faster |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.02–0.67 | at least 10% faster than the baseline; within 3% of the fastest |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 2– | sumfact | 0.03–0.67 | direct not selectable at p = 8; at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 1–1 | direct | 1.00 | no strategy 10% faster |
 | FacetNormals | Hexahedron | Gpu | f32 | 2–2 | shared | 0.77–0.86 | at least 10% faster than the baseline; within 3% of the fastest |
 | FacetNormals | Hexahedron | Gpu | f32 | 3–3 | sumfact | 0.17–0.23 | at least 10% faster than the baseline; within 3% of the fastest |
@@ -939,7 +942,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 
 ### Cost per strategy
 
-Per measured class, policy family, cell type, scalar type and degree: the baseline's class time in ns per point and each selectable strategy's class ratio to it, at the rule sizes (10^6 / 10^7 points on Gpu, 10^6 on the CPU classes, ADR-0052); "–" where a strategy is not selectable (not measured on every device, not a candidate of the class, ran its fallback `loops`, or on Gpu a failed launch or a compile over 30 s on Locust). "n.m.; T3": `direct` not measured on tetrahedra, hexahedra and prisms at p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline. Jacobian sums J, det J and K; PullBack is the pull-back at 9 Newton iterations.
+Per measured class, policy family, cell type, scalar type and degree: the baseline's class time in ns per point and each selectable strategy's class ratio to it, at the rule sizes (10^6 / 10^7 points on Gpu, 10^6 on the CPU classes, ADR-0052); "–" where a strategy is not selectable (not measured on every device, not a candidate of the class, ran its fallback `loops`, or a failed record or a compile and load over 30 s on a sweep device of the class: rule 7 on Locust, every class by ADR-0056). "n.m.; T3": `direct` not measured on tetrahedra, hexahedra and prisms at p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline. Jacobian sums J, det J and K; PullBack is the pull-back at 9 Newton iterations.
 
 | Family | Cell | Class | Type | p | Base | ns per point | direct | loops | sumfact | shared | cooperative | Choice | Reason |
 | --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
@@ -1139,8 +1142,8 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | CpuSimd128 | f32 | 2 | direct | 0.39 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 3 | direct | 0.67 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 4 | direct | 0.72 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f32 | 5 | direct | 0.70 | 1.00 | 0.95 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f32 | 6 | direct | 0.81 | 1.00 | 0.82 | – | – | – | loops | loops 0.82 of direct |
+| EVector | Hexahedron | CpuSimd128 | f32 | 5 | loops | 0.66 | n.m.; T3: 1.05 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
+| EVector | Hexahedron | CpuSimd128 | f32 | 6 | loops | 0.66 | n.m.; T3: 1.21 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f32 | 7 | loops | 0.68 | – | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f32 | 8 | loops | 0.70 | – | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f64 | 1 | direct | 0.28 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1149,7 +1152,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | CpuSimd128 | f64 | 4 | direct | 0.65 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 5 | direct | 0.83 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 6 | direct | 1.04 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f64 | 7 | direct | 1.21 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
+| EVector | Hexahedron | CpuSimd128 | f64 | 7 | loops | 1.19 | n.m.; T3: 1.02 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f64 | 8 | loops | 1.30 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.37 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 2 | direct | 1.57 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1770,7 +1773,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 5 | direct | 471 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 6 | direct | 915 | 1.00 | 0.18 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 7 | direct | 1360 | 1.00 | 0.16 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 8 | direct | 2106 | 1.00 | 0.15 | 0.01 | – | – | sumfact | sumfact 0.01 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 8 | loops | 311 | n.m.; T3: 9.01 | 1.00 | 0.08 | – | – | sumfact | sumfact 0.08 of loops |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 1 | direct | 3.38 | 1.00 | 1.01 | 1.05 | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 2 | direct | 3.89 | 1.00 | 0.96 | 0.95 | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 3 | direct | 7.95 | 1.00 | 0.71 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
@@ -1778,7 +1781,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 5 | direct | 118 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 6 | direct | 315 | 1.00 | 0.17 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 7 | direct | 813 | 1.00 | 0.13 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 8 | direct | 1787 | 1.00 | 0.35 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 8 | loops | 627 | n.m.; T3: 2.85 | 1.00 | 0.05 | – | – | sumfact | sumfact 0.05 of loops |
 | Jacobian | Hexahedron | Gpu | f32 | 1 | direct | 0.36 / 0.19 | 1.00 / 1.00 | 1.15 / 1.22 | 1.12 / 1.16 | 1.13 / 1.15 | 3.93 / 6.41 | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | Gpu | f32 | 2 | direct | 0.54 / 0.28 | 1.00 / 1.00 | 2.45 / 3.63 | 0.92 / 0.86 | 0.86 / 0.82 | 6.39 / 11.55 | shared | shared 0.86 / 0.82 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 3 | direct | 3.14 / 2.23 | 1.00 / 1.00 | 1.81 / 1.45 | 0.19 / 0.14 | 0.19 / 0.14 | 2.77 / 4.12 | shared | shared 0.19 / 0.14 of direct |
@@ -2220,7 +2223,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 5 | direct | 155 | 1.00 | 0.20 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 6 | direct | 310 | 1.00 | 0.13 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 7 | direct | 463 | 1.00 | 0.19 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 8 | direct | 695 | 1.00 | 0.14 | 0.01 | – | – | sumfact | sumfact 0.01 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 8 | loops | 96.3 | n.m.; T3: 7.30 | 1.00 | 0.10 | – | – | sumfact | sumfact 0.10 of loops |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.62 | 1.00 | 0.92 | 1.10 | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.02 | 1.00 | 0.77 | 0.67 | – | – | sumfact | sumfact 0.67 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 3 | direct | 3.53 | 1.00 | 0.73 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
@@ -2228,7 +2231,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 5 | direct | 38.7 | 1.00 | 0.17 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 6 | direct | 92.4 | 1.00 | 0.15 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 7 | direct | 173 | 1.00 | 0.36 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 8 | direct | 311 | 1.00 | 0.13 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 8 | loops | 40.8 | n.m.; T3: 7.57 | 1.00 | 0.13 | – | – | sumfact | sumfact 0.13 of loops |
 | FacetNormals | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.28 / 1.39 | 1.19 / 1.51 | 1.15 / 1.41 | 5.00 / 10.54 | direct | no strategy 10% faster than direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 2 | direct | 0.21 / 0.09 | 1.00 / 1.00 | 2.61 / 3.34 | 0.80 / 0.90 | 0.77 / 0.86 | 5.95 / 12.39 | shared | shared 0.77 / 0.86 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 3 | direct | 1.08 / 0.71 | 1.00 / 1.00 | 1.74 / 1.58 | 0.23 / 0.17 | 0.23 / 0.18 | 3.12 / 4.01 | sumfact | sumfact 0.23 / 0.17 of direct |
@@ -2747,7 +2750,7 @@ The time per point at p = 8 over p = 4 of the strategy the policy selects at p =
 
 ### Rule 11: the policy against `direct` at p ≤ 4
 
-In one paired run per device (the newest), per policy family (J + det J + K summed per run; the pull-back at 9 iterations), cell type, degree p ≤ 4 and rule size, where `direct` is selectable for the class (ADR-0055): a device's per-run ratios of the policy's run i over `direct`'s run i (`degree_sweep --interleave` alternates them on CPUs), their median and lower quartile, and the class's geometric means over its devices. A configuration fails if the lower quartile exceeds 1.05, that is, if the policy is over 5% slower in at least three quarters of the run pairs. Excluded: configurations where `direct` is not selectable (rule 7 on Gpu). CpuSimd128 includes Locust's Grace CPU (ADR-0051).
+In one paired run per device (the newest), per policy family (J + det J + K summed per run; the pull-back at 9 iterations), cell type, degree p ≤ 4 and rule size, where `direct` is selectable for the class (ADR-0055): a device's per-run ratios of the policy's run i over `direct`'s run i (`degree_sweep --interleave` alternates them on CPUs), their median and lower quartile, and the class's geometric means over its devices. A configuration fails if the lower quartile exceeds 1.05, that is, if the policy is over 5% slower in at least three quarters of the run pairs. Excluded: configurations where `direct` is not selectable (rule 7 on Gpu; the first-use bound of ADR-0056 on every class). CpuSimd128 includes Locust's Grace CPU (ADR-0051).
 
 | Class | Type | Runs | Compared | Excluded | Missing | Worst median | At | Worst lower quartile | At | Failures |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- | --- |

@@ -13,9 +13,9 @@
 //! - A strategy is selectable if every device of the class has an `ok` record of every member
 //!   family at every rule size that ran the strategy itself, not its fallback `loops` (sum
 //!   factorisation and cooperation on the E-vector, sum factorisation on simplices, `shared`
-//!   beyond the shared-memory limit: `loops` measured again), and on the Gpu class if none of
-//!   its Locust CUDA records of the member families (launch-only or timed) failed or took over
-//!   30 s to compile and load (rule 7).
+//!   beyond the shared-memory limit: `loops` measured again), and if none of the records of
+//!   the member families on the class's devices (launch-only or timed) failed or took over
+//!   30 s to compile and load (rule 7 on Locust; every class, ADR-0056).
 //! - Class ratios are geometric means of the per-device ratios (ADR-0015, item 5).
 //! - The baseline is `direct`, or `loops` where `direct` is not selectable (as where the sweep
 //!   leaves it out, ADR-0050). A strategy is admitted if it is the baseline or at least 10%
@@ -39,7 +39,8 @@ use crate::record::{CLASSES, DegreeRecord, HighOrderData, STRATEGIES, Scalar};
 pub const ADMIT: f64 = 0.9;
 /// A strategy qualifies if it takes at most this factor of the fastest admitted one.
 pub const WITHIN: f64 = 1.03;
-/// The bound of rule 7 on Locust's first-use compile and load time, in seconds.
+/// The bound on the first-use compile and load time, in seconds: rule 7's on Locust, and the
+/// selectability bound on every class's sweep devices (ADR-0056).
 pub const COMPILE_BOUND_S: f64 = 30.0;
 
 /// The policy families, in the order of `degree-policy.toml`.
@@ -203,6 +204,10 @@ type TimeKey<'a> = (
     &'a str,
 );
 
+/// A device's configuration for the first-use rule: (target, backend, bench family, cell,
+/// degree, scalar, strategy).
+type FirstUseKey<'a> = (&'a str, &'a str, &'a str, &'a str, u32, Scalar, &'a str);
+
 /// The timed records of a sweep, indexed: the time per point of the last `ok` record of each
 /// configuration on the codimension-0 meshes (codimension 1 for `Normals`) with equispaced
 /// nodes that ran its strategy, an interleaved one if there is one (the CPU classes at p ≤ 4,
@@ -211,9 +216,9 @@ type TimeKey<'a> = (
 pub struct Times<'a> {
     times: HashMap<TimeKey<'a>, f64>,
     baseline: HashMap<TimeKey<'a>, f64>,
-    /// (bench family, cell, degree, scalar, strategy) → every Locust CUDA record (launch-only or
-    /// timed) was `ok` within the compile bound.
-    locust: HashMap<(&'a str, &'a str, u32, Scalar, &'a str), bool>,
+    /// (target, backend, bench family, cell, degree, scalar, strategy) → every record of the
+    /// device (launch-only or timed) was `ok` within the compile bound (ADR-0056).
+    first_use: HashMap<FirstUseKey<'a>, bool>,
     /// The largest Locust CUDA compile and load time of the same keys.
     locust_compile: HashMap<(&'a str, &'a str, u32, Scalar, &'a str), f64>,
 }
@@ -263,10 +268,10 @@ impl<'a> Times<'a> {
         };
         let times = index(&data.degree);
         let baseline = index(&data.baseline);
-        let mut locust = HashMap::new();
+        let mut first_use = HashMap::new();
         let mut locust_compile: HashMap<_, f64> = HashMap::new();
         for r in data.launch.iter().chain(&data.degree) {
-            if r.target != "locust" || r.backend != "cuda" || paired.contains(r.run_id.as_str()) {
+            if paired.contains(r.run_id.as_str()) {
                 continue;
             }
             let key = (
@@ -277,14 +282,19 @@ impl<'a> Times<'a> {
                 r.strategy.as_str(),
             );
             let good = r.status == "ok" && r.compile_s <= COMPILE_BOUND_S;
-            *locust.entry(key).or_insert(true) &= good;
-            let c = locust_compile.entry(key).or_insert(0.0);
-            *c = c.max(r.compile_s);
+            let device = (r.target.as_str(), r.backend.as_str());
+            *first_use
+                .entry((device.0, device.1, key.0, key.1, key.2, key.3, key.4))
+                .or_insert(true) &= good;
+            if device == ("locust", "cuda") {
+                let c = locust_compile.entry(key).or_insert(0.0);
+                *c = c.max(r.compile_s);
+            }
         }
         Times {
             times,
             baseline,
-            locust,
+            first_use,
             locust_compile,
         }
     }
@@ -366,21 +376,26 @@ impl<'a> Times<'a> {
             .sum()
     }
 
-    /// Whether `strategy` passed rule 7 on Locust for every member family of `family`: no
-    /// failed launch and no compile over 30 s. Configurations without a record pass.
-    pub fn locust_ok(
+    /// Whether `strategy` passed the first-use rule on every one of a class's `devices` for
+    /// every member family of `family` (rule 7 on Locust; every class's sweep devices,
+    /// ADR-0056): no failed record and no compile and load over 30 s, launch-only or timed.
+    /// Configurations without a record pass.
+    pub fn first_use_ok(
         &self,
+        devices: &[(&str, &str)],
         family: &str,
         cell: &str,
         degree: u32,
         scalar: Scalar,
         strategy: &str,
     ) -> bool {
-        members(family).into_iter().all(|(f, _)| {
-            self.locust
-                .get(&(f, cell, degree, scalar, strategy))
-                .copied()
-                .unwrap_or(true)
+        devices.iter().all(|&(target, backend)| {
+            members(family).into_iter().all(|(f, _)| {
+                self.first_use
+                    .get(&(target, backend, f, cell, degree, scalar, strategy))
+                    .copied()
+                    .unwrap_or(true)
+            })
         })
     }
 
@@ -588,7 +603,7 @@ fn choose(
     };
     let selectable = |s: &str| {
         sizes.iter().all(|&n| class_time(s, n).is_some())
-            && (class != DeviceClass::Gpu || times.locust_ok(family, cell, degree, scalar, s))
+            && times.first_use_ok(devices, family, cell, degree, scalar, s)
     };
     let base = if selectable("direct") {
         "direct"
