@@ -8,7 +8,8 @@
 //! Every launcher of a degree-dependent family asks [`choose`] for its strategy: the scoped
 //! hook, then `GRIDCL_GEOM_STRATEGY`, then `degree-policy.toml` for the client's device class;
 //! a strategy that does not apply to the launch (the cell, the point set, a table beyond the
-//! shared-memory limit) falls back to `Loops`.
+//! shared-memory limit, a shared memory too small for one component per unit of a cooperative
+//! cube) falls back to `Loops`.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

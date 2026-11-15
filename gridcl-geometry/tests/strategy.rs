@@ -60,6 +60,17 @@ fn with_recorded<R>(ran: &[(StrategyFamily, Strategy)], f: impl FnOnce() -> R) -
     )()
 }
 
+/// The largest |entry| of `want`, which must be finite: an infinite entry would make every
+/// tolerance below infinite.
+fn finite_scale(want: &[f64]) -> f64 {
+    let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    assert!(
+        scale.is_finite() && want.iter().all(|v| v.is_finite()),
+        "reference values are not finite"
+    );
+    scale
+}
+
 /// Runs `f` in f32 and, where the device supports it, in f64 (the policy's entries differ per
 /// scalar size).
 fn each_precision(
@@ -275,7 +286,7 @@ fn sumfact_on_tensor_rules<F: Real>(client: &cubecl::prelude::Client, tol: f64) 
         );
         let (x_loops, j_loops, _) = points_and_jacobians(&mesh, &rule, Strategy::Loops);
         for (what, got, want) in [("X", &x, &x_loops), ("J", &j, &j_loops)] {
-            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            let scale = finite_scale(want);
             for (g, w) in got.iter().zip(want.iter()) {
                 assert!(
                     (g - w).abs() <= tol * scale,
@@ -341,7 +352,7 @@ fn sumfact_against_loops<F, TD, GD>(
     let (want, _) = forced(mesh, Strategy::Loops, &f);
     for ((name, got), (_, want)) in got.iter().zip(&want) {
         assert_eq!(got.len(), want.len());
-        let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let scale = finite_scale(want);
         for (g, w) in got.iter().zip(want) {
             assert!((g - w).abs() <= tol * scale, "{name} of {what}: {g} vs {w}");
         }
@@ -486,11 +497,14 @@ fn sumfact_pull_backs<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
 
 #[test]
 fn sumfact_falls_back_to_loops_without_tensor_points() {
+    each_precision(sumfact_fallback::<f32>, sumfact_fallback::<f64>);
+}
+
+fn sumfact_fallback<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    let client = gridcl_testing::test_client();
     let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 1, 2)
         .with_node_family(NodeFamily::Gll)
-        .build::<f32, D3, D3>(&client)
+        .build::<F, D3, D3>(client)
         .unwrap();
     let sumfact = StrategyOverride::Fixed(Strategy::SumFactorised);
     let ((), ran) = record_strategies(|| {
@@ -506,10 +520,13 @@ fn sumfact_falls_back_to_loops_without_tensor_points() {
 
 #[test]
 fn overrides_nest_per_family() {
+    each_precision(overrides_nest::<f32>, overrides_nest::<f64>);
+}
+
+fn overrides_nest<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    let client = gridcl_testing::test_client();
     let mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 2)
-        .build::<f32, D2, D2>(&client)
+        .build::<F, D2, D2>(client)
         .unwrap();
     let rule = QuadRule::for_grid(&mesh, 2).unwrap();
     // The E-vector is built here, so the records below hold the factors alone.
@@ -539,9 +556,12 @@ fn overrides_nest_per_family() {
 
 #[test]
 fn records_nest_and_survive_panics() {
-    let client = gridcl_testing::test_client();
+    each_precision(records_nest::<f32>, records_nest::<f64>);
+}
+
+fn records_nest<F: Real>(client: &cubecl::prelude::Client) {
     let mesh = gridcl_testing::square_box(Cell2::Triangle, 1, 1)
-        .build::<f32, D2, D2>(&client)
+        .build::<F, D2, D2>(client)
         .unwrap();
     let rule = QuadRule::for_grid(&mesh, 2).unwrap();
     let ((inner, panicked), outer) = record_strategies(|| {
@@ -668,7 +688,7 @@ fn shared_against_kernels<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
         let (want, _) = forced(&mesh, staged_for, quantities);
         for ((name, got), (_, want)) in got.iter().zip(&want) {
             assert_eq!(got.len(), want.len());
-            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            let scale = finite_scale(want);
             for (g, w) in got.iter().zip(want) {
                 if bitwise {
                     assert_eq!(g.to_bits(), w.to_bits(), "{name} of {what}: {g} vs {w}");
@@ -721,8 +741,10 @@ fn shared_fallback<F: Real>(client: &cubecl::prelude::Client) {
 
 /// A forced `cooperative` falls back to `loops` where the shared memory cannot hold one
 /// component per unit of a cube (ADR-0042, item 3, addendum of 2026-11-15): on a GPU class
-/// (the device's own, or injected on the CPU runtime) with 16 bytes of shared memory. A CPU
-/// class plans one unit per group and uses no shared memory, so it keeps `cooperative`.
+/// (the device's own, or injected on the CPU runtime) with 16 bytes of shared memory, and at
+/// one byte below the size of one component per unit of the largest cube; at that size it
+/// runs. A CPU class plans one unit per group and uses no shared memory, so it keeps
+/// `cooperative`.
 #[test]
 fn cooperative_falls_back_to_loops_above_the_limit() {
     each_precision(cooperative_fallback::<f32>, cooperative_fallback::<f64>);
@@ -730,8 +752,8 @@ fn cooperative_falls_back_to_loops_above_the_limit() {
 
 fn cooperative_fallback<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    use gridcl_device::DeviceClass;
-    use gridcl_device::testing::with_properties;
+    use gridcl_device::testing::{with_properties, with_vector_size};
+    use gridcl_device::{DeviceClass, VectorSizeOverride};
     let name = std::any::type_name::<F>();
     for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
         let mesh = gridcl_testing::cube_box(cell, 1, 2)
@@ -771,6 +793,39 @@ fn cooperative_fallback<F: Real>(client: &cubecl::prelude::Client) {
         gpu.hardware.num_cpu_cores = None;
         let (_, ran) = with_properties(gpu, || forced(&mesh, Strategy::Cooperative, run));
         assert_eq!(ran, want(Strategy::Loops), "{name} {cell:?}, a GPU class");
+        // The boundary: shared memory for exactly one component per unit of the largest cube
+        // at the widest vector runs `cooperative`, and its plans succeed at every vector size
+        // (so `cooperative::fits` covers `LaunchPlan::per_group`'s cube); one byte less runs
+        // `loops`. On the CPU runtime the injected GPU class has no more units than the
+        // device runs in one cube (C21).
+        let hw = &gridcl_device::device_properties(client).hardware;
+        let own = hw.max_units_per_cube.min(hw.max_cube_dim.0);
+        let cube = if DeviceClass::for_client(client) == DeviceClass::Gpu {
+            own.min(256)
+        } else {
+            1 << own.ilog2()
+        };
+        let widest = hw.max_vector_size.clamp(1, gridcl_device::VECTOR_PAD);
+        let exact = cube as usize * widest * size_of::<F>();
+        let limit = |bytes: usize| {
+            let mut props = (*gridcl_device::device_properties(client)).clone();
+            props.hardware.num_cpu_cores = None;
+            props.hardware.max_units_per_cube = cube;
+            props.hardware.max_cube_dim.0 = cube;
+            props.hardware.max_shared_memory_size = bytes;
+            props
+        };
+        for vector in [VectorSizeOverride::Scalar, VectorSizeOverride::Widest] {
+            let at = format!("{name} {cell:?}, {exact} bytes, {vector:?}");
+            let (_, ran) = with_properties(limit(exact), || {
+                with_vector_size(vector, || forced(&mesh, Strategy::Cooperative, run))
+            });
+            assert_eq!(ran, want(Strategy::Cooperative), "{at}");
+            let (_, ran) = with_properties(limit(exact - 1), || {
+                with_vector_size(vector, || forced(&mesh, Strategy::Cooperative, run))
+            });
+            assert_eq!(ran, want(Strategy::Loops), "{at}, one byte less");
+        }
     }
 }
 
@@ -932,7 +987,7 @@ fn units_against_one<F, TD, GD>(
     let compare = |at: &str, got: &Quantities, want: &Quantities, exact: bool| {
         for ((name, got), (_, want)) in got.iter().zip(want) {
             assert_eq!(got.len(), want.len(), "{name} of {at}");
-            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            let scale = finite_scale(want);
             for (g, w) in got.iter().zip(want) {
                 if exact {
                     assert_eq!(g.to_bits(), w.to_bits(), "{name} of {at}: {g} vs {w}");

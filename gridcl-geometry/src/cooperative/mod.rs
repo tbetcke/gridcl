@@ -89,11 +89,14 @@ pub(crate) fn fits(client: &Client, elem_bytes: usize) -> bool {
         return true;
     }
     let hw = &device_properties(client).hardware;
+    // At least one unit and one lane, as `per_group` plans them.
     let cube = GPU_CUBE_UNITS
         .min(hw.max_units_per_cube)
-        .min(hw.max_cube_dim.0) as usize;
-    // A plan's vector size divides `VECTOR_PAD`; the CPU runtime reports no limit of its own.
-    cube.checked_mul(hw.max_vector_size.min(VECTOR_PAD))
+        .min(hw.max_cube_dim.0)
+        .max(1) as usize;
+    // A plan's vector size divides `VECTOR_PAD`; the CPU and CUDA runtimes report no limit of
+    // their own.
+    cube.checked_mul(hw.max_vector_size.clamp(1, VECTOR_PAD))
         .and_then(|v| v.checked_mul(elem_bytes))
         .is_some_and(|bytes| bytes <= hw.max_shared_memory_size)
 }
