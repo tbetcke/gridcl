@@ -611,7 +611,9 @@ impl<F: Real, TD: TopoDim + EmbeddedIn<D3>> FactorMesh<F, TD> {
                     let bound = want(&a, q, &mut values);
                     for (k, &w) in values.iter().enumerate() {
                         let got = data[((c / tile) * q_len * len + q * len + k) * tile + c % tile];
-                        if (got.widen() - w).abs() > bound {
+                        let err = (got.widen() - w).abs();
+                        // A NaN error fails too.
+                        if err.is_nan() || err > bound {
                             return Err(format!(
                                 "{what}: cell {cell}, point {q}, component {k}: {}, want {w} \
                                  (tolerance {bound:e})",

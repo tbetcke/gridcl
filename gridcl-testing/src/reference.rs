@@ -755,7 +755,16 @@ pub fn pull_back_scale<G: DeviceGrid>(g: &G, b: usize, points: &[f64]) -> Result
 
 /// The relative tolerance of `F` scaled by `scale`: `scale` · 1e-5 (f32) or `scale` · 1e-12
 /// (f64).
+///
+/// # Panics
+///
+/// If `scale` is NaN or infinite (as from a singular reference Jacobian): such a tolerance
+/// would accept any output, an infinite error included.
 pub fn tolerance<F: Real>(scale: f64) -> f64 {
+    assert!(
+        scale.is_finite(),
+        "tolerance: the scale {scale} is not finite"
+    );
     scale
         * if size_of::<F>() == 4 {
             TOL_F32

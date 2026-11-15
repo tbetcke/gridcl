@@ -459,7 +459,9 @@ impl Workload for Factors {
                 for b in 0..3 {
                     let kj: f64 = (0..3).map(|g| k[g][a] * j[b][g]).sum();
                     let id = if a == b { 1.0 } else { 0.0 };
-                    if (kj - id).abs() > tol {
+                    let err = (kj - id).abs();
+                    // A NaN error fails too.
+                    if err.is_nan() || err > tol {
                         return Err(format!(
                             "K J = {kj} at ({a}, {b}) of point {i}, expected {id}"
                         ));
