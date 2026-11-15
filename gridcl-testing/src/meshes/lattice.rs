@@ -246,6 +246,7 @@ impl<K: Copy + Eq + Hash> Assembler<K> {
                 HostBlock {
                     cell: b.cell,
                     degree: b.degree,
+                    family: NodeFamily::Equispaced,
                     cells: b.cells,
                     cell_ids: Some(ids),
                 }

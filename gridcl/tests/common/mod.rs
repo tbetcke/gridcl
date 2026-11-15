@@ -19,14 +19,15 @@ pub fn client() -> Client {
     gridcl_testing::test_client()
 }
 
-/// Runs `$f::<f32>(&client)` and, where the device supports f64, `$f::<f64>(&client)`.
+/// Runs `$f::<f32>(&client, args...)` and, where the device supports f64,
+/// `$f::<f64>(&client, args...)`.
 #[macro_export]
 macro_rules! for_each_precision {
-    ($client:expr, $f:ident) => {{
+    ($client:expr, $f:ident $(, $arg:expr)*) => {{
         let client = $client;
-        $f::<f32>(&client);
+        $f::<f32>(&client $(, $arg)*);
         if gridcl_testing::supports::<f64>(&client) {
-            $f::<f64>(&client);
+            $f::<f64>(&client $(, $arg)*);
         } else {
             eprintln!(
                 "{}: f64 is not supported on this device; skipped",
@@ -317,15 +318,10 @@ pub fn host_detj(j: &[f64], td: usize, gd: usize) -> f64 {
     }
 }
 
-/// max |got − want| / max |want| (or the absolute error if `want` is zero).
+/// max |got − want| / max |want| (or the absolute error if `want` is zero); infinite if any
+/// entry is NaN or infinite (`gridcl_testing::reference::rel_err`).
 pub fn rel_max_err(got: &[f64], want: &[f64]) -> f64 {
-    assert_eq!(got.len(), want.len(), "lengths");
-    let scale = want.iter().fold(0.0f64, |m, x| m.max(x.abs()));
-    let err = got
-        .iter()
-        .zip(want)
-        .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
-    if scale > 0.0 { err / scale } else { err }
+    gridcl_testing::reference::rel_err(got, want)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -353,10 +349,32 @@ pub fn flat_f64<F: Real, S: FieldShape>(fields: &BlockFields<F, S>) -> Vec<Vec<f
 /// Asserts `got` equals `want` bitwise up to the sign of zero on the CPU runtime, and within
 /// the tolerance of `F` (relative to the largest |want|) elsewhere. A separately written
 /// reference kernel may fuse multiply-adds differently, which can flip the sign of a zero
-/// (ADR-0013); every nonzero value must match in every bit.
+/// (ADR-0013); every nonzero value must match in every bit. Under a `GRIDCL_GEOM_STRATEGY`
+/// that reorders the sums of the node-order references ([`environment_reorders_sums`]), the
+/// CPU runtime is held to the tolerance too.
 pub fn assert_matches<F: Real>(got: &[F], want: &[F], what: &str) {
+    assert_matches_if(got, want, what, !environment_reorders_sums());
+}
+
+/// [`assert_matches`] for a launch whose strategies `ran` were recorded
+/// (`testing::record_strategies`): bitwise on the CPU runtime only where every strategy that
+/// ran sums in the node order of the references ([`reorders_sums`]), within the tolerance
+/// otherwise (ADR-0054).
+pub fn assert_matches_ran<F: Real>(
+    got: &[F],
+    want: &[F],
+    what: &str,
+    ran: &[(StrategyFamily, Strategy)],
+) {
+    let in_order = !environment_reorders_sums() && !ran.iter().any(|&(_, s)| reorders_sums(s));
+    assert_matches_if(got, want, &format!("{what}, ran {ran:?}"), in_order);
+}
+
+/// Bitwise up to the sign of zero if `bitwise` and the device is the CPU runtime, else within
+/// the tolerance of `F`.
+fn assert_matches_if<F: Real>(got: &[F], want: &[F], what: &str, bitwise: bool) {
     assert_eq!(got.len(), want.len(), "{what}: lengths");
-    if gridcl_testing::bitwise_device() {
+    if gridcl_testing::bitwise_device() && bitwise {
         for (i, (a, b)) in got.iter().zip(want).enumerate() {
             let (a, b) = (a.widen(), b.widen());
             assert!(
@@ -505,4 +523,321 @@ pub fn permutations(n: usize) -> Vec<Vec<i64>> {
         out.push(p.clone());
     }
     out
+}
+
+// ---------------------------------------------------------------------------------------------
+// M9h: strategies, degrees, degree-scaled tolerances and the high-order test meshes
+// (docs/plans/M9h.md, T0b; ADR-0042, items 2, 3 and 8).
+
+pub use gridcl_geometry::testing::{Strategy, StrategyFamily, StrategyOverride};
+
+/// The environment variable of the degree policy's override (ADR-0042, item 3).
+pub const GEOM_STRATEGY_VAR: &str = "GRIDCL_GEOM_STRATEGY";
+
+/// Whether strategy `s` sums in another order than the scalar node-order references:
+/// `sumfact` (one direction at a time), `shared` (`sumfact`'s kernels on tensor rules, T9) or
+/// `cooperative` (trees over units). `direct` and `loops` sum in node order, so the references'
+/// bitwise comparisons hold under them (docs/plans/M9h.md, Deviations log, T7b; ADR-0054).
+pub fn reorders_sums(s: Strategy) -> bool {
+    matches!(
+        s,
+        Strategy::SumFactorised | Strategy::Shared | Strategy::Cooperative
+    )
+}
+
+/// Whether `GRIDCL_GEOM_STRATEGY` forces, for some family, a strategy that [`reorders_sums`].
+/// The degree policy may select one too; tests that compare with a reference under the policy
+/// record what ran ([`assert_matches_ran`], ADR-0054).
+pub fn environment_reorders_sums() -> bool {
+    let Some(value) = std::env::var_os(GEOM_STRATEGY_VAR) else {
+        return false;
+    };
+    value.to_string_lossy().split(',').any(|entry| {
+        let name = entry.rsplit('=').next().unwrap_or_default().trim();
+        Strategy::ALL
+            .into_iter()
+            .any(|s| reorders_sums(s) && s.name() == name)
+    })
+}
+
+/// One setting an M9h test runs under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StrategyRun {
+    /// No scoped hook: `GRIDCL_GEOM_STRATEGY` as set for the whole run (the kernel-task check
+    /// set of docs/plans/M9h.md).
+    Environment,
+    /// Every family overridden by the scoped hook.
+    Hook(StrategyOverride),
+}
+
+impl std::fmt::Display for StrategyRun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StrategyRun::Environment => write!(f, "{GEOM_STRATEGY_VAR} from the environment"),
+            StrategyRun::Hook(StrategyOverride::Policy) => write!(f, "the degree policy"),
+            StrategyRun::Hook(StrategyOverride::Fixed(s)) => write!(f, "strategy {}", s.name()),
+        }
+    }
+}
+
+/// The settings of [`for_each_strategy!`]: the environment's alone if `GRIDCL_GEOM_STRATEGY`
+/// is set, else the policy and then every strategy forced.
+pub fn strategy_runs() -> Vec<StrategyRun> {
+    if std::env::var_os(GEOM_STRATEGY_VAR).is_some() {
+        return vec![StrategyRun::Environment];
+    }
+    let mut runs = vec![StrategyRun::Hook(StrategyOverride::Policy)];
+    runs.extend(
+        Strategy::ALL
+            .into_iter()
+            .map(|s| StrategyRun::Hook(StrategyOverride::Fixed(s))),
+    );
+    runs
+}
+
+/// Runs `f` with every family's strategy overridden by `s`.
+pub fn with_every_family<R>(s: StrategyOverride, f: impl FnOnce() -> R) -> R {
+    use StrategyFamily::*;
+    use gridcl_geometry::testing::with_strategy;
+    with_strategy(EVector, s, || {
+        with_strategy(Points, s, || {
+            with_strategy(Jacobian, s, || {
+                with_strategy(Normals, s, || {
+                    with_strategy(FacetNormals, s, || with_strategy(PullBack, s, f))
+                })
+            })
+        })
+    })
+}
+
+/// Runs `f` under `run` and checks what ran (`record_strategies`): under a forced strategy,
+/// that strategy or its fallback `Loops` (ADR-0042, item 3).
+pub fn under_strategy<R>(run: StrategyRun, f: impl FnOnce() -> R) -> R {
+    let (result, ran) = gridcl_geometry::testing::record_strategies(|| match run {
+        StrategyRun::Environment => f(),
+        StrategyRun::Hook(s) => with_every_family(s, f),
+    });
+    if let StrategyRun::Hook(StrategyOverride::Fixed(s)) = run {
+        for (family, got) in &ran {
+            assert!(
+                *got == s || *got == Strategy::Loops,
+                "under {run}: {family:?} ran {}",
+                got.name()
+            );
+        }
+    }
+    result
+}
+
+/// Runs `$f(run)` under every [`StrategyRun`] of [`strategy_runs`], `$f` taking the run.
+#[macro_export]
+macro_rules! for_each_strategy {
+    ($f:expr) => {{
+        #[allow(unused_mut)] // FnMut or Fn.
+        let mut f = $f;
+        for run in $crate::common::strategy_runs() {
+            $crate::common::under_strategy(run, || f(run));
+        }
+    }};
+}
+
+/// A module `$name` of M9h tests, one per degree, `p1` to `p8`, each calling `$run(p)` from
+/// the enclosing module; p ≥ 5 is ignored in debug builds (release-only, docs/plans/M9h.md,
+/// T0b). One test per degree lets scripts/ci-gridcl-shard.sh share a test's degrees out over
+/// shards (T12); meshes with pyramids stop at p = 3 (ADR-0041) in `$run`.
+#[macro_export]
+macro_rules! degree_tests {
+    ($name:ident, $run:ident) => {
+        mod $name {
+            $crate::degree_tests!(@ $run; p1 1, p2 2, p3 3, p4 4; p5 5, p6 6, p7 7, p8 8);
+        }
+    };
+    (@ $run:ident; $($low:ident $pl:literal),*; $($high:ident $ph:literal),*) => {
+        $(
+            #[test]
+            fn $low() {
+                super::$run($pl);
+            }
+        )*
+        $(
+            #[test]
+            #[cfg_attr(debug_assertions, ignore = "p ≥ 5 runs in release builds only")]
+            fn $high() {
+                super::$run($ph);
+            }
+        )*
+    };
+}
+
+pub use gridcl_testing::reference::Amplification;
+
+/// max(1, A / A_ref) of every block of `h` (with its node family) at `points` of each block's
+/// cell, the largest over blocks (ADR-0042, item 2).
+pub fn block_scale(
+    h: &HostMesh,
+    points: impl Fn(CellType) -> Vec<f64>,
+    kind: Amplification,
+) -> f64 {
+    h.blocks
+        .iter()
+        .filter(|b| b.num_cells() > 0)
+        .map(|b| {
+            gridcl_testing::reference::tolerance_scale(
+                b.cell,
+                b.degree,
+                b.family,
+                &points(b.cell),
+                kind,
+            )
+        })
+        .fold(1.0, f64::max)
+}
+
+/// Asserts the relative error of `got` against `want` (per quantity over the block, ADR-0042,
+/// item 2) is within the tolerance of `F` times `scale`.
+pub fn assert_scaled<F: Real>(got: &[f64], want: &[f64], scale: f64, what: &str) {
+    assert_eq!(got.len(), want.len(), "{what}: lengths");
+    let err = gridcl_testing::reference::rel_err(got, want);
+    let tol = gridcl_testing::reference::tolerance::<F>(scale);
+    assert!(
+        err <= tol,
+        "{what} ({}): relative error {err:e} > {tol:e} (scale {scale})",
+        name::<F>()
+    );
+}
+
+/// Asserts `got` equals `want` bitwise on the CPU runtime (up to the sign of zero) and within
+/// the tolerance of `F` times `scale` elsewhere, both read back and widened to f64.
+pub fn assert_invariant<F: Real>(got: &[f64], want: &[f64], scale: f64, what: &str) {
+    assert_eq!(got.len(), want.len(), "{what}: lengths");
+    if gridcl_testing::bitwise_device() {
+        for (i, (a, b)) in got.iter().zip(want).enumerate() {
+            assert!(
+                a.to_bits() == b.to_bits() || (*a == 0.0 && *b == 0.0),
+                "{what} ({}): entry {i}: {a} vs {b} (bitwise up to the sign of zero)",
+                name::<F>()
+            );
+        }
+    } else {
+        assert_scaled::<F>(got, want, scale, what);
+    }
+}
+
+/// The node families of a mesh whose blocks all have the cell types `cells`: equispaced, and
+/// GLL where every cell offers it (intervals, quadrilaterals, hexahedra).
+pub fn node_families(cells: &[CellType]) -> Vec<NodeFamily> {
+    let gll = cells.iter().all(|c| {
+        matches!(
+            c,
+            CellType::Interval | CellType::Quadrilateral | CellType::Hexahedron
+        )
+    });
+    if gll {
+        vec![NodeFamily::Equispaced, NodeFamily::Gll]
+    } else {
+        vec![NodeFamily::Equispaced]
+    }
+}
+
+/// A check on the M9h test meshes; [`visit_high_order_meshes`] calls the methods that apply to
+/// each mesh's dimensions.
+pub trait MeshVisitor {
+    /// X, J, det J, K and the pull-back, on every mesh.
+    fn common<F, TD, GD>(&mut self, what: &str, h: &HostMesh)
+    where
+        F: Real,
+        TD: TopoDim + EmbeddedIn<GD>,
+        GD: Dim;
+    /// Facet normals, in codimension 0.
+    fn facets<F: Real, TD: TopoDim + Codim0<TD>>(&mut self, what: &str, h: &HostMesh);
+    /// Normals, in codimension 1.
+    fn normals<F, TD, GD>(&mut self, what: &str, h: &HostMesh)
+    where
+        F: Real,
+        TD: TopoDim + Codim1<GD>,
+        GD: Dim;
+}
+
+/// Which M9h meshes [`visit_high_order_meshes`] gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshSet {
+    /// Small meshes of every (TD, GD) pair and cell type, curved and perturbed, for the
+    /// accuracy tests.
+    Accuracy,
+    /// Boxes with at least 17 cells of each cell type, a curve in 2D and 3D, and the mixed
+    /// surface, for the invariance tests ([`INVARIANCE_CELLS`]).
+    Invariance,
+}
+
+/// Calls `v` on every mesh of `set` at degree `p`, in each node family it offers ([`node_families`]),
+/// with every (TD, GD) pair, skipping meshes with pyramids above p = 3.
+pub fn visit_high_order_meshes<F: Real>(set: MeshSet, p: u32, v: &mut impl MeshVisitor) {
+    use gridcl_testing::{ball, cube_box, interval_box, mixed_surface, sphere, square_box};
+    let accuracy = set == MeshSet::Accuracy;
+    let named = |what: &str, f: NodeFamily| format!("{what} p={p} {f:?}");
+    let interval = interval_box(if accuracy { 5 } else { 17 }, p).perturbed(0.05);
+    for f in node_families(&[CellType::Interval]) {
+        let h = interval.with_node_family(f);
+        v.common::<F, D1, D1>(&named("intervals", f), &h);
+        v.facets::<F, D1>(&named("intervals", f), &h);
+        let curve = lift_curve(&h, 2);
+        v.common::<F, D1, D2>(&named("curve in 2D", f), &curve);
+        v.normals::<F, D1, D2>(&named("curve in 2D", f), &curve);
+        let curve = lift_curve(&h, 3);
+        v.common::<F, D1, D3>(&named("curve in 3D", f), &curve);
+    }
+    for (cell, n) in [
+        (Cell2::Triangle, 3),
+        (Cell2::Quadrilateral, if accuracy { 3 } else { 5 }),
+    ] {
+        let base = square_box(cell, n, p).perturbed(0.05);
+        for f in node_families(&[cell.into()]) {
+            let h = base.with_node_family(f);
+            let what = named(&format!("{cell:?} box"), f);
+            v.common::<F, D2, D2>(&what, &h);
+            v.facets::<F, D2>(&what, &h);
+        }
+    }
+    let surfaces = if accuracy {
+        vec![
+            ("sphere", sphere(1, p)),
+            ("mixed surface", mixed_surface(1, p)),
+        ]
+    } else {
+        vec![("mixed surface", mixed_surface(1, p))]
+    };
+    for (what, h) in &surfaces {
+        let what = named(what, NodeFamily::Equispaced);
+        v.common::<F, D2, D3>(&what, h);
+        v.normals::<F, D2, D3>(&what, h);
+    }
+    for cell in [
+        Cell3::Tetrahedron,
+        Cell3::Hexahedron,
+        Cell3::Prism,
+        Cell3::Pyramid,
+    ] {
+        if cell == Cell3::Pyramid && p > 3 {
+            continue;
+        }
+        let n = if !accuracy && matches!(cell, Cell3::Hexahedron | Cell3::Prism) {
+            3
+        } else {
+            2
+        };
+        let base = cube_box(cell, n, p).perturbed(0.05);
+        for f in node_families(&[cell.into()]) {
+            let h = base.with_node_family(f);
+            let what = named(&format!("{cell:?} box"), f);
+            v.common::<F, D3, D3>(&what, &h);
+            v.facets::<F, D3>(&what, &h);
+        }
+    }
+    if accuracy {
+        let base = ball(0, p);
+        for f in node_families(&[CellType::Hexahedron]) {
+            let h = base.with_node_family(f);
+            v.common::<F, D3, D3>(&named("ball", f), &h);
+        }
+    }
 }

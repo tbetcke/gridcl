@@ -1,9 +1,11 @@
 //! The JSON records of `docs/perf/data/`: one [`SweepRecord`] per measured configuration of the
 //! vector-size sweep, and one [`ThroughputRecord`] per end-to-end throughput measurement.
 //!
-//! Files named `m3s-sweep-*.json` and `m3s-throughput-*.json` each hold a JSON array of records.
+//! Files named `m3s-sweep-*.json` and `m3s-throughput-*.json` each hold a JSON array of records;
+//! the M9h degree sweep writes `m9h-*.json` files of [`DegreeRecord`]s and [`CudaResources`]
+//! ([`load_high_order_dir`]).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gridcl_device::{DeviceClass, KernelKind};
 use serde_json::{Map, Value, json};
@@ -230,7 +232,94 @@ pub fn read_records<T>(
 /// A message naming the file if it cannot be written.
 pub fn write_records(path: &Path, records: &[Value]) -> Result<(), String> {
     let text = serde_json::to_string_pretty(records).expect("JSON of records");
-    std::fs::write(path, format!("{text}\n")).map_err(|e| format!("{}: {e}", path.display()))
+    // Through a temporary file and a rename, so a process stopped while writing leaves the
+    // previous file whole (`degree_sweep --resume`).
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, format!("{text}\n"))
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Sets `node_load` to `load` in every record of the JSON array in `path`: the runner's
+/// snapshots, whose "after" is taken once the command has finished (ADR-0002, ADR-0005).
+///
+/// # Errors
+///
+/// A message naming the file if it cannot be read, parsed or written.
+pub fn annotate_node_load(path: &Path, load: &NodeLoad) -> Result<(), String> {
+    edit_records(path, |record| {
+        record.insert("node_load".to_owned(), load.to_json());
+        Ok(())
+    })
+}
+
+/// The commit of a runner job: `commit=` in `submit.env` of its results directory
+/// (scripts/hpc), for records made in a remote tree without `.git`.
+///
+/// # Errors
+///
+/// A message naming the file if it cannot be read or names no full commit, or if the job's
+/// tree was dirty.
+pub fn job_commit(dir: &Path) -> Result<String, String> {
+    let path = dir.join("submit.env");
+    let what = path.display();
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{what}: {e}"))?;
+    let value = |key: &str| {
+        text.lines()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+    };
+    let commit = value("commit")
+        .filter(|c| c.len() == 40 && c.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| format!("{what}: no commit"))?;
+    if value("dirty") != Some("no") {
+        return Err(format!("{what}: the job's tree was dirty"));
+    }
+    Ok(commit.to_owned())
+}
+
+/// Sets `commit` to `commit` in every record of the JSON array in `path` that says `unknown`:
+/// the records of a job whose tree had no `.git` ([`job_commit`]).
+///
+/// # Errors
+///
+/// A message naming the file if it cannot be read, parsed or written, or if a record names
+/// another commit.
+pub fn annotate_commit(path: &Path, commit: &str) -> Result<(), String> {
+    let what = path.display().to_string();
+    edit_records(path, |record| {
+        match record.get("commit").and_then(Value::as_str) {
+            Some("unknown") => {
+                record.insert("commit".to_owned(), json!(commit));
+                Ok(())
+            }
+            Some(c) if c == commit => Ok(()),
+            other => Err(format!(
+                "{what}: a record of commit {other:?}, not {commit}"
+            )),
+        }
+    })
+}
+
+/// Applies `edit` to every record of the JSON array in `path` and writes the file back.
+fn edit_records(
+    path: &Path,
+    mut edit: impl FnMut(&mut Map<String, Value>) -> Result<(), String>,
+) -> Result<(), String> {
+    let what = path.display();
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{what}: {e}"))?;
+    let mut value: Value = serde_json::from_str(&text).map_err(|e| format!("{what}: {e}"))?;
+    let records = value
+        .as_array_mut()
+        .ok_or_else(|| format!("{what}: not a JSON array"))?;
+    for record in records.iter_mut() {
+        let object = record
+            .as_object_mut()
+            .ok_or_else(|| format!("{what}: a record is not a JSON object"))?;
+        edit(object)?;
+    }
+    write_records(path, records)
 }
 
 /// Every kind, in the order of `vector-policy.toml`.
@@ -617,6 +706,338 @@ fn as_u32(v: &Value) -> Option<u32> {
     u32::try_from(v.as_u64()?).ok()
 }
 
+// ---------------------------------------------------------------------------------------------
+// M9h degree sweep (docs/plans/M9h.md, T1; ADR-0042, items 1, 6, 7, 11 and 12).
+
+/// One measured (or launched) configuration of the degree sweep.
+///
+/// Names are those of `degree_sweep`: `family` one of [`DEGREE_FAMILIES`], `cell` a
+/// `CellType` name (`Hexahedron`), `node_family` `equispaced` or `gll`, `strategy` one of
+/// [`STRATEGIES`] or `policy`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DegreeRecord {
+    pub backend: String,
+    pub device: String,
+    pub device_class: DeviceClass,
+    /// The machine: `macmini` (the local Mac, ADR-0034) or a target of
+    /// scripts/hpc/remote-test.sh.
+    pub target: String,
+    /// The job (or local run) that wrote the record: the paired policy-against-`direct` runs of
+    /// rule 11 share it.
+    pub run_id: String,
+    pub family: String,
+    pub cell: String,
+    /// gdim of the mesh: tdim, or tdim + 1 for `Normals`.
+    pub gdim: usize,
+    pub degree: u32,
+    pub node_family: String,
+    pub scalar: Scalar,
+    /// The requested strategy, or `policy`.
+    pub strategy: String,
+    /// The strategy that ran (`record_strategies`): the requested one or its fallback `loops`.
+    pub strategy_ran: String,
+    /// Quadrature points of the protocol: 10^5, 10^6 or 10^7 (Gauss degree 2p).
+    pub nominal_points: usize,
+    pub cells: usize,
+    pub points_per_cell: usize,
+    /// Newton iterations of a `PullBack` record (1 or 9; rule 1); `None` elsewhere.
+    pub iterations: Option<u32>,
+    /// The requested vector size: the policy's, or 1 in a launch-only run.
+    pub vector_size: usize,
+    /// The vector size of the family's plans (`record_plans`), the widest if they differ: at
+    /// most the requested size, smaller where the register budget or the tile limits it.
+    pub vector_size_ran: usize,
+    /// The vector size the vector policy gives the family's kind on this device.
+    pub policy_vector_size: usize,
+    /// QuadField tile width (the policy's).
+    pub tile: usize,
+    /// CPU block target in bytes (CPU classes only).
+    pub block_bytes: Option<usize>,
+    pub units_per_group: u32,
+    /// `ok`, `too slow` (over 600 s per timed run on a CPU), `too slow to compile` (over 300 s)
+    /// or `failed: <message>`; the two `too slow` statuses end in `(process stopped after S s)`
+    /// where `scripts/bench/degree-sweep.sh` stopped the process at its time limit.
+    pub status: String,
+    /// A `degree_sweep --launch-only` record: one call, no timing (rule 7).
+    pub launch_only: bool,
+    /// Timed with `degree_sweep --interleave`: the timed runs of the configuration's strategies
+    /// alternated (ADR-0055). Absent in older records, read as `false`.
+    pub interleaved: bool,
+    /// The warm-up's check against the f64 host reference on a sample of cells: the relative
+    /// error per quantity (ADR-0042, item 2), the largest over the family's quantities, and the
+    /// tolerance it was held to; `None` where no check ran.
+    pub check_error: Option<f64>,
+    pub check_tolerance: Option<f64>,
+    /// Every timed run, as seconds per call (empty for launch-only and failed records).
+    pub times_s: Vec<f64>,
+    pub median_s: f64,
+    pub calls_per_run: usize,
+    pub calibration_s: f64,
+    /// First-use compile and load time: the warm-up of a call that launches exactly one new
+    /// kernel, minus the median (rule 6).
+    pub compile_s: f64,
+    /// `disabled` where `CUDA_CACHE_DISABLE=1` was set (CUDA), else the cache state.
+    pub kernel_cache: String,
+    pub commit: String,
+    pub profile: String,
+    pub cores: Cores,
+    pub fallback_reason: Option<String>,
+    pub node_load: Option<NodeLoad>,
+}
+
+impl DegreeRecord {
+    /// Seconds per quadrature point: the median per call over cells × points per cell.
+    pub fn time_per_point(&self) -> f64 {
+        self.median_s / (self.cells * self.points_per_cell) as f64
+    }
+}
+
+/// Registers, spill and local memory per thread of one CUDA kernel, from `ncu` or `ptxas -v`
+/// (rule 6), joined to the degree records by kernel name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CudaResources {
+    pub target: String,
+    pub kernel: String,
+    pub family: String,
+    pub cell: String,
+    pub degree: u32,
+    pub scalar: Scalar,
+    pub strategy: String,
+    pub vector_size: usize,
+    pub registers: u32,
+    pub spill_bytes: u64,
+    pub local_bytes: u64,
+    /// Derived from the register count.
+    pub max_threads_per_block: u32,
+    /// `ncu` or `ptxas`.
+    pub source: String,
+}
+
+/// Every M9h record of a directory.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HighOrderData {
+    /// `m9h-baseline-*.json`: `direct` at the pinned commit of T3 (rule 11).
+    pub baseline: Vec<DegreeRecord>,
+    /// `m9h-degree-*.json`: the strategy sweeps and the paired policy runs.
+    pub degree: Vec<DegreeRecord>,
+    /// `m9h-launch-*.json`: `degree_sweep --launch-only` (rule 7).
+    pub launch: Vec<DegreeRecord>,
+    /// `m9h-cuda-resources-*.json`.
+    pub resources: Vec<CudaResources>,
+}
+
+/// The bench families of the degree sweep.
+pub const DEGREE_FAMILIES: [&str; 9] = [
+    "EVector",
+    "Points",
+    "Jacobian",
+    "DetJ",
+    "Pinv",
+    "Normals",
+    "FacetNormals",
+    "PullBack",
+    "BasisEval",
+];
+
+/// The strategies, simplest first (rule 12's tie order).
+pub const STRATEGIES: [&str; 5] = ["direct", "loops", "sumfact", "shared", "cooperative"];
+
+/// The records of every `m9h-*.json` file in `dir`.
+///
+/// # Errors
+///
+/// A message naming the file, for unreadable files and malformed records.
+pub fn load_high_order_dir(dir: &Path) -> Result<HighOrderData, String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with("m9h-") && name.ends_with(".json"))
+        .collect();
+    names.sort();
+    let mut data = HighOrderData::default();
+    for name in names {
+        let path = dir.join(&name);
+        if name.starts_with("m9h-baseline-") {
+            data.baseline
+                .extend(read_records(&path, DegreeRecord::from_json)?);
+        } else if name.starts_with("m9h-degree-") {
+            data.degree
+                .extend(read_records(&path, DegreeRecord::from_json)?);
+        } else if name.starts_with("m9h-launch-") {
+            data.launch
+                .extend(read_records(&path, DegreeRecord::from_json)?);
+        } else if name.starts_with("m9h-cuda-resources-") {
+            data.resources
+                .extend(read_records(&path, CudaResources::from_json)?);
+        } else {
+            return Err(format!(
+                "{}: not an m9h-baseline-, m9h-degree-, m9h-launch- or \
+                 m9h-cuda-resources- file",
+                path.display()
+            ));
+        }
+    }
+    Ok(data)
+}
+
+impl DegreeRecord {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "backend": self.backend,
+            "device": self.device,
+            "device_class": format!("{:?}", self.device_class),
+            "target": self.target,
+            "run_id": self.run_id,
+            "family": self.family,
+            "cell": self.cell,
+            "gdim": self.gdim,
+            "degree": self.degree,
+            "node_family": self.node_family,
+            "scalar": self.scalar.name(),
+            "strategy": self.strategy,
+            "strategy_ran": self.strategy_ran,
+            "nominal_points": self.nominal_points,
+            "cells": self.cells,
+            "points_per_cell": self.points_per_cell,
+            "iterations": self.iterations,
+            "vector_size": self.vector_size,
+            "vector_size_ran": self.vector_size_ran,
+            "policy_vector_size": self.policy_vector_size,
+            "tile": self.tile,
+            "block_bytes": self.block_bytes,
+            "units_per_group": self.units_per_group,
+            "status": self.status,
+            "launch_only": self.launch_only,
+            "interleaved": self.interleaved,
+            "check_error": self.check_error,
+            "check_tolerance": self.check_tolerance,
+            "times_s": self.times_s,
+            "median_s": self.median_s,
+            "calls_per_run": self.calls_per_run,
+            "calibration_s": self.calibration_s,
+            "compile_s": self.compile_s,
+            "kernel_cache": self.kernel_cache,
+            "commit": self.commit,
+            "profile": self.profile,
+            "cores": self.cores.to_json(),
+            "fallback_reason": self.fallback_reason,
+            "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Result<DegreeRecord, String> {
+        let o = Fields::new(v, "degree record")?;
+        Ok(DegreeRecord {
+            backend: o.string("backend")?,
+            device: o.string("device")?,
+            device_class: o.class("device_class")?,
+            target: o.string("target")?,
+            run_id: o.string("run_id")?,
+            family: o.parsed("family", |f| {
+                DEGREE_FAMILIES.contains(&f).then(|| f.to_owned())
+            })?,
+            cell: o.parsed("cell", |c| CELL_NAMES.contains(&c).then(|| c.to_owned()))?,
+            gdim: o.usize("gdim")?,
+            degree: o.u32("degree")?,
+            node_family: o.parsed("node_family", |f| {
+                ["equispaced", "gll"].contains(&f).then(|| f.to_owned())
+            })?,
+            scalar: o.scalar("scalar")?,
+            strategy: o.parsed("strategy", strategy_named)?,
+            strategy_ran: o.parsed("strategy_ran", strategy_named)?,
+            nominal_points: o.usize("nominal_points")?,
+            cells: o.usize("cells")?,
+            points_per_cell: o.usize("points_per_cell")?,
+            iterations: o.opt_u32("iterations")?,
+            vector_size: o.usize("vector_size")?,
+            vector_size_ran: o.usize("vector_size_ran")?,
+            policy_vector_size: o.usize("policy_vector_size")?,
+            tile: o.usize("tile")?,
+            block_bytes: o.opt_usize("block_bytes")?,
+            units_per_group: o.u32("units_per_group")?,
+            status: o.string("status")?,
+            launch_only: o.typed("launch_only", "a boolean", Value::as_bool)?,
+            interleaved: o
+                .opt_typed("interleaved", "a boolean", Value::as_bool)?
+                .unwrap_or(false),
+            check_error: o.opt_f64("check_error")?,
+            check_tolerance: o.opt_f64("check_tolerance")?,
+            times_s: o.times("times_s")?,
+            median_s: o.f64("median_s")?,
+            calls_per_run: o.usize("calls_per_run")?,
+            calibration_s: o.f64("calibration_s")?,
+            compile_s: o.f64("compile_s")?,
+            kernel_cache: o.string("kernel_cache")?,
+            commit: o.string("commit")?,
+            profile: o.string("profile")?,
+            cores: Cores::from_json(o.get("cores")?)?,
+            fallback_reason: o.opt_string("fallback_reason")?,
+            node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
+        })
+    }
+}
+
+impl CudaResources {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "target": self.target,
+            "kernel": self.kernel,
+            "family": self.family,
+            "cell": self.cell,
+            "degree": self.degree,
+            "scalar": self.scalar.name(),
+            "strategy": self.strategy,
+            "vector_size": self.vector_size,
+            "registers": self.registers,
+            "spill_bytes": self.spill_bytes,
+            "local_bytes": self.local_bytes,
+            "max_threads_per_block": self.max_threads_per_block,
+            "source": self.source,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Result<CudaResources, String> {
+        let o = Fields::new(v, "CUDA resources record")?;
+        let u64_of = |key: &str| o.typed(key, "an unsigned integer", Value::as_u64);
+        Ok(CudaResources {
+            target: o.string("target")?,
+            kernel: o.string("kernel")?,
+            family: o.parsed("family", |f| {
+                DEGREE_FAMILIES.contains(&f).then(|| f.to_owned())
+            })?,
+            cell: o.parsed("cell", |c| CELL_NAMES.contains(&c).then(|| c.to_owned()))?,
+            degree: o.u32("degree")?,
+            scalar: o.scalar("scalar")?,
+            strategy: o.parsed("strategy", strategy_named)?,
+            vector_size: o.usize("vector_size")?,
+            registers: o.u32("registers")?,
+            spill_bytes: u64_of("spill_bytes")?,
+            local_bytes: u64_of("local_bytes")?,
+            max_threads_per_block: o.u32("max_threads_per_block")?,
+            source: o.parsed("source", |s| {
+                ["ncu", "ptxas"].contains(&s).then(|| s.to_owned())
+            })?,
+        })
+    }
+}
+
+/// The cell types of the degree sweep, by their `CellType` names.
+pub const CELL_NAMES: [&str; 7] = [
+    "Interval",
+    "Triangle",
+    "Quadrilateral",
+    "Tetrahedron",
+    "Hexahedron",
+    "Prism",
+    "Pyramid",
+];
+
+/// A strategy of [`STRATEGIES`] or `policy`.
+fn strategy_named(name: &str) -> Option<String> {
+    (STRATEGIES.contains(&name) || name == "policy").then(|| name.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,6 +1208,229 @@ mod tests {
         let error = load_dir(&dir).unwrap_err();
         assert!(
             error.contains("m3s-sweep-bad.json: record 0: no field"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn degree() -> DegreeRecord {
+        DegreeRecord {
+            backend: "cuda".to_owned(),
+            device: "NVIDIA H100".to_owned(),
+            device_class: DeviceClass::Gpu,
+            target: "locust".to_owned(),
+            run_id: "1234".to_owned(),
+            family: "PullBack".to_owned(),
+            cell: "Hexahedron".to_owned(),
+            gdim: 3,
+            degree: 8,
+            node_family: "gll".to_owned(),
+            scalar: Scalar::F64,
+            strategy: "sumfact".to_owned(),
+            strategy_ran: "loops".to_owned(),
+            nominal_points: 1_000_000,
+            cells: 1331,
+            points_per_cell: 729,
+            iterations: Some(9),
+            vector_size: 2,
+            vector_size_ran: 1,
+            policy_vector_size: 2,
+            tile: 16,
+            block_bytes: None,
+            units_per_group: 1,
+            status: "ok".to_owned(),
+            launch_only: false,
+            interleaved: true,
+            check_error: Some(1e-13),
+            check_tolerance: Some(2e-12),
+            times_s: vec![0.5, 0.25],
+            median_s: 0.375,
+            calls_per_run: 1,
+            calibration_s: 0.5,
+            compile_s: 12.5,
+            kernel_cache: "disabled".to_owned(),
+            commit: "abc".to_owned(),
+            profile: "release".to_owned(),
+            cores: cores(),
+            fallback_reason: None,
+            node_load: Some(NodeLoad {
+                before: "idle".to_owned(),
+                after: "idle".to_owned(),
+            }),
+        }
+    }
+
+    fn resources() -> CudaResources {
+        CudaResources {
+            target: "locust".to_owned(),
+            kernel: "pull_back_kernel_f64".to_owned(),
+            family: "PullBack".to_owned(),
+            cell: "Hexahedron".to_owned(),
+            degree: 4,
+            scalar: Scalar::F64,
+            strategy: "direct".to_owned(),
+            vector_size: 1,
+            registers: 255,
+            spill_bytes: 1 << 33,
+            local_bytes: 4096,
+            max_threads_per_block: 256,
+            source: "ncu".to_owned(),
+        }
+    }
+
+    #[test]
+    fn degree_records_round_trip_through_json() {
+        let r = degree();
+        assert_eq!(DegreeRecord::from_json(&r.to_json()).unwrap(), r);
+        let r = DegreeRecord {
+            family: "Jacobian".to_owned(),
+            strategy: "policy".to_owned(),
+            iterations: None,
+            block_bytes: Some(16 << 10),
+            check_error: None,
+            check_tolerance: None,
+            launch_only: true,
+            times_s: Vec::new(),
+            node_load: None,
+            fallback_reason: Some("Locust busy".to_owned()),
+            interleaved: false,
+            ..degree()
+        };
+        assert_eq!(DegreeRecord::from_json(&r.to_json()).unwrap(), r);
+        // Records before ADR-0055 have no `interleaved` field.
+        let mut old = r.to_json();
+        old.as_object_mut().unwrap().remove("interleaved");
+        assert_eq!(DegreeRecord::from_json(&old).unwrap(), r);
+        assert_eq!(
+            CudaResources::from_json(&resources().to_json()).unwrap(),
+            resources()
+        );
+        assert_eq!(degree().time_per_point(), 0.375 / (1331.0 * 729.0));
+    }
+
+    #[test]
+    fn malformed_degree_records_name_the_field() {
+        for (key, value, error) in [
+            (
+                "family",
+                json!("GeomFactors"),
+                "field family: unknown value 'GeomFactors'",
+            ),
+            ("cell", json!("Point"), "field cell: unknown value 'Point'"),
+            (
+                "strategy",
+                json!("fast"),
+                "field strategy: unknown value 'fast'",
+            ),
+            (
+                "node_family",
+                json!("Gll"),
+                "field node_family: unknown value 'Gll'",
+            ),
+            (
+                "launch_only",
+                json!(1),
+                "field launch_only is not a boolean",
+            ),
+        ] {
+            let mut v = degree().to_json();
+            v[key] = value;
+            assert_eq!(DegreeRecord::from_json(&v).unwrap_err(), error, "{key}");
+        }
+        let mut v = resources().to_json();
+        v["source"] = json!("nvcc");
+        assert_eq!(
+            CudaResources::from_json(&v).unwrap_err(),
+            "field source: unknown value 'nvcc'"
+        );
+    }
+
+    #[test]
+    fn load_high_order_dir_sorts_files_by_prefix() {
+        let dir = std::env::temp_dir().join(format!("gridcl-bench-m9h-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = DegreeRecord {
+            strategy: "direct".to_owned(),
+            strategy_ran: "direct".to_owned(),
+            ..degree()
+        };
+        let launch = DegreeRecord {
+            launch_only: true,
+            ..degree()
+        };
+        write_records(
+            &dir.join("m9h-baseline-cuda-locust.json"),
+            &[base.to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m9h-degree-cuda-locust.json"),
+            &[degree().to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m9h-launch-cuda-locust.json"),
+            &[launch.to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m9h-cuda-resources-locust.json"),
+            &[resources().to_json()],
+        )
+        .unwrap();
+        // M3s files and other files are not read.
+        write_records(&dir.join("m3s-sweep-cpu-x.json"), &[sweep().to_json()]).unwrap();
+        std::fs::write(dir.join("notes.txt"), "m9h").unwrap();
+        let data = load_high_order_dir(&dir).unwrap();
+        assert_eq!(data.baseline, vec![base]);
+        assert_eq!(data.degree, vec![degree()]);
+        assert_eq!(data.launch, vec![launch]);
+        assert_eq!(data.resources, vec![resources()]);
+        assert_eq!(load_dir(&dir).unwrap().sweeps, vec![sweep()]);
+
+        std::fs::write(dir.join("m9h-other.json"), "[]").unwrap();
+        let error = load_high_order_dir(&dir).unwrap_err();
+        assert!(
+            error.contains("m9h-other.json: not an m9h-baseline-"),
+            "{error}"
+        );
+        std::fs::remove_file(dir.join("m9h-other.json")).unwrap();
+        std::fs::write(dir.join("m9h-degree-bad.json"), "[{}]").unwrap();
+        let error = load_high_order_dir(&dir).unwrap_err();
+        assert!(
+            error.contains("m9h-degree-bad.json: record 0: no field"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn commits_come_from_the_job() {
+        let dir = std::env::temp_dir().join(format!("gridcl-bench-load-{}-c", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let commit = "a88ab2a1a25ec8efda634cdf115be366161fdcc2";
+        let env = |dirty: &str| format!("target=locust\ncommit={commit}\ndirty={dirty}\n");
+        std::fs::write(dir.join("submit.env"), env("no")).unwrap();
+        assert_eq!(job_commit(&dir).unwrap(), commit);
+        std::fs::write(dir.join("submit.env"), env("yes")).unwrap();
+        assert!(
+            job_commit(&dir)
+                .unwrap_err()
+                .ends_with("the job's tree was dirty")
+        );
+        std::fs::write(dir.join("submit.env"), "commit=a88ab2a\ndirty=no\n").unwrap();
+        assert!(job_commit(&dir).unwrap_err().ends_with("no commit"));
+
+        let file = dir.join("records.json");
+        let record = |c: &str| json!({ "family": "Points", "commit": c });
+        write_records(&file, &[record("unknown"), record(commit)]).unwrap();
+        annotate_commit(&file, commit).unwrap();
+        let read = read_records(&file, |v| Ok(v.clone())).unwrap();
+        assert_eq!(read, vec![record(commit); 2]);
+        write_records(&file, &[record("unknown"), record("b9zz")]).unwrap();
+        let error = annotate_commit(&file, commit).unwrap_err();
+        assert!(
+            error.contains("a record of commit Some(\"b9zz\")"),
             "{error}"
         );
         std::fs::remove_dir_all(&dir).unwrap();

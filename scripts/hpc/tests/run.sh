@@ -44,7 +44,7 @@ failing_command_first_error summary_header_and_length max_wait_deletes_job resul
 results_survive_resync busy_tree_refused cubecl_toml_written myriad_cpu_job_script
 myriad_cpu_rejects_gpus"
 DIRECT_CASES="status_lists_jobs cancel_deletes_job direct_remote_timeout prune_merged_branch_trees
-job_environment direct_job_group_ended no_answer_ends_runner"
+job_environment direct_start_returns direct_job_group_ended no_answer_ends_runner"
 SLURM_CASES="kathleen_job_script kathleen_two_nodes kathleen_rejects kathleen_max_wait_cancels
 kathleen_status_and_cancel cancel_only_own_jobs"
 CASE_TIMEOUT=${CASE_TIMEOUT:-120}
@@ -548,7 +548,7 @@ case_status_lists_jobs() {
     FAKE_SGE_HOLD=1 bg_rt held myriad-v100 --max-wait 00:01:00 -- true
     local sge_bg=$BG id
     id=$(wait_for_sge_job) || { fail "held job never queued"; return; }
-    bg_rt direct locust --max-wait 00:01:00 -- 'sleep 47'
+    bg_rt direct locust --max-wait 00:01:00 -- 'echo progress-line; sleep 47'
     local direct_bg=$BG pidfile did
     pidfile=$(wait_for_pid_file) || { fail "direct job never started"; return; }
     did=$(basename "$pidfile" .pid)
@@ -558,6 +558,14 @@ case_status_lists_jobs() {
     expect_status 0 "status with jobs"
     expect_grep "$T/status" "(^|[^0-9])$id([^0-9]|$)" "SGE job listed"
     expect_grep "$T/status" "$did" "direct job listed"
+    # The job's output.log fills after the pid file appears.
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        grep -q "^    last: progress-line$" "$T/status" && break
+        sleep 1
+        "$STATUS" >"$T/status" 2>"$T/status.err"
+    done
+    expect_grep "$T/status" "^    last: progress-line$" "direct job's last output line listed"
 
     "$CANCEL" "$id" >/dev/null 2>&1
     "$CANCEL" "$did" >/dev/null 2>&1
@@ -777,13 +785,33 @@ case_direct_remote_timeout() {
 
 # The command sees GRIDCL_HPC_TREE and the job's own GRIDCL_MPI_TEST_DIR (M8 review).
 case_job_environment() {
-    rt locust -- 'echo "tree=$GRIDCL_HPC_TREE"; echo "mpi=$GRIDCL_MPI_TEST_DIR"'
+    rt locust -- 'echo "tree=$GRIDCL_HPC_TREE"; echo "mpi=$GRIDCL_MPI_TEST_DIR"
+        echo "commit=$GRIDCL_HPC_COMMIT"; echo "dirty=$GRIDCL_HPC_DIRTY"'
     expect_status 0 "direct run"
     local id tree=$REMOTE/locust/dev_e0-test
     id=$(job_id)
     expect_line "$LOCAL/target/hpc/locust/$id/output.log" "tree=$tree" "GRIDCL_HPC_TREE"
     expect_line "$LOCAL/target/hpc/locust/$id/output.log" "mpi=$tree/results/$id/mpi-test" \
         "GRIDCL_MPI_TEST_DIR in the job's results"
+    # M9h T3: the degree sweep records the commit from these; the remote tree has no .git.
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "commit=$(g rev-parse HEAD)" \
+        "GRIDCL_HPC_COMMIT"
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "dirty=no" "GRIDCL_HPC_DIRTY"
+}
+
+# The ssh that starts a direct job returns at once, not when the job ends (M9h T3: a
+# backgrounded `cd ... && nohup ...` list held ssh's output open for the whole job).
+case_direct_start_returns() {
+    bg_rt long locust --max-wait 00:01:00 -- 'sleep 50'
+    local i=0
+    while ! grep -q 'started job' "$T/long.stderr" 2>/dev/null && [ $i -lt 75 ]; do
+        sleep 0.2
+        i=$((i + 1))
+    done
+    expect_grep "$T/long.stderr" 'started job' "start reported within 15 s of a 50 s job"
+    "$CANCEL" "$(basename "$(wait_for_pid_file)" .pid)" >"$T/cancel" 2>&1
+    wait_exit "$BG" 30
+    no_process 'sleep 50' || fail "cancelled job still running"
 }
 
 # No process of a direct job outlives it: neither one left behind when the command ends nor

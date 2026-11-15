@@ -46,6 +46,8 @@ pub struct HostChunkBlock {
     pub cell: CellType,
     /// The degree p ≥ 1.
     pub degree: u32,
+    /// The node family of the coordinate element.
+    pub family: NodeFamily,
     /// Cell → node origin ids in A.5 order, one row per cell.
     pub node_ids: Vec<i64>,
     /// Cell origin ids.
@@ -241,6 +243,7 @@ impl HostMesh {
             blocks.push(HostChunkBlock {
                 cell: block.cell,
                 degree: block.degree,
+                family: block.family,
                 node_ids: block.cells[mine.start * k..mine.end * k]
                     .iter()
                     .map(|&n| self.node_id(n as usize))
@@ -325,7 +328,7 @@ impl HostChunk {
     }
 
     /// A `MeshBuilder` with this chunk's nodes, cells (by node origin id), tags and names, with
-    /// equispaced coordinate elements; the caller sets the options and calls `build_on`.
+    /// each block's coordinate element; the caller sets the options and calls `build_on`.
     ///
     /// # Errors
     ///
@@ -343,7 +346,7 @@ impl HostChunk {
             let element = CoordinateElement {
                 cell: super::td_cell::<TD>(block.cell)?,
                 degree: block.degree,
-                family: NodeFamily::Equispaced,
+                family: block.family,
             };
             builder = builder.cell_block_by_ids(element, &block.node_ids, Some(&block.cell_ids));
         }

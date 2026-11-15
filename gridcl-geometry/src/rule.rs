@@ -2,10 +2,11 @@
 
 use cubecl::prelude::Client;
 use gridcl_device::{GridError, Real, Result, check_precision};
-use gridcl_dims::TopoDim;
+use gridcl_dims::{CellType, TopoDim};
 use gridcl_refcell::gauss_rule;
 
 use crate::names::cell_name;
+use crate::sumfact::TensorFactors;
 use crate::{DeviceGrid, PointSet};
 
 /// The distinct cell types of `cells`, in order of first appearance.
@@ -61,8 +62,23 @@ impl<F: Real, TD: TopoDim> QuadRule<F, TD> {
         let sets = distinct(cells.iter().copied())
             .into_iter()
             .map(|cell| {
-                let rule = gauss_rule(cell.into(), degree);
-                PointSet::new(client, cell, rule.points, rule.weights)
+                let cell_type: CellType = cell.into();
+                let rule = gauss_rule(cell_type, degree);
+                let set = PointSet::new(client, cell, rule.points, rule.weights)?;
+                // Tensor Gauss on quadrilaterals and hexahedra records its 1D factor, the
+                // interval rule of the same degree, and the prism's rule its triangle and
+                // interval factors (ADR-0042, item 5).
+                let line = || gauss_rule(CellType::Interval, degree).points;
+                Ok(match cell_type {
+                    CellType::Quadrilateral | CellType::Hexahedron => {
+                        set.with_tensor(TensorFactors::cube(TD::N, &line()))
+                    }
+                    CellType::Prism => {
+                        let triangle = gauss_rule(CellType::Triangle, degree).points;
+                        set.with_tensor(TensorFactors::prism(&triangle, &line()))
+                    }
+                    _ => set,
+                })
             })
             .collect::<Result<_>>()?;
         Ok(Self { sets })

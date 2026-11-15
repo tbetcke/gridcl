@@ -28,6 +28,7 @@ fn permutation_mesh(cell: CellType, shift: i64) -> HostMesh {
         blocks: vec![HostBlock {
             cell,
             degree: 1,
+            family: gridcl::NodeFamily::Equispaced,
             cells,
             cell_ids: None,
         }],

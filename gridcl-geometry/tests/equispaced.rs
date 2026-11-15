@@ -122,7 +122,10 @@ fn check_interpolant<G: DeviceGrid>(mesh: &G, got: &[f64], what: &str) -> Vec<bo
                     let want: f64 = (0..k)
                         .map(|j| tab.get(0, i, j) * x[row[j] as usize * gd + g])
                         .sum();
-                    worst = worst.max((got[node * gd + g] - want).abs() / scale);
+                    let err = (got[node * gd + g] - want).abs() / scale;
+                    // `f64::max` would skip a NaN.
+                    assert!(err.is_finite(), "node {node}, component {g}: {err}");
+                    worst = worst.max(err);
                 }
             }
         }

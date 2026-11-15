@@ -25,6 +25,7 @@ fn single_block(
         blocks: vec![HostBlock {
             cell,
             degree,
+            family: NodeFamily::Equispaced,
             cells,
             cell_ids: None,
         }],

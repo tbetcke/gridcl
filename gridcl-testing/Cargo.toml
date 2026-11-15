@@ -27,6 +27,7 @@ cubecl.workspace = true
 gridcl = { path = "../gridcl" }
 gridcl-device = { path = "../gridcl-device", features = ["testing"] }
 gridcl-dims = { path = "../gridcl-dims" }
+gridcl-geometry = { path = "../gridcl-geometry", features = ["testing"] }
 gridcl-refcell = { path = "../gridcl-refcell" }
 mpi = { workspace = true, optional = true }
 # Exact float parsing: the oracles print f32 values that must compare bitwise.

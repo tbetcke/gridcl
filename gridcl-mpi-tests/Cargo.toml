@@ -101,3 +101,8 @@ required-features = ["mpi"]
 name = "orient_parallel"
 harness = false
 required-features = ["mpi"]
+
+[[test]]
+name = "high_order_parallel"
+harness = false
+required-features = ["mpi"]

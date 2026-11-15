@@ -7,6 +7,7 @@ use gridcl_refcell::{facet_points_to_cell, gauss_rule, reference_facet_normals, 
 
 use crate::names::cell_name;
 use crate::rule::distinct;
+use crate::sumfact::TensorFactors;
 use crate::{DeviceGrid, PointSet};
 
 /// Points on every facet of a cell, in cell coordinates, facet-major (ADR-0012). A cell's
@@ -59,8 +60,18 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
             facet_offsets.push(weights.len());
         }
         let narrowed: Vec<F> = normals.iter().map(|&x| F::narrow(x)).collect();
+        let set = PointSet::new(client, cell, points, weights)?;
+        // The facets of quadrilaterals, hexahedra and prisms carry tensor Gauss rules (on the
+        // prism, triangle × z or edge × z), each mapped along cell axes: the set records one
+        // tensor block per facet (ADR-0042, item 5).
+        let set = match cell_type {
+            CellType::Quadrilateral | CellType::Hexahedron | CellType::Prism => {
+                set.with_tensor(TensorFactors::facets(cell_type, degree))
+            }
+            _ => set,
+        };
         Ok(Self {
-            points: PointSet::new(client, cell, points, weights)?,
+            points: set,
             facet_offsets,
             normals_device: DeviceBuffer::from_host(client, &narrowed)?,
             normals,

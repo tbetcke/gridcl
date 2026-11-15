@@ -4,8 +4,11 @@
 //! - [`device`]: the device-primitive families (Fill, Copy, Reduce, ScanTile, SortDigits,
 //!   Gather) and the scalar helpers measured for `KernelKind::Scalar`'s CPU blocks;
 //! - [`mesh`]: the mesh families (TopologyKeys, PermutationInfo, EVector, GeomFactors), with
-//!   cells as items.
+//!   cells as items;
+//! - [`degree`]: the M9h degree sweep of the degree-dependent families at p = 1–8, with
+//!   quadrature points as items.
 
+pub mod degree;
 pub mod device;
 pub mod mesh;
 

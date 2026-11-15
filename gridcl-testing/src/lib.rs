@@ -12,6 +12,7 @@ mod meshes;
 pub mod oracle;
 pub mod parallel;
 pub mod partition;
+pub mod reference;
 
 pub use comm::ThreadComm;
 pub use meshes::{

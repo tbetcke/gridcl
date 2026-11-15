@@ -10,6 +10,7 @@ use gridcl_refcell::LagrangeElement;
 
 use crate::CoordinateElement;
 use crate::names::element_error;
+use crate::sumfact::TensorFactors;
 
 /// Which table of an element a cache entry holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -18,6 +19,8 @@ enum Table {
     Values,
     /// Reference derivatives, `[q][k][d]`.
     Derivatives,
+    /// The table of the sum-factorised kernels (`TensorFactors::table`).
+    Tensor,
 }
 
 /// The uploaded tables of a point set, per element and table.
@@ -48,6 +51,9 @@ pub struct PointSet<F: Real, TD: TopoDim> {
     weights_device: DeviceBuffer<F>,
     /// Uploaded tabulations, per element and table.
     cache: RefCell<TableCache<F, TD>>,
+    /// The tensor structure of the points, recorded by the rules that build tensor products
+    /// (ADR-0042, item 5); `None` for every other point set.
+    tensor: Option<TensorFactors>,
 }
 
 impl<F: Real, TD: TopoDim> PointSet<F, TD> {
@@ -67,6 +73,7 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
             client: client.clone(),
             weights_device: DeviceBuffer::from_host(client, &narrowed)?,
             cache: RefCell::new(HashMap::new()),
+            tensor: None,
         })
     }
 
@@ -83,7 +90,42 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
             client: client.clone(),
             weights_device: DeviceBuffer::zeros(client, num_points)?,
             cache: RefCell::new(HashMap::new()),
+            tensor: None,
         })
+    }
+
+    /// The point set with the tensor structure `factors` recorded.
+    ///
+    /// # Panics
+    ///
+    /// If `factors` do not describe exactly the points of the set.
+    pub(crate) fn with_tensor(mut self, factors: TensorFactors) -> Self {
+        assert!(
+            factors.points(TD::N, self.len()).as_deref() == Some(self.points.as_slice()),
+            "tensor factors that do not describe the points"
+        );
+        self.tensor = Some(factors);
+        self
+    }
+
+    /// The tensor structure of the points, if a rule recorded one.
+    pub(crate) fn tensor(&self) -> Option<&TensorFactors> {
+        self.tensor.as_ref()
+    }
+
+    /// The table of the sum-factorised kernels for `e`, `[TensorFactors::table]` narrowed to
+    /// `F`, uploaded on first use and cached like the tabulations.
+    ///
+    /// # Errors
+    ///
+    /// As [`tabulate`](PointSet::tabulate), and `TooLarge` for a table whose integers reach
+    /// 2^24.
+    ///
+    /// # Panics
+    ///
+    /// If the set records no tensor structure.
+    pub(crate) fn tabulate_tensor(&self, e: &CoordinateElement<TD>) -> Result<DeviceBuffer<F>> {
+        self.cached(e, Table::Tensor)
     }
 
     /// The weights on the device, narrowed to `F` (uploaded when the rule was created).
@@ -258,10 +300,15 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// The table of `e` at the points, in f64, narrowed to `F`.
     fn compute(&self, e: &CoordinateElement<TD>, table: Table) -> Result<Vec<F>> {
         let cell: CellType = e.cell.into();
+        if table == Table::Tensor {
+            let factors = self.tensor.as_ref().expect("a tensor point set");
+            let host = factors.table(cell, e.degree, e.family)?;
+            return Ok(host.into_iter().map(F::narrow).collect());
+        }
         let element = LagrangeElement::new(cell, e.degree, e.family).map_err(element_error)?;
         let nderivs = match table {
             Table::Values => 0,
-            Table::Derivatives => 1,
+            Table::Derivatives | Table::Tensor => 1,
         };
         let tab = element
             .tabulate(&self.points, nderivs)
@@ -274,7 +321,7 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
                 .flat_map(|q| (0..k_count).map(move |k| (q, k)))
                 .map(|(q, k)| F::narrow(tab.get(0, q, k)))
                 .collect(),
-            Table::Derivatives => (0..num_points)
+            Table::Derivatives | Table::Tensor => (0..num_points)
                 .flat_map(|q| (0..k_count).map(move |k| (q, k)))
                 .flat_map(|(q, k)| (0..tdim).map(move |d| (q, k, d)))
                 .map(|(q, k, d)| F::narrow(tab.get(1 + d, q, k)))

@@ -3,12 +3,24 @@
 
 use cubecl::prelude::*;
 use gridcl_device::{
-    GridError, KernelKind, LaunchPlan, Real, Result, VECTOR_PAD, debug_assert_bindings,
+    DeviceBuffer, GridError, KernelKind, LaunchPlan, Real, Result, VECTOR_PAD,
+    debug_assert_bindings,
 };
 use gridcl_dims::{CellType, Dim, EmbeddedIn, TopoDim};
 
-use crate::basis_eval::expansion;
+use crate::basis_eval::{expansion, expansion_loops, loops_capacity};
+use crate::cooperative::pull_back::{pull_back_cooperative_kernel, step_components};
+use crate::cooperative::{self, MAX_LEAVES};
 use crate::layout::pinv_of;
+use crate::layout_loops::loops_layout;
+use crate::shared::{self, pull_back_setup_shared_kernel, pull_back_sumfact_setup_shared_kernel};
+use crate::strategy::Strategy;
+use crate::strategy::{self, StrategyFamily};
+use crate::sumfact::pull_back::{
+    pull_back_sumfact_kernel, pull_back_sumfact_setup_kernel, sumfact_pull_back_live,
+    sumfact_setup_live,
+};
+use crate::sumfact::tensor::sumfact_layout;
 use crate::{BlockFields, DeviceGrid, GeomLayout, QuadChunk, QuadField, ScalarShape, VecShape};
 
 /// Options of the pull-back (ADR-0039, item 13).
@@ -67,9 +79,85 @@ pub struct PullBack<F: Real, TD: TopoDim> {
 }
 
 /// Coordinate `d` of the vertex centroid of `cell`, the start of the iteration.
-fn centroid(cell: CellType, d: usize) -> f32 {
+pub(crate) fn centroid(cell: CellType, d: usize) -> f32 {
     let v = gridcl_refcell::vertices(cell);
     (v.iter().map(|p| p[d]).sum::<f64>() / v.len() as f64) as f32
+}
+
+/// The lower and upper bound of the box [−0.1, 1.1]^TD that confines the iterates: every
+/// reference cell lies in [0, 1]^TD (ADR-0046). The margins are 0.1 rounded to f32.
+const BOX: [f32; 2] = [-0.1, 1.1];
+
+/// One Newton iteration of the lanes at `p`, from the coordinate map's expansion `e` at `p`
+/// (X_g at entry g (1 + TD), ∂X_g/∂ξ_d at g (1 + TD) + 1 + d) and the target `y` (relative to
+/// the origin): Δ = K(ξ)(y − X(ξ)), and |Δ|∞ with a non-finite component counting as
+/// `F::max_value()`. Lanes not yet frozen move to ξ + Δ clamped to [`BOX`] by two selects
+/// (ADR-0046), record |Δ|∞ in `last` and freeze once it is at most `tol`; frozen lanes keep ξ
+/// and the step by selects, so no value of a diverging lane reaches them (ADR-0039, item 13).
+/// The step is the unclamped one, so a point whose preimage lies outside the box does not
+/// converge. Shared by the pull-back kernels of every strategy.
+#[cube]
+pub(crate) fn newton_update<F: Float, N: Size>(
+    p: &mut Array<Vector<F, N>>,
+    e: &Array<Vector<F, N>>,
+    y: &Array<Vector<F, N>>,
+    last: &mut Vector<F, N>,
+    frozen: &mut Vector<u32, N>,
+    tol: Vector<F, N>,
+    #[comptime] l: GeomLayout,
+) {
+    let td = l.tdim;
+    let gd = l.gdim;
+    let big = Vector::<F, N>::broadcast(F::max_value());
+    let lo = Vector::<F, N>::broadcast(F::new(comptime!(BOX[0])));
+    let hi = Vector::<F, N>::broadcast(F::new(comptime!(BOX[1])));
+    let no = Vector::<u32, N>::broadcast(0u32);
+    let yes = Vector::<u32, N>::broadcast(1u32);
+    let mut j = Array::<Vector<F, N>>::new(comptime!(td * gd));
+    #[unroll]
+    for d in 0..td {
+        #[unroll]
+        for g in 0..gd {
+            j[d * gd + g] = e[g * (td + 1) + 1 + d];
+        }
+    }
+    let k = pinv_of::<F, N>(&j, l);
+    let mut r = Array::<Vector<F, N>>::new(comptime!(gd));
+    #[unroll]
+    for g in 0..gd {
+        r[g] = y[g] - e[g * (td + 1)];
+    }
+    // Δ = K r; |Δ|∞ and the number of non-finite components (comparisons with NaN are false).
+    let mut delta = Array::<Vector<F, N>>::new(comptime!(td));
+    let mut s = big;
+    let mut bad = no;
+    #[unroll]
+    for t in 0..td {
+        let mut acc = k[t] * r[0];
+        #[unroll]
+        for g in 1..gd {
+            acc += k[g * td + t] * r[g];
+        }
+        delta[t] = acc;
+        let m = acc.abs();
+        if comptime!(t == 0) {
+            s = m;
+        } else {
+            s = select_many(m.greater_than(&s), m, s);
+        }
+        bad += select_many(m.less_equal(&big), no, yes);
+    }
+    s = select_many(bad.equal(&no), s, big);
+    let keep = frozen.equal(&yes);
+    #[unroll]
+    for d in 0..td {
+        let mut q = p[d] + delta[d];
+        q = select_many(q.less_than(&lo), lo, q);
+        q = select_many(q.greater_than(&hi), hi, q);
+        p[d] = select_many(keep, p[d], q);
+    }
+    *last = select_many(keep, *last, s);
+    *frozen = select_many(keep, *frozen, select_many(s.less_equal(&tol), yes, no));
 }
 
 /// The pull-back of the points of the cell vectors `v < num_vectors` of one chunk range. The
@@ -82,9 +170,7 @@ fn centroid(cell: CellType, d: usize) -> f32 {
 ///   xi, step      output QuadField chunks: ξ (tdim components) and |Δξ|∞ of the last step
 /// Tile offsets count tiles from the start of each chunk; the E-vector offset and stride count
 /// vectors. Per cell, the coordinate map's expansion coefficients a(k, g) = Σ_j C'(k, j) x(j, g)
-/// are formed once; per point, every lane runs all `max_iterations` steps
-/// ξ ← ξ + K(ξ)(x − X(ξ)) and freezes, through lane selects, once |Δξ|∞ ≤ tolerance (ADR-0039,
-/// item 13). A non-finite component of Δξ counts as a step of `F::max_value()`.
+/// are formed once; per point, every lane runs all `max_iterations` steps of [`newton_update`].
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn pull_back_kernel<F: Float, N: Size>(
@@ -117,7 +203,6 @@ fn pull_back_kernel<F: Float, N: Size>(
     let tol = Vector::<F, N>::broadcast(F::cast_from(tolerance_hi) + F::cast_from(tolerance_lo));
     let big = Vector::<F, N>::broadcast(F::max_value());
     let no = Vector::<u32, N>::broadcast(0u32);
-    let yes = Vector::<u32, N>::broadcast(1u32);
     let xe_offset = xe_offset as usize;
     let xe_stride = xe_stride as usize;
     let first = ABSOLUTE_POS * items_per_unit as usize;
@@ -160,53 +245,8 @@ fn pull_back_kernel<F: Float, N: Size>(
                 let mut last = big;
                 let mut frozen = no;
                 for _ in 0..max_iterations {
-                    // X at entry g (1 + T), ∂X_g/∂ξ_d at g (1 + T) + 1 + d.
                     let e = expansion::<F, N>(&p, &a, one, zero, cell, degree, gd);
-                    let mut j = Array::<Vector<F, N>>::new(comptime!(td * gd));
-                    #[unroll]
-                    for d in 0..td {
-                        #[unroll]
-                        for g in 0..gd {
-                            j[d * gd + g] = e[g * (td + 1) + 1 + d];
-                        }
-                    }
-                    let k = pinv_of::<F, N>(&j, l);
-                    let mut r = Array::<Vector<F, N>>::new(comptime!(gd));
-                    #[unroll]
-                    for g in 0..gd {
-                        r[g] = y[g] - e[g * (td + 1)];
-                    }
-                    // Δ = K r; |Δ|∞ and the number of non-finite components (comparisons
-                    // with NaN are false).
-                    let mut delta = Array::<Vector<F, N>>::new(comptime!(td));
-                    let mut s = big;
-                    let mut bad = no;
-                    #[unroll]
-                    for t in 0..td {
-                        let mut acc = k[t] * r[0];
-                        #[unroll]
-                        for g in 1..gd {
-                            acc += k[g * td + t] * r[g];
-                        }
-                        delta[t] = acc;
-                        let m = acc.abs();
-                        if comptime!(t == 0) {
-                            s = m;
-                        } else {
-                            s = select_many(m.greater_than(&s), m, s);
-                        }
-                        bad += select_many(m.less_equal(&big), no, yes);
-                    }
-                    s = select_many(bad.equal(&no), s, big);
-                    // Frozen lanes keep ξ and the step by selects, so no value of a diverging
-                    // lane reaches them.
-                    let keep = frozen.equal(&yes);
-                    #[unroll]
-                    for d in 0..td {
-                        p[d] = select_many(keep, p[d], p[d] + delta[d]);
-                    }
-                    last = select_many(keep, last, s);
-                    frozen = select_many(keep, frozen, select_many(s.less_equal(&tol), yes, no));
+                    newton_update::<F, N>(&mut p, &e, &y, &mut last, &mut frozen, tol, l);
                 }
                 let xo = ((xi_first_tile as usize + local_tile) * l.num_points + q) * td;
                 #[unroll]
@@ -214,6 +254,180 @@ fn pull_back_kernel<F: Float, N: Size>(
                     xi[(xo + d) * vpt + lane] = p[d];
                 }
                 let so = (step_first_tile as usize + local_tile) * l.num_points + q;
+                step[so * vpt + lane] = last;
+            }
+        }
+    }
+}
+
+/// The set-up of the `loops` pull-back (docs/plans/M9h.md, T6b): the coordinate map's expansion
+/// coefficients a(k, g) = Σ_j C'(k, j) x(j, g) of the cell vectors `v < num_vectors` of one
+/// range, with `nodes` nodes at run time, summed over j in the order of [`pull_back_kernel`].
+///   xe            E-vector chunk, as in [`pull_back_kernel`]
+///   coefficients  C' (nodes × nodes), then the runtime zero and one and the origin
+///   a             `[k][g][cell]`: a(k, g) of the range's cell vector v at (k·G + g)·a_stride + v
+/// Three buffers.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn pull_back_setup_kernel<F: Float, N: Size>(
+    xe: &[Vector<F, N>],
+    coefficients: &[F],
+    a: &mut [Vector<F, N>],
+    xe_offset: u32,
+    xe_stride: u32,
+    a_stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    #[comptime] gd: usize,
+) {
+    pull_back_setup_body::<F, N>(
+        xe,
+        coefficients,
+        a,
+        xe_offset,
+        xe_stride,
+        a_stride,
+        num_vectors,
+        items_per_unit,
+        nodes,
+        gd,
+    );
+}
+
+/// The body of [`pull_back_setup_kernel`], with `coefficients` in global or shared memory
+/// (the `shared` strategy, `crate::shared`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pull_back_setup_body<F: Float, N: Size>(
+    xe: &[Vector<F, N>],
+    coefficients: &[F],
+    a: &mut [Vector<F, N>],
+    xe_offset: u32,
+    xe_stride: u32,
+    a_stride: u32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    #[comptime] gd: usize,
+) {
+    let nb = nodes as usize;
+    let xe_offset = xe_offset as usize;
+    let xe_stride = xe_stride as usize;
+    let a_stride = a_stride as usize;
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let v = first + it;
+        if v < num_vectors as usize {
+            for k in 0..nb {
+                let mut acc = Array::<Vector<F, N>>::new(comptime!(gd));
+                let c = Vector::<F, N>::broadcast(coefficients[k * nb]);
+                #[unroll]
+                for g in 0..gd {
+                    acc[g] = c * xe[g * xe_stride + xe_offset + v];
+                }
+                for j in 1..nb {
+                    let c = Vector::<F, N>::broadcast(coefficients[k * nb + j]);
+                    #[unroll]
+                    for g in 0..gd {
+                        acc[g] += c * xe[(j * gd + g) * xe_stride + xe_offset + v];
+                    }
+                }
+                #[unroll]
+                for g in 0..gd {
+                    a[(k * gd + g) * a_stride + v] = acc[g];
+                }
+            }
+        }
+    }
+}
+
+/// The Newton iterations of the `loops` pull-back (docs/plans/M9h.md, T6b): as
+/// [`pull_back_kernel`], with the expansion coefficients from [`pull_back_setup_kernel`]
+/// (`a`, range-local cell vectors, row stride `a_stride` vectors), the node and point counts
+/// and the degree at run time, and the basis evaluator of [`expansion_loops`] (`cap` its
+/// capacity, `l` from `loops_layout`). Five buffers.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn pull_back_loops_kernel<F: Float, N: Size>(
+    x: &[Vector<F, N>],
+    a: &[Vector<F, N>],
+    coefficients: &[F],
+    xi: &mut [Vector<F, N>],
+    step: &mut [Vector<F, N>],
+    x_first_tile: u32,
+    a_stride: u32,
+    xi_first_tile: u32,
+    step_first_tile: u32,
+    max_iterations: u32,
+    tolerance_hi: f32,
+    tolerance_lo: f32,
+    num_vectors: u32,
+    items_per_unit: u32,
+    nodes: u32,
+    num_points: u32,
+    degree: u32,
+    #[comptime] l: GeomLayout,
+    #[comptime] cell: CellType,
+    #[comptime] cap: usize,
+) {
+    let td = l.tdim;
+    let gd = l.gdim;
+    let nb = nodes as usize;
+    let nq = num_points as usize;
+    let vpt = comptime!(l.tile) / N::value();
+    // The runtime zero and one of `basis_eval`.
+    let zero = Vector::<F, N>::broadcast(coefficients[nb * nb]);
+    let one = Vector::<F, N>::broadcast(coefficients[nb * nb + 1]);
+    let tol = Vector::<F, N>::broadcast(F::cast_from(tolerance_hi) + F::cast_from(tolerance_lo));
+    let big = Vector::<F, N>::broadcast(F::max_value());
+    let no = Vector::<u32, N>::broadcast(0u32);
+    let a_stride = a_stride as usize;
+    let first = ABSOLUTE_POS * items_per_unit as usize;
+    for it in 0..items_per_unit as usize {
+        let v = first + it;
+        if v < num_vectors as usize {
+            // v − (v / vpt) · vpt, not v % vpt (CubeCL folds `x % 1` on the CPU runtime).
+            let local_tile = v / vpt;
+            let lane = v - local_tile * vpt;
+            for q in 0..nq {
+                // The point relative to the origin.
+                let xo = ((x_first_tile as usize + local_tile) * nq + q) * gd;
+                let mut y = Array::<Vector<F, N>>::new(comptime!(gd));
+                #[unroll]
+                for g in 0..gd {
+                    y[g] = x[(xo + g) * vpt + lane]
+                        - Vector::<F, N>::broadcast(coefficients[nb * nb + 2 + g]);
+                }
+                // The centroid, times the runtime one (no operation on constants alone).
+                let mut p = Array::<Vector<F, N>>::new(comptime!(td));
+                #[unroll]
+                for d in 0..td {
+                    p[d] = Vector::<F, N>::broadcast(F::new(comptime!(centroid(cell, d)))) * one;
+                }
+                let mut last = big;
+                let mut frozen = no;
+                for _ in 0..max_iterations {
+                    let e = expansion_loops::<F, N>(
+                        &p,
+                        a,
+                        v,
+                        a_stride,
+                        one,
+                        zero,
+                        degree as usize,
+                        cell,
+                        gd,
+                        cap,
+                    );
+                    newton_update::<F, N>(&mut p, &e, &y, &mut last, &mut frozen, tol, l);
+                }
+                let xo = ((xi_first_tile as usize + local_tile) * nq + q) * td;
+                #[unroll]
+                for d in 0..td {
+                    xi[(xo + d) * vpt + lane] = p[d];
+                }
+                let so = (step_first_tile as usize + local_tile) * nq + q;
                 step[so * vpt + lane] = last;
             }
         }
@@ -271,7 +485,10 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// both tiled like `x`.
 ///
 /// Iteration starts at the reference cell's vertex centroid with Δ = K(ξ)(x − X(ξ)), K the
-/// pseudo-inverse: Newton in codimension 0, Gauss–Newton otherwise. A lane freezes once
+/// pseudo-inverse: Newton in codimension 0, Gauss–Newton otherwise. Each iterate is clamped to
+/// [−0.1, 1.1]^TD, the box of every reference cell widened by 0.1, while the freeze test and
+/// the last step use the unclamped Δ, so a point whose preimage lies outside that box does not
+/// converge (ADR-0046). A lane freezes once
 /// |Δ|∞ ≤ tolerance; the loop always runs `max_iterations`, so the result is the same at
 /// every vector size (ADR-0039, items 13 and 14). Where the iteration has not converged, the
 /// last step exceeds the tolerance: a step with a non-finite component counts as
@@ -281,7 +498,16 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// as `physical_points_block` does.
 ///
 /// Plans use `KernelKind::PullBack` with `max_vector` = the tile width of `x`. The first call
-/// for a block uploads its expansion coefficients, cached with the E-vector.
+/// for a block uploads its expansion coefficients, cached with the E-vector. Under the `loops`
+/// strategy a set-up kernel first writes each cell's coordinate-map coefficients to a scratch
+/// buffer of the size of the largest range of the E-vector chunks, which the iterations read.
+/// Under `sumfact` (quadrilaterals, hexahedra and prisms) the set-up forms the same
+/// coefficients by sum factorisation, and each step evaluates the 1D Legendre polynomials at ξ
+/// and contracts them one direction at a time; the first call uploads the interval's
+/// coefficients, the node permutation and on prisms the triangle's coefficients instead of the
+/// expansion coefficients (ADR-0049). Under `cooperative` the `loops` set-up runs once per cell,
+/// and each Newton step's sum over the basis functions is split among a group of units
+/// (planned by `LaunchPlan::per_group`, `crate::cooperative`).
 ///
 /// # Errors
 ///
@@ -341,14 +567,30 @@ where
     }
     let gb = g.geometry_block(b);
     let cell: CellType = gb.element.cell.into();
+    let (degree, family, origin) = (gb.element.degree, gb.element.family, g.origin());
+    // `shared` stages the set-up's table: the tensor data of `sumfact` on tensor cells, else
+    // `loops`' C′.
+    let sumfact = strategy::sum_factorises(StrategyFamily::PullBack, cell, true);
+    let s = strategy::choose(
+        client,
+        StrategyFamily::PullBack,
+        cell,
+        degree,
+        size_of::<F>(),
+        true,
+        || {
+            let xe = g.evector(b)?;
+            let table = if sumfact {
+                xe.tensor_coefficients(cell, degree, family, origin.as_ref())?
+            } else {
+                xe.coefficients(cell, degree, family, origin.as_ref())?
+            };
+            Ok(Some(table.len()))
+        },
+    )?;
+    let staged = s == Strategy::Shared;
     let layout = GeomLayout::new::<TD, GD>(&gb.element, num_points, tile);
     let xe = g.evector(b)?;
-    let coefficients = xe.coefficients(
-        cell,
-        gb.element.degree,
-        gb.element.family,
-        g.origin().as_ref(),
-    )?;
     // The tolerance as an f32 pair whose sum in F rounds like the tolerance itself (a float
     // scalar argument of generic F is not a CubeCL launch argument).
     let tolerance = opts
@@ -357,8 +599,344 @@ where
     let tolerance_hi = tolerance as f32;
     let tolerance_lo = (tolerance - f64::from(tolerance_hi)) as f32;
     let (td, gd, nb) = (layout.tdim, layout.gdim, layout.nodes_per_cell);
+    let ranges = ranges([xe.chunks(), x.chunks(), xi.chunks(), step.chunks()], tile);
+    // The scratch of the strategies with a set-up: the coordinate map's coefficients of the
+    // largest range, nodes × gdim per cell (the size of one E-vector chunk range).
+    let scratch = || -> Result<DeviceBuffer<F>> {
+        let cells = ranges.iter().map(|r| r.padded_cells).max().unwrap_or(0);
+        let per_cell = nb.checked_mul(gd).ok_or(GridError::TooLarge)?;
+        DeviceBuffer::<F>::uninit(
+            client,
+            per_cell.checked_mul(cells).ok_or(GridError::TooLarge)?,
+        )
+    };
+    if s == Strategy::SumFactorised || (staged && sumfact) {
+        let data = xe.tensor_coefficients(cell, degree, family, origin.as_ref())?;
+        // The node count per direction at run time, the arrays' capacity at comptime.
+        let n1 = degree as usize + 1;
+        let cap = loops_capacity(degree);
+        let l = sumfact_layout(layout, cap);
+        let a = scratch()?;
+        for r in &ranges {
+            let [ce, cx, cxi, cs] = r.chunks;
+            let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
+            let (cxi, cs) = (&xi.chunks()[cxi], &step.chunks()[cs]);
+            let live = sumfact_setup_live(cell, cap, td);
+            let (setup, staged_cap) = if staged {
+                shared::plan(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live,
+                    data.len(),
+                )?
+            } else {
+                let plan = LaunchPlan::elementwise(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live,
+                )?;
+                (plan, 0)
+            };
+            let n = setup.vector_size;
+            debug_assert_bindings(client, 3);
+            if staged {
+                // SAFETY: as for the `sumfact` set-up in the other branch; besides, the kernel
+                // stages data[i] for i < data.len() into a shared array of staged_cap ≥
+                // data.len() entries (`shared::capacity`), the shared memory per cube the plan
+                // checked, and reads the staged copy where the `sumfact` set-up reads `data`. The plan has one unit per group, so its
+                // vectors are those of `elementwise`.
+                unsafe {
+                    pull_back_sumfact_setup_shared_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        data.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(n1)?,
+                        fit(data.len())?,
+                        l,
+                        cell,
+                        staged_cap,
+                    );
+                }
+            } else {
+                // SAFETY: as for `loops`' set-up below: the kernel handles vectors
+                // v < padded_cells / n, reads E-vector vectors (k·G + g)·stride/n + offset/n + v
+                // < K·G·stride/n for the nodes k < K of the permutation, `data` below its length
+                // (`pull_back_data`: 2 + G + n², the permutation of K entries, on prisms nt²), and
+                // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n for k < K (n^TD
+                // coefficients on quadrilaterals and hexahedra, nt·n on prisms, both K), within the
+                // scratch of K·G·scratch_cells elements.
+                unsafe {
+                    pull_back_sumfact_setup_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        data.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(n1)?,
+                        l,
+                        cell,
+                    );
+                }
+            }
+            let plan = LaunchPlan::elementwise(
+                client,
+                KernelKind::PullBack,
+                r.padded_cells,
+                size_of::<F>(),
+                tile,
+                sumfact_pull_back_live(cell, cap, td, gd),
+            )?;
+            let n = plan.vector_size;
+            debug_assert_bindings(client, 5);
+            // SAFETY: as for `loops` below: the kernel reads `a` at (k·G + g)·padded_cells/n + v
+            // for k < K, inside the scratch the set-up kernel wrote (stream order), `data` at
+            // its first 2 + G entries, and `x`, `xi` and `step` as `direct` does, with
+            // num_points at run time.
+            unsafe {
+                pull_back_sumfact_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    cx.data.vector_arg(n),
+                    a.vector_arg(n),
+                    data.arg(),
+                    cxi.data.vector_arg(n),
+                    cs.data.vector_arg(n),
+                    fit((r.first_cell - cx.first_cell) / tile)?,
+                    fit(r.padded_cells / n)?,
+                    fit((r.first_cell - cxi.first_cell) / tile)?,
+                    fit((r.first_cell - cs.first_cell) / tile)?,
+                    opts.max_iterations,
+                    tolerance_hi,
+                    tolerance_lo,
+                    fit(r.padded_cells / n)?,
+                    plan.items_per_unit,
+                    fit(num_points)?,
+                    fit(n1)?,
+                    l,
+                    cell,
+                );
+            }
+        }
+        return Ok((xi, step));
+    }
+    let coefficients = xe.coefficients(cell, degree, family, origin.as_ref())?;
+    let cooperate = s == Strategy::Cooperative;
+    if s == Strategy::Loops || staged || cooperate {
+        let cap = loops_capacity(degree);
+        // The evaluator's sums, 1D values and recurrences, then the Newton step's values.
+        let live = gd * (td + 1) + 3 * cap + 18 + 3 * td * gd + 2 * gd + 3 * td + 6;
+        // `cooperative` adds the deepest tree of one unit per group, the step's sum and the
+        // tree's control words.
+        let comps = step_components(&layout);
+        let tree_live = (MAX_LEAVES.ilog2() as usize + 2) * comps + 6;
+        let a = scratch()?;
+        for r in ranges {
+            let [ce, cx, cxi, cs] = r.chunks;
+            let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
+            let (cxi, cs) = (&xi.chunks()[cxi], &step.chunks()[cs]);
+            let (setup, staged_cap) = if staged {
+                shared::plan(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    2 * gd + 2,
+                    coefficients.len(),
+                )?
+            } else {
+                let plan = LaunchPlan::elementwise(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    2 * gd + 2,
+                )?;
+                (plan, 0)
+            };
+            let n = setup.vector_size;
+            debug_assert_bindings(client, 3);
+            if staged {
+                // SAFETY: as for the `loops` set-up in the other branch; besides, the kernel
+                // stages coefficients[i] for i < coefficients.len() into a shared array of
+                // staged_cap ≥ coefficients.len() entries (`shared::capacity`), the shared
+                // memory per cube the plan checked, and reads the staged copy where the `loops`
+                // set-up reads `coefficients`. The plan has one unit per group, so its vectors
+                // are those of `elementwise`.
+                unsafe {
+                    pull_back_setup_shared_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        coefficients.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(nb)?,
+                        fit(coefficients.len())?,
+                        gd,
+                        staged_cap,
+                    );
+                }
+            } else {
+                // SAFETY: n divides the tile, which divides r.padded_cells, VECTOR_PAD, every
+                // chunk's first cell and the E-vector stride. The kernel handles vectors
+                // v < padded_cells / n; it reads E-vector vectors (k·G + g)·stride/n + offset/n + v
+                // < K·G·stride/n (offset + padded_cells ≤ stride), `coefficients` below K², and
+                // writes `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n, within the
+                // scratch of K·G·scratch_cells elements (padded_cells ≤ scratch_cells).
+                unsafe {
+                    pull_back_setup_kernel::launch_unchecked::<F>(
+                        client,
+                        setup.cube_count,
+                        setup.cube_dim,
+                        n,
+                        ce.data.vector_arg(n),
+                        coefficients.arg(),
+                        a.vector_arg(n),
+                        fit((r.first_cell - ce.first_cell) / n)?,
+                        fit(ce.num_cells.next_multiple_of(VECTOR_PAD) / n)?,
+                        fit(r.padded_cells / n)?,
+                        fit(r.padded_cells / n)?,
+                        setup.items_per_unit,
+                        fit(nb)?,
+                        gd,
+                    );
+                }
+            }
+            if cooperate {
+                let (plan, group) = cooperative::plan(
+                    client,
+                    KernelKind::PullBack,
+                    r.padded_cells,
+                    size_of::<F>(),
+                    tile,
+                    live + tree_live,
+                    nb,
+                    comps,
+                )?;
+                let n = plan.vector_size;
+                debug_assert_bindings(client, 5);
+                // SAFETY: as for `loops` below: each group slot takes the vectors (c · slots +
+                // s) · items_per_unit + i of the plan, which cover padded_cells / n; its units
+                // read `x` and `a` at the entries `loops` reads for vector min(v, num_vectors −
+                // 1) (a unit reads `a` only for its basis functions k < K), and only unit 0
+                // writes `xi` and `step`, at the entries of `loops` for v < num_vectors. The
+                // shared array has slots · units · round vectors, the bytes `per_group` checked
+                // (none with one unit per group), indexed by UNIT_POS · round + c and, in the
+                // tree, by (UNIT_POS + t) · round + c for the units u + t of the same group.
+                unsafe {
+                    pull_back_cooperative_kernel::launch_unchecked::<F>(
+                        client,
+                        plan.cube_count,
+                        plan.cube_dim,
+                        n,
+                        cx.data.vector_arg(n),
+                        a.vector_arg(n),
+                        coefficients.arg(),
+                        cxi.data.vector_arg(n),
+                        cs.data.vector_arg(n),
+                        fit((r.first_cell - cx.first_cell) / tile)?,
+                        fit(r.padded_cells / n)?,
+                        fit((r.first_cell - cxi.first_cell) / tile)?,
+                        fit((r.first_cell - cs.first_cell) / tile)?,
+                        opts.max_iterations,
+                        tolerance_hi,
+                        tolerance_lo,
+                        fit(r.padded_cells / n)?,
+                        plan.items_per_unit,
+                        fit(nb)?,
+                        fit(num_points)?,
+                        degree,
+                        loops_layout(layout),
+                        cell,
+                        cap,
+                        group,
+                    );
+                }
+                continue;
+            }
+            let plan = LaunchPlan::elementwise(
+                client,
+                KernelKind::PullBack,
+                r.padded_cells,
+                size_of::<F>(),
+                tile,
+                live,
+            )?;
+            let n = plan.vector_size;
+            debug_assert_bindings(client, 5);
+            // SAFETY: as for `direct` below, with `a` in place of the E-vector: the kernel
+            // reads `a` at (k·G + g)·padded_cells/n + v < K·G·padded_cells/n for k < K, inside
+            // the scratch the set-up kernel wrote (stream order), `coefficients` below
+            // K² + 2 + G, and `x`, `xi` and `step` as `direct` does.
+            unsafe {
+                pull_back_loops_kernel::launch_unchecked::<F>(
+                    client,
+                    plan.cube_count,
+                    plan.cube_dim,
+                    n,
+                    cx.data.vector_arg(n),
+                    a.vector_arg(n),
+                    coefficients.arg(),
+                    cxi.data.vector_arg(n),
+                    cs.data.vector_arg(n),
+                    fit((r.first_cell - cx.first_cell) / tile)?,
+                    fit(r.padded_cells / n)?,
+                    fit((r.first_cell - cxi.first_cell) / tile)?,
+                    fit((r.first_cell - cs.first_cell) / tile)?,
+                    opts.max_iterations,
+                    tolerance_hi,
+                    tolerance_lo,
+                    fit(r.padded_cells / n)?,
+                    plan.items_per_unit,
+                    fit(nb)?,
+                    fit(num_points)?,
+                    degree,
+                    loops_layout(layout),
+                    cell,
+                    cap,
+                );
+            }
+        }
+        return Ok((xi, step));
+    }
+    debug_assert!(
+        s == Strategy::Direct,
+        "`choose` returns only the strategies that run"
+    );
     let live = nb * gd + 3 * td * gd + 2 * gd + 3 * td + 6;
-    for r in ranges([xe.chunks(), x.chunks(), xi.chunks(), step.chunks()], tile) {
+    for r in ranges {
         let [ce, cx, cxi, cs] = r.chunks;
         let (ce, cx) = (&xe.chunks()[ce], &x.chunks()[cx]);
         let (cxi, cs) = (&xi.chunks()[cxi], &step.chunks()[cs]);
@@ -405,7 +983,7 @@ where
                 plan.items_per_unit,
                 layout,
                 cell,
-                gb.element.degree as usize,
+                degree as usize,
             );
         }
     }

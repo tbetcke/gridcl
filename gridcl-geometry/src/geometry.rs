@@ -7,6 +7,7 @@ use gridcl_device::{DeviceBuffer, GridError, Real, Result};
 use gridcl_dims::{Dim, EmbeddedIn, TopoDim};
 use gridcl_parallel::{CommDyn, IndexMap};
 
+use crate::strategy::StrategyFamily;
 use crate::{EVector, GeometryBlock};
 
 /// The geometry of a mesh (ADR-0012).
@@ -125,7 +126,8 @@ where
         self.origin
     }
 
-    /// The E-vector of block `b`, built on first use and cached.
+    /// The E-vector of block `b`, built on first use with the strategy of the degree policy
+    /// (ADR-0042, item 3) and cached.
     ///
     /// # Errors
     ///
@@ -136,6 +138,16 @@ where
             return Ok(xe);
         }
         let block = &self.blocks[b];
+        let s = crate::strategy::choose(
+            self.nodes.client(),
+            StrategyFamily::EVector,
+            block.element.cell.into(),
+            block.element.degree,
+            size_of::<F>(),
+            false,
+            // A gather: no table for `shared` to stage.
+            || Ok(None),
+        )?;
         let xe = crate::evector::build(
             &self.nodes,
             &block.dofmap.data,
@@ -143,6 +155,7 @@ where
             block.nodes_per_cell(),
             GD::N,
             self.origin_device.share(),
+            s,
         )?;
         Ok(cache.get_or_init(|| xe))
     }

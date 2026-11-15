@@ -6,6 +6,10 @@
 //! write tiled [`QuadField`]s, with the lanes of a vector over consecutive cells of a tile.
 
 mod basis_eval;
+#[doc(hidden)]
+#[cfg(feature = "bench")]
+pub mod bench;
+mod cooperative;
 mod detj_pinv;
 mod element;
 mod equispaced;
@@ -16,6 +20,7 @@ mod field;
 mod geometry;
 mod grid;
 mod layout;
+mod layout_loops;
 mod measure;
 mod names;
 mod orient;
@@ -24,6 +29,12 @@ mod points_jac;
 mod pull_back;
 mod rule;
 mod shape;
+mod shared;
+mod strategy;
+mod sumfact;
+#[doc(hidden)]
+#[cfg(feature = "testing")]
+pub mod testing;
 
 pub use detj_pinv::{detj_block, pseudo_inverse_block};
 pub use element::{CoordinateElement, GeometryBlock};

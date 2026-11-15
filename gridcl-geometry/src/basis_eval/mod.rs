@@ -23,9 +23,16 @@
 //! ([`device_coefficients`]); every other constant is an integer or half-integer other than
 //! 0 and 1, and every operation has a runtime operand.
 
+mod loops;
 mod pyramid;
 mod simplex;
 mod tensor;
+
+#[cfg(any(test, feature = "bench"))]
+pub(crate) use loops::broadcast_rows;
+pub(crate) use loops::{
+    dubiner_into, expansion_cooperative, expansion_loops, legendre_into, loops_capacity,
+};
 
 use cubecl::prelude::*;
 use gridcl_device::{GridError, Result};
