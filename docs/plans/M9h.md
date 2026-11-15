@@ -1,6 +1,6 @@
 # M9h High-order performance — plan
 
-- **Status:** approved
+- **Status:** implemented
 - **Branch:** tbetcke/tbetcke-m9h-high-order-performance (user prefix, as for M3–M9)
 - **Issue:** #37
 - **Base commit:** d90f90ecb80faedf19f651a9bd39f49fdeb6aa4b
@@ -397,7 +397,7 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
   - After: T11b
   - Parallel with: –
   - Risks / notes: –
-- [ ] **T13 Final runs**
+- [x] **T13 Final runs**
   - Goal: acceptance on every target; results in Review.
   - Runs:
     - local Mac: CPU f32/f64 and Metal f32 workspace suites; `scripts/mpi-test.sh 1` (CPU) and `GRIDCL_TEST_DEVICE=metal scripts/mpi-test.sh 1 2 3 4`;
@@ -548,7 +548,21 @@ Local cargo runs go one at a time. No edits while `remote-test.sh` syncs. Benchm
 | 2026-11-15 | T12 | Hosted CI at 204abcc (run 43661655200), all pass: cpu 25.8 min; cpu-gridcl-1 to -11 15.8, 11.0, 13.7, 14.4, 14.7, 14.0, 18.9, 13.3, 19.0, 8.5 and 13.9; vulkan-1,4 10.6, -2 9.7, -3 23.0, -5,7,8 17.8, -6 14.5, -9 23.9, -10 17.3, -11 22.4, other 17.6; MPI 14.5–20.2. Less the branch's build difference (cpu about 6.5 min, vulkan 6.5–7.5), every job is under 20 min on main. The whole suite on the local Mac and Locust (T12's goal) runs once, at T13, on the final tree; locally, gridcl and gridcl-bench passed on the CPU runtime in debug at d078d8f (131 integration tests, 24 ignored, 89 min). | Each hosted job under 20 min; one final run per target. | – |
 | 2026-11-15 | T12 (fix, found at T13) | Hosted CI at a8c82e0 (run 43663909606): every job passed but vulkan-other, where `gridcl-bench`'s `timed_smoke_and_second_call_compile_time` failed its "nine iterations take longer than one" assert on a loaded runner (as once locally under load at T6a's preparation). The assert now compares the least median of the first and the three cached runs; `cargo test -p gridcl-bench` passes. | Load only adds time. | – |
 | 2026-11-15 | T12 (fix, found at T13) | Locust job 20261115085214-15680 (T13's CUDA workspace run without the high-order modules, cbe1342): the same test failed on the H100 with nine iterations at 50 µs and one at 84 µs per call: at 10^5 points a GPU call is launch-bound. The "nine iterations take longer than one" assert now runs on CPU device classes only (`protocol::is_cpu`); `cargo test -p gridcl-bench` passes. | Not a load effect on GPUs. | – |
+| 2026-11-15 | T13 | Locust CUDA at p = 5–8 ran as five jobs, one per `GRIDCL_GEOM_STRATEGY` = `policy`, `loops`, `sumfact`, `shared`, `cooperative`, not under `for_each_strategy!`'s forced `direct`: the direct 3D pull-back does not compile within 900 s on Locust from p = 6 (C18), so the planned "CUDA workspace" run cannot finish there. Forced `direct` on CUDA ran at p ≤ 4 (policy and every strategy); at p = 5–8 it ran on the CPU runtime (Mac mini) and Metal. | Maintainer, 2026-11-15: "Env runs, no direct"; as ADR-0050 excludes `direct` at p ≥ 5 from rule 7. | ADR-0050 |
+| 2026-11-15 | T13 | The aarch64 CPU-runtime run on Locust's Grace left out the M9h tests at p = 5–8 (the workspace with `--skip` of the high-order modules, `gridcl-testing`'s lib binary at the default thread count, then the high-order tests at p = 1–4). p = 5–8 on the CPU runtime on aarch64 ran on the Mac mini (release, every strategy). The CUDA `gridcl-bench --lib` re-run after 24db39a was not made: that change only skips the last assert on GPUs, and the rest of the test had passed on the H100 in job 20261115085214-15680. | Maintainer, 2026-11-15, to shorten the final runs; the M6 covers ARM (as in ADR-0051). | ADR-0051 |
+| 2026-11-15 | T13 | Long runs split below the 2 h limit of background commands (CUDA by degree ranges and strategy, local release and Metal by degree ranges); `remote-test.sh` jobs ran one after another from a detached driver. The local CPU release run of p = 7–8 was stopped at the limit after 11 of 12 tests had passed; `vector_size_invariance::p8` ran again alone. One Locust submission (`policy`) was lost when its output was piped into `head`, which ended the runner during the sync, before a job existed; it was resubmitted. | Tool limits. | – |
 
 ## Review
 
-<Filled by /review-milestone.>
+- **Final run before the review** (T13, 2026-11-15; code at 24db39a, tree clean on every remote run; Locust's first CUDA job at cbe1342, which differs only in that test's GPU assert):
+  - Local Mac (M6 Mac mini), 24db39a: fmt; clippy `--workspace --all-targets -D warnings`; `cargo doc --workspace --no-deps` with `-Dwarnings`; `scripts/check-workspace-deps.sh` (443 crates, none forbidden) — all pass. `HWLOC_COMPONENTS=-darwin cargo test --workspace --no-fail-fast` (CPU, debug; f32 and f64), in two runs (`--exclude gridcl`, then `-p gridcl`): 1,172 passed, 0 failed, 24 ignored (the p ≥ 5 tests, release-only; 12 + 87 min). CPU release, the M9h tests at p = 5–8 under the policy and every strategy: p = 5–6 12/12 (32 min), p = 7–8 11/11 before the 2 h limit and `vector_size_invariance::p8` alone 1/1 (67 min). Metal release (`--features gridcl-testing/metal`, f32) in four runs (`--exclude gridcl`; `-p gridcl` without p = 5–8; p = 5–6; p = 7–8): 1,192 passed, 0 failed (4, 7, 20 and 86 min). `scripts/mpi-test.sh 1` (CPU, Open MPI) 12/12; `GRIDCL_TEST_DEVICE=metal scripts/mpi-test.sh 1 2 3 4` 48/48 (10 min together).
+  - Hosted CI at 24db39a: ci run 43704660989 and bench run 43704660983 pass. At a8c82e0 (run 43663909606) every job but vulkan-other passed (fixed in cbe1342 and 24db39a, Deviations log).
+  - Kathleen, two nodes (ADR-0016), cbe1342: `--nodes 2 --ranks 16 -- 'GRIDCL_SKIP_PYTHON=1 GRIDCL_MPIRUN_FLAGS="--map-by node:PE=5 --bind-to core" scripts/mpi-test.sh 2 4 8 16'`, job 634302, 48/48 (12 targets × 4 rank counts, `high_order_parallel` 84 s at 16 ranks; 17 min).
+  - Locust (node load idle before and after every job; `GRIDCL_SKIP_PYTHON=1`, `CUDA_CACHE_DISABLE=1`, `--test-threads=4` for CUDA):
+    - CUDA workspace without the high-order modules (`--skip high_order:: --skip high_order_invariance:: --skip high_order_parallel_invariance`), cbe1342, job 20261115085214-15680: 1,142 passed, 1 failed (`gridcl-bench`'s nine-iteration assert, fixed in 24db39a; 19 min).
+    - CUDA high-order tests (`high_order*`, `parallel_threads::high_order_parallel_invariance`; f32 and f64) under the policy and every strategy: p = 1–3, job 20261115103632-36075, 19/19 (with `vtk::p2_pyramids…`, matched by the filter; 23 min); p = 4, job 20261115105953-47705, 6/6 (69 min).
+    - CUDA p = 5–8 per `GRIDCL_GEOM_STRATEGY` (Deviations log), 24/24 each: `policy` 20261115121009-57571 (92 min), `loops` 20261115134302-70623 (13 min), `sumfact` 20261115135634-73324 (31 min), `shared` 20261115142835-78347 (37 min), `cooperative` 20261115150649-86964 (14 min).
+    - `--gpus 1 --ranks 2 -- scripts/mpi-test.sh 1 2`, job 20261115152134-96236, 24/24 (12 min).
+    - aarch64 CPU runtime (`GRIDCL_TEST_DEVICE=cpu`, `--test-threads=1`; Deviations log): the workspace without the high-order modules, job 20261115153413-118710, 1,143 passed, 0 failed (82 min; no C17 crash this time); `gridcl-testing --lib` at the default thread count, job 20261115165712-195796, 58/58; the high-order tests at p = 1–4, job 20261115165828-197827, 25/25 (30 min).
+  - **Not run:** MPICH locally (hosted CI covers it); Myriad (ADR-0014: no multi-GPU or GPU-aware test in M9h; Locust covered every CUDA run); forced `direct` at p = 5–8 on CUDA and the M9h tests at p = 5–8 on Grace (Deviations log, maintainer's decisions).
+  - **Follow-ups:** C17 (not reproduced in this run); C18 (direct 3D pull-back at p ≥ 6 on CUDA); C20.
