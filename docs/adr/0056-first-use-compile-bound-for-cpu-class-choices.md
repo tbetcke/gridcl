@@ -1,6 +1,6 @@
 # ADR-0056: A first-use compile bound for the CPU classes' choices in the degree policy
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-15
 - **Raised in:** M9h review (design-reviewer, Major 2)
 - **Design sections affected:** "Benchmarks" (**Degree sweep (M9h)**); "Geometric factors" (the degree policy). Amends ADR-0042, items 7 and 12.
@@ -50,4 +50,4 @@ Option 2. It is the Gpu rule the design already has, applied where the same caus
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-15, as proposed (option 2), at the M9h review. Applied in `adr: 0056 apply`: docs/design.md, "Benchmarks" (**Degree sweep (M9h)**); ADR-0042's decision record; the M9h plan. In code (`M9h review: first-use bound on every class (ADR-0056)`): `decide_degree.rs` (`Times::first_use_ok`), `high_order_record.rs` (`first_use_ok`, the new `policy_choices_first_use_within_30_s_on_every_class`), the regenerated `degree-policy.toml` and `docs/perf/high-order.md`. The regenerated policy changes exactly the two entries named under option 2. In the report, the baseline of four CpuSimd512 rows also becomes `loops` (Jacobian and FacetNormals on hexahedra at p = 8, f32 and f64: `direct`'s first use on Kathleen is over 30 s there), with the choice `sumfact` unchanged.

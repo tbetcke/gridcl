@@ -225,3 +225,5 @@ Amended by ADR-0052 (items 1, 11 and 12: on the CPU classes the degree sweep tim
 Amended by ADR-0053 (item 1: the p = 8 / p = 4 ratios of the selected strategies are measured and reported per class against the bounds, with the speedup over M9 at p = 8, and not enforced in M9h; M10 takes the bound as its target), accepted 2026-11-14.
 
 Amended by ADR-0055 (items 11 and 12: rule 11 compares policy families, only where `direct` is selectable for the class, and counts a configuration as slower where the policy is over 5% slower in at least three quarters of the paired runs; the paired runs interleave on CPUs; at p ≤ 4 the CPU classes' strategies are timed interleaved and those records decide), accepted 2026-11-14.
+
+Amended by ADR-0056 (items 7 and 12: a strategy that fails, or takes over 30 s to compile and load on a device swept for a class, is not selectable for that class; bullet 2's bound stays Locust's), accepted 2026-11-15.
