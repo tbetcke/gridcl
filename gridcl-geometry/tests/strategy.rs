@@ -13,11 +13,12 @@ use gridcl_geometry::testing::{
 
 /// Every family on `mesh` with the Gauss rule of degree 2: E-vector, the factors, `normals`
 /// (the facet normals of codimension 0 or the normals of codimension 1) and the pull-back.
-fn every_family<TD, GD>(
-    mesh: &Mesh<f32, TD, GD>,
-    normals: impl Fn(&Mesh<f32, TD, GD>, &QuadRule<f32, TD>) -> Result<()>,
+fn every_family<F, TD, GD>(
+    mesh: &Mesh<F, TD, GD>,
+    normals: impl Fn(&Mesh<F, TD, GD>, &QuadRule<F, TD>) -> Result<()>,
 ) -> Result<()>
 where
+    F: Real,
     TD: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
 {
@@ -59,27 +60,43 @@ fn with_recorded<R>(ran: &[(StrategyFamily, Strategy)], f: impl FnOnce() -> R) -
     )()
 }
 
+/// Runs `f` in f32 and, where the device supports it, in f64 (the policy's entries differ per
+/// scalar size).
+fn each_precision(
+    f32_run: impl FnOnce(&cubecl::prelude::Client),
+    f64_run: impl FnOnce(&cubecl::prelude::Client),
+) {
+    let client = gridcl_testing::test_client();
+    f32_run(&client);
+    if gridcl_testing::supports::<f64>(&client) {
+        f64_run(&client);
+    }
+}
+
 /// Under the policy every family's launches are recorded, the E-vector once per mesh (cached);
 /// forcing each family's recorded strategy records the same launches (the policy dispatches
 /// to the strategy it names, or its fallback).
 #[test]
 fn record_strategies_shows_the_policy() {
+    each_precision(shows_the_policy::<f32>, shows_the_policy::<f64>);
+}
+
+fn shows_the_policy<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    let client = gridcl_testing::test_client();
     let square = gridcl_testing::square_box(Cell2::Quadrilateral, 2, 3)
-        .build::<f32, D2, D2>(&client)
+        .build::<F, D2, D2>(client)
         .unwrap();
     let sphere = gridcl_testing::sphere(0, 2)
-        .build::<f32, D2, D3>(&client)
+        .build::<F, D2, D3>(client)
         .unwrap();
-    let on_square = |m: &Mesh<f32, D2, D2>| {
+    let on_square = |m: &Mesh<F, D2, D2>| {
         every_family(m, |m, _| {
             m.facet_normals(&FacetQuadRule::for_grid(m, 2)?).map(drop)
         })
         .unwrap()
     };
     let on_sphere =
-        |m: &Mesh<f32, D2, D3>| every_family(m, |m, rule| m.normals(rule).map(drop)).unwrap();
+        |m: &Mesh<F, D2, D3>| every_family(m, |m, rule| m.normals(rule).map(drop)).unwrap();
     let ((ran_square, ran_sphere), ran) = record_strategies(|| {
         with_every(StrategyOverride::Policy, || {
             let (((), a), ((), b)) = (
@@ -108,11 +125,17 @@ fn record_strategies_shows_the_policy() {
 /// The policy's J equals, bitwise, J with the strategy the policy chose forced.
 #[test]
 fn policy_matches_its_forced_choice_bitwise() {
-    let client = gridcl_testing::test_client();
+    each_precision(
+        policy_matches_its_forced_choice::<f32>,
+        policy_matches_its_forced_choice::<f64>,
+    );
+}
+
+fn policy_matches_its_forced_choice<F: Real>(client: &cubecl::prelude::Client) {
     let run = |s| {
         let mesh = gridcl_testing::cube_box(Cell3::Hexahedron, 2, 2)
             .perturbed(0.05)
-            .build::<f32, D3, D3>(&client)
+            .build::<F, D3, D3>(client)
             .unwrap();
         let rule = QuadRule::for_grid(&mesh, 4).unwrap();
         record_strategies(|| {
@@ -129,18 +152,32 @@ fn policy_matches_its_forced_choice_bitwise() {
         .map(|&(_, s)| s)
         .expect("a Jacobian launch");
     let (forced, _) = run(StrategyOverride::Fixed(chosen));
-    let bits = |v: &Vec<[[f32; 3]; 3]>| -> Vec<u32> {
-        v.iter().flatten().flatten().map(|x| x.to_bits()).collect()
+    // Widening to f64 is exact, so equal bits there are equal bits in `F`.
+    let bits = |v: &Vec<[[F; 3]; 3]>| -> Vec<u64> {
+        v.iter()
+            .flatten()
+            .flatten()
+            .map(|x| x.widen().to_bits())
+            .collect()
     };
-    assert_eq!(bits(&policy), bits(&forced), "{}", chosen.name());
+    assert_eq!(
+        bits(&policy),
+        bits(&forced),
+        "{} {}",
+        std::any::type_name::<F>(),
+        chosen.name()
+    );
 }
 
 #[test]
 fn forced_loops_runs_loops() {
+    each_precision(forced_loops::<f32>, forced_loops::<f64>);
+}
+
+fn forced_loops<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    let client = gridcl_testing::test_client();
     let triangle = gridcl_testing::square_box(Cell2::Triangle, 2, 2)
-        .build::<f32, D2, D2>(&client)
+        .build::<F, D2, D2>(client)
         .unwrap();
     // Sum factorisation does not apply to a triangle: its fallback `loops` runs.
     for s in [Strategy::Loops, Strategy::SumFactorised] {
@@ -648,14 +685,17 @@ fn shared_against_kernels<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
 /// 64 bytes of shared memory, against the device's own limit, under which they run `shared`.
 #[test]
 fn shared_falls_back_to_loops_above_the_limit() {
+    each_precision(shared_fallback::<f32>, shared_fallback::<f64>);
+}
+
+fn shared_fallback<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    let client = gridcl_testing::test_client();
     for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
         let mesh = gridcl_testing::cube_box(cell, 1, 2)
-            .build::<f32, D3, D3>(&client)
+            .build::<F, D3, D3>(client)
             .unwrap();
         let rule = QuadRule::for_grid(&mesh, 4).unwrap();
-        let run = |mesh: &Mesh<f32, D3, D3>| {
+        let run = |mesh: &Mesh<F, D3, D3>| {
             let x = mesh.physical_points(&rule).unwrap();
             mesh.jacobians(&rule).unwrap();
             mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
@@ -671,11 +711,66 @@ fn shared_falls_back_to_loops_above_the_limit() {
             ]
         };
         assert_eq!(ran, want(Strategy::Shared), "{cell:?}");
-        let mut props = (*gridcl_device::device_properties(&client)).clone();
+        let mut props = (*gridcl_device::device_properties(client)).clone();
         props.hardware.max_shared_memory_size = 64;
         let (_, ran) =
             gridcl_device::testing::with_properties(props, || forced(&mesh, Strategy::Shared, run));
         assert_eq!(ran, want(Strategy::Loops), "{cell:?}");
+    }
+}
+
+/// A forced `cooperative` falls back to `loops` where the shared memory cannot hold one
+/// component per unit of a cube (ADR-0042, item 3, addendum of 2026-11-15): on a GPU class
+/// (the device's own, or injected on the CPU runtime) with 16 bytes of shared memory. A CPU
+/// class plans one unit per group and uses no shared memory, so it keeps `cooperative`.
+#[test]
+fn cooperative_falls_back_to_loops_above_the_limit() {
+    each_precision(cooperative_fallback::<f32>, cooperative_fallback::<f64>);
+}
+
+fn cooperative_fallback<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    use gridcl_device::DeviceClass;
+    use gridcl_device::testing::with_properties;
+    let name = std::any::type_name::<F>();
+    for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
+        let mesh = gridcl_testing::cube_box(cell, 1, 2)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 4).unwrap();
+        let run = |mesh: &Mesh<F, D3, D3>| {
+            let x = mesh.physical_points(&rule).unwrap();
+            mesh.jacobians(&rule).unwrap();
+            mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+            vec![]
+        };
+        let want = |s| {
+            vec![
+                (Points, s),
+                (EVector, Strategy::Loops),
+                (Jacobian, s),
+                (PullBack, s),
+            ]
+        };
+        let (_, ran) = forced(&mesh, Strategy::Cooperative, run);
+        assert_eq!(ran, want(Strategy::Cooperative), "{name} {cell:?}");
+        let small = || {
+            let mut props = (*gridcl_device::device_properties(client)).clone();
+            props.hardware.max_shared_memory_size = 16;
+            props
+        };
+        if DeviceClass::for_client(client) != DeviceClass::Gpu {
+            let (_, ran) = with_properties(small(), || forced(&mesh, Strategy::Cooperative, run));
+            assert_eq!(
+                ran,
+                want(Strategy::Cooperative),
+                "{name} {cell:?}, a CPU class"
+            );
+        }
+        let mut gpu = small();
+        gpu.hardware.num_cpu_cores = None;
+        let (_, ran) = with_properties(gpu, || forced(&mesh, Strategy::Cooperative, run));
+        assert_eq!(ran, want(Strategy::Loops), "{name} {cell:?}, a GPU class");
     }
 }
 

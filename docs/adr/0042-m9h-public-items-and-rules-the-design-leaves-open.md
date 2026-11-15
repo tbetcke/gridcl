@@ -227,3 +227,7 @@ Amended by ADR-0053 (item 1: the p = 8 / p = 4 ratios of the selected strategies
 Amended by ADR-0055 (items 11 and 12: rule 11 compares policy families, only where `direct` is selectable for the class, and counts a configuration as slower where the policy is over 5% slower in at least three quarters of the paired runs; the paired runs interleave on CPUs; at p ≤ 4 the CPU classes' strategies are timed interleaved and those records decide), accepted 2026-11-14.
 
 Amended by ADR-0056 (items 7 and 12: a strategy that fails, or takes over 30 s to compile and load on a device swept for a class, is not selectable for that class; bullet 2's bound stays Locust's), accepted 2026-11-15.
+
+Addenda at the M9h review (maintainer, 2026-11-15):
+
+- Item 3, inapplicable strategies: `cooperative` is also inapplicable, and falls back to `loops`, where the device's shared memory cannot hold one component per unit of a cube (the largest GPU cube at the device's widest vector; `cooperative::fits`). Before, such a launch returned `TooLarge`. No device of the test targets is affected (Metal: 4 KiB of 32 KiB); CPU classes plan one unit per group and use no shared memory.

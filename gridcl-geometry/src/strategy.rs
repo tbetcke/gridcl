@@ -64,7 +64,9 @@ impl Strategy {
     /// records its factors; the pull-back, at arbitrary points, passes `true`). Sum
     /// factorisation needs a tensor cell and tensor points; neither it nor `cooperative`
     /// applies to the E-vector, a gather without sums (ADR-0042, item 3). `shared` needs a
-    /// table that fits the shared memory, which [`choose`] checks with the launch's table.
+    /// table that fits the shared memory, which [`choose`] checks with the launch's table, and
+    /// `cooperative` a shared memory that holds one component per unit of a cube, which
+    /// [`choose`] checks with the device.
     fn applies(self, family: StrategyFamily, cell: CellType, tensor: bool) -> bool {
         match self {
             Strategy::SumFactorised => {
@@ -354,8 +356,9 @@ fn env_override(family: StrategyFamily) -> Option<StrategyOverride> {
 /// launch's points are a tensor point set, see `Strategy::applies`). `table` gives the
 /// entries of the table the `shared` variant of the launch stages (`None` where it has
 /// none, the E-vector and the bench evaluator), and is called only when `shared` is wanted;
-/// a table beyond the device's shared memory per cube makes `shared` fall back to `Loops` too
-/// (ADR-0042, item 3). Recorded for `testing::record_strategies`.
+/// a table beyond the device's shared memory per cube makes `shared` fall back to `Loops` too,
+/// as does a shared memory too small for one component per unit of a cube for `cooperative`
+/// (`cooperative::fits`; ADR-0042, item 3). Recorded for `testing::record_strategies`.
 ///
 /// # Errors
 ///
@@ -394,7 +397,8 @@ pub(crate) fn choose(
     };
     let applies = wanted.applies(family, cell, tensor)
         && (wanted != Strategy::Shared
-            || table()?.is_some_and(|len| crate::shared::fits(client, len, elem_bytes)));
+            || table()?.is_some_and(|len| crate::shared::fits(client, len, elem_bytes)))
+        && (wanted != Strategy::Cooperative || crate::cooperative::fits(client, elem_bytes));
     let s = if applies { wanted } else { Strategy::Loops };
     hook::record(family, s);
     Ok(s)

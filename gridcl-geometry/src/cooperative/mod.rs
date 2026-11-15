@@ -16,7 +16,9 @@
 //! On GPUs a launch asks `per_group` for L units per group and gets U ≤ L. The shared array
 //! holds one vector per unit of the cube for each of the components reduced together; where
 //! the cube's units times the components exceed the shared memory, the components go through
-//! the tree in rounds of [`Group::round`] (at least one).
+//! the tree in rounds of [`Group::round`] (at least one). Where the shared memory cannot hold
+//! even one component per unit of a cube, the strategy does not apply and the launch runs
+//! `loops` ([`fits`]).
 //!
 //! On CPUs a launch asks for one unit per group. A CubeCL CPU unit is a thread, and
 //! `sync_cube` a spin barrier on pinned workers (C21): with the barriers of a tree per point,
@@ -29,10 +31,15 @@ pub(crate) mod factors;
 pub(crate) mod pull_back;
 
 use cubecl::prelude::*;
-use gridcl_device::{DeviceClass, GridError, KernelKind, LaunchPlan, Result, device_properties};
+use gridcl_device::{
+    DeviceClass, GridError, KernelKind, LaunchPlan, Result, VECTOR_PAD, device_properties,
+};
 
 /// The most leaves of a group's tree: a power of two.
 pub(crate) const MAX_LEAVES: usize = 32;
+/// Units of a GPU cube of `LaunchPlan::per_group` (docs/design.md, Listing S2: 256 units per
+/// cube, or fewer where the device's limits are smaller).
+const GPU_CUBE_UNITS: u32 = 256;
 
 /// The leaves of a sum over `terms` terms: the largest power of two not above
 /// min([`MAX_LEAVES`], `terms`), and 1 for no term.
@@ -69,6 +76,28 @@ impl Group {
     }
 }
 
+/// Whether a cooperative launch with `elem_bytes`-byte scalars applies on `client`'s device
+/// (ADR-0042, item 3, addendum of 2026-11-15): its shared array holds at least one component,
+/// one vector per unit of the cube, whatever the launch's plan. The test is the largest cube
+/// (256 units, or the device's smaller limits) at the device's widest vector (at most
+/// `VECTOR_PAD`), so that no plan
+/// of [`plan`] meets `TooLarge` for the shared memory where this holds. CPU classes plan one
+/// unit per group and use no shared memory, so the strategy always applies there.
+/// `strategy::choose` falls back to `loops` where it does not.
+pub(crate) fn fits(client: &Client, elem_bytes: usize) -> bool {
+    if DeviceClass::for_client(client) != DeviceClass::Gpu {
+        return true;
+    }
+    let hw = &device_properties(client).hardware;
+    let cube = GPU_CUBE_UNITS
+        .min(hw.max_units_per_cube)
+        .min(hw.max_cube_dim.0) as usize;
+    // A plan's vector size divides `VECTOR_PAD`; the CPU runtime reports no limit of its own.
+    cube.checked_mul(hw.max_vector_size.min(VECTOR_PAD))
+        .and_then(|v| v.checked_mul(elem_bytes))
+        .is_some_and(|bytes| bytes <= hw.max_shared_memory_size)
+}
+
 /// The plan of a cooperative launch over `groups` groups (cells, padded to whole tiles) whose
 /// sums have `terms` terms and `comps` components: `LaunchPlan::per_group` for
 /// [`leaves`]`(terms)` units per group on GPUs and one on CPUs, and the [`Group`] of its
@@ -78,8 +107,8 @@ impl Group {
 ///
 /// # Errors
 ///
-/// `TooLarge` where one component per unit of the cube exceeds the shared memory, and as
-/// `per_group`.
+/// `TooLarge` where one component per unit of the cube exceeds the shared memory (not where
+/// [`fits`] holds, which `strategy::choose` has checked), and as `per_group`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn plan(
     client: &Client,
