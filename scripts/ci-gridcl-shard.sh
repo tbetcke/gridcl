@@ -25,6 +25,8 @@
 #   9, 11. (M9h tests only);
 #   10.  submesh;
 #   and in shards 2, 3, 6, 9, 10 and 11 the M9h tests of $ho at p = 1-4; h5-h8 those at p = 5-8.
+# high_order::open_ended_ranges_launch (p = 9 and 10; release only, M9h review) is in no shard:
+# like p = 5-8 it runs on Metal, CUDA and the local CPU runtime, not in hosted CI.
 # The options (for example --release --features gridcl-testing/vulkan) go to every cargo test.
 set -eu
 set -o pipefail
@@ -57,6 +59,7 @@ factors=high_order::factors_match_host_reference
 pull_back=high_order::pull_back_recovers_reference_points
 parallel=parallel_threads::high_order_parallel_invariance
 ho_tests=("$sizes" "$tiles" "$twice" "$factors" "$pull_back" "$parallel")
+open_ended=high_order::open_ended_ranges_launch
 ho=(
     [2]="$sizes::p1"
     [3]="$sizes::p2 $tiles::p1 $tiles::p2 $twice::p1 $twice::p2"
@@ -91,6 +94,7 @@ for k in $shards; do
     6)
         skip=()
         for m in "${named[@]}"; do skip+=(--skip "$m::"); done
+        skip+=(--skip "$open_ended")
         # Every M9h test but this shard's.
         for t in "${ho_tests[@]}"; do
             for p in 1 2 3 4 5 6 7 8; do

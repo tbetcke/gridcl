@@ -195,3 +195,138 @@ fn pull_backs_at(p: u32) {
 }
 
 crate::degree_tests!(pull_back_recovers_reference_points, pull_backs_at);
+
+/// The policy's open-ended last ranges at p = 9 and 10 (docs/design.md, "Geometric factors":
+/// the last range "resolves to a strategy known to compile at p = 9–10"; ADR-0042, item 3):
+/// on unperturbed boxes of every cell type but pyramids, in each node family the cell offers,
+/// every family launches under the policy of the device's class. No launch runs `direct`; X,
+/// J, det J, K, the facet normals and the pull-back's ξ are finite, and det J is positive. No
+/// accuracy is asserted: rule 2's tolerances are defined to p = 8.
+fn open_ended<F: Real>(client: &Client, p: u32) {
+    use gridcl_geometry::testing::{Strategy, StrategyOverride, record_strategies};
+    use gridcl_testing::{cube_box, interval_box, square_box};
+
+    fn launch<F: Real, TD: TopoDim + Codim0<TD>>(client: &Client, what: &str, h: &HostMesh) {
+        let mesh = build::<F, TD, TD>(h, client);
+        let degree = rule_degree(h);
+        let rule = QuadRule::for_grid(&mesh, degree).expect("rule");
+        let facets = FacetQuadRule::for_grid(&mesh, degree).expect("facet rule");
+        // The scoped hook comes before `GRIDCL_GEOM_STRATEGY`, so this is the policy always.
+        let (fields, ran) = record_strategies(|| {
+            with_every_family(StrategyOverride::Policy, || {
+                let x = mesh.physical_points(&rule).expect("X");
+                let pb = mesh
+                    .pull_back(&x, &PullBackOptions::default())
+                    .unwrap_or_else(|e| panic!("pull-back of {what}: {e}"));
+                let all = |blocks: Vec<Vec<f64>>| blocks.concat();
+                let f = |r: Result<Vec<f64>>| r.expect("to_host");
+                vec![
+                    ("X", all(x.blocks.iter().map(|b| f(field_f64(b))).collect())),
+                    (
+                        "J",
+                        all(mesh
+                            .jacobians(&rule)
+                            .expect("J")
+                            .blocks
+                            .iter()
+                            .map(|b| f(field_f64(b)))
+                            .collect()),
+                    ),
+                    (
+                        "det J",
+                        all(mesh
+                            .detj(&rule)
+                            .expect("det J")
+                            .blocks
+                            .iter()
+                            .map(|b| f(field_f64(b)))
+                            .collect()),
+                    ),
+                    (
+                        "K",
+                        all(mesh
+                            .pseudo_inverse_jacobians(&rule)
+                            .expect("K")
+                            .blocks
+                            .iter()
+                            .map(|b| f(field_f64(b)))
+                            .collect()),
+                    ),
+                    (
+                        "facet normals",
+                        all(mesh
+                            .facet_normals(&facets)
+                            .expect("facet normals")
+                            .blocks
+                            .iter()
+                            .map(|b| f(field_f64(b)))
+                            .collect()),
+                    ),
+                    (
+                        "ξ",
+                        all(pb
+                            .reference
+                            .blocks
+                            .iter()
+                            .map(|b| f(field_f64(b)))
+                            .collect()),
+                    ),
+                ]
+            })
+        });
+        let at = format!("{what} ({})", name::<F>());
+        assert!(!ran.is_empty(), "{at}: no launch went through the dispatch");
+        assert!(
+            ran.iter().all(|&(_, s)| s != Strategy::Direct),
+            "{at}: the open-ended range ran direct: {ran:?}"
+        );
+        for (quantity, values) in &fields {
+            assert!(!values.is_empty(), "{quantity} of {at}: empty");
+            assert!(
+                values.iter().all(|v| v.is_finite()),
+                "{quantity} of {at}: not finite (under {ran:?})"
+            );
+        }
+        let detj = &fields[2].1;
+        assert!(
+            detj.iter().all(|&d| d > 0.0),
+            "det J of {at}: not positive (under {ran:?})"
+        );
+    }
+
+    let named = |what: &str, f: NodeFamily| format!("{what} p={p} {f:?}");
+    for f in node_families(&[CellType::Interval]) {
+        let h = interval_box(3, p).with_node_family(f);
+        launch::<F, D1>(client, &named("intervals", f), &h);
+    }
+    for cell in [Cell2::Triangle, Cell2::Quadrilateral] {
+        for f in node_families(&[cell.into()]) {
+            let h = square_box(cell, 2, p).with_node_family(f);
+            launch::<F, D2>(client, &named(&format!("{cell:?} box"), f), &h);
+        }
+    }
+    for cell in [Cell3::Tetrahedron, Cell3::Hexahedron, Cell3::Prism] {
+        for f in node_families(&[cell.into()]) {
+            let h = cube_box(cell, 1, p).with_node_family(f);
+            launch::<F, D3>(client, &named(&format!("{cell:?} box"), f), &h);
+        }
+    }
+}
+
+/// One test per degree above the measured ones, in release builds only (as p ≥ 5): Metal, CUDA
+/// and the CPU runtime run them; hosted CI does not (scripts/ci-gridcl-shard.sh).
+mod open_ended_ranges_launch {
+    use super::*;
+
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "p ≥ 5 runs in release builds only")]
+    fn p9() {
+        for_each_precision!(client(), open_ended, 9);
+    }
+
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "p ≥ 5 runs in release builds only")]
+    fn p10() {
+        for_each_precision!(client(), open_ended, 10);
+    }
+}
