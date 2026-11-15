@@ -70,7 +70,7 @@ jobs:
           scripts/check-workspace-deps.sh --features gridcl-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
 
-  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the ten
+  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the eleven
   # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review). Shard 1,
   # the shortest (6 min), also runs gridcl-geometry's integration tests.
   cpu-gridcl:
@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust toolchain from rust-toolchain.toml
@@ -181,7 +181,7 @@ jobs:
           GRIDCL_MPI_FEATURES: hdf5
           GRIDCL_MPI_TESTS: vtkhdf_parallel
 
-  # In five jobs (33 min in one, M8 review): gridcl's shards of scripts/ci-gridcl-shard.sh, two
+  # In nine jobs (33 min in one, M8 review): gridcl's shards of scripts/ci-gridcl-shard.sh, two
   # or more to a job where they are short, and the other crates, whose job saves the cache.
   vulkan:
     name: vulkan-${{ matrix.shard }}
@@ -192,7 +192,7 @@ jobs:
       fail-fast: false
       matrix:
         # Not h5-h8 (M9h's tests at p = 5-8): too slow on lavapipe; Metal and CUDA run them.
-        shard: ["1,4", "2", "3", "5,7,8", "6", "9", "10", other]
+        shard: ["1,4", "2", "3", "5,7,8", "6", "9", "10", "11", other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Software Vulkan (Mesa lavapipe)

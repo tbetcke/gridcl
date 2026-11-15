@@ -510,8 +510,10 @@ mod tests {
             "warm-up, calibration and three runs of k calls"
         );
         assert_eq!(m.times_s.len(), 3);
-        // Time per call: the undelayed fills take far less than the calibration call.
-        assert!(m.median_s() < m.calibration_s, "{m:?}");
+        // Time per call: the undelayed fills take far less than the calibration call. The least
+        // run: on a loaded hosted runner two of three runs took 20 ms, and load only adds time.
+        let least = m.times_s.iter().copied().fold(f64::INFINITY, f64::min);
+        assert!(least < m.calibration_s, "{m:?}");
     }
 
     #[test]
