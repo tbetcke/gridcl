@@ -396,7 +396,9 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
          class, ran its fallback `loops`, or a failed record or a compile and load over 30 s \
          on a sweep device of the class: rule 7 on Locust, every class by ADR-0056). \"n.m.; \
          T3\": `direct` not measured on tetrahedra, hexahedra and prisms at \
-         p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline. \
+         p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline; \
+         \"f.u.; T3\": `direct` timed on every device but excluded by the first-use rule (a \
+         failed record or over 30 s), with T3's cost likewise. \
          Jacobian sums J, det J and K; PullBack is the pull-back at 9 Newton iterations.\n\n",
     );
     let heads: String = STRATEGIES.iter().map(|s| format!(" {s} |")).collect();
@@ -425,7 +427,11 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
                                 let r = match (c.ratio(s), &c.t3_direct) {
                                     (Some(r), _) => per_size(r, |x| format!("{x:.2}")),
                                     (None, Some(t3)) if s == "direct" => {
-                                        format!("n.m.; T3: {}", per_size(t3, |x| format!("{x:.2}")))
+                                        let why = if c.direct_timed { "f.u." } else { "n.m." };
+                                        format!(
+                                            "{why}; T3: {}",
+                                            per_size(t3, |x| format!("{x:.2}"))
+                                        )
                                     }
                                     _ => "–".to_owned(),
                                 };

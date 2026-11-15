@@ -22,7 +22,7 @@ Since `direct` is the baseline and another strategy replaces it only when it is 
 | CpuSimd128 (Mac mini) | E-vector, hexahedron | f64 | 6 | `direct` | 26.4 s | 0.01 s | 0.98 ms / 0.95 ms |
 | CpuSimd128 (Mac mini) | E-vector, hexahedron | f32 | 4 | `direct` | 11.5 s | 0.02 s | (rule 11's range) |
 
-No other choice of a CPU class takes over 10 s to first use; on CpuSimd512 (one Kathleen socket) the largest is 15 s (`direct` E-vector, hexahedron, p = 8). The E-vector is a gather that a mesh builds once and caches, so the two entries above cost a first build 37 s and 64 s to save nothing measurable. `docs/perf/high-order.md` ("CPU compile time at high degree") says "The degree policy and T11a's strategies with runtime loops avoid the fully unrolled kernels", which is not true of these entries.
+No other choice of the CpuSimd128 class takes over 10 s to first use; on CpuSimd512 (one Kathleen socket) the largest is 24 s (`direct` pull-back, hexahedron, p = 8, f64; the `direct` hexahedron E-vector at p = 8 takes 15 s). The E-vector is a gather that a mesh builds once and caches, so the two entries above cost a first build 37 s and 64 s to save nothing measurable. `docs/perf/high-order.md` ("CPU compile time at high degree") says "The degree policy and T11a's strategies with runtime loops avoid the fully unrolled kernels", which is not true of these entries.
 
 The implementation conforms to the design and ADR-0042; the acceptance bullets hold. The question is whether the decision rule should let this happen.
 
@@ -51,3 +51,5 @@ Option 2. It is the Gpu rule the design already has, applied where the same caus
 ## Decision record
 
 Accepted by the maintainer on 2026-11-15, as proposed (option 2), at the M9h review. Applied in `adr: 0056 apply`: docs/design.md, "Benchmarks" (**Degree sweep (M9h)**); ADR-0042's decision record; the M9h plan. In code (`M9h review: first-use bound on every class (ADR-0056)`): `decide_degree.rs` (`Times::first_use_ok`), `high_order_record.rs` (`first_use_ok`, the new `policy_choices_first_use_within_30_s_on_every_class`), the regenerated `degree-policy.toml` and `docs/perf/high-order.md`. The regenerated policy changes exactly the two entries named under option 2. In the report, the baseline of four CpuSimd512 rows also becomes `loops` (Jacobian and FacetNormals on hexahedra at p = 8, f32 and f64: `direct`'s first use on Kathleen is over 30 s there), with the choice `sumfact` unchanged.
+
+Corrected at the second review round (2026-11-15): the Problem section gave 15 s as the largest first use of a CpuSimd512 choice; it is 24.2 s (`direct` pull-back on hexahedra at p = 8 in f64, `m9h-degree-cpu-kathleen-hex8-f64.json`). The decision does not depend on it. In the report's cost table, `direct` excluded by the first-use rule is marked "f.u.; T3" (timed, not selectable) instead of "n.m.; T3" (not measured, ADR-0050).

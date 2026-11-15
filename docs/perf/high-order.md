@@ -942,7 +942,7 @@ One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Rati
 
 ### Cost per strategy
 
-Per measured class, policy family, cell type, scalar type and degree: the baseline's class time in ns per point and each selectable strategy's class ratio to it, at the rule sizes (10^6 / 10^7 points on Gpu, 10^6 on the CPU classes, ADR-0052); "–" where a strategy is not selectable (not measured on every device, not a candidate of the class, ran its fallback `loops`, or a failed record or a compile and load over 30 s on a sweep device of the class: rule 7 on Locust, every class by ADR-0056). "n.m.; T3": `direct` not measured on tetrahedra, hexahedra and prisms at p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline. Jacobian sums J, det J and K; PullBack is the pull-back at 9 Newton iterations.
+Per measured class, policy family, cell type, scalar type and degree: the baseline's class time in ns per point and each selectable strategy's class ratio to it, at the rule sizes (10^6 / 10^7 points on Gpu, 10^6 on the CPU classes, ADR-0052); "–" where a strategy is not selectable (not measured on every device, not a candidate of the class, ran its fallback `loops`, or a failed record or a compile and load over 30 s on a sweep device of the class: rule 7 on Locust, every class by ADR-0056). "n.m.; T3": `direct` not measured on tetrahedra, hexahedra and prisms at p ≥ 5 (ADR-0050), with its cost from T3's baseline (a88ab2a) over this run's baseline; "f.u.; T3": `direct` timed on every device but excluded by the first-use rule (a failed record or over 30 s), with T3's cost likewise. Jacobian sums J, det J and K; PullBack is the pull-back at 9 Newton iterations.
 
 | Family | Cell | Class | Type | p | Base | ns per point | direct | loops | sumfact | shared | cooperative | Choice | Reason |
 | --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
@@ -1142,8 +1142,8 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | CpuSimd128 | f32 | 2 | direct | 0.39 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 3 | direct | 0.67 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f32 | 4 | direct | 0.72 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f32 | 5 | loops | 0.66 | n.m.; T3: 1.05 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
-| EVector | Hexahedron | CpuSimd128 | f32 | 6 | loops | 0.66 | n.m.; T3: 1.21 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
+| EVector | Hexahedron | CpuSimd128 | f32 | 5 | loops | 0.66 | f.u.; T3: 1.05 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
+| EVector | Hexahedron | CpuSimd128 | f32 | 6 | loops | 0.66 | f.u.; T3: 1.21 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f32 | 7 | loops | 0.68 | – | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f32 | 8 | loops | 0.70 | – | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f64 | 1 | direct | 0.28 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1152,7 +1152,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | CpuSimd128 | f64 | 4 | direct | 0.65 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 5 | direct | 0.83 | 1.00 | 0.98 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd128 | f64 | 6 | direct | 1.04 | 1.00 | 0.97 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | CpuSimd128 | f64 | 7 | loops | 1.19 | n.m.; T3: 1.02 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
+| EVector | Hexahedron | CpuSimd128 | f64 | 7 | loops | 1.19 | f.u.; T3: 1.02 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd128 | f64 | 8 | loops | 1.30 | n.m.; T3: 1.08 | 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | CpuSimd512 | f32 | 1 | direct | 0.37 | 1.00 | 1.12 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | CpuSimd512 | f32 | 2 | direct | 1.57 | 1.00 | 0.94 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1177,7 +1177,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | Gpu | f32 | 5 | direct | 0.20 / 0.07 | 1.00 / 1.00 | 0.98 / 0.99 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 6 | direct | 0.28 / 0.08 | 1.00 / 1.00 | 1.04 / 1.03 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f32 | 7 | direct | 0.53 / 0.10 | 1.00 / 1.00 | 0.92 / 0.85 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f32 | 8 | loops | 0.52 / 0.11 | n.m.; T3: 1.16 / 1.18 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
+| EVector | Hexahedron | Gpu | f32 | 8 | loops | 0.52 / 0.11 | f.u.; T3: 1.16 / 1.18 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Hexahedron | Gpu | f64 | 1 | direct | 0.03 / 0.01 | 1.00 / 1.00 | 1.00 / 1.09 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 2 | direct | 0.04 / 0.02 | 1.00 / 1.00 | 1.03 / 2.84 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 3 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.24 / 1.91 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1185,7 +1185,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | EVector | Hexahedron | Gpu | f64 | 5 | direct | 0.09 / 0.03 | 1.00 / 1.00 | 1.49 / 1.23 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 6 | direct | 0.14 / 0.04 | 1.00 / 1.00 | 1.51 / 1.24 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Hexahedron | Gpu | f64 | 7 | direct | 0.27 / 0.05 | 1.00 / 1.00 | 1.33 / 1.33 | – | – | – | direct | no strategy 10% faster than direct |
-| EVector | Hexahedron | Gpu | f64 | 8 | loops | 0.47 / 0.07 | n.m.; T3: 0.83 / 0.79 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
+| EVector | Hexahedron | Gpu | f64 | 8 | loops | 0.47 / 0.07 | f.u.; T3: 0.83 / 0.79 | 1.00 / 1.00 | – | – | – | loops | no strategy 10% faster than loops |
 | EVector | Prism | CpuSimd128 | f32 | 1 | direct | 0.15 | 1.00 | 1.04 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd128 | f32 | 2 | direct | 0.30 | 1.00 | 1.00 | – | – | – | direct | no strategy 10% faster than direct |
 | EVector | Prism | CpuSimd128 | f32 | 3 | direct | 0.42 | 1.00 | 1.01 | – | – | – | direct | no strategy 10% faster than direct |
@@ -1773,7 +1773,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 5 | direct | 471 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 6 | direct | 915 | 1.00 | 0.18 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f32 | 7 | direct | 1360 | 1.00 | 0.16 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f32 | 8 | loops | 311 | n.m.; T3: 9.01 | 1.00 | 0.08 | – | – | sumfact | sumfact 0.08 of loops |
+| Jacobian | Hexahedron | CpuSimd512 | f32 | 8 | loops | 311 | f.u.; T3: 9.01 | 1.00 | 0.08 | – | – | sumfact | sumfact 0.08 of loops |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 1 | direct | 3.38 | 1.00 | 1.01 | 1.05 | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 2 | direct | 3.89 | 1.00 | 0.96 | 0.95 | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 3 | direct | 7.95 | 1.00 | 0.71 | 0.49 | – | – | sumfact | sumfact 0.49 of direct |
@@ -1781,7 +1781,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 5 | direct | 118 | 1.00 | 0.19 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 6 | direct | 315 | 1.00 | 0.17 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | Jacobian | Hexahedron | CpuSimd512 | f64 | 7 | direct | 813 | 1.00 | 0.13 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
-| Jacobian | Hexahedron | CpuSimd512 | f64 | 8 | loops | 627 | n.m.; T3: 2.85 | 1.00 | 0.05 | – | – | sumfact | sumfact 0.05 of loops |
+| Jacobian | Hexahedron | CpuSimd512 | f64 | 8 | loops | 627 | f.u.; T3: 2.85 | 1.00 | 0.05 | – | – | sumfact | sumfact 0.05 of loops |
 | Jacobian | Hexahedron | Gpu | f32 | 1 | direct | 0.36 / 0.19 | 1.00 / 1.00 | 1.15 / 1.22 | 1.12 / 1.16 | 1.13 / 1.15 | 3.93 / 6.41 | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | Gpu | f32 | 2 | direct | 0.54 / 0.28 | 1.00 / 1.00 | 2.45 / 3.63 | 0.92 / 0.86 | 0.86 / 0.82 | 6.39 / 11.55 | shared | shared 0.86 / 0.82 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 3 | direct | 3.14 / 2.23 | 1.00 / 1.00 | 1.81 / 1.45 | 0.19 / 0.14 | 0.19 / 0.14 | 2.77 / 4.12 | shared | shared 0.19 / 0.14 of direct |
@@ -1789,7 +1789,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | Gpu | f32 | 5 | direct | 44.4 / 29.4 | 1.00 / 1.00 | 1.00 / 0.78 | 0.04 / 0.03 | 0.03 / 0.03 | 0.48 / 0.68 | shared | shared 0.03 / 0.03 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 6 | direct | 96.9 / 64.5 | 1.00 / 1.00 | 1.09 / 0.70 | 0.06 / 0.05 | 0.06 / 0.05 | 0.35 / 0.46 | sumfact | sumfact 0.06 / 0.05 of direct |
 | Jacobian | Hexahedron | Gpu | f32 | 7 | direct | 257 / 157 | 1.00 / 1.00 | 0.91 / 0.56 | 0.04 / 0.02 | 0.05 / 0.03 | 0.19 / 0.24 | sumfact | sumfact 0.04 / 0.02 of direct |
-| Jacobian | Hexahedron | Gpu | f32 | 8 | loops | 438 / 143 | n.m.; T3: 1.66 / 2.61 | 1.00 / 1.00 | 0.03 / 0.04 | 0.04 / 0.04 | 0.18 / 0.46 | sumfact | sumfact 0.03 / 0.04 of loops |
+| Jacobian | Hexahedron | Gpu | f32 | 8 | loops | 438 / 143 | f.u.; T3: 1.66 / 2.61 | 1.00 / 1.00 | 0.03 / 0.04 | 0.04 / 0.04 | 0.18 / 0.46 | sumfact | sumfact 0.03 / 0.04 of loops |
 | Jacobian | Hexahedron | Gpu | f64 | 1 | direct | 0.13 / 0.07 | 1.00 / 1.00 | 1.33 / 1.49 | 1.37 / 1.49 | 1.29 / 1.50 | 5.65 / 9.09 | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | Gpu | f64 | 2 | direct | 0.29 / 0.11 | 1.00 / 1.00 | 3.16 / 5.87 | 0.79 / 1.08 | 0.76 / 1.09 | 7.64 / 17.95 | direct | no strategy 10% faster than direct |
 | Jacobian | Hexahedron | Gpu | f64 | 3 | direct | 1.40 / 0.68 | 1.00 / 1.00 | 3.42 / 2.42 | 0.22 / 0.29 | 0.64 / 1.11 | 3.52 / 6.96 | sumfact | sumfact 0.22 / 0.29 of direct |
@@ -1797,7 +1797,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | Jacobian | Hexahedron | Gpu | f64 | 5 | direct | 27.7 / 10.1 | 1.00 / 1.00 | 1.90 / 1.26 | 0.31 / 0.26 | 0.31 / 0.25 | 0.42 / 1.05 | shared | shared 0.31 / 0.25 of direct |
 | Jacobian | Hexahedron | Gpu | f64 | 6 | direct | 470 / 72.9 | 1.00 / 1.00 | 0.32 / 0.42 | 0.04 / 0.05 | 0.04 / 0.05 | 0.04 / 0.22 | sumfact | sumfact 0.04 / 0.05 of direct |
 | Jacobian | Hexahedron | Gpu | f64 | 7 | direct | 217 / 38.9 | 1.00 / 1.00 | 1.66 / 1.78 | 0.15 / 0.14 | 0.19 / 0.17 | 0.13 / 0.59 | sumfact | closest: sumfact 0.15 / 0.14 of direct, 20% slower than the fastest at one size |
-| Jacobian | Hexahedron | Gpu | f64 | 8 | loops | 669 / 139 | n.m.; T3: 3.70 / 2.53 | 1.00 / 1.00 | 0.07 / 0.05 | 0.10 / 0.07 | 0.07 / 0.25 | sumfact | sumfact 0.07 / 0.05 of loops |
+| Jacobian | Hexahedron | Gpu | f64 | 8 | loops | 669 / 139 | f.u.; T3: 3.70 / 2.53 | 1.00 / 1.00 | 0.07 / 0.05 | 0.10 / 0.07 | 0.07 / 0.25 | sumfact | sumfact 0.07 / 0.05 of loops |
 | Jacobian | Prism | CpuSimd128 | f32 | 1 | direct | 1.23 | 1.00 | 0.97 | 0.99 | – | – | direct | no strategy 10% faster than direct |
 | Jacobian | Prism | CpuSimd128 | f32 | 2 | direct | 2.38 | 1.00 | 0.94 | 0.70 | – | – | sumfact | sumfact 0.70 of direct |
 | Jacobian | Prism | CpuSimd128 | f32 | 3 | direct | 5.69 | 1.00 | 0.83 | 0.41 | – | – | sumfact | sumfact 0.41 of direct |
@@ -2223,7 +2223,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 5 | direct | 155 | 1.00 | 0.20 | 0.04 | – | – | sumfact | sumfact 0.04 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 6 | direct | 310 | 1.00 | 0.13 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f32 | 7 | direct | 463 | 1.00 | 0.19 | 0.02 | – | – | sumfact | sumfact 0.02 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f32 | 8 | loops | 96.3 | n.m.; T3: 7.30 | 1.00 | 0.10 | – | – | sumfact | sumfact 0.10 of loops |
+| FacetNormals | Hexahedron | CpuSimd512 | f32 | 8 | loops | 96.3 | f.u.; T3: 7.30 | 1.00 | 0.10 | – | – | sumfact | sumfact 0.10 of loops |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 1 | direct | 0.62 | 1.00 | 0.92 | 1.10 | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 2 | direct | 1.02 | 1.00 | 0.77 | 0.67 | – | – | sumfact | sumfact 0.67 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 3 | direct | 3.53 | 1.00 | 0.73 | 0.35 | – | – | sumfact | sumfact 0.35 of direct |
@@ -2231,7 +2231,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 5 | direct | 38.7 | 1.00 | 0.17 | 0.05 | – | – | sumfact | sumfact 0.05 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 6 | direct | 92.4 | 1.00 | 0.15 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
 | FacetNormals | Hexahedron | CpuSimd512 | f64 | 7 | direct | 173 | 1.00 | 0.36 | 0.03 | – | – | sumfact | sumfact 0.03 of direct |
-| FacetNormals | Hexahedron | CpuSimd512 | f64 | 8 | loops | 40.8 | n.m.; T3: 7.57 | 1.00 | 0.13 | – | – | sumfact | sumfact 0.13 of loops |
+| FacetNormals | Hexahedron | CpuSimd512 | f64 | 8 | loops | 40.8 | f.u.; T3: 7.57 | 1.00 | 0.13 | – | – | sumfact | sumfact 0.13 of loops |
 | FacetNormals | Hexahedron | Gpu | f32 | 1 | direct | 0.10 / 0.04 | 1.00 / 1.00 | 1.28 / 1.39 | 1.19 / 1.51 | 1.15 / 1.41 | 5.00 / 10.54 | direct | no strategy 10% faster than direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 2 | direct | 0.21 / 0.09 | 1.00 / 1.00 | 2.61 / 3.34 | 0.80 / 0.90 | 0.77 / 0.86 | 5.95 / 12.39 | shared | shared 0.77 / 0.86 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 3 | direct | 1.08 / 0.71 | 1.00 / 1.00 | 1.74 / 1.58 | 0.23 / 0.17 | 0.23 / 0.18 | 3.12 / 4.01 | sumfact | sumfact 0.23 / 0.17 of direct |
@@ -2239,7 +2239,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | Gpu | f32 | 5 | direct | 13.2 / 8.60 | 1.00 / 1.00 | 1.16 / 0.91 | 0.05 / 0.04 | 0.05 / 0.04 | 0.54 / 0.78 | shared | shared 0.05 / 0.04 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 6 | direct | 28.3 / 20.2 | 1.00 / 1.00 | 1.18 / 0.74 | 0.04 / 0.03 | 0.08 / 0.05 | 0.34 / 0.49 | sumfact | sumfact 0.04 / 0.03 of direct |
 | FacetNormals | Hexahedron | Gpu | f32 | 7 | direct | 61.9 / 44.3 | 1.00 / 1.00 | 0.93 / 0.57 | 0.05 / 0.03 | 0.05 / 0.03 | 0.26 / 0.33 | sumfact | sumfact 0.05 / 0.03 of direct |
-| FacetNormals | Hexahedron | Gpu | f32 | 8 | loops | 99.6 / 42.6 | n.m.; T3: 1.03 / 1.67 | 1.00 / 1.00 | 0.04 / 0.04 | 0.04 / 0.04 | 0.25 / 0.45 | sumfact | sumfact 0.04 / 0.04 of loops |
+| FacetNormals | Hexahedron | Gpu | f32 | 8 | loops | 99.6 / 42.6 | f.u.; T3: 1.03 / 1.67 | 1.00 / 1.00 | 0.04 / 0.04 | 0.04 / 0.04 | 0.25 / 0.45 | sumfact | sumfact 0.04 / 0.04 of loops |
 | FacetNormals | Hexahedron | Gpu | f64 | 1 | direct | 0.05 / 0.02 | 1.00 / 1.00 | 1.40 / 1.26 | 1.79 / 1.93 | 1.63 / 1.77 | 5.53 / 10.08 | direct | no strategy 10% faster than direct |
 | FacetNormals | Hexahedron | Gpu | f64 | 2 | direct | 0.12 / 0.05 | 1.00 / 1.00 | 2.79 / 3.60 | 0.99 / 1.14 | 0.97 / 1.06 | 6.65 / 13.52 | direct | no strategy 10% faster than direct |
 | FacetNormals | Hexahedron | Gpu | f64 | 3 | direct | 0.69 / 0.30 | 1.00 / 1.00 | 1.88 / 1.64 | 0.30 / 0.37 | 0.30 / 0.46 | 2.56 / 5.30 | sumfact | sumfact 0.30 / 0.37 of direct |
@@ -2247,7 +2247,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | FacetNormals | Hexahedron | Gpu | f64 | 5 | direct | 7.16 / 2.69 | 1.00 / 1.00 | 1.42 / 0.89 | 0.63 / 0.45 | 0.66 / 0.42 | 0.55 / 1.33 | shared | closest: shared 0.66 / 0.42 of direct, 5% slower than the fastest at one size |
 | FacetNormals | Hexahedron | Gpu | f64 | 6 | direct | 134 / 24.9 | 1.00 / 1.00 | 0.18 / 0.20 | 0.05 / 0.06 | 0.06 / 0.06 | 0.05 / 0.22 | sumfact | sumfact 0.05 / 0.06 of direct |
 | FacetNormals | Hexahedron | Gpu | f64 | 7 | direct | 48.5 / 11.2 | 1.00 / 1.00 | 1.04 / 0.80 | 0.21 / 0.18 | 0.28 / 0.21 | 0.17 / 0.69 | sumfact | closest: sumfact 0.21 / 0.18 of direct, 23% slower than the fastest at one size |
-| FacetNormals | Hexahedron | Gpu | f64 | 8 | loops | 117 / 17.4 | n.m.; T3: 4.12 / 4.66 | 1.00 / 1.00 | 0.12 / 0.15 | 0.14 / 0.17 | 0.13 / 0.66 | sumfact | sumfact 0.12 / 0.15 of loops |
+| FacetNormals | Hexahedron | Gpu | f64 | 8 | loops | 117 / 17.4 | f.u.; T3: 4.12 / 4.66 | 1.00 / 1.00 | 0.12 / 0.15 | 0.14 / 0.17 | 0.13 / 0.66 | sumfact | sumfact 0.12 / 0.15 of loops |
 | FacetNormals | Prism | CpuSimd128 | f32 | 1 | direct | 0.53 | 1.00 | 0.95 | 1.03 | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Prism | CpuSimd128 | f32 | 2 | direct | 1.07 | 1.00 | 0.99 | 0.92 | – | – | direct | no strategy 10% faster than direct |
 | FacetNormals | Prism | CpuSimd128 | f32 | 3 | direct | 1.85 | 1.00 | 0.96 | 0.85 | – | – | sumfact | sumfact 0.85 of direct |
@@ -2401,7 +2401,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Triangle | Gpu | f32 | 5 | direct | 0.97 / 0.85 | 1.00 / 1.00 | 2.62 / 2.06 | – | 2.63 / 2.07 | 50.57 / 55.74 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f32 | 6 | direct | 1.73 / 1.27 | 1.00 / 1.00 | 2.26 / 1.87 | – | 2.26 / 1.87 | 33.21 / 43.77 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f32 | 7 | direct | 2.48 / 1.71 | 1.00 / 1.00 | 2.28 / 1.71 | – | 2.27 / 1.71 | 65.26 / 92.47 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f32 | 8 | loops | 9.27 / 3.84 | n.m.; T3: 0.57 / 0.63 | 1.00 / 1.00 | – | 1.00 / 1.00 | 19.76 / 46.51 | loops | no strategy 10% faster than loops |
+| PullBack | Triangle | Gpu | f32 | 8 | loops | 9.27 / 3.84 | f.u.; T3: 0.57 / 0.63 | 1.00 / 1.00 | – | 1.00 / 1.00 | 19.76 / 46.51 | loops | no strategy 10% faster than loops |
 | PullBack | Triangle | Gpu | f64 | 1 | direct | 0.07 / 0.04 | 1.00 / 1.00 | 4.71 / 6.37 | – | 4.59 / 6.38 | 11.83 / 18.06 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 2 | direct | 0.17 / 0.13 | 1.00 / 1.00 | 3.50 / 3.63 | – | 3.49 / 3.63 | 16.70 / 20.96 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 3 | direct | 0.31 / 0.28 | 1.00 / 1.00 | 2.51 / 2.53 | – | 2.52 / 2.53 | 28.51 / 30.91 | direct | no strategy 10% faster than direct |
@@ -2409,7 +2409,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Triangle | Gpu | f64 | 5 | direct | 1.22 / 0.90 | 1.00 / 1.00 | 2.40 / 1.59 | – | 2.38 / 1.58 | 27.93 / 29.97 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 6 | direct | 2.00 / 1.46 | 1.00 / 1.00 | 2.07 / 1.36 | – | 2.06 / 1.35 | 17.31 / 22.52 | direct | no strategy 10% faster than direct |
 | PullBack | Triangle | Gpu | f64 | 7 | direct | 3.78 / 1.95 | 1.00 / 1.00 | 1.86 / 1.24 | – | 1.86 / 1.23 | 23.42 / 43.59 | direct | no strategy 10% faster than direct |
-| PullBack | Triangle | Gpu | f64 | 8 | loops | 10.8 / 2.84 | n.m.; T3: 0.85 / 1.54 | 1.00 / 1.00 | – | 1.00 / 0.99 | 9.46 / 35.02 | loops | no strategy 10% faster than loops |
+| PullBack | Triangle | Gpu | f64 | 8 | loops | 10.8 / 2.84 | f.u.; T3: 0.85 / 1.54 | 1.00 / 1.00 | – | 1.00 / 0.99 | 9.46 / 35.02 | loops | no strategy 10% faster than loops |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 1 | direct | 15.0 | 1.00 | 1.94 | 1.64 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 2 | direct | 23.0 | 1.00 | 1.82 | 1.48 | – | – | direct | no strategy 10% faster than direct |
 | PullBack | Quadrilateral | CpuSimd128 | f32 | 3 | direct | 41.4 | 1.00 | 1.46 | 1.16 | – | – | direct | no strategy 10% faster than direct |
@@ -2493,7 +2493,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Tetrahedron | Gpu | f32 | 1 | direct | 0.23 / 0.17 | 1.00 / 1.00 | 3.95 / 4.88 | – | 3.95 / 4.88 | 28.18 / 37.75 | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | Gpu | f32 | 2 | direct | 0.60 / 0.38 | 1.00 / 1.00 | 3.84 / 4.09 | – | 3.84 / 4.09 | 39.62 / 58.63 | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | Gpu | f32 | 3 | direct | 1.53 / 1.05 | 1.00 / 1.00 | 3.32 / 2.65 | – | 3.32 / 2.65 | 48.97 / 69.87 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | Gpu | f32 | 4 | loops | 13.0 / 5.28 | n.m.; T3: 0.69 / 0.69 | 1.00 / 1.00 | – | 1.00 / 1.00 | 18.56 / 43.83 | loops | no strategy 10% faster than loops |
+| PullBack | Tetrahedron | Gpu | f32 | 4 | loops | 13.0 / 5.28 | f.u.; T3: 0.69 / 0.69 | 1.00 / 1.00 | – | 1.00 / 1.00 | 18.56 / 43.83 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 5 | loops | 28.1 / 9.57 | – | 1.00 / 1.00 | – | 1.00 / 0.99 | 12.23 / 31.82 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 6 | loops | 56.5 / 18.5 | – | 1.00 / 1.00 | – | 1.00 / 1.00 | 7.64 / 21.58 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f32 | 7 | loops | 127 / 37.1 | – | 1.00 / 1.00 | – | – | 4.40 / 14.48 | loops | no strategy 10% faster than loops |
@@ -2501,7 +2501,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Tetrahedron | Gpu | f64 | 1 | direct | 0.13 / 0.10 | 1.00 / 1.00 | 6.28 / 7.71 | – | 6.24 / 7.71 | 54.20 / 68.91 | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | Gpu | f64 | 2 | direct | 0.54 / 0.32 | 1.00 / 1.00 | 5.32 / 4.87 | – | 5.32 / 4.88 | 44.94 / 69.29 | direct | no strategy 10% faster than direct |
 | PullBack | Tetrahedron | Gpu | f64 | 3 | direct | 1.33 / 0.75 | 1.00 / 1.00 | 4.27 / 3.67 | – | 4.28 / 3.68 | 50.24 / 86.70 | direct | no strategy 10% faster than direct |
-| PullBack | Tetrahedron | Gpu | f64 | 4 | loops | 18.6 / 5.35 | n.m.; T3: 0.78 / 0.52 | 1.00 / 1.00 | – | 1.01 / 1.00 | 10.98 / 36.23 | loops | no strategy 10% faster than loops |
+| PullBack | Tetrahedron | Gpu | f64 | 4 | loops | 18.6 / 5.35 | f.u.; T3: 0.78 / 0.52 | 1.00 / 1.00 | – | 1.01 / 1.00 | 10.98 / 36.23 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 5 | loops | 51.9 / 9.43 | – | 1.00 / 1.00 | – | 1.01 / 1.02 | 6.09 / 28.28 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 6 | loops | 106 / 17.8 | – | 1.00 / 1.00 | – | 1.00 / 1.01 | 3.41 / 19.77 | loops | no strategy 10% faster than loops |
 | PullBack | Tetrahedron | Gpu | f64 | 7 | loops | 218 / 36.2 | – | 1.00 / 1.00 | – | 1.00 / 1.01 | 2.20 / 13.45 | loops | no strategy 10% faster than loops |
@@ -2541,7 +2541,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Hexahedron | Gpu | f32 | 1 | direct | 0.30 / 0.23 | 1.00 / 1.00 | 3.51 / 4.08 | 3.80 / 3.97 | 3.81 / 3.97 | 69.27 / 90.30 | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | Gpu | f32 | 2 | direct | 1.26 / 0.83 | 1.00 / 1.00 | 3.31 / 3.14 | 3.23 / 3.77 | 3.48 / 3.77 | 54.82 / 80.41 | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | Gpu | f32 | 3 | direct | 17.3 / 11.2 | 1.00 / 1.00 | 0.90 / 0.88 | 0.90 / 1.05 | 0.90 / 1.05 | 14.59 / 21.97 | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f32 | 4 | loops | 38.7 / 27.8 | n.m.; T3: 1.50 / 1.28 | 1.00 / 1.00 | 1.05 / 1.04 | 1.05 / 1.05 | 10.16 / 13.37 | loops | no strategy 10% faster than loops |
+| PullBack | Hexahedron | Gpu | f32 | 4 | loops | 38.7 / 27.8 | f.u.; T3: 1.50 / 1.28 | 1.00 / 1.00 | 1.05 / 1.04 | 1.05 / 1.05 | 10.16 / 13.37 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 5 | loops | 92.6 / 53.2 | – | 1.00 / 1.00 | 1.02 / 1.24 | 1.02 / 1.24 | 6.95 / 10.69 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 6 | loops | 221 / 98.8 | – | 1.00 / 1.00 | 1.03 / 1.31 | 1.03 / 1.29 | 4.49 / 8.88 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f32 | 7 | loops | 629 / 246 | – | 1.00 / 1.00 | 0.86 / 1.01 | 0.86 / 1.01 | 2.59 / 5.47 | loops | no strategy 10% faster than loops |
@@ -2549,7 +2549,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Hexahedron | Gpu | f64 | 1 | direct | 0.19 / 0.15 | 1.00 / 1.00 | 3.79 / 4.23 | 4.12 / 4.50 | 4.11 / 4.50 | 100.57 / 127.30 | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | Gpu | f64 | 2 | direct | 0.89 / 0.53 | 1.00 / 1.00 | 3.78 / 3.68 | 3.17 / 4.42 | 3.16 / 4.42 | 52.46 / 83.72 | direct | no strategy 10% faster than direct |
 | PullBack | Hexahedron | Gpu | f64 | 3 | direct | 5.12 / 5.45 | 1.00 / 1.00 | 2.73 / 1.42 | 2.05 / 1.39 | 2.04 / 1.39 | 30.06 / 27.31 | direct | no strategy 10% faster than direct |
-| PullBack | Hexahedron | Gpu | f64 | 4 | loops | 48.2 / 17.4 | n.m.; T3: 0.41 / 0.86 | 1.00 / 1.00 | 0.77 / 0.94 | 0.77 / 0.94 | 5.26 / 13.62 | loops | no strategy 10% faster than loops |
+| PullBack | Hexahedron | Gpu | f64 | 4 | loops | 48.2 / 17.4 | f.u.; T3: 0.41 / 0.86 | 1.00 / 1.00 | 0.77 / 0.94 | 0.77 / 0.94 | 5.26 / 13.62 | loops | no strategy 10% faster than loops |
 | PullBack | Hexahedron | Gpu | f64 | 5 | loops | 126 / 30.4 | – | 1.00 / 1.00 | 0.77 / 0.88 | 0.77 / 0.88 | 3.30 / 12.57 | sumfact | sumfact 0.77 / 0.88 of loops |
 | PullBack | Hexahedron | Gpu | f64 | 6 | loops | 363 / 73.1 | – | 1.00 / 1.00 | 0.72 / 0.79 | 0.72 / 0.79 | 2.12 / 8.07 | sumfact | sumfact 0.72 / 0.79 of loops |
 | PullBack | Hexahedron | Gpu | f64 | 7 | loops | 824 / 160 | – | 1.00 / 1.00 | 0.72 / 0.79 | 0.72 / 0.79 | 1.46 / 7.39 | sumfact | sumfact 0.72 / 0.79 of loops |
@@ -2589,7 +2589,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Prism | Gpu | f32 | 1 | direct | 0.27 / 0.20 | 1.00 / 1.00 | 3.89 / 4.79 | 3.94 / 4.64 | 3.90 / 4.64 | 24.93 / 32.64 | direct | no strategy 10% faster than direct |
 | PullBack | Prism | Gpu | f32 | 2 | direct | 0.93 / 0.60 | 1.00 / 1.00 | 3.71 / 3.80 | 2.70 / 2.92 | 2.70 / 2.93 | 71.05 / 107.46 | direct | no strategy 10% faster than direct |
 | PullBack | Prism | Gpu | f32 | 3 | direct | 5.74 / 3.54 | 1.00 / 1.00 | 1.75 / 1.59 | 1.61 / 2.39 | 1.61 / 2.38 | 42.07 / 65.68 | direct | no strategy 10% faster than direct |
-| PullBack | Prism | Gpu | f32 | 4 | loops | 23.5 / 15.8 | n.m.; T3: 0.90 / 1.30 | 1.00 / 1.00 | 0.97 / 0.82 | 0.97 / 0.82 | 15.14 / 21.71 | loops | no strategy 10% faster than loops |
+| PullBack | Prism | Gpu | f32 | 4 | loops | 23.5 / 15.8 | f.u.; T3: 0.90 / 1.30 | 1.00 / 1.00 | 0.97 / 0.82 | 0.97 / 0.82 | 15.14 / 21.71 | loops | no strategy 10% faster than loops |
 | PullBack | Prism | Gpu | f32 | 5 | loops | 66.8 / 36.4 | – | 1.00 / 1.00 | 0.68 / 0.74 | 0.68 / 0.74 | 8.69 / 14.16 | sumfact | sumfact 0.68 / 0.74 of loops, within 3% of shared (0.68 / 0.74) |
 | PullBack | Prism | Gpu | f32 | 6 | loops | 158 / 72.9 | – | 1.00 / 1.00 | 0.64 / 0.75 | 0.64 / 0.75 | 5.29 / 10.26 | sumfact | sumfact 0.64 / 0.75 of loops, within 3% of shared (0.64 / 0.75) |
 | PullBack | Prism | Gpu | f32 | 7 | loops | 302 / 132 | – | 1.00 / 1.00 | 0.68 / 0.92 | 0.68 / 0.92 | 4.05 / 7.93 | loops | no strategy 10% faster than loops |
@@ -2597,7 +2597,7 @@ Per measured class, policy family, cell type, scalar type and degree: the baseli
 | PullBack | Prism | Gpu | f64 | 1 | direct | 0.17 / 0.13 | 1.00 / 1.00 | 6.16 / 7.28 | 5.64 / 6.24 | 5.66 / 6.24 | 37.92 / 45.12 | direct | no strategy 10% faster than direct |
 | PullBack | Prism | Gpu | f64 | 2 | direct | 0.65 / 0.37 | 1.00 / 1.00 | 7.48 / 6.72 | 3.47 / 4.36 | 3.44 / 4.36 | 71.82 / 121.36 | direct | no strategy 10% faster than direct |
 | PullBack | Prism | Gpu | f64 | 3 | direct | 4.63 / 2.34 | 1.00 / 1.00 | 2.50 / 2.53 | 1.83 / 2.97 | 1.82 / 2.98 | 34.01 / 63.42 | direct | no strategy 10% faster than direct |
-| PullBack | Prism | Gpu | f64 | 4 | loops | 42.2 / 17.0 | n.m.; T3: 0.34 / 0.69 | 1.00 / 1.00 | 0.54 / 0.72 | 0.53 / 0.72 | 5.64 / 13.42 | sumfact | sumfact 0.54 / 0.72 of loops, within 3% of shared (0.53 / 0.72) |
+| PullBack | Prism | Gpu | f64 | 4 | loops | 42.2 / 17.0 | f.u.; T3: 0.34 / 0.69 | 1.00 / 1.00 | 0.54 / 0.72 | 0.53 / 0.72 | 5.64 / 13.42 | sumfact | sumfact 0.54 / 0.72 of loops, within 3% of shared (0.53 / 0.72) |
 | PullBack | Prism | Gpu | f64 | 5 | loops | 125 / 33.1 | – | 1.00 / 1.00 | 0.49 / 0.50 | 0.49 / 0.50 | 3.63 / 10.76 | sumfact | sumfact 0.49 / 0.50 of loops, within 3% of shared (0.49 / 0.50) |
 | PullBack | Prism | Gpu | f64 | 6 | loops | 314 / 48.7 | – | 1.00 / 1.00 | 0.46 / 0.67 | 0.46 / 0.67 | 2.25 / 10.90 | sumfact | sumfact 0.46 / 0.67 of loops, within 3% of shared (0.46 / 0.67) |
 | PullBack | Prism | Gpu | f64 | 7 | loops | 598 / 104 | – | 1.00 / 1.00 | 0.50 / 0.69 | 0.50 / 0.69 | 1.33 / 7.23 | sumfact | sumfact 0.50 / 0.69 of loops, within 3% of shared (0.50 / 0.69) |

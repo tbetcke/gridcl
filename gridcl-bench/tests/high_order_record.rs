@@ -673,23 +673,36 @@ fn policy_choices_first_use_within_30_s_on_every_class() {
                 for &cell in cells_of(family) {
                     for degree in 1..=max_degree(cell) {
                         let s = policy.strategy(class, policy_family(family), cell, bytes, degree);
-                        for r in data.launch.iter().chain(&records) {
-                            if devices.contains(&(r.target.as_str(), r.backend.as_str()))
-                                && r.family == family
-                                && r.cell == cell
-                                && r.degree == degree
-                                && r.scalar == scalar
-                                && r.strategy == s
-                            {
-                                assert!(
-                                    r.status == "ok" && r.compile_s <= 30.0,
-                                    "{}: the {class:?} choice has status {:?}, compile and load \
-                                     {:.1} s",
-                                    describe(r),
-                                    r.status,
-                                    r.compile_s
-                                );
-                            }
+                        let what =
+                            format!("{class:?} {family} {cell} p={degree} {} {s}", scalar.name());
+                        // The rule as the decision reads it (launch-only and timed records,
+                        // the paired runs left out).
+                        assert!(
+                            first_use_ok(
+                                &data,
+                                &devices,
+                                &[(family, None)],
+                                cell,
+                                degree,
+                                scalar,
+                                s
+                            ),
+                            "{what}: a record of the choice failed or took over 30 s to first use"
+                        );
+                        // Not vacuous: every device has a record of the choice.
+                        for &(target, backend) in &devices {
+                            assert!(
+                                data.launch.iter().chain(&records).any(|r| {
+                                    r.target == target
+                                        && r.backend == backend
+                                        && r.family == family
+                                        && r.cell == cell
+                                        && r.degree == degree
+                                        && r.scalar == scalar
+                                        && r.strategy == s
+                                }),
+                                "{what}: no record on {target} {backend}"
+                            );
                         }
                     }
                 }

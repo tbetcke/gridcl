@@ -211,8 +211,8 @@ type FirstUseKey<'a> = (&'a str, &'a str, &'a str, &'a str, u32, Scalar, &'a str
 /// The timed records of a sweep, indexed: the time per point of the last `ok` record of each
 /// configuration on the codimension-0 meshes (codimension 1 for `Normals`) with equispaced
 /// nodes that ran its strategy, an interleaved one if there is one (the CPU classes at p ≤ 4,
-/// ADR-0055), T3's baseline likewise, and Locust's CUDA compile and launch
-/// outcomes.
+/// ADR-0055), T3's baseline likewise, and each device's first-use outcomes (launched, and
+/// compiled and loaded within the bound; ADR-0056) with Locust's CUDA compile times.
 pub struct Times<'a> {
     times: HashMap<TimeKey<'a>, f64>,
     baseline: HashMap<TimeKey<'a>, f64>,
@@ -441,6 +441,10 @@ pub struct DegreeChoice {
     /// Where `direct` is not selectable and T3's baseline measured it: its class ratio to the
     /// baseline at each rule size (ADR-0050).
     pub t3_direct: Option<Vec<f64>>,
+    /// The sweep timed `direct` on every device of the class at every rule size, whether or
+    /// not it is selectable: where it is not, the first-use rule excluded it (rule 7,
+    /// ADR-0056), not a missing measurement (ADR-0050).
+    pub direct_timed: bool,
     /// Why, in one line for the report.
     pub reason: String,
 }
@@ -618,6 +622,7 @@ fn choose(
             base_time: Vec::new(),
             ratios: Vec::new(),
             t3_direct: None,
+            direct_timed: false,
             reason: "neither direct nor loops ran everywhere".to_owned(),
         };
     };
@@ -724,6 +729,7 @@ fn choose(
         base,
         reason,
         t3_direct,
+        direct_timed: sizes.iter().all(|&n| class_time("direct", n).is_some()),
         base_time: sizes
             .iter()
             .map(|&n| class_time(base, n).expect("selectable"))
@@ -1174,6 +1180,7 @@ mod tests {
             base_time: vec![1e-9],
             ratios: vec![("direct", vec![1.0])],
             t3_direct: None,
+            direct_timed: true,
             reason: String::new(),
         }
     }
