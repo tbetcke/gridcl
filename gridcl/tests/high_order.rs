@@ -198,19 +198,48 @@ crate::degree_tests!(pull_back_recovers_reference_points, pull_backs_at);
 
 /// The policy's open-ended last ranges at p = 9 and 10 (docs/design.md, "Geometric factors":
 /// the last range "resolves to a strategy known to compile at p = 9–10"; ADR-0042, item 3):
-/// on unperturbed boxes of every cell type but pyramids, in each node family the cell offers,
-/// every family launches under the policy of the device's class. No launch runs `direct`; X,
-/// J, det J, K, the facet normals and the pull-back's ξ are finite, and det J is positive. No
-/// accuracy is asserted: rule 2's tolerances are defined to p = 8.
+/// on every cell type but pyramids, in each node family the cell offers, and for every
+/// (TD, GD) pair, every family launches under the policy of the device's class: unperturbed
+/// boxes (codimension 0, with the facet normals), lifted curves in 2D and 3D, the sphere and
+/// the mixed surface (codimension 1 with the normals; the kernels' comptime variants depend
+/// on GD). The launches cover exactly the policy's families, none runs `direct`, every result
+/// is finite and det J is positive. No accuracy is asserted: rule 2's tolerances are defined
+/// to p = 8.
 fn open_ended<F: Real>(client: &Client, p: u32) {
-    use gridcl_geometry::testing::{Strategy, StrategyOverride, record_strategies};
-    use gridcl_testing::{cube_box, interval_box, square_box};
+    use gridcl_geometry::testing::{Strategy, StrategyFamily, StrategyOverride, record_strategies};
+    use gridcl_testing::{cube_box, interval_box, mixed_surface, sphere, square_box};
 
-    fn launch<F: Real, TD: TopoDim + Codim0<TD>>(client: &Client, what: &str, h: &HostMesh) {
-        let mesh = build::<F, TD, TD>(h, client);
+    type Fields = Vec<(&'static str, Vec<f64>)>;
+
+    /// A field of every block, flattened.
+    macro_rules! all {
+        ($field:expr) => {
+            $field
+                .blocks
+                .iter()
+                .map(|b| field_f64(b).expect("to_host"))
+                .collect::<Vec<_>>()
+                .concat()
+        };
+    }
+
+    /// X, J, det J, K and the pull-back's ξ of `mesh`, then `more` (the normals of its
+    /// codimension), under the policy; checked as the function's doc says.
+    fn launch<F, TD, GD>(
+        client: &Client,
+        what: &str,
+        h: &HostMesh,
+        normals: StrategyFamily,
+        more: impl Fn(&Mesh<F, TD, GD>, &QuadRule<F, TD>, u32) -> Fields,
+    ) where
+        F: Real,
+        TD: TopoDim + EmbeddedIn<GD>,
+        GD: Dim,
+    {
+        use StrategyFamily::*;
+        let mesh = build::<F, TD, GD>(h, client);
         let degree = rule_degree(h);
         let rule = QuadRule::for_grid(&mesh, degree).expect("rule");
-        let facets = FacetQuadRule::for_grid(&mesh, degree).expect("facet rule");
         // The scoped hook comes before `GRIDCL_GEOM_STRATEGY`, so this is the policy always.
         let (fields, ran) = record_strategies(|| {
             with_every_family(StrategyOverride::Policy, || {
@@ -218,64 +247,27 @@ fn open_ended<F: Real>(client: &Client, p: u32) {
                 let pb = mesh
                     .pull_back(&x, &PullBackOptions::default())
                     .unwrap_or_else(|e| panic!("pull-back of {what}: {e}"));
-                let all = |blocks: Vec<Vec<f64>>| blocks.concat();
-                let f = |r: Result<Vec<f64>>| r.expect("to_host");
-                vec![
-                    ("X", all(x.blocks.iter().map(|b| f(field_f64(b))).collect())),
-                    (
-                        "J",
-                        all(mesh
-                            .jacobians(&rule)
-                            .expect("J")
-                            .blocks
-                            .iter()
-                            .map(|b| f(field_f64(b)))
-                            .collect()),
-                    ),
-                    (
-                        "det J",
-                        all(mesh
-                            .detj(&rule)
-                            .expect("det J")
-                            .blocks
-                            .iter()
-                            .map(|b| f(field_f64(b)))
-                            .collect()),
-                    ),
-                    (
-                        "K",
-                        all(mesh
-                            .pseudo_inverse_jacobians(&rule)
-                            .expect("K")
-                            .blocks
-                            .iter()
-                            .map(|b| f(field_f64(b)))
-                            .collect()),
-                    ),
-                    (
-                        "facet normals",
-                        all(mesh
-                            .facet_normals(&facets)
-                            .expect("facet normals")
-                            .blocks
-                            .iter()
-                            .map(|b| f(field_f64(b)))
-                            .collect()),
-                    ),
-                    (
-                        "ξ",
-                        all(pb
-                            .reference
-                            .blocks
-                            .iter()
-                            .map(|b| f(field_f64(b)))
-                            .collect()),
-                    ),
-                ]
+                let mut fields: Fields = vec![
+                    ("det J", all!(mesh.detj(&rule).expect("det J"))),
+                    ("X", all!(x)),
+                    ("J", all!(mesh.jacobians(&rule).expect("J"))),
+                    ("K", all!(mesh.pseudo_inverse_jacobians(&rule).expect("K"))),
+                    ("ξ", all!(pb.reference)),
+                ];
+                fields.extend(more(&mesh, &rule, degree));
+                fields
             })
         });
         let at = format!("{what} ({})", name::<F>());
-        assert!(!ran.is_empty(), "{at}: no launch went through the dispatch");
+        let mut families: Vec<StrategyFamily> = ran.iter().map(|&(f, _)| f).collect();
+        families.sort();
+        families.dedup();
+        let mut want = vec![EVector, Points, Jacobian, PullBack];
+        if normals != EVector {
+            want.push(normals);
+        }
+        want.sort();
+        assert_eq!(families, want, "{at}: the families launched ({ran:?})");
         assert!(
             ran.iter().all(|&(_, s)| s != Strategy::Direct),
             "{at}: the open-ended range ran direct: {ran:?}"
@@ -287,28 +279,72 @@ fn open_ended<F: Real>(client: &Client, p: u32) {
                 "{quantity} of {at}: not finite (under {ran:?})"
             );
         }
-        let detj = &fields[2].1;
+        assert_eq!(fields[0].0, "det J");
         assert!(
-            detj.iter().all(|&d| d > 0.0),
+            fields[0].1.iter().all(|&d| d > 0.0),
             "det J of {at}: not positive (under {ran:?})"
         );
+    }
+
+    /// Codimension 0, with the facet normals.
+    fn volume<F: Real, TD: TopoDim + Codim0<TD>>(client: &Client, what: &str, h: &HostMesh) {
+        launch::<F, TD, TD>(
+            client,
+            what,
+            h,
+            StrategyFamily::FacetNormals,
+            |mesh, _, degree| {
+                let facets = FacetQuadRule::for_grid(mesh, degree).expect("facet rule");
+                vec![(
+                    "facet normals",
+                    all!(mesh.facet_normals(&facets).expect("facet normals")),
+                )]
+            },
+        );
+    }
+
+    /// Codimension 1, with the normals.
+    fn surface<F, TD, GD>(client: &Client, what: &str, h: &HostMesh)
+    where
+        F: Real,
+        TD: TopoDim + Codim1<GD> + EmbeddedIn<GD>,
+        GD: Dim,
+    {
+        launch::<F, TD, GD>(client, what, h, StrategyFamily::Normals, |mesh, rule, _| {
+            vec![("normals", all!(mesh.normals(rule).expect("normals")))]
+        });
     }
 
     let named = |what: &str, f: NodeFamily| format!("{what} p={p} {f:?}");
     for f in node_families(&[CellType::Interval]) {
         let h = interval_box(3, p).with_node_family(f);
-        launch::<F, D1>(client, &named("intervals", f), &h);
+        volume::<F, D1>(client, &named("intervals", f), &h);
+        surface::<F, D1, D2>(client, &named("curve in 2D", f), &lift_curve(&h, 2));
+        // Codimension 2 has no normals: `EVector` stands for "no further family".
+        launch::<F, D1, D3>(
+            client,
+            &named("curve in 3D", f),
+            &lift_curve(&h, 3),
+            StrategyFamily::EVector,
+            |_, _, _| Vec::new(),
+        );
     }
     for cell in [Cell2::Triangle, Cell2::Quadrilateral] {
         for f in node_families(&[cell.into()]) {
             let h = square_box(cell, 2, p).with_node_family(f);
-            launch::<F, D2>(client, &named(&format!("{cell:?} box"), f), &h);
+            volume::<F, D2>(client, &named(&format!("{cell:?} box"), f), &h);
         }
+    }
+    for (what, h) in [
+        ("sphere", sphere(0, p)),
+        ("mixed surface", mixed_surface(1, p)),
+    ] {
+        surface::<F, D2, D3>(client, &named(what, NodeFamily::Equispaced), &h);
     }
     for cell in [Cell3::Tetrahedron, Cell3::Hexahedron, Cell3::Prism] {
         for f in node_families(&[cell.into()]) {
             let h = cube_box(cell, 1, p).with_node_family(f);
-            launch::<F, D3>(client, &named(&format!("{cell:?} box"), f), &h);
+            volume::<F, D3>(client, &named(&format!("{cell:?} box"), f), &h);
         }
     }
 }
