@@ -1735,15 +1735,18 @@ mod tests {
                 b
             );
         }
-        // Nine iterations take longer than one, by the least median of the four runs: hosted
-        // CI's loaded vulkan runner once timed one run's nine iterations below its one.
+        // On CPUs nine iterations take longer than one, by the least median of the four runs:
+        // hosted CI's loaded vulkan runner once timed one run's nine iterations below its one.
+        // On GPUs a call at 10^5 points is launch-bound (the H100: 50 and 84 us, nine first).
         let least = |i: usize| {
             std::iter::once(&first)
                 .chain(&cached)
                 .map(|r| r[i].median_s)
                 .fold(f64::INFINITY, f64::min)
         };
-        assert!(least(2) > least(1), "{} s, {} s", least(2), least(1));
+        if is_cpu(machine.class) {
+            assert!(least(2) > least(1), "{} s, {} s", least(2), least(1));
+        }
     }
 
     /// A resumed run skips the configurations it has records of; a stopped process's
