@@ -752,7 +752,7 @@ fn cooperative_falls_back_to_loops_above_the_limit() {
 
 fn cooperative_fallback<F: Real>(client: &cubecl::prelude::Client) {
     use StrategyFamily::*;
-    use gridcl_device::testing::{with_properties, with_vector_size};
+    use gridcl_device::testing::{record_plans, with_properties, with_vector_size};
     use gridcl_device::{DeviceClass, VectorSizeOverride};
     let name = std::any::type_name::<F>();
     for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
@@ -793,28 +793,43 @@ fn cooperative_fallback<F: Real>(client: &cubecl::prelude::Client) {
         gpu.hardware.num_cpu_cores = None;
         let (_, ran) = with_properties(gpu, || forced(&mesh, Strategy::Cooperative, run));
         assert_eq!(ran, want(Strategy::Loops), "{name} {cell:?}, a GPU class");
-        // The boundary: shared memory for exactly one component per unit of the largest cube
-        // at the widest vector runs `cooperative`, and its plans succeed at every vector size
-        // (so `cooperative::fits` covers `LaunchPlan::per_group`'s cube); one byte less runs
-        // `loops`. On the CPU runtime the injected GPU class has no more units than the
-        // device runs in one cube (C21).
-        let hw = &gridcl_device::device_properties(client).hardware;
-        let own = hw.max_units_per_cube.min(hw.max_cube_dim.0);
-        let cube = if DeviceClass::for_client(client) == DeviceClass::Gpu {
-            own.min(256)
-        } else {
-            1 << own.ilog2()
-        };
-        let widest = hw.max_vector_size.clamp(1, gridcl_device::VECTOR_PAD);
-        let exact = cube as usize * widest * size_of::<F>();
-        let limit = |bytes: usize| {
+        // The boundary: shared memory for exactly one component per unit of the cube that
+        // `LaunchPlan::per_group` plans, at the widest vector, runs `cooperative`, and its
+        // plans succeed at every vector size; one byte less runs `loops`. The cube is read
+        // from a recorded plan, so on a GPU with at least 256 units per cube the test fails
+        // if `cooperative::fits` and `per_group` ever disagree on the cube. On the CPU
+        // runtime the injected GPU class has no more units than the device runs in one cube
+        // (C21), so the cube is that number.
+        let gpu_class = |bytes: Option<usize>| {
             let mut props = (*gridcl_device::device_properties(client)).clone();
-            props.hardware.num_cpu_cores = None;
-            props.hardware.max_units_per_cube = cube;
-            props.hardware.max_cube_dim.0 = cube;
-            props.hardware.max_shared_memory_size = bytes;
+            if DeviceClass::for_client(client) != DeviceClass::Gpu {
+                let own = props
+                    .hardware
+                    .max_units_per_cube
+                    .min(props.hardware.max_cube_dim.0);
+                let own = 1 << own.ilog2();
+                props.hardware.num_cpu_cores = None;
+                props.hardware.max_units_per_cube = own;
+                props.hardware.max_cube_dim.0 = own;
+            }
+            if let Some(bytes) = bytes {
+                props.hardware.max_shared_memory_size = bytes;
+            }
             props
         };
+        let (_, plans) = with_properties(gpu_class(None), || {
+            record_plans(|| forced(&mesh, Strategy::Cooperative, run))
+        });
+        let cube = plans
+            .iter()
+            .filter(|(_, p)| p.units_per_group > 1)
+            .map(|(_, p)| p.cube_dim.num_elems() as usize)
+            .max()
+            .expect("a plan with several units per group");
+        let hw = &gridcl_device::device_properties(client).hardware;
+        let widest = hw.max_vector_size.clamp(1, gridcl_device::VECTOR_PAD);
+        let exact = cube * widest * size_of::<F>();
+        let limit = |bytes: usize| gpu_class(Some(bytes));
         for vector in [VectorSizeOverride::Scalar, VectorSizeOverride::Widest] {
             let at = format!("{name} {cell:?}, {exact} bytes, {vector:?}");
             let (_, ran) = with_properties(limit(exact), || {

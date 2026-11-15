@@ -898,10 +898,6 @@ fn no_family_slower_than_m9_at_low_degree() {
     check_protocol(&data.degree);
     let records = &data.degree;
     let sweep = sweep_records(&data);
-    let sweep_data = HighOrderData {
-        degree: sweep.clone(),
-        ..data.clone()
-    };
     for class in MEASURED_CLASSES {
         for (scalar, _) in SCALARS {
             let devices = devices(required(records), class, scalar);
@@ -912,15 +908,10 @@ fn no_family_slower_than_m9_at_low_degree() {
                 let members = members_of(family);
                 for &cell in cells_of(family) {
                     for degree in 1..=max_degree(cell).min(4) {
-                        if !direct_selectable(
-                            &sweep_data,
-                            &sweep,
-                            class,
-                            &members,
-                            cell,
-                            degree,
-                            scalar,
-                        ) {
+                        // The whole data: `first_use_ok` leaves the paired runs out itself,
+                        // from the launch records too, as the decision rule does.
+                        if !direct_selectable(&data, &sweep, class, &members, cell, degree, scalar)
+                        {
                             continue;
                         }
                         for &size in rule_sizes(class) {
@@ -1112,11 +1103,9 @@ fn first_use_ok(
 fn degree_policy_follows_the_decision_rule() {
     let data = data();
     let policy = policy();
+    // `first_use_ok` gets the whole data and leaves the paired runs out itself, from the launch
+    // records too, as the decision rule does.
     let records = sweep_records(&data);
-    let data = HighOrderData {
-        degree: records.clone(),
-        ..data
-    };
     for ((class, family, cell, bytes), ranges) in &policy.0 {
         let at = format!("{class}.{family}.{cell}.{bytes}");
         assert_eq!(
