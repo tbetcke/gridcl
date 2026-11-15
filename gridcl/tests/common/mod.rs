@@ -318,15 +318,10 @@ pub fn host_detj(j: &[f64], td: usize, gd: usize) -> f64 {
     }
 }
 
-/// max |got − want| / max |want| (or the absolute error if `want` is zero).
+/// max |got − want| / max |want| (or the absolute error if `want` is zero); infinite if any
+/// entry is NaN or infinite (`gridcl_testing::reference::rel_err`).
 pub fn rel_max_err(got: &[f64], want: &[f64]) -> f64 {
-    assert_eq!(got.len(), want.len(), "lengths");
-    let scale = want.iter().fold(0.0f64, |m, x| m.max(x.abs()));
-    let err = got
-        .iter()
-        .zip(want)
-        .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
-    if scale > 0.0 { err / scale } else { err }
+    gridcl_testing::reference::rel_err(got, want)
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -766,6 +766,8 @@ pub fn tolerance<F: Real>(scale: f64) -> f64 {
 
 /// The relative error of a quantity over a block (ADR-0042, item 2): max |got − want| /
 /// max |want| over every entry and component, or the absolute error if `want` is all zero.
+/// Infinite if any entry of `got` or `want` is NaN or infinite, so that no tolerance accepts
+/// such an output.
 ///
 /// Each quantity (X, J, det J, K, normals, ξ) is measured on its own, so det J ~ h³ stays
 /// relative; the components of one quantity share its largest value, because rounding errors
@@ -782,6 +784,10 @@ pub fn tolerance<F: Real>(scale: f64) -> f64 {
 /// let got = [1.0, 1.1e-3, 1e-3, 2.0];
 /// assert!((rel_err(&got, &want) - 5e-5).abs() < 1e-15);
 /// assert_eq!(rel_err(&[1e-3], &[0.0]), 1e-3);
+/// // A NaN or an infinite entry is an infinite error, wherever it is.
+/// assert_eq!(rel_err(&[1.0, f64::NAN], &[1.0, 1.0]), f64::INFINITY);
+/// assert_eq!(rel_err(&[f64::INFINITY, 1.0], &[1.0, 1.0]), f64::INFINITY);
+/// assert_eq!(rel_err(&[1.0], &[f64::NAN]), f64::INFINITY);
 /// ```
 ///
 /// # Panics
@@ -789,6 +795,10 @@ pub fn tolerance<F: Real>(scale: f64) -> f64 {
 /// If the lengths differ.
 pub fn rel_err(got: &[f64], want: &[f64]) -> f64 {
     assert_eq!(got.len(), want.len(), "rel_err: lengths");
+    // `f64::max` returns its other operand for a NaN, so a fold alone would skip NaN entries.
+    if got.iter().chain(want).any(|x| !x.is_finite()) {
+        return f64::INFINITY;
+    }
     let scale = want.iter().fold(0.0f64, |m, x| m.max(x.abs()));
     let err = got
         .iter()
