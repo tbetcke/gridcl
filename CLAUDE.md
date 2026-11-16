@@ -22,7 +22,10 @@
     fixed-order reductions and fixed-order in-vector prefixes; no branches on lane values
     (use arithmetic masks);
   - vector sizes come from VectorPolicy (vector-policy.toml), changed only with benchmark
-    data in docs/perf/vectorization.md.
+    data in docs/perf/vectorization.md;
+  - from M10, vector-policy.toml and degree-policy.toml hold four generic sets (Cpu and Gpu,
+    for f32 and f64), good enough on every benchmark platform, never one set per platform
+    (ADR-0058).
 - Precision: every kernel test runs in f32 and, where supported, f64.
   Tolerances: 1e-12 relative (f64), 1e-5 (f32).
 - Host maths generic over F: Real uses widen()/narrow() or f64, never F's own methods.
@@ -31,6 +34,12 @@
   GPU runs: GRIDCL_TEST_DEVICE=vulkan | metal | cuda.
 - MPI tests: crate gridcl-mpi-tests ([[test]] targets, harness = false),
   run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI.
+- Run plans: only the runs that show the code works and the timings a decision needs
+  (ADR-0057). The standing matrix stays (CPU runtime and Metal on every change, Locust after
+  kernel tasks, MPI on 1-4 ranks under both flavours, f32 and f64, scalar and widest vector
+  sizes, the review targets). Beyond it: no exhaustive sweeps over parameters, sizes, degrees
+  or targets, no repeats of passing runs, and after review fixes only the runs they reach.
+  Benchmarks use the candidate protocol of docs/design.md, "Benchmarks".
 - ndelement is a dependency of conformance/ only (outside the workspace). Never add it to a
   library crate, and never add `version =` to its git dependency. After bumping its pin, run
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with
@@ -126,7 +135,7 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   architecture-dependent results; for CUDA-version- or architecture-specific changes; or when
   the user asks. Say why when you schedule them.
 - Kathleen (`kathleen`, Slurm, Xeon Gold 6248 with AVX-512) runs every CPU-only remote run
-  (x86-64 AVX-512 CPU benchmarks, CpuSimd512) on one whole node, and the MPI runs beyond 4 ranks;
+  (x86-64 AVX-512 CPU benchmarks) on one whole node, and the MPI runs beyond 4 ranks;
   from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes (ADR-0016).
   Never more than two nodes per job.
 - Myriad's CPU-only D nodes (`myriad-cpu`, `-ac allow=D`, never a GPU node) run CPU-only work

@@ -48,6 +48,12 @@ Follow docs/plans/TEMPLATE.md exactly.
 - **Per task:** goal, crates and files, public items added or changed (matching the
   Architecture listings exactly), the tests it makes pass, a verification command, and its
   dependencies ("after").
+- **Runs (ADR-0057):** plan the minimum. The standing matrix of "Testing and validation" stays.
+  Beyond it, add a run only if it shows the code works on a backend, or gives a timing that a
+  decision or an acceptance bullet needs. No exhaustive sweeps over parameters, sizes,
+  degrees or targets, and no repeats of passing runs. Benchmarks use the candidate protocol of
+  "Benchmarks". Every benchmark or remote-run task names its targets, its candidate set,
+  sizes and number of runs, and an estimate of the wall time.
 - **Parallel with:** mark a task only if it shares no files and no unmerged API with the other
   task. Do not mark parallel tasks unless the gain is clear.
 - **Acceptance coverage:** every acceptance bullet appears exactly once, with test names and
