@@ -63,3 +63,5 @@ Option 2. The strategies M9h set out to compare exist, are correct at p = 1–8 
 ## Decision record
 
 Accepted by the maintainer on 2026-11-14, as proposed (option 2). Applied in `adr: 0053 apply`: docs/design.md, Roadmap M9h (bullet 3 and the acceptance line), M10 Hardening (acceptance) and "Benchmarks" (**Degree sweep (M9h)**); ADR-0042's decision record; the M9h plan (T11b and the coverage table) and issue #37. `tensor_cost_ratio_p8_over_p4` becomes `tensor_cost_ratio_reported` with T11b.
+
+Amended by ADR-0060 (item 5, accepted 2026-11-16): M10 meets the bound's target by reporting the p = 8 / p = 4 ratios and the cause of every miss; option 1's GPU kernel is left to a later performance milestone.

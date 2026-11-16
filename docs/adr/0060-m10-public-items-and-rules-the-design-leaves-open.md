@@ -1,6 +1,6 @@
 # ADR-0060: M10 public items and rules the design leaves open
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-16
 - **Raised in:** M10 planning (`/plan-milestone M10`, open questions 4–10)
 - **Design sections affected:**
@@ -114,4 +114,6 @@ Option 2, item by item.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-16, as proposed (option 2, items 1–7); the resolutions were chosen in M10 planning ("all questions as recommended").
+
+Applied in `adr: 0060 apply`: docs/design.md (Listing B8, Listing S2c, "Benchmarks": What it runs and Degree sweep (M9h), the crate table, "Cargo features", Roadmap M10's reading line), closing notes in ADR-0053 and ADR-0058, and issue #25.

@@ -93,3 +93,5 @@ Accepted by the maintainer on 2026-11-16, with options chosen in the same sessio
 - the degree ranges come from M9h's data and are checked at p = 1, 4 and 8.
 
 Applied in `adr: 0058 apply`: docs/design.md (the sections above), CLAUDE.md, the hpc-test skill and issue #25.
+
+Amended by ADR-0060 (item 3, accepted 2026-11-16): item 5's comparison with M9h is at 10^6 points, and a range that misses the bound or moves by more than 10% is re-measured, with candidates only, at the inner degrees next to each of its boundaries.
