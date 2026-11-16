@@ -1,6 +1,6 @@
 # ADR-0059: Defer the GPU-aware transport and harden the host-staged exchange
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-16
 - **Raised in:** M10 planning (`/plan-milestone M10`; the maintainer asked what GPU-aware MPI would gain and for measurements)
 - **Design sections affected:**
@@ -135,4 +135,6 @@ Option 2. On gridcl's targets the host-staged exchange is limited by its own upl
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-16, as proposed (option 2).
+
+Applied in `adr: 0059 apply`: docs/design.md ("Supported backends", "Transports", Listing S2b, Listing S2c, the targets table of "Testing and validation", "Development environment and test targets", the gridcl-device row, dependency rule 4, "Cargo features", "CI matrix", "Risks and mitigations", Roadmap M10 scope and acceptance bullet 1, Listing H1), CLAUDE.md and IMPLEMENTATION.md, and issue #25. The code part of Consequences (an empty `gpu-aware-cuda` feature in gridcl-device, the `Transport` doc comments) is done in M10's hardening task.

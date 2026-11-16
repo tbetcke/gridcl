@@ -60,7 +60,6 @@ The development tooling and the Rust workspace do not exist yet. Milestone E0 cr
    | E0 (used from M5) | Python with `vtk` ≥ 9.2 and `meshio` | VTU read-back tests |
    | M7 | PT-Scotch; optionally ParMETIS | partitioner tests |
    | M8 | HDF5 built with MPI | VTKHDF output |
-   | M10 | a Myriad node with a CUDA-aware MPI (E0 records whether one exists) | GPU-aware halo exchange |
 
 ## The loop for each milestone
 
@@ -176,7 +175,7 @@ Merge them into main one at a time, in dependency order. If a branch falls behin
 - **M4:** generate the Gmsh fixture corpus once with a pinned Gmsh version and commit it; Claude can write the `.geo` scripts.
 - **M6 and later:** run the MPI tests under both MPICH and Open MPI where you can; the `Comm` design depends on it.
 - **CUDA:** Claude runs CUDA tests on Locust after kernel changes and at every review, and schedules Myriad V100 or A100 only for multi-GPU tests, architecture comparisons, or as the fallback when Locust is unavailable; CPU-only Myriad runs use a D node (ADR-0014). Ask for a specific target with `/hpc-test myriad-a100 -- <command>`.
-- **M10:** needs a Myriad node with a CUDA-aware MPI (2 ranks on a V100 node, 4 on an A100 node). If E0 found none, decide early whether to build one in your home directory. The benchmarks use the candidate protocol and only the runs a decision needs (ADR-0057).
+- **M10:** hardens the host-staged halo exchange; the GPU-aware transport is deferred and needs no CUDA-aware MPI (ADR-0059). The benchmarks use the candidate protocol and only the runs a decision needs (ADR-0057).
 
 ## Useful one-off prompts
 

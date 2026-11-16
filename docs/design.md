@@ -880,7 +880,7 @@ The backend is chosen at run time through `cubecl::Device`, and no gridcl type c
 | Backend | cubecl feature | Device | f64 | u64 arithmetic | Float atomic add | GPU-aware MPI | Tested on |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CPU runtime | `cpu` | `Device::cpu()` | yes | yes | f32, f64 | no | the local Mac on every change; hosted Linux CI |
-| CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | yes (`gpu-aware-cuda`) | Locust; Myriad V100/A100 for multi-GPU, comparisons and fallback |
+| CUDA | `cuda` | `Device::cuda(i)` | yes | yes | f32; f64 from sm_60 | deferred (`gpu-aware-cuda` reserved; ADR-0059) | Locust; Myriad V100/A100 for multi-GPU, comparisons and fallback |
 | HIP/ROCm | `hip` | `Device::rocm(i)` | yes | yes | f32 | planned (`gpu-aware-hip`) | manual |
 | Vulkan via wgpu (SPIR-V) | `vulkan` | `Device::vulkan(kind)` | if the adapter has shaderFloat64 | if the adapter has shaderInt64 | f32 if supported | no | hosted Linux CI (software Vulkan) |
 | Metal via wgpu (MSL) | `metal` | `Device::metal_msl(kind)` | no | yes | f32 only | no | the local Mac on every change |
@@ -1489,7 +1489,7 @@ impl Scatterer {
 /// Ghost values are unchanged by reverse; empty segments use the ADR-0011 identities (ADR-0026).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum ReverseOp { Add, Min, Max, Insert }
 pub trait ScatterNumeric: DeviceScalar {}                      // f32, f64, i32, u32
-/// M6 always chooses HostStaged; M10 adds GpuAware (ADR-0026).
+/// HostStaged is the only transport; GpuAware is reserved (ADR-0026, ADR-0059).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Transport { HostStaged, GpuAware }
 ```
 
@@ -1497,11 +1497,11 @@ pub trait ScatterNumeric: DeviceScalar {}                      // f32, f64, i32,
 
 ### Transports
 
-- **HostStaged** (default, every backend): a pack kernel fills the send buffer, `Client::read_one` copies it to the host, and the data moves by a neighbourhood all-to-all-v. `DeviceBuffer::write_host` (`Client::write`) then uploads the receive buffer and an unpack kernel scatters it. This is the one host–device copy allowed on a library hot path.
-- **GpuAware** (CUDA, feature `gpu-aware-cuda`; HIP later as `gpu-aware-hip`): device pointers are handed to a CUDA-aware MPI, using `Client::get_resource` as in Listing S2b. Keep CubeCL's CUDA allocator at its default, `CudaAllocator::Sync`; the stream-ordered `Async` pool may not work with CUDA IPC in MPI libraries.
+- **HostStaged** (default, every backend): a pack kernel fills the send buffer, `Client::read_one` copies it to the host, and the data moves by a neighbourhood all-to-all-v. `DeviceBuffer::write_host` (`Client::write`) then uploads the receive buffer and an unpack kernel scatters it. This is the one host–device copy allowed on a library hot path. The received data is uploaded through pinned staging buffers that each scatterer reuses, and `reverse` uploads only the received values (ADR-0059).
+- **GpuAware** (CUDA, feature `gpu-aware-cuda`; HIP later as `gpu-aware-hip`): deferred (ADR-0059); the design below is kept for a later milestone, and no scatterer chooses it. Device pointers are handed to a CUDA-aware MPI, using `Client::get_resource` as in Listing S2b. Keep CubeCL's CUDA allocator at its default, `CudaAllocator::Sync`; the stream-ordered `Async` pool may not work with CUDA IPC in MPI libraries.
 - **CubeCL collectives:** `Client::all_reduce` and `Client::to_client` (both take `&mut self`) move data between GPUs of one process when `has_device_transport()` is true. They are not used in the one-GPU-per-rank model.
 
-**Listing S2b — GPU-aware path (gridcl-device, feature `gpu-aware-cuda`)**
+**Listing S2b — GPU-aware path (gridcl-device, feature `gpu-aware-cuda`; deferred, ADR-0059)**
 
 ```rust
 // cubecl re-exports the Runtime trait only under cubecl::__private, so depend on
@@ -1679,12 +1679,11 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
 | --- | --- | --- |
 | Local Mac (macOS, arm64) | CubeCL CPU runtime in f32 and f64; Metal via wgpu in f32; MPI | every change |
 | Hosted CI, Linux x86-64 | CPU runtime in f32 and f64; Vulkan (software driver) in f32, plus f64 if supported; MPI under MPICH and Open MPI | every push |
-| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU and GPU-aware tests; architecture comparisons; fallback after the A4000 workstation (ADR-0014, ADR-0037) |
+| Myriad V100 (sm_70, CUDA 12.x) | CUDA in f32 and f64 | multi-GPU tests; architecture comparisons; fallback after the A4000 workstation (ADR-0014, ADR-0037) |
 | Myriad A100 (sm_80) | CUDA in f32 and f64 | when required (see "Development environment and test targets") |
 | Locust GH200 (sm_90, aarch64) | CUDA in f32 and f64; CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review; benchmarks (ADR-0014) |
 | A4000 workstation (sm_86, x86-64, CUDA 12.x) | CUDA in f32 and f64 | first fallback when Locust is unavailable; architecture comparisons (ADR-0037) |
 | Kathleen (Slurm, x86-64, AVX-512, Omni-Path) | CPU runtime in f32 and f64; MPI on one and two nodes | CPU benchmarks; MPI runs beyond 4 ranks; two-node MPI at every review from M6 (ADR-0016) |
-| Myriad node with a CUDA-aware MPI | GPU-aware halo exchange | from M10 |
 
 - **Tolerances.** Quantities that are exact in exact arithmetic (unit volume, polynomial reproduction) are checked to 10^−12 relative in f64 and 10^−5 in f32. f32 results are also compared with f64 results to 10^−5 relative. Convergence rates are tested in f64 only.
     - Above degree 4, or on distorted cells, both tolerances scale by max(1, A / A_ref), times max(1, n / n_ref) and max(1, R) for J, the quantities derived from it and the pull-back, where A is the element's amplification factor at the test's points, computed on the host in f64 (Σ_j |ψ_j| for physical points; max_d Σ_j |∂_d ψ_j| for J and the quantities derived from it; Σ_k |φ_k| Σ_j |C_kj| for a pull-back through coefficients), and A_ref the same factor of the p = 4 equispaced element of that cell type at the same points; n is the element's number of nodes and n_ref that of the p = 4 equispaced element (p = 3 for pyramids), and R is the largest |x − o| over the block's nodes, o the grid's origin, divided by the block's largest entry of J. For K and the pull-back, max(1, A / A_ref) is multiplied by the largest κ_F(J) / TD over the block's cells and points (κ_F = ‖J‖_F ‖K‖_F, TD the topological dimension), and A_ref is the element's factor alone. The factor is at most 1.01 for p ≤ 4 on cells with κ_F(J) = TD. Relative errors of geometric factors are taken against the largest value of each component over the block (ADR-0042, ADR-0044, ADR-0046).
@@ -1736,9 +1735,9 @@ Claude Code runs on the local Apple-silicon Mac and tests there on every change;
 **When the fallbacks run.** Locust is the CUDA platform for every run: Claude runs the CUDA tests there after every task that changes kernels and at every milestone review, and runs the benchmarks there (ADR-0014). The A4000 workstation (`a4000`) is the first fallback: Claude runs there when Locust is unreachable or a run fails because another user occupies its GPU, and to compare when a Locust failure or result looks architecture-dependent (sm_86); the run report says why. It never runs CPU benchmarks (its CPU is shared), GPU timings only under the idle rule that applies to Locust, and no MPI tests (one GPU, no MPI). All software for gridcl on the workstation lives under `~/local_disk`, never in its network home (ADR-0037). Claude schedules Myriad V100 or A100 runs only:
 
 - as the fallback, when the workstation is unavailable too or a benchmark cannot get an idle node; the run report says why;
-- for multi-GPU and GPU-aware MPI tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU);
+- for multi-GPU tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU);
 - to compare, when a Locust failure or result looks architecture-dependent (sm_70, sm_80);
-- when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device or the GPU-aware transport;
+- when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device;
 - when the user asks.
 
 CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512, which Locust cannot provide, use one whole Kathleen node; benchmarks bind to one socket (ADR-0020). A Myriad D node (`-ac allow=D`, never a GPU node) runs them only as the fallback: when Kathleen is unreachable, a job is still queued after `--max-wait`, or the user asks; the run report says why (ADR-0016). MPI runs beyond the local Mac's 4 ranks use Kathleen, at most two nodes per job; from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes.
@@ -1777,7 +1776,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- |
 | gridcl-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
 | gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
-| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, re-exports of `Client` and `CubeElement` (ADR-0026), GPU-aware pointer access, test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; cubecl-runtime (feature `gpu-aware-cuda`); libc (macOS, ADR-0017); dev: proptest |
+| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, re-exports of `Client` and `CubeElement` (ADR-0026), (GPU-aware pointer access deferred, ADR-0059), test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; libc (macOS, ADR-0017); dev: proptest |
 | gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
 | gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
 | gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
@@ -1797,14 +1796,14 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 1. Every crate that defines or launches kernels may depend on `cubecl` without runtime features. This covers gridcl-device, gridcl-topology, gridcl-geometry and gridcl.
 2. The launch API may be used anywhere: `Client`, `CubeCount`, `CubeDim`, `BufferArg`, `launch_unchecked`, `calculate_cube_count_elemwise` and `Client::properties`.
 3. Runtime types appear only in gridcl-device: runtime structs such as `CudaRuntime`, `get_resource`, and `cubecl-runtime`.
-4. Runtime features (`cpu`, `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`) are enabled only in gridcl-testing, examples, benchmarks and binaries. The one exception is `gpu-aware-cuda` in gridcl-device, which enables cubecl's `cuda` feature.
+4. Runtime features (`cpu`, `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`) are enabled only in gridcl-testing, examples, benchmarks and binaries. `gpu-aware-cuda` is reserved and enables nothing (ADR-0059).
 5. No crate depends on MPI unless its `mpi` feature is on. `cargo test --workspace` without features needs neither MPI nor a GPU.
 6. ndelement appears only in conformance/. The workspace excludes conformance/ and tools/env-check/ (`exclude = ["conformance", "tools/env-check"]`).
 7. A workspace crate may expose a `#[doc(hidden)] pub` item to other workspace crates when no stable API serves the purpose (hidden hooks and test accessors). Such an item is documented as not part of the stable API, has a rustdoc example or a named test, is listed in its milestone plan, and is semver-exempt (ADR-0015, ADR-0028, ADR-0038).
 
 ### Cargo features
 
-- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda`. `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
+- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda` (reserved; enables nothing, ADR-0059). `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
 - **Runtime features** (on gridcl-testing and examples): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
 - **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it. gridcl-geometry has a `testing` feature too, for the hidden `gridcl_geometry::testing` (strategy overrides; ADR-0042), also turned on by gridcl-testing.
 - **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on. gridcl-geometry's `bench` feature enables the hidden `gridcl_geometry::bench` (the basis-evaluator timing hook; the pull-back is timed through its public call at 1 and 9 iterations; ADR-0042), also turned on by gridcl-bench.
@@ -1822,7 +1821,6 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | multi-GPU; fallback |
 | cuda-a100 | Myriad L node through `scripts/hpc` | as cuda-v100, with the newest toolkit the driver supports | when required |
 | gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review |
-| gpu-aware | Myriad node with a CUDA-aware MPI, through `scripts/hpc` | host-staged vs GPU-aware halo exchange | from M10, at every milestone review |
 
 The hosted CI provider is not fixed. Without one, the local Mac covers the cpu, MPI and conformance jobs, and Vulkan runs are skipped.
 
@@ -2093,11 +2091,11 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M10 Hardening
 
-**Scope:** the GPU-aware transport (CUDA) and `local_gpu_index` (ADR-0026), benchmarks (including a re-run of the M3s vectorization study for every kernel family and a check of M9h's degree policy, both with the candidate protocol of "Benchmarks"; ADR-0057), ending with four generic parameter sets, CPU and GPU for f32 and f64 (ADR-0058), documentation and examples.
+**Scope:** a hardened host-staged halo exchange and `local_gpu_index` (ADR-0026, ADR-0059), benchmarks (including a re-run of the M3s vectorization study for every kernel family and a check of M9h's degree policy, both with the candidate protocol of "Benchmarks"; ADR-0057), ending with four generic parameter sets, CPU and GPU for f32 and f64 (ADR-0058), documentation and examples.
 
 **Acceptance** (read as in ADR-0057 and ADR-0058):
 
-- on a Myriad node with a CUDA-aware MPI, the GPU-aware halo exchange is bitwise identical to the host-staged one on 2 ranks (V100 node) and 4 ranks (A100 node);
+- the host-staged halo exchange (`forward` and `reverse`, halos of 10^3, 10^4 and 10^5 nodes with block 3) is recorded on the local Mac (CPU runtime, Metal) and Locust (CUDA, 1 and 2 ranks); for 10^5 nodes, its host-to-device copy takes at most 1.5 times its device-to-host copy and `reverse` at most twice `forward` on each, and results stay bitwise identical to M9h's (ADR-0059);
 - for quadrilaterals and hexahedra, the time per point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every benchmark platform under the generic degree policy (ADR-0042 item 1, ADR-0053, ADR-0058), or the gap is reported with its cause;
 - benchmarks (entities created per second, geometric factors per second at p = 1, 4 and 8; ADR-0041) are recorded on the local Mac (CPU runtime, Metal), Locust and one socket of a whole Kathleen node (AVX-512; ADR-0020), plus a Myriad D node if Kathleen was unavailable, and Myriad's V100 and A100 nodes if Locust was unavailable (ADR-0014, ADR-0016);
 - the M3s study covers every candidate `KernelKind`, including Pack, PullBack and any kernel family M9h adds (ADR-0041), and the degree-dependent families are measured at p = 1, 4 and 8, each with the candidate protocol of "Benchmarks" (ADR-0057); `vector-policy.toml`, `degree-policy.toml`, `docs/perf/vectorization.md` and `docs/perf/high-order.md` are updated from these runs on the benchmark platforms, and from M9h's records between those degrees;
@@ -2117,7 +2115,7 @@ The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and t
 | High-degree kernels: register pressure, code size and driver JIT time (C18); (p + 1)^6 cost per cell of direct evaluation | M9h: degree sweeps, runtime loops, sum factorisation, a degree policy from benchmarks (ADR-0041). |
 | No device-wide sort or scan in CubeCL; no forward-progress guarantee on Vulkan and Metal | Implement reduce-then-scan and LSD radix sort in gridcl-device; check CubeK first; benchmark in M2, because topology creation depends on them. |
 | f32 accuracy for curved high-order geometry | Tabulate in f64 on the host; store coordinates relative to the global origin; finish reductions in f64; test f32 against f64. |
-| GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Host-staged transport stays the default. GPU-aware path behind a feature, with an integration test on a CUDA-aware MPI runner. Keep `CudaAllocator::Sync`. Re-check on every CubeCL upgrade. |
+| GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Deferred (ADR-0059); host-staged exchange hardened in M10. |
 | MPI flavour differences: `MPI_Comm` is a pointer in Open MPI and an integer in MPICH | `Mpi` holds the communicator in an `Rc` and is not `Send` under either; `Comm` requires neither `Send` nor `Sync`; CI runs both MPICH and Open MPI. |
 | rsmpi lacks neighbourhood collectives; no Rust bindings exist for PT-Scotch's distributed API or for ParMETIS | Own wrappers over `mpi::ffi`; own ptscotch-sys and parmetis-sys with width probing; vendored METIS as the dependency-free fallback; dedicated CI image; check the ParMETIS licence. |
 | Rust 1.95 MSRV is declared only in CubeCL's workspace, not in its published manifests | Pin the toolchain (Rust 1.99) in `rust-toolchain.toml`; CI images with that toolchain. |
@@ -2153,7 +2151,7 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
   - Never add a Runtime type parameter to a public type; use cubecl::prelude::Client.
   - Runtime features only in gridcl-testing, examples, benches and binaries
-    (exception: gpu-aware-cuda in gridcl-device).
+    (`gpu-aware-cuda` is reserved; ADR-0059).
 - Kernels:
   - launch shape (cube count, cube dim, vector size, items per unit) only from LaunchPlan;
     usize arithmetic with overflow checks;

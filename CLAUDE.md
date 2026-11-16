@@ -8,7 +8,7 @@
   - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
   - Never add a Runtime type parameter to a public type; use cubecl::prelude::Client.
   - Runtime features only in gridcl-testing, examples, benches and binaries
-    (exception: gpu-aware-cuda in gridcl-device).
+    (`gpu-aware-cuda` is reserved; ADR-0059).
 - Kernels:
   - launch shape (cube count, cube dim, vector size, items per unit) only from LaunchPlan;
     usize arithmetic with overflow checks;
