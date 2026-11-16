@@ -36,7 +36,7 @@ tests cannot run until E0 is merged, and stop.
 
   State the reason in one line when you choose `myriad-v100` or `myriad-a100`.
 - **`kathleen`** (Slurm; whole nodes of 2 × 20-core Xeon Gold 6248, AVX-512) for every
-  CPU-only remote run (x86-64 AVX-512 CPU benchmarks, CpuSimd512, which Locust cannot provide;
+  CPU-only remote run (x86-64 AVX-512 CPU benchmarks, which Locust cannot provide;
   the CPU runtime on x86-64) and for MPI runs beyond 4 ranks; from M6 on, every milestone review
   also runs the MPI tests on two Kathleen nodes (ADR-0016). Never more than two nodes per job:
   `--nodes 1` (default, QoS `singlenode`, at most 6 h) or `--nodes 2` (`test` up to 1 h, else
