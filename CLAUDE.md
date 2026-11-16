@@ -31,6 +31,12 @@
   GPU runs: GRIDCL_TEST_DEVICE=vulkan | metal | cuda.
 - MPI tests: crate gridcl-mpi-tests ([[test]] targets, harness = false),
   run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI.
+- Run plans: only the runs that show the code works and the timings a decision needs
+  (ADR-0057). The standing matrix stays (CPU runtime and Metal on every change, Locust after
+  kernel tasks, MPI on 1-4 ranks under both flavours, f32 and f64, scalar and widest vector
+  sizes, the review targets). Beyond it: no exhaustive sweeps over parameters, sizes, degrees
+  or targets, no repeats of passing runs, and after review fixes only the runs they reach.
+  Benchmarks use the candidate protocol of docs/design.md, "Benchmarks".
 - ndelement is a dependency of conformance/ only (outside the workspace). Never add it to a
   library crate, and never add `version =` to its git dependency. After bumping its pin, run
   cargo test --manifest-path conformance/Cargo.toml and re-export the fixtures with

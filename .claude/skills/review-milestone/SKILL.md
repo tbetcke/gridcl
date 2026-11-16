@@ -27,6 +27,7 @@ If the milestone is empty, ask the user which milestone to review.
   target in the plan's acceptance-coverage table (Myriad for multi-GPU tests where
   docs/design.md requires them for this milestone), MPI if the milestone touches
   gridcl-parallel or later crates, and conformance if gridcl-refcell or conformance/ changed.
+  This is the standing matrix, run once. Add no sweeps or repeats beyond it (ADR-0057).
 
 ## 3. Check acceptance coverage yourself
 
@@ -41,6 +42,9 @@ counted as missing.
 
 - **Blockers and Majors:** fix them in new commits named `<milestone> review: <summary>`,
   then ask the reviewers again for the affected part. Repeat until none remain.
+  Re-run only the tests and targets the fixes reach. Propose that set first, as a table of
+  job, time and what each cut loses. Record every cut, and the earlier run that covers it, in
+  the plan (ADR-0057).
 - If a finding is really a design problem, run the `draft-adr` skill instead of working
   around it.
 - **Minors:** list them for the user; fix only those the user chooses.

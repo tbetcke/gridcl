@@ -73,6 +73,10 @@ If the user named a target, use it.
 - Benchmarks on a fallback target (`myriad-cpu`, `myriad-v100`, `myriad-a100`): pass
   `--fallback-reason "<why>"` to `vector_sweep` and `mesh_throughput`; `perf_record` rejects
   Myriad records without one (ADR-0014, ADR-0016).
+- Minimum runs (ADR-0057): run what the plan names, once. Do not add sweeps, sizes, degrees
+  or targets. Do not repeat a passing run. Repeat a run only when its timing is invalid (the
+  node is not idle) or lies within the noise of a decision threshold. Benchmarks use the
+  candidate protocol of docs/design.md, "Benchmarks".
 - Benchmarks or timings on Locust or `a4000`: neither has a scheduler, and both are shared with
   other users. Use the result only if the summary's `node load:` line is `idle` before and after
   the run; otherwise discard it and repeat the run later (ADR-0002, ADR-0037). Benchmark records
