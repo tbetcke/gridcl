@@ -780,9 +780,10 @@ fn median(times: &[f64]) -> f64 {
 /// and Metal (f32) on two ranks, and on Locust's CUDA (f64) on one and two ranks; one rank
 /// times the copies and kernels only, two ranks also the host exchange, `forward` and `reverse`.
 /// At 10^5 nodes the host-to-device copy takes at most 1.5 times the device-to-host copy on
-/// Metal and CUDA; on the CPU runtime docs/perf/halo-exchange.md reports the ratio with its
-/// cause (ADR-0061). `reverse` takes at most twice `forward` on each. (Bitwise results: the `scatter` MPI tests and
-/// `scatter_threads`.)
+/// Metal and on CUDA with one process per GPU (Locust at one rank); on the CPU runtime, and on
+/// CUDA with two ranks sharing Locust's one GPU, docs/perf/halo-exchange.md reports the ratio
+/// with its cause (ADR-0061, ADR-0062). `reverse` takes at most twice `forward` on each.
+/// (Bitwise results: the `scatter` MPI tests and `scatter_threads`.)
 #[test]
 fn halo_exchange_recorded() {
     let data = m10();
@@ -867,8 +868,9 @@ fn halo_exchange_recorded() {
             "{target} {backend} {} {ranks} ranks, 10^5 nodes",
             scalar.name()
         );
-        if backend == "cpu" {
-            // ADR-0061: on the CPU runtime the ratio is reported with its cause.
+        if backend == "cpu" || (backend == "cuda" && ranks > 1) {
+            // On the CPU runtime (ADR-0061), and on CUDA ranks sharing one GPU (ADR-0062), the
+            // ratio is reported with its cause.
             let ratio = format!("{:.2}", t("h2d") / t("d2h"));
             let doc = std::fs::read_to_string(root().join("docs/perf/halo-exchange.md"))
                 .expect("docs/perf/halo-exchange.md");
@@ -881,7 +883,7 @@ fn halo_exchange_recorded() {
             assert_eq!(cells.get(5), Some(&ratio.as_str()), "{what}: h2d / d2h");
             assert!(
                 cells.get(8).is_some_and(|c| !c.is_empty() && *c != "–"),
-                "{what}: the h2d / d2h ratio needs a cause (ADR-0061)"
+                "{what}: the h2d / d2h ratio needs a cause (ADR-0061, ADR-0062)"
             );
         } else {
             assert!(

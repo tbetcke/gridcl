@@ -46,15 +46,20 @@ pub fn render_m10_vector(
     todo!("M10 T8")
 }
 
-/// The bounds of M10 bullet 1 at 10^5 halo nodes (ADR-0059, ADR-0061).
+/// The bounds of M10 bullet 1 at 10^5 halo nodes (ADR-0059, ADR-0061, ADR-0062).
 pub const HALO_BOUND_NODES: usize = 100_000;
-/// `h2d ≤ H2D_BOUND × d2h` on Metal and CUDA.
+/// `h2d ≤ H2D_BOUND × d2h` on Metal and on CUDA with one process per GPU.
 pub const H2D_BOUND: f64 = 1.5;
 /// `reverse ≤ REVERSE_BOUND × forward` on every platform.
 pub const REVERSE_BOUND: f64 = 2.0;
 /// The cause of the CPU runtime's upload ratio (ADR-0061).
 pub const CPU_H2D_CAUSE: &str = "the CPU runtime's read returns a view of its storage, so \
     `to_host` is one copy and `write_host` at least two (ADR-0061)";
+/// The cause of the upload ratio of CUDA runs on more than one rank, which share Locust's one
+/// GPU (ADR-0062).
+pub const SHARED_GPU_H2D_CAUSE: &str = "the ranks share one GPU and time-slice it, so each \
+    kernel waits for a slice (see pack and unpack against one rank), and the staged upload waits \
+    on the GPU more often than the download (ADR-0062)";
 
 /// M10's tables of `docs/perf/halo-exchange.md` from the `m10-halo-*.json` records (the last
 /// record of a part wins): per (target, backend, type, ranks) the median of each part in µs at
@@ -125,7 +130,8 @@ pub fn render_m10_halo(records: &[crate::record::HaloRecord]) -> String {
         let h2d = ratio(at("h2d"), at("d2h"));
         let rev = ratio(at("reverse"), at("forward"));
         let cpu = backend == "cpu";
-        let bound = if cpu {
+        let shared_gpu = backend == "cuda" && *ranks > 1;
+        let bound = if cpu || shared_gpu {
             format!("reverse ≤ {REVERSE_BOUND} × forward; h2d reported")
         } else {
             format!("h2d ≤ {H2D_BOUND} × d2h; reverse ≤ {REVERSE_BOUND} × forward")
@@ -133,6 +139,8 @@ pub fn render_m10_halo(records: &[crate::record::HaloRecord]) -> String {
         let mut causes = Vec::new();
         if cpu {
             causes.push(CPU_H2D_CAUSE.to_owned());
+        } else if shared_gpu {
+            causes.push(SHARED_GPU_H2D_CAUSE.to_owned());
         } else if h2d.is_some_and(|r| r > H2D_BOUND) {
             causes.push("h2d over the bound".to_owned());
         }
