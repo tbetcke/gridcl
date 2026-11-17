@@ -22,3 +22,8 @@ cubecl.workspace = true
 gridcl = { path = "../gridcl" }
 gridcl-testing = { path = "../gridcl-testing", default-features = false }
 mpi = { workspace = true, optional = true }
+
+# The other examples are found by name; halo_exchange runs under mpirun.
+[[example]]
+name = "halo_exchange"
+required-features = ["mpi"]
