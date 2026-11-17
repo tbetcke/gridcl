@@ -1227,7 +1227,8 @@ pub struct M10Data {
     /// `m10-vector-*.json`: the vector candidates (ADR-0060 item 2).
     pub vector: Vec<SweepRecord>,
     /// `m10-degree-*.json`: the degree check at p = 1, 4 and 8 and its re-measurements
-    /// (ADR-0060 item 3).
+    /// (ADR-0060 item 3), at each entry's rule sizes
+    /// ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063).
     pub degree: Vec<DegreeRecord>,
     /// `m10-throughput-*.json`.
     pub throughput: Vec<ThroughputRecord>,
@@ -1235,7 +1236,8 @@ pub struct M10Data {
     pub halo: Vec<HaloRecord>,
 }
 
-/// The records of every `m10-*.json` file in `dir`.
+/// The records of every `m10-*.json` file in `dir`; degree records only at their entry's rule
+/// sizes ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063).
 ///
 /// # Errors
 ///
@@ -1256,8 +1258,21 @@ pub fn load_m10_dir(dir: &Path) -> Result<M10Data, String> {
             data.vector
                 .extend(read_records(&path, SweepRecord::from_json)?);
         } else if name.starts_with("m10-degree-") {
-            data.degree
-                .extend(read_records(&path, DegreeRecord::from_json)?);
+            // Records outside their entry's rule sizes (ADR-0063: T9's FacetNormals records on
+            // intervals in f32 at sizes f32 cannot resolve) stay in the files as history.
+            data.degree.extend(
+                read_records(&path, DegreeRecord::from_json)?
+                    .into_iter()
+                    .filter(|r| {
+                        crate::protocol::degree_rule_sizes(
+                            &r.family,
+                            &r.cell,
+                            r.scalar.bytes(),
+                            r.degree,
+                        )
+                        .contains(&r.nominal_points)
+                    }),
+            );
         } else if name.starts_with("m10-throughput-") {
             data.throughput
                 .extend(read_records(&path, ThroughputRecord::from_json)?);

@@ -1273,6 +1273,17 @@ const M10_DEGREES: [u32; 3] = [1, 4, 8];
 /// The rule sizes of the candidate protocol, on every platform (ADR-0057 item 3).
 const M10_SIZES: [usize; 2] = [1_000_000, 10_000_000];
 
+/// The rule sizes of a (family, cell, scalar, degree): [`M10_SIZES`], except FacetNormals on
+/// intervals in f32, at sizes f32 can resolve: 10^5 and 10^6 points at p = 4–6, 10^4 and 10^5
+/// at p = 7–8 (ADR-0063).
+fn m10_sizes(family: &str, cell: &str, scalar: Scalar, degree: u32) -> [usize; 2] {
+    match (family, cell, scalar, degree) {
+        ("FacetNormals", "Interval", Scalar::F32, 4..=6) => [100_000, 1_000_000],
+        ("FacetNormals", "Interval", Scalar::F32, 7..) => [10_000, 100_000],
+        _ => M10_SIZES,
+    }
+}
+
 /// Timed runs of the candidate protocol.
 const M10_RUNS: usize = 5;
 
@@ -1409,7 +1420,8 @@ fn baseline(cell: &str, degree: u32) -> &'static str {
 
 /// Bullet 4 (ADR-0057 item 3, ADR-0060 items 2 and 3): every degree-dependent bench family, cell
 /// type and scalar type is measured on every M10 platform at p = 1, 4 and 8 (pyramids at p = 1)
-/// and at 10^6 and 10^7 points, with its candidates: the baseline, the M9h choices of the old
+/// and at 10^6 and 10^7 points (FacetNormals on intervals in f32 at [`m10_sizes`], ADR-0063),
+/// with its candidates: the baseline, the M9h choices of the old
 /// classes of its class (`history/degree-policy-pre-m10.toml`) and every strategy of
 /// `candidates::degree_candidates`. A failed or too slow strategy is a record too.
 #[test]
@@ -1436,7 +1448,7 @@ fn m10_degree_check_covers_p1_4_8_on_every_platform() {
                             bytes,
                             degree,
                         ));
-                        for size in M10_SIZES {
+                        for size in m10_sizes(family, cell, scalar, degree) {
                             for iterations in iterations_of(family) {
                                 let c = Config {
                                     target,
@@ -1581,6 +1593,7 @@ fn degree_policy_follows_the_generic_rule() {
                 for &cell in cells_of(family) {
                     for degree in m10_degrees(cell) {
                         let at = format!("{class} {family} {cell} p={degree} {}", scalar.name());
+                        let sizes = m10_sizes(family, cell, scalar, degree);
                         let t = |d: (&str, &str), size, s: &str| {
                             m10_time(records, d, &members, cell, degree, scalar, size, s)
                         };
@@ -1599,7 +1612,7 @@ fn degree_policy_follows_the_generic_rule() {
                             first_use(s)
                                 && devices
                                     .iter()
-                                    .all(|&d| M10_SIZES.iter().all(|&n| t(d, n, s).is_some()))
+                                    .all(|&d| sizes.iter().all(|&n| t(d, n, s).is_some()))
                         };
                         let cand: Vec<&str> = candidates(device_class(class))
                             .iter()
@@ -1615,11 +1628,11 @@ fn degree_policy_follows_the_generic_rule() {
                             );
                             "loops"
                         };
-                        // r(s, d, n), in the order of `devices` × `M10_SIZES`.
+                        // r(s, d, n), in the order of `devices` × `sizes`.
                         let r = |s: &str| -> Vec<f64> {
                             let mut out = Vec::new();
                             for &d in &devices {
-                                for &n in &M10_SIZES {
+                                for &n in &sizes {
                                     let fastest = cand
                                         .iter()
                                         .map(|&c| t(d, n, c).unwrap())
@@ -1634,7 +1647,7 @@ fn degree_policy_follows_the_generic_rule() {
                             .copied()
                             .filter(|&s| {
                                 s == base
-                                    || M10_SIZES.iter().all(|&n| {
+                                    || sizes.iter().all(|&n| {
                                         let v: Vec<f64> = devices
                                             .iter()
                                             .map(|&d| t(d, n, s).unwrap() / t(d, n, base).unwrap())

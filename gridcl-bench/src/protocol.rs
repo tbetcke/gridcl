@@ -34,6 +34,27 @@ pub const CANDIDATE_RUNS: usize = 5;
 /// Problem sizes of the candidate protocol, in items or quadrature points, on every device
 /// class (ADR-0057 item 3).
 pub const CANDIDATE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
+
+/// The rule sizes of a degree-policy entry in the candidate protocol, in quadrature points:
+/// [`CANDIDATE_SIZES`], except FacetNormals on intervals with 4-byte scalars, where 10^6 or
+/// 10^7 equispaced points exceed f32's resolution: 10^5 and 10^6 at p = 4–6, 10^4 and 10^5 at
+/// p = 7–8 (ADR-0063). `family` is a bench or policy family name, `cell` a `CellType` name.
+///
+/// ```
+/// use gridcl_bench::protocol::{CANDIDATE_SIZES, degree_rule_sizes};
+/// assert_eq!(degree_rule_sizes("FacetNormals", "Interval", 4, 8), [10_000, 100_000]);
+/// assert_eq!(degree_rule_sizes("FacetNormals", "Interval", 8, 8), CANDIDATE_SIZES);
+/// ```
+pub fn degree_rule_sizes(family: &str, cell: &str, bytes: usize, degree: u32) -> [usize; 2] {
+    if family == "FacetNormals" && cell == "Interval" && bytes == 4 {
+        match degree {
+            4..=6 => return [100_000, 1_000_000],
+            7.. => return [10_000, 100_000],
+            _ => {}
+        }
+    }
+    CANDIDATE_SIZES
+}
 /// The shortest timed run: a run repeats the call until about this long (ADR-0018).
 pub const MIN_RUN: Duration = Duration::from_millis(20);
 /// The most calls per timed run.

@@ -76,7 +76,7 @@ use super::Machine;
 use super::mesh::nearest_side;
 use crate::candidates::degree_candidates;
 use crate::decide_degree::{COMPILE_BOUND_S, policy_family};
-use crate::protocol::{calls_per_run, is_cpu, median, profile, sync};
+use crate::protocol::{calls_per_run, degree_rule_sizes, is_cpu, median, profile, sync};
 use crate::record::{DegreeRecord, LegacyClass, Scalar};
 
 /// The protocol's sizes, in quadrature points (rule 12).
@@ -242,6 +242,10 @@ pub struct DegreeOptions {
     pub scalars: Vec<Scalar>,
     /// Quadrature points, ascending.
     pub sizes: Vec<usize>,
+    /// With `candidates`: each family at its entry's rule sizes
+    /// ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063) instead of
+    /// `sizes`; a (cell, degree, scalar) runs the union of its families' sizes.
+    pub entry_sizes: bool,
     /// Strategy names: [`STRATEGIES`](crate::record::STRATEGIES) or `policy`. Ignored with
     /// `candidates`.
     pub strategies: Vec<String>,
@@ -356,7 +360,7 @@ pub fn degree_sweep(
                     }
                     let mut history = History::new();
                     let mut backup = HashSet::new();
-                    for &nominal in &options.sizes {
+                    for nominal in point_sizes(options, cell, degree, scalar) {
                         let point = Point {
                             cell,
                             degree,
@@ -386,6 +390,23 @@ pub fn degree_sweep(
         }
     }
     Ok(records)
+}
+
+/// The sizes of a (cell, degree, scalar): `options.sizes`, or with `entry_sizes` the union of
+/// its families' rule sizes, ascending.
+fn point_sizes(options: &DegreeOptions, cell: CellType, degree: u32, scalar: Scalar) -> Vec<usize> {
+    if !options.entry_sizes {
+        return options.sizes.clone();
+    }
+    let cell = format!("{cell:?}");
+    let mut sizes: Vec<usize> = options
+        .families
+        .iter()
+        .flat_map(|f| degree_rule_sizes(f.name(), &cell, scalar.bytes(), degree))
+        .collect();
+    sizes.sort_unstable();
+    sizes.dedup();
+    sizes
 }
 
 /// One (cell, degree, node family, scalar, size) of the sweep.
@@ -426,8 +447,14 @@ struct PointSweep<'a> {
 impl PointSweep<'_> {
     fn run<F: Real>(&mut self, on_record: &mut dyn FnMut(&DegreeRecord)) -> Vec<DegreeRecord> {
         let p = self.point;
+        let cell = format!("{:?}", p.cell);
         let families: Vec<DegreeFamily> = (self.options.families.iter().copied())
             .filter(|f| f.applies_to(p.cell))
+            .filter(|f| {
+                !self.options.entry_sizes
+                    || degree_rule_sizes(f.name(), &cell, p.scalar.bytes(), p.degree)
+                        .contains(&p.nominal)
+            })
             .collect();
         let mut out = Vec::new();
         let mut with_loops = HashSet::new();
@@ -1743,6 +1770,7 @@ mod tests {
             node_families: vec![NodeFamily::Equispaced, NodeFamily::Gll],
             scalars: vec![Scalar::F32, Scalar::F64],
             sizes: vec![10_000],
+            entry_sizes: false,
             strategies: vec!["direct".to_owned()],
             skip: Vec::new(),
             launch_only,

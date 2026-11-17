@@ -30,7 +30,10 @@ use crate::decide::{BLOCK_UNIT, ELEM_BYTES, units_name};
 use crate::decide_degree::{
     POLICY_FAMILIES, SCALARS, Times, cells_of, max_degree, members, sweep_devices,
 };
-use crate::protocol::CANDIDATE_SIZES;
+use crate::protocol::{CANDIDATE_SIZES, degree_rule_sizes};
+
+/// The smallest size of M9h's degree sweep, in quadrature points.
+const M9H_SMALLEST: usize = 100_000;
 use crate::record::{
     CubeDimMode, DegreeRecord, HighOrderData, KINDS, LegacyClass, M10Data, STRATEGIES, Scalar,
     SweepRecord,
@@ -910,14 +913,21 @@ struct EntryContext<'a> {
 impl EntryContext<'_> {
     fn entry(&self) -> DegreeEntry {
         let picks: Vec<DegreePick> = (1..=max_degree(self.cell))
-            .map(|p| match self.m10_members(p) {
-                ref m if !m.is_empty() => self.pick(self.new, m, &CANDIDATE_SIZES, p, true),
-                _ => {
-                    let sizes: &[usize] = match self.class {
-                        DeviceClass::Gpu => &CANDIDATE_SIZES,
-                        DeviceClass::Cpu => &CANDIDATE_SIZES[..1],
-                    };
-                    self.pick(self.old, &self.m9h_platforms, sizes, p, false)
+            .map(|p| {
+                let sizes = degree_rule_sizes(self.family, self.cell, self.scalar.bytes(), p);
+                match self.m10_members(p) {
+                    ref m if !m.is_empty() => self.pick(self.new, m, &sizes, p, true),
+                    _ => {
+                        // M9h measured 10^5 to 10^7 points; its CPU rule used the first size
+                        // (ADR-0052).
+                        let m9h: Vec<usize> =
+                            sizes.into_iter().filter(|&n| n >= M9H_SMALLEST).collect();
+                        let sizes = match self.class {
+                            DeviceClass::Gpu => &m9h[..],
+                            DeviceClass::Cpu => &m9h[..1],
+                        };
+                        self.pick(self.old, &self.m9h_platforms, sizes, p, false)
+                    }
                 }
             })
             .collect();
@@ -1047,10 +1057,11 @@ impl EntryContext<'_> {
         }
     }
 
-    /// M10's check at `pick` (from M10) against M9h's records at 10^6 points, per platform and
-    /// strategy both timed.
+    /// M10's check at `pick` (from M10) against M9h's records at the pick's first rule size
+    /// (10^6 points; ADR-0063's lower sizes for FacetNormals on intervals in f32), per platform
+    /// and strategy both timed.
     fn moves(&self, pick: &DegreePick) -> Vec<DegreeMove> {
-        let size = CANDIDATE_SIZES[0];
+        let size = pick.sizes[0];
         let mut out = Vec::new();
         for k in &pick.platforms {
             let p = k.platform;

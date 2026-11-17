@@ -27,9 +27,11 @@
 //!   `candidates::degree_candidates` for the device's class and the family's policy family
 //!   (the baseline, the M9h choices of the class's old classes, the live policy's), and `loops`
 //!   too where that policy family's `direct` is skipped, fails or takes over 30 s at first use
-//!   (ADR-0056); at p = 1, 4 and 8 (pyramids 1), 10^6 and 10^7 points, equispaced nodes and
-//!   five timed runs unless given; interleaved on a CPU (ADR-0055). `--degrees` names the
-//!   degrees a re-measurement adds (ADR-0060 item 3). Committed files are `m10-degree-*.json`.
+//!   (ADR-0056); at p = 1, 4 and 8 (pyramids 1), each entry's rule sizes (10^6 and 10^7
+//!   points; FacetNormals on intervals in f32 lower, ADR-0063) unless `--sizes` is given,
+//!   equispaced nodes and five timed runs unless given; interleaved on a CPU (ADR-0055).
+//!   `--degrees` names the degrees a re-measurement adds (ADR-0060 item 3). Committed files
+//!   are `m10-degree-*.json`.
 //! - `--strategies`: default `direct`; `policy` runs the degree policy, a strategy's name forces
 //!   it on every family (or its fallback `loops`, which the records name). They run in the
 //!   given order.
@@ -153,6 +155,8 @@ struct Args {
     stopped_after: Option<f64>,
     /// The candidate protocol (`--candidates`).
     candidates: bool,
+    /// `--candidates` without `--sizes`: each family at its entry's rule sizes (ADR-0063).
+    entry_sizes: bool,
 }
 
 /// The first non-empty value of the environment variables `vars`.
@@ -188,6 +192,7 @@ impl Args {
             resume: false,
             stopped_after: None,
             candidates: false,
+            entry_sizes: false,
         };
         let mut given = Vec::new();
         while let Some(flag) = args.next() {
@@ -299,6 +304,7 @@ impl Args {
             }
             if parsed.sizes.is_none() {
                 parsed.sizes = Some(CANDIDATE_SIZES.to_vec());
+                parsed.entry_sizes = true;
             }
             parsed.node_families = Some(vec![NodeFamily::Equispaced]);
         }
@@ -366,6 +372,7 @@ fn run(args: Args) -> Result<(), Failure> {
         candidates: args.candidates,
         node_families: args.node_families(),
         sizes: args.sizes(),
+        entry_sizes: args.entry_sizes,
         target: args.target,
         run_id: args.run_id,
         families: args.families,
@@ -575,6 +582,10 @@ mod tests {
     fn candidates_take_the_candidate_protocol() {
         let parsed = args(&["--candidates"]).ok().unwrap();
         assert!(parsed.candidates);
+        assert!(
+            parsed.entry_sizes,
+            "each entry at its rule sizes (ADR-0063)"
+        );
         assert_eq!(parsed.degrees, M10_DEGREES);
         assert_eq!(parsed.sizes(), CANDIDATE_SIZES);
         assert_eq!(parsed.runs, CANDIDATE_RUNS);
@@ -594,6 +605,7 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.degrees, [2, 3]);
         assert_eq!((parsed.runs, parsed.sizes()), (3, vec![1_000_000]));
+        assert!(!parsed.entry_sizes, "--sizes applies to every family");
         assert_eq!(parsed.cells, [CellType::Prism]);
         for list in [
             &["--candidates", "--strategies", "direct"][..],
