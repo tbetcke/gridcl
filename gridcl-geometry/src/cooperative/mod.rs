@@ -47,6 +47,13 @@ pub(crate) fn leaves(terms: usize) -> usize {
     1 << terms.clamp(1, MAX_LEAVES).ilog2()
 }
 
+/// The vectors a cooperative kernel keeps live beside its strategy's own for a sum of `comps`
+/// components: the deepest tree of one unit per group ([`unit_tree`]'s stack of
+/// log₂([`MAX_LEAVES`]) + 1 levels and its leaf, C each) and the tree's control words (6).
+pub(crate) fn tree_live(comps: usize) -> usize {
+    (MAX_LEAVES.ilog2() as usize + 2) * comps + 6
+}
+
 /// The comptime shape of a cooperative launch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Group {

@@ -16,6 +16,7 @@
 //! on the CPU runtime.
 
 use cubecl::prelude::*;
+use gridcl_dims::CellType;
 
 use super::LEVEL_LEN;
 use super::prism::block_prism;
@@ -31,6 +32,20 @@ pub(crate) fn sumfact_layout(l: GeomLayout, n: usize) -> GeomLayout {
         num_points: 0,
         ..l
     }
+}
+
+/// The vectors the factor kernel keeps live for `n` nodes per direction on `cell` (T = `td`,
+/// G = `gd`): the partial sums of its first contractions (A_1 of [`block_2d`], 2·G·n on
+/// quadrilaterals; A_2 and A_1 of [`block_3d`], 2·G·n² + 3·G·n on hexahedra; B of
+/// `block_prism`, 3·G·n on prisms), J's T running sums, and J, K (or the normals) and a
+/// coordinate and weight as `direct`: 2·T·G + 2.
+pub(crate) fn sumfact_factor_live(cell: CellType, n: usize, td: usize, gd: usize) -> usize {
+    let partials = match (cell, td) {
+        (CellType::Prism, _) => 3 * gd * n,
+        (_, 2) => 2 * gd * n,
+        _ => 2 * gd * n * n + 3 * gd * n,
+    };
+    partials + td + 2 * td * gd + 2
 }
 
 /// The integer at `tab[i]`.
