@@ -4,7 +4,7 @@
 //! ```text
 //! cargo run --release -p gridcl-bench --bin halo_exchange [--features mpi] -- [--target NAME]
 //!     [--types f32,f64] [--halos 1000,10000,100000] [--owned N] [--block B] [--runs R]
-//!     [--warmups W] [--fallback-reason TEXT] [--out FILE]
+//!     [--warmups W] [--fallback-reason TEXT] [--out FILE [--append]]
 //! halo_exchange annotate --node-load RESULTS_DIR FILE...
 //! halo_exchange report [--check] [--data DIR] [--doc FILE]
 //! ```
@@ -27,7 +27,7 @@
 //! A forward is checked once against the owners' values before the timing. Types default to
 //! f64, or f32 on a device without f64. Rank 0 writes the records. Without the feature `mpi`
 //! the binary runs on one rank (`Serial`). `--target`, `--fallback-reason` and `--out` are as
-//! in `vector_sweep`; the commit likewise.
+//! in `vector_sweep`; the commit likewise. `--append` keeps the records already in `--out`.
 //!
 //! `annotate` adds the runner's node-load snapshots to every record of each file, as
 //! `vector_sweep annotate` does. `report` writes the tables of docs/perf/halo-exchange.md
@@ -45,13 +45,14 @@ use gridcl::{
 use gridcl_bench::families::Machine;
 use gridcl_bench::protocol::{self, median};
 use gridcl_bench::record::{
-    HALO_PARTS, HaloRecord, NodeLoad, Scalar, annotate_node_load, load_m10_dir, write_records,
+    HALO_PARTS, HaloRecord, NodeLoad, Scalar, annotate_node_load, load_m10_dir, read_records,
+    write_records,
 };
 use gridcl_bench::report::{M10_BEGIN_MARKER as BEGIN_MARKER, M10_END_MARKER as END_MARKER};
 use gridcl_device::{check_precision, pack, unpack};
 
 const USAGE: &str = "usage: halo_exchange [--target NAME] [--types f32,f64] [--halos LIST] \
-    [--owned N] [--block B] [--runs R] [--warmups W] [--fallback-reason TEXT] [--out FILE]\n       \
+    [--owned N] [--block B] [--runs R] [--warmups W] [--fallback-reason TEXT] [--out FILE [--append]]\n       \
     halo_exchange annotate --node-load RESULTS_DIR FILE...\n       \
     halo_exchange report [--check] [--data DIR] [--doc FILE]";
 
@@ -147,6 +148,8 @@ struct Args {
     warmups: usize,
     fallback_reason: Option<String>,
     out: Option<PathBuf>,
+    /// Keep the records already in `out`.
+    append: bool,
 }
 
 fn positive(flag: &str, value: &str) -> Result<usize, String> {
@@ -172,6 +175,7 @@ impl Args {
             warmups: WARMUPS,
             fallback_reason: None,
             out: None,
+            append: false,
         };
         while let Some(flag) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -205,8 +209,12 @@ impl Args {
                 }
                 "--fallback-reason" => parsed.fallback_reason = Some(value()?),
                 "--out" => parsed.out = Some(PathBuf::from(value()?)),
+                "--append" => parsed.append = true,
                 _ => return Err(format!("unknown option {flag}").into()),
             }
+        }
+        if parsed.append && parsed.out.is_none() {
+            return Err("--append needs --out".into());
         }
         if let Some(&h) = parsed.halos.iter().find(|&&h| h > parsed.owned) {
             return Err(format!("a halo of {h} nodes exceeds --owned {}", parsed.owned).into());
@@ -242,7 +250,12 @@ fn run(comm: &dyn CommDyn, args: &Args) -> Result<(), String> {
             args.warmups
         );
     }
-    let mut records = Vec::new();
+    let mut records = match &args.out {
+        Some(out) if args.append && rank == 0 && out.exists() => {
+            read_records(out, |v| Ok::<_, String>(v.clone()))?
+        }
+        _ => Vec::new(),
+    };
     for scalar in scalars {
         for &halo in &args.halos {
             let parts = match scalar {
