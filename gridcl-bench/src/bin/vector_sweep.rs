@@ -6,8 +6,16 @@
 //!     [--families fill,copy,...] [--types f32,f64,u32] [--sizes 100000,...]
 //!     [--vector-sizes 1,2,...] [--blocks 4,16,64] [--cube-dim auto|plan|perf|both]
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE]
+//! vector_sweep --candidates [--target NAME] [--families LIST] [--types LIST] [--sizes LIST]
+//!     [--runs R] [--fallback-reason TEXT] [--out FILE]
 //! vector_sweep annotate --node-load RESULTS_DIR FILE...
 //! ```
+//!
+//! - `--candidates`: the candidate protocol of M10 and of a CubeCL pin bump (ADR-0057 item 3,
+//!   ADR-0060 item 2): per kind and type only the configurations of
+//!   `candidates::vector_candidates` for the device's class, Pack and PullBack included, at
+//!   10^6 and 10^7 items with five timed runs by default. `--vector-sizes`, `--blocks` and
+//!   `--cube-dim` do not apply.
 //!
 //! - `--target`: the machine, `m3max` or a target of scripts/hpc/remote-test.sh; default
 //!   `GRIDCL_HPC_TARGET` (set in runner jobs), else `local`.
@@ -31,14 +39,17 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use gridcl_bench::families::{self, BLOCKS, Machine, SIZES, SweepOptions};
-use gridcl_bench::protocol::RUNS;
+use gridcl_bench::candidates::candidate_kinds;
+use gridcl_bench::families::{self, BLOCKS, CandidateOptions, Machine, SIZES, SweepOptions};
+use gridcl_bench::protocol::{CANDIDATE_RUNS, CANDIDATE_SIZES, RUNS};
 use gridcl_bench::record::{CubeDimMode, NodeLoad, Scalar, kind_named, write_records};
 use gridcl_device::KernelKind;
 use serde_json::Value;
 
 const USAGE: &str = "usage: vector_sweep [--target NAME] [--families LIST] [--types LIST] \
     [--sizes LIST] [--vector-sizes LIST] [--blocks KIB,...] [--cube-dim auto|plan|perf|both] \
+    [--runs R] [--fallback-reason TEXT] [--out FILE]\n       \
+    vector_sweep --candidates [--target NAME] [--families LIST] [--types LIST] [--sizes LIST] \
     [--runs R] [--fallback-reason TEXT] [--out FILE]\n       \
     vector_sweep annotate --node-load RESULTS_DIR FILE...";
 
@@ -92,6 +103,8 @@ enum CubeDims {
 /// Command-line options of the sweep.
 #[derive(Debug)]
 struct Args {
+    /// The candidate protocol (`--candidates`).
+    candidates: bool,
     target: String,
     families: Vec<KernelKind>,
     scalars: Option<Vec<Scalar>>,
@@ -107,39 +120,38 @@ struct Args {
 impl Args {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, Failure> {
         let mut parsed = Args {
+            candidates: false,
             target: std::env::var("GRIDCL_HPC_TARGET")
                 .ok()
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| "local".to_owned()),
-            families: families::families().into_iter().map(|(k, _)| k).collect(),
+            families: Vec::new(),
             scalars: None,
-            sizes: SIZES.to_vec(),
+            sizes: Vec::new(),
             vector_sizes: None,
             blocks: BLOCKS.to_vec(),
             cube_dims: CubeDims::Auto,
-            runs: RUNS,
+            runs: 0,
             fallback_reason: None,
             out: None,
         };
+        let (mut families, mut sizes, mut runs, mut sweep_only) = (None, None, None, None);
         while let Some(flag) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
             match flag.as_str() {
+                "--candidates" => parsed.candidates = true,
                 "--target" => parsed.target = value()?,
-                "--families" => {
-                    let measured: Vec<KernelKind> =
-                        families::families().into_iter().map(|(k, _)| k).collect();
-                    parsed.families = list(&flag, &value()?, |name| {
-                        kind_named(name).filter(|k| measured.contains(k))
-                    })?;
-                }
+                "--families" => families = Some(list(&flag, &value()?, kind_named)?),
                 "--types" => parsed.scalars = Some(list(&flag, &value()?, Scalar::named)?),
-                "--sizes" => parsed.sizes = list(&flag, &value()?, positive)?,
+                "--sizes" => sizes = Some(list(&flag, &value()?, positive)?),
                 "--vector-sizes" => {
+                    sweep_only = Some(flag.clone());
                     parsed.vector_sizes = Some(list(&flag, &value()?, |v| {
                         positive(v).filter(|n| n.is_power_of_two())
                     })?)
                 }
                 "--blocks" => {
+                    sweep_only = Some(flag.clone());
                     parsed.blocks = list(&flag, &value()?, |v| {
                         positive(v)
                             .filter(|k| k.is_power_of_two() && (4..=64).contains(k))
@@ -147,6 +159,7 @@ impl Args {
                     })?
                 }
                 "--cube-dim" => {
+                    sweep_only = Some(flag.clone());
                     parsed.cube_dims = match value()?.as_str() {
                         "auto" => CubeDims::Auto,
                         "plan" => CubeDims::Plan,
@@ -156,13 +169,38 @@ impl Args {
                     }
                 }
                 "--runs" => {
-                    parsed.runs = positive(&value()?).ok_or("--runs needs a positive integer")?
+                    runs = Some(positive(&value()?).ok_or("--runs needs a positive integer")?)
                 }
                 "--fallback-reason" => parsed.fallback_reason = Some(value()?),
                 "--out" => parsed.out = Some(PathBuf::from(value()?)),
                 _ => return Err(format!("unknown option {flag}").into()),
             }
         }
+        // The kinds each mode measures: the M3s families, or every candidate kind.
+        let measured: Vec<KernelKind> = if parsed.candidates {
+            if let Some(flag) = sweep_only {
+                return Err(format!("{flag} does not apply to --candidates").into());
+            }
+            candidate_kinds().into_iter().map(|(k, _)| k).collect()
+        } else {
+            families::families().into_iter().map(|(k, _)| k).collect()
+        };
+        parsed.families = match families {
+            Some(kinds) => {
+                if let Some(k) = kinds.iter().find(|k| !measured.contains(k)) {
+                    return Err(format!("--families: {k:?} is not measured in this mode").into());
+                }
+                kinds
+            }
+            None => measured,
+        };
+        let (default_sizes, default_runs) = if parsed.candidates {
+            (CANDIDATE_SIZES.to_vec(), CANDIDATE_RUNS)
+        } else {
+            (SIZES.to_vec(), RUNS)
+        };
+        parsed.sizes = sizes.unwrap_or(default_sizes);
+        parsed.runs = runs.unwrap_or(default_runs);
         Ok(parsed)
     }
 }
@@ -204,22 +242,10 @@ fn run(args: Args) -> Result<(), Failure> {
         machine.cores,
         machine.kernel_cache
     );
-    let options = SweepOptions {
-        target: args.target,
-        families: args.families,
-        scalars: args.scalars,
-        sizes: args.sizes,
-        vector_sizes: args.vector_sizes,
-        blocks: args.blocks,
-        cube_dims,
-        runs: args.runs,
-        fallback_reason: args.fallback_reason,
-    };
-
     let mut written: Vec<Value> = Vec::new();
     let mut write_error = None;
     let out = args.out.as_deref();
-    let records = families::sweep(&client, &machine, &options, &mut |r| {
+    let mut on_record = |r: &gridcl_bench::record::SweepRecord| {
         eprintln!(
             "{:?} {} n = {} v = {} (ran {}) block = {:?} {:?}: median {:.3} ms ({} calls a run), \
              compile {:.3} s",
@@ -240,7 +266,31 @@ fn run(args: Args) -> Result<(), Failure> {
         {
             write_error = write_records(path, &written).err();
         }
-    })
+    };
+    let records = if args.candidates {
+        let options = CandidateOptions {
+            target: args.target,
+            families: args.families,
+            scalars: args.scalars,
+            sizes: args.sizes,
+            runs: args.runs,
+            fallback_reason: args.fallback_reason,
+        };
+        families::candidate_sweep(&client, &machine, &options, &mut on_record)
+    } else {
+        let options = SweepOptions {
+            target: args.target,
+            families: args.families,
+            scalars: args.scalars,
+            sizes: args.sizes,
+            vector_sizes: args.vector_sizes,
+            blocks: args.blocks,
+            cube_dims,
+            runs: args.runs,
+            fallback_reason: args.fallback_reason,
+        };
+        families::sweep(&client, &machine, &options, &mut on_record)
+    }
     .map_err(Failure::Run)?;
     if let Some(error) = write_error {
         return Err(Failure::Run(error));
@@ -317,6 +367,31 @@ mod tests {
         assert_eq!(parsed.blocks, BLOCKS);
         assert_eq!((parsed.runs, parsed.cube_dims), (RUNS, CubeDims::Auto));
         assert!(parsed.scalars.is_none() && parsed.vector_sizes.is_none());
+        assert!(!parsed.candidates);
+        assert!(!parsed.families.contains(&KernelKind::Pack));
+    }
+
+    /// `--candidates`: every candidate kind, 10^6 and 10^7, five runs; the sweep's
+    /// configuration options are rejected.
+    #[test]
+    fn candidates_take_the_candidate_protocol() {
+        let parsed = args(&["--candidates"]).ok().unwrap();
+        assert!(parsed.candidates);
+        assert_eq!(parsed.sizes, CANDIDATE_SIZES);
+        assert_eq!(parsed.runs, CANDIDATE_RUNS);
+        assert_eq!(parsed.families.len(), 13);
+        let parsed = args(&["--families", "pack,PullBack", "--candidates", "--runs", "3"])
+            .ok()
+            .unwrap();
+        assert_eq!(parsed.families, [KernelKind::Pack, KernelKind::PullBack]);
+        assert_eq!(parsed.runs, 3);
+        for list in [
+            &["--candidates", "--blocks", "4"][..],
+            &["--candidates", "--vector-sizes", "1"],
+            &["--cube-dim", "plan", "--candidates"],
+        ] {
+            assert!(matches!(args(list), Err(Failure::Usage(_))), "{list:?}");
+        }
     }
 
     #[test]

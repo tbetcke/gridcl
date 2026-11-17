@@ -8,6 +8,10 @@
 //! the CPU block, `with_quad_tile` for the QuadField tile, and `with_cpu_units` with
 //! `with_performance_cores` for the CPU units (ADR-0017). The size that actually ran comes from
 //! `record_plans`.
+//!
+//! The candidate protocol of M10 and of a CubeCL pin bump (ADR-0057 item 3) keeps the warm-up,
+//! the calibration and the 20 ms runs, with [`CANDIDATE_RUNS`] timed runs at
+//! [`CANDIDATE_SIZES`].
 
 use std::any::Any;
 use std::process::Command;
@@ -25,6 +29,11 @@ use crate::record::{Cores, CubeDimMode, PerfLevel};
 
 /// Timed runs per configuration.
 pub const RUNS: usize = 10;
+/// Timed runs per configuration of the candidate protocol (ADR-0057 item 3).
+pub const CANDIDATE_RUNS: usize = 5;
+/// Problem sizes of the candidate protocol, in items or quadrature points, on every device
+/// class (ADR-0057 item 3).
+pub const CANDIDATE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
 /// The shortest timed run: a run repeats the call until about this long (ADR-0018).
 pub const MIN_RUN: Duration = Duration::from_millis(20);
 /// The most calls per timed run.

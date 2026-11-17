@@ -7,7 +7,10 @@
 //! - SortDigits (u32): `radix_sort` of two-word keys; its inner `exclusive_scan` keeps its own
 //!   vector size, because the override is per kind;
 //! - Scalar, for its CPU blocks only (ADR-0015, item 7): `histogram` (u32) and
-//!   `segmented_reduce` (sum, f64).
+//!   `segmented_reduce` (sum, f64);
+//! - Pack (f32, f64; M10 candidates only, ADR-0060 item 2): `pack` of blocks of
+//!   [`PACK_BLOCK`] values at random in-range indices, as the halo exchange packs vector
+//!   fields. The kernel moves u32 words, so it plans with the 4-byte entry in both types.
 
 use std::any::Any;
 use std::fmt::Debug;
@@ -15,7 +18,7 @@ use std::fmt::Debug;
 use cubecl::prelude::Client;
 use gridcl_device::{
     DeviceBuffer, DeviceScalar, KernelKind, Real, ReduceOp, SortKeys, copy, exclusive_scan, fill,
-    gather, histogram, inclusive_scan, radix_sort, reduce, segmented_reduce,
+    gather, histogram, inclusive_scan, pack, radix_sort, reduce, segmented_reduce,
 };
 
 use crate::protocol::Workload;
@@ -52,6 +55,8 @@ pub fn workload(
         (KernelKind::Gather, Scalar::U32) => boxed(Gather::<u32>::new(client, n)),
         (KernelKind::Scalar, Scalar::U32) => boxed(Histogram::new(client, n)),
         (KernelKind::Scalar, Scalar::F64) => boxed(Segmented::new(client, n)),
+        (KernelKind::Pack, Scalar::F32) => boxed(Pack::<f32>::new(client, n)),
+        (KernelKind::Pack, Scalar::F64) => boxed(Pack::<f64>::new(client, n)),
         _ => return None,
     })
 }
@@ -448,6 +453,76 @@ impl<T: Elem> Workload for Gather<T> {
                 self.idx_host.len()
             )),
             Some(i) => Err(format!("gather: value {i} differs")),
+        }
+    }
+}
+
+/// Values per index of the Pack workload: a 3D vector field (ADR-0059's block 3).
+pub const PACK_BLOCK: usize = 3;
+
+/// `pack(src, idx, PACK_BLOCK, out)` of about `n` values: `n / PACK_BLOCK` random in-range
+/// indices into a source of as many blocks; `reset` zeroes `out`.
+struct Pack<T: Elem> {
+    src_host: Vec<T>,
+    idx_host: Vec<u32>,
+    src: DeviceBuffer<T>,
+    idx: DeviceBuffer<u32>,
+    out: DeviceBuffer<T>,
+}
+
+impl<T: Elem> Pack<T> {
+    fn new(client: &Client, n: usize) -> gridcl_device::Result<Self> {
+        let blocks = (n / PACK_BLOCK).max(1);
+        let mut rng = SplitMix(SEED ^ 7);
+        let src_host: Vec<T> = (0..blocks * PACK_BLOCK)
+            .map(|_| T::small(1 + rng.next_u32() % 1000))
+            .collect();
+        let idx_host: Vec<u32> = (0..blocks)
+            .map(|_| (rng.next_u64() % blocks as u64) as u32)
+            .collect();
+        Ok(Pack {
+            src: DeviceBuffer::from_host(client, &src_host)?,
+            idx: DeviceBuffer::from_host(client, &idx_host)?,
+            out: DeviceBuffer::uninit(client, blocks * PACK_BLOCK)?,
+            src_host,
+            idx_host,
+        })
+    }
+}
+
+impl<T: Elem> Workload for Pack<T> {
+    fn items(&self) -> usize {
+        self.out.len()
+    }
+
+    /// Reads an index per block and its values, writes the values.
+    fn bytes(&self) -> Option<usize> {
+        Some(self.idx.len() * size_of::<u32>() + 2 * self.out.len() * size_of::<T>())
+    }
+
+    fn reset(&mut self) -> Result<(), String> {
+        fill(&mut self.out, T::small(0)).map_err(host_error)
+    }
+
+    fn run(&mut self) -> Result<Box<dyn Any>, String> {
+        pack(&self.src, &self.idx, PACK_BLOCK, &mut self.out).map_err(host_error)?;
+        Ok(Box::new(()))
+    }
+
+    fn check(&mut self, _: Box<dyn Any>) -> Result<(), String> {
+        let got = self.out.to_host().map_err(host_error)?;
+        let want = self.idx_host.iter().flat_map(|&i| {
+            let i = i as usize * PACK_BLOCK;
+            self.src_host[i..i + PACK_BLOCK].iter().copied()
+        });
+        match got.iter().zip(want).position(|(&g, w)| g != w) {
+            None if got.len() == self.idx_host.len() * PACK_BLOCK => Ok(()),
+            None => Err(format!(
+                "pack: {} values, not {}",
+                got.len(),
+                self.out.len()
+            )),
+            Some(i) => Err(format!("pack: value {i} differs")),
         }
     }
 }

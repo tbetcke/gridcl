@@ -8,7 +8,12 @@
 //!   made outside the timing;
 //! - GeomFactors (f32, f64): the four block functions X, J, det J and K, on a P2 tetrahedron box
 //!   and a P2 triangle surface in 3D of about half the cells each, with a degree-4 rule. Each
-//!   field is dropped right after its call, so at most one field is alive.
+//!   field is dropped right after its call, so at most one field is alive;
+//! - PullBack (f32, f64; M10 candidates only, ADR-0060 item 2): `pull_back_block` of the
+//!   physical points of a degree-4 rule on a P2 tetrahedron box, under the degree policy, with
+//!   nine Newton iterations (M9h's policy member). Its items are quadrature points: the box
+//!   has about n / q cells for q points per cell. The cells are affine, so every point comes
+//!   back.
 //!
 //! The boxes have the box side nearest to the nominal size. Vertex origin ids are a random
 //! permutation of the node indices, so the orientation words vary and fit u32. Checks compare a
@@ -23,8 +28,9 @@ use std::rc::Rc;
 use cubecl::prelude::Client;
 use gridcl::{
     Cell2, Cell3, CellBlock, CellType, D2, D3, DeviceBuffer, DeviceGrid, DeviceStrided, EmbeddedIn,
-    FieldShape, IndexMap, Mesh, QuadField, QuadRule, Real, Serial, TopoDim, VECTOR_PAD, detj_block,
-    jacobians_block, physical_points_block, pseudo_inverse_block,
+    FieldShape, IndexMap, Mesh, PullBackOptions, QuadField, QuadRule, Real, ScalarShape, Serial,
+    TopoDim, VECTOR_PAD, VecShape, detj_block, jacobians_block, physical_points_block,
+    pseudo_inverse_block, pull_back_block,
 };
 use gridcl_device::KernelKind;
 use gridcl_refcell::{gauss_rule, orientation_bits, sub_entities};
@@ -62,6 +68,8 @@ pub fn workload(
         (KernelKind::EVector, Scalar::F64) => boxed(EVectors::<f64>::new(client, n)),
         (KernelKind::GeomFactors, Scalar::F32) => boxed(Factors::<f32>::new(client, n)),
         (KernelKind::GeomFactors, Scalar::F64) => boxed(Factors::<f64>::new(client, n)),
+        (KernelKind::PullBack, Scalar::F32) => boxed(PullBacks::<f32>::new(client, n)),
+        (KernelKind::PullBack, Scalar::F64) => boxed(PullBacks::<f64>::new(client, n)),
         _ => return None,
     })
 }
@@ -90,7 +98,7 @@ pub fn factor_cells(n: usize) -> usize {
 }
 
 /// The smallest s ≥ 1 whose count is nearest to `cells`; ties go to the smaller box.
-pub(crate) fn nearest_side(cells: usize, count: impl Fn(usize) -> usize) -> usize {
+pub fn nearest_side(cells: usize, count: impl Fn(usize) -> usize) -> usize {
     let mut s = 1;
     while count(s + 1) <= cells {
         s += 1;
@@ -762,6 +770,95 @@ impl<F: Real> Workload for Factors<F> {
     fn check(&mut self, _: Box<dyn Any>) -> Result<(), String> {
         self.volume.check("tetrahedron box")?;
         self.surface.check("triangle surface")
+    }
+}
+
+/// Newton iterations of the PullBack workload: M9h's policy member (ADR-0042).
+const PULL_BACK_ITERATIONS: u32 = 9;
+
+/// The pull-back's output: ξ and the last Newton step.
+type PullBackOut<F> = (QuadField<F, VecShape<D3>>, QuadField<F, ScalarShape>);
+
+/// PullBack: ξ from the physical points of a degree-4 rule on a P2 tetrahedron box.
+struct PullBacks<F: Real> {
+    mesh: Mesh<F, D3, D3>,
+    x: QuadField<F, VecShape<D3>>,
+    /// The reference points, `[point][3]`.
+    points: Vec<f64>,
+    side: usize,
+}
+
+impl<F: Real> PullBacks<F> {
+    fn new(client: &Client, n: usize) -> Result<Self, String> {
+        let points = gauss_rule(Cell3::Tetrahedron.into(), RULE_DEGREE).points;
+        let q = points.len() / 3;
+        let side = tetrahedron_side((n / q).max(1));
+        let h = host_mesh(Generator::Tetrahedra, side, P);
+        let mesh: Mesh<F, D3, D3> = h.build(client).map_err(device_error)?;
+        let rule = QuadRule::for_grid(&mesh, RULE_DEGREE).map_err(device_error)?;
+        let pts = rule.get(Cell3::Tetrahedron).map_err(device_error)?;
+        let x = physical_points_block(&mesh, 0, pts).map_err(device_error)?;
+        Ok(PullBacks {
+            mesh,
+            x,
+            points,
+            side,
+        })
+    }
+}
+
+impl<F: Real> Workload for PullBacks<F> {
+    fn items(&self) -> usize {
+        self.x.num_cells() * self.x.num_points()
+    }
+
+    /// Reads X (3 values per point), writes ξ (3) and the last step (1).
+    fn bytes(&self) -> Option<usize> {
+        Some(self.items() * 7 * size_of::<F>())
+    }
+
+    fn run(&mut self) -> Result<Box<dyn Any>, String> {
+        let opts = PullBackOptions {
+            tolerance: None,
+            max_iterations: PULL_BACK_ITERATIONS,
+        };
+        let out: PullBackOut<F> =
+            pull_back_block(&self.mesh, 0, &self.x, &opts).map_err(device_error)?;
+        Ok(Box::new(out))
+    }
+
+    /// ξ of the sampled cells against the rule's points, within the tolerance times 4 · side
+    /// (J has entries of size 1/side).
+    fn check(&mut self, out: Box<dyn Any>) -> Result<(), String> {
+        let (xi, _) = *out
+            .downcast::<PullBackOut<F>>()
+            .map_err(|_| "pull-back: unexpected output")?;
+        let (tile, q_len) = (xi.tile(), xi.num_points());
+        let bound = tolerance::<F>() * 4.0 * self.side as f64;
+        let cells = sample(xi.num_cells());
+        for chunk in xi.chunks() {
+            let data = chunk.data.to_host().map_err(device_error)?;
+            let range = chunk.first_cell..chunk.first_cell + chunk.num_cells;
+            for &cell in cells.iter().filter(|c| range.contains(c)) {
+                let c = cell - chunk.first_cell;
+                for q in 0..q_len {
+                    for k in 0..3 {
+                        let got = data[((c / tile) * q_len * 3 + q * 3 + k) * tile + c % tile];
+                        let want = self.points[q * 3 + k];
+                        let err = (got.widen() - want).abs();
+                        // A NaN error fails too.
+                        if err.is_nan() || err > bound {
+                            return Err(format!(
+                                "pull-back: cell {cell}, point {q}, component {k}: {}, want \
+                                 {want} (tolerance {bound:e})",
+                                got.widen()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

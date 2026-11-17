@@ -1172,11 +1172,52 @@ pub struct HaloRecord {
 
 impl HaloRecord {
     pub fn to_json(&self) -> Value {
-        todo!("M10 T6")
+        json!({
+            "backend": self.backend,
+            "device": self.device,
+            "device_class": format!("{:?}", self.device_class),
+            "target": self.target,
+            "scalar": self.scalar.name(),
+            "ranks": self.ranks,
+            "owned_nodes": self.owned_nodes,
+            "halo_nodes": self.halo_nodes,
+            "block": self.block,
+            "part": self.part,
+            "warmups": self.warmups,
+            "times_s": self.times_s,
+            "median_s": self.median_s,
+            "commit": self.commit,
+            "profile": self.profile,
+            "cores": self.cores.to_json(),
+            "load_width": self.load_width,
+            "fallback_reason": self.fallback_reason,
+            "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
+        })
     }
 
-    pub fn from_json(_v: &Value) -> Result<HaloRecord, String> {
-        todo!("M10 T6")
+    pub fn from_json(v: &Value) -> Result<HaloRecord, String> {
+        let o = Fields::new(v, "halo record")?;
+        Ok(HaloRecord {
+            backend: o.string("backend")?,
+            device: o.string("device")?,
+            device_class: o.parsed("device_class", class_named)?,
+            target: o.string("target")?,
+            scalar: o.scalar("scalar")?,
+            ranks: o.usize("ranks")?,
+            owned_nodes: o.usize("owned_nodes")?,
+            halo_nodes: o.usize("halo_nodes")?,
+            block: o.usize("block")?,
+            part: o.parsed("part", |p| HALO_PARTS.contains(&p).then(|| p.to_owned()))?,
+            warmups: o.usize("warmups")?,
+            times_s: o.times("times_s")?,
+            median_s: o.f64("median_s")?,
+            commit: o.string("commit")?,
+            profile: o.string("profile")?,
+            cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
+            fallback_reason: o.opt_string("fallback_reason")?,
+            node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
+        })
     }
 }
 
@@ -1200,8 +1241,37 @@ pub struct M10Data {
 ///
 /// A message naming the file, for unreadable files, malformed records and `m10-` files of
 /// another kind.
-pub fn load_m10_dir(_dir: &Path) -> Result<M10Data, String> {
-    todo!("M10 T2")
+pub fn load_m10_dir(dir: &Path) -> Result<M10Data, String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with("m10-") && name.ends_with(".json"))
+        .collect();
+    names.sort();
+    let mut data = M10Data::default();
+    for name in names {
+        let path = dir.join(&name);
+        if name.starts_with("m10-vector-") {
+            data.vector
+                .extend(read_records(&path, SweepRecord::from_json)?);
+        } else if name.starts_with("m10-degree-") {
+            data.degree
+                .extend(read_records(&path, DegreeRecord::from_json)?);
+        } else if name.starts_with("m10-throughput-") {
+            data.throughput
+                .extend(read_records(&path, ThroughputRecord::from_json)?);
+        } else if name.starts_with("m10-halo-") {
+            data.halo
+                .extend(read_records(&path, HaloRecord::from_json)?);
+        } else {
+            return Err(format!(
+                "{}: not an m10-vector-, m10-degree-, m10-throughput- or m10-halo- file",
+                path.display()
+            ));
+        }
+    }
+    Ok(data)
 }
 
 #[cfg(test)]
@@ -1596,6 +1666,98 @@ mod tests {
         assert!(
             error.contains("m9h-degree-bad.json: record 0: no field"),
             "{error}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn halo() -> HaloRecord {
+        HaloRecord {
+            backend: "cuda".to_owned(),
+            device: "H100".to_owned(),
+            device_class: DeviceClass::Gpu,
+            target: "locust".to_owned(),
+            scalar: Scalar::F64,
+            ranks: 2,
+            owned_nodes: 1_000_000,
+            halo_nodes: 10_000,
+            block: 3,
+            part: "reverse".to_owned(),
+            warmups: 5,
+            times_s: vec![2e-4, 1e-4, 3e-4],
+            median_s: 2e-4,
+            commit: "abc".to_owned(),
+            profile: "release".to_owned(),
+            cores: cores(),
+            load_width: Some(128),
+            fallback_reason: None,
+            node_load: None,
+        }
+    }
+
+    /// The M10 loader reads the four kinds of `m10-` file, M10 records keep `Cpu` and
+    /// `load_width`, and another `m10-` file is an error.
+    #[test]
+    fn load_m10_dir_reads_every_m10_kind() {
+        let dir = std::env::temp_dir().join(format!("gridcl-bench-m10-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let vector = SweepRecord {
+            device_class: DeviceClass::Cpu,
+            legacy_class: None,
+            load_width: Some(128),
+            ..sweep()
+        };
+        let degree = DegreeRecord {
+            load_width: Some(512),
+            ..degree()
+        };
+        let throughput = ThroughputRecord {
+            device_class: DeviceClass::Cpu,
+            legacy_class: None,
+            load_width: Some(256),
+            ..throughput()
+        };
+        assert_eq!(vector.to_json()["device_class"], "Cpu");
+        assert_eq!(HaloRecord::from_json(&halo().to_json()).unwrap(), halo());
+        write_records(
+            &dir.join("m10-vector-cpu-macmini.json"),
+            &[vector.to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m10-degree-cpu-macmini.json"),
+            &[degree.to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m10-throughput-cpu-macmini.json"),
+            &[throughput.to_json()],
+        )
+        .unwrap();
+        write_records(&dir.join("m10-halo-cuda-locust.json"), &[halo().to_json()]).unwrap();
+        // Records of other milestones are not read.
+        write_records(&dir.join("m3s-sweep-cpu-x.json"), &[sweep().to_json()]).unwrap();
+        let data = load_m10_dir(&dir).unwrap();
+        assert_eq!(data.vector, vec![vector]);
+        assert_eq!(data.degree, vec![degree]);
+        assert_eq!(data.throughput, vec![throughput]);
+        assert_eq!(data.halo, vec![halo()]);
+        std::fs::write(dir.join("m10-other.json"), "[]").unwrap();
+        let error = load_m10_dir(&dir).unwrap_err();
+        assert!(
+            error.contains("m10-other.json: not an m10-vector-"),
+            "{error}"
+        );
+        std::fs::remove_file(dir.join("m10-other.json")).unwrap();
+        let bad = HaloRecord {
+            part: "pack".to_owned(),
+            ..halo()
+        };
+        let mut json = bad.to_json();
+        json["part"] = serde_json::json!("shuffle");
+        assert!(
+            HaloRecord::from_json(&json)
+                .unwrap_err()
+                .contains("unknown value 'shuffle'")
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -6,14 +6,47 @@
 //!   selectable.
 //! - **History:** the choices of the unchanged M3s rule (`decide`) and M9h rule
 //!   (`decide_degree`) on the committed records, for any old device class, as frozen in
-//!   `gridcl-bench/history/{vector,degree}-policy-pre-m10.toml`.
-//! - **Own:** the configuration the entry's current policy names.
+//!   `gridcl-bench/history/{vector,degree}-policy-pre-m10.toml`. A Cpu entry takes the
+//!   CpuSimd128 and CpuSimd512 choices (CpuSimd256 copied CpuSimd512), a Gpu entry the Gpu ones.
+//! - **Own:** the configuration the entry's current policy names (`gridcl-device/vector-policy.toml`
+//!   and `gridcl-geometry/degree-policy.toml`, as compiled into this crate).
 //! - Pack and PullBack, never measured before M10, also measure the widest size and the M3s
 //!   choices of Gather and GeomFactors.
+//!
+//! The history files are guarded by the M3s and M9h history tests (`perf_record.rs`,
+//! `high_order_record.rs`), which check them against the unchanged rules on the committed
+//! records.
 
 use gridcl_device::{CpuUnits, DeviceClass, KernelKind};
 
-use crate::record::Scalar;
+use crate::record::{LegacyClass, Scalar};
+
+/// Every kind of the vector policy with the scalar types the candidate protocol measures it
+/// in, in the order of `vector-policy.toml`: the M3s families (`families::families`) with Pack
+/// and PullBack, which exist from M6 and M9. Scalar is measured for its CPU blocks only.
+pub fn candidate_kinds() -> Vec<(KernelKind, &'static [Scalar])> {
+    use Scalar::{F32, F64, U32};
+    vec![
+        (KernelKind::Fill, &[F32, F64, U32]),
+        (KernelKind::Copy, &[U32]),
+        (KernelKind::Reduce, &[F32, F64, U32]),
+        (KernelKind::ScanTile, &[U32]),
+        (KernelKind::SortDigits, &[U32]),
+        (KernelKind::Gather, &[F32, F64, U32]),
+        (KernelKind::Pack, &[F32, F64]),
+        (KernelKind::TopologyKeys, &[U32]),
+        (KernelKind::PermutationInfo, &[U32]),
+        (KernelKind::EVector, &[F32, F64]),
+        (KernelKind::GeomFactors, &[F32, F64]),
+        (KernelKind::PullBack, &[F32, F64]),
+        (KernelKind::Scalar, &[U32, F64]),
+    ]
+}
+
+/// The frozen pre-M10 vector policy (ADR-0060 item 2).
+pub const HISTORY_VECTOR_TOML: &str = include_str!("../history/vector-policy-pre-m10.toml");
+/// The live vector policy, as compiled into this crate.
+pub const VECTOR_POLICY_TOML: &str = include_str!("../../gridcl-device/vector-policy.toml");
 
 /// One configuration of a vector-policy entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -28,15 +61,200 @@ pub struct VectorConfig {
     pub units: Option<CpuUnits>,
 }
 
+/// A configuration as an ordered key, in the generic rule's simplicity order (ADR-0058 item 4):
+/// the smallest vector size, then tile, then block; ties in units go to all hardware threads.
+pub type ConfigKey = (usize, Option<usize>, Option<usize>, bool);
+
+impl VectorConfig {
+    /// The configuration's key in the simplicity order.
+    pub fn key(&self) -> ConfigKey {
+        (
+            self.vector_size,
+            self.tile,
+            self.block_bytes,
+            self.units == Some(CpuUnits::Performance),
+        )
+    }
+
+    /// The configuration of `key` in an entry of `class`: units only on Cpu.
+    pub fn from_key(class: DeviceClass, key: ConfigKey) -> VectorConfig {
+        VectorConfig {
+            vector_size: key.0,
+            tile: key.1,
+            block_bytes: key.2,
+            units: (class == DeviceClass::Cpu).then_some(if key.3 {
+                CpuUnits::Performance
+            } else {
+                CpuUnits::All
+            }),
+        }
+    }
+}
+
+/// The configuration of (`kind`, `bytes`) in the table `table` of the vector-policy text
+/// `text`, at vector size `n` if given (a baseline), else the table's own. The tile is the
+/// table's `quad_tile` for GeomFactors, `None` otherwise; block and units are read where the
+/// table has `cpu_block` (CPU tables).
+///
+/// # Errors
+///
+/// If the text does not parse, or the table lacks an entry.
+pub fn table_config(
+    text: &str,
+    table: &str,
+    kind: KernelKind,
+    bytes: usize,
+    n: Option<usize>,
+) -> Result<VectorConfig, String> {
+    let policy: toml::Table = text.parse().map_err(|e| format!("{e}"))?;
+    let k = format!("{kind:?}");
+    let b = bytes.to_string();
+    let what = format!("[{table}] {k} {bytes}");
+    let class = policy
+        .get(table)
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| format!("no table [{table}]"))?;
+    let int = |path: &[&str]| -> Result<usize, String> {
+        let mut v: &toml::Value = class
+            .get(path[0])
+            .ok_or_else(|| format!("{what}: no {}", path[0]))?;
+        for p in &path[1..] {
+            v = v
+                .get(p)
+                .ok_or_else(|| format!("{what}: no {}", path.join(".")))?;
+        }
+        v.as_integer()
+            .and_then(|i| usize::try_from(i).ok())
+            .ok_or_else(|| format!("{what}: {} is not a size", path.join(".")))
+    };
+    let vector_size = match n {
+        Some(n) => n,
+        None => int(&["vector_size", &k, &b])?,
+    };
+    let tile = if kind == KernelKind::GeomFactors {
+        Some(int(&["quad_tile", &b])?)
+    } else {
+        None
+    };
+    let cpu = class.contains_key("cpu_block");
+    let block_bytes = if cpu {
+        Some(int(&["cpu_block", &k, &b])? * crate::decide::BLOCK_UNIT)
+    } else {
+        None
+    };
+    let units = if cpu {
+        let name = class
+            .get("cpu_units")
+            .and_then(|u| u.get(&k))
+            .and_then(|u| u.get(&b))
+            .and_then(toml::Value::as_str);
+        Some(match name {
+            Some("all") => CpuUnits::All,
+            Some("performance") => CpuUnits::Performance,
+            v => return Err(format!("{what}: cpu_units {v:?}")),
+        })
+    } else {
+        None
+    };
+    Ok(VectorConfig {
+        vector_size,
+        tile,
+        block_bytes,
+        units,
+    })
+}
+
+fn history_config(
+    old: LegacyClass,
+    kind: KernelKind,
+    bytes: usize,
+    n: Option<usize>,
+) -> VectorConfig {
+    table_config(HISTORY_VECTOR_TOML, &format!("{old:?}"), kind, bytes, n)
+        .unwrap_or_else(|e| panic!("gridcl-bench/history/vector-policy-pre-m10.toml: {e}"))
+}
+
+/// The old classes whose M3s and M9h choices an entry of `class` measures: CpuSimd128 and
+/// CpuSimd512 for Cpu (CpuSimd256 copied CpuSimd512), Gpu for Gpu.
+pub fn old_classes(class: DeviceClass) -> &'static [LegacyClass] {
+    match class {
+        DeviceClass::Cpu => &[LegacyClass::CpuSimd128, LegacyClass::CpuSimd512],
+        DeviceClass::Gpu => &[LegacyClass::Gpu],
+    }
+}
+
+/// The baseline of the vector-policy entry (`class`, `kind`, `bytes`): vector size 1 at the old
+/// CpuSimd128 tile, block and units on Cpu, at the Gpu tile on Gpu (ADR-0060 item 2).
+pub fn vector_baseline(class: DeviceClass, kind: KernelKind, bytes: usize) -> VectorConfig {
+    let old = match class {
+        DeviceClass::Cpu => LegacyClass::CpuSimd128,
+        DeviceClass::Gpu => LegacyClass::Gpu,
+    };
+    history_config(old, kind, bytes, Some(1))
+}
+
+/// The configuration the live policy names for (`class`, `kind`, `bytes`).
+pub fn policy_vector_config(class: DeviceClass, kind: KernelKind, bytes: usize) -> VectorConfig {
+    table_config(VECTOR_POLICY_TOML, &format!("{class:?}"), kind, bytes, None)
+        .unwrap_or_else(|e| panic!("gridcl-device/vector-policy.toml: {e}"))
+}
+
+/// The M3s choice of the old class `old` for (`kind`, `bytes`), from the frozen policy.
+pub fn history_vector_config(old: LegacyClass, kind: KernelKind, bytes: usize) -> VectorConfig {
+    history_config(old, kind, bytes, None)
+}
+
 /// The candidates of the vector-policy entry (`class`, `kind`, `scalar`'s size) on a device
-/// whose widest vector size for `scalar` is `widest`, baseline first.
+/// whose widest vector size for `scalar` is `widest`, baseline first, each once:
+///
+/// - the baseline ([`vector_baseline`]);
+/// - the M3s choices of the class's old classes ([`old_classes`]);
+/// - the live policy's configuration;
+/// - for Pack and PullBack, the M3s choices of Gather and GeomFactors as configurations of
+///   the kind (PullBack has no tile of its own), and the baseline at the widest size. The
+///   widest size is `widest`, or the widest of the other candidates if that is wider, so that a
+///   device's records give back the same set when their widest requested size is passed.
+///
+/// Scalar kernels plan at size 1 (ADR-0015, item 7): their candidates differ in block and
+/// units only.
 pub fn vector_candidates(
-    _class: DeviceClass,
-    _kind: KernelKind,
-    _scalar: Scalar,
-    _widest: usize,
+    class: DeviceClass,
+    kind: KernelKind,
+    scalar: Scalar,
+    widest: usize,
 ) -> Vec<VectorConfig> {
-    todo!("M10 T2")
+    let bytes = scalar.bytes();
+    let baseline = vector_baseline(class, kind, bytes);
+    let mut out = vec![baseline];
+    fn push(out: &mut Vec<VectorConfig>, c: VectorConfig) {
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    for &old in old_classes(class) {
+        push(&mut out, history_vector_config(old, kind, bytes));
+    }
+    push(&mut out, policy_vector_config(class, kind, bytes));
+    let nearest = match kind {
+        KernelKind::Pack => Some(KernelKind::Gather),
+        KernelKind::PullBack => Some(KernelKind::GeomFactors),
+        _ => None,
+    };
+    if let Some(nearest) = nearest {
+        for &old in old_classes(class) {
+            let c = history_vector_config(old, nearest, bytes);
+            push(&mut out, VectorConfig { tile: None, ..c });
+        }
+        let wider = out.iter().map(|c| c.vector_size).fold(widest, usize::max);
+        push(
+            &mut out,
+            VectorConfig {
+                vector_size: wider,
+                ..baseline
+            },
+        );
+    }
+    out
 }
 
 /// The candidate strategies of the degree-policy entry (`class`, policy `family`, `cell`,
@@ -48,5 +266,145 @@ pub fn degree_candidates(
     _bytes: usize,
     _degree: u32,
 ) -> Vec<&'static str> {
-    todo!("M10 T2")
+    todo!("M10 T2b")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decide::decide;
+    use crate::record::{KINDS, load_dir};
+
+    /// The class of the M3s decision rule whose choices a legacy class's table holds.
+    fn decided(
+        d: &crate::decide::Decision,
+        old: LegacyClass,
+        kind: KernelKind,
+        bytes: usize,
+    ) -> VectorConfig {
+        let c = d.choice(old, kind, bytes).expect("a choice per entry");
+        VectorConfig {
+            vector_size: c.vector_size,
+            tile: (kind == KernelKind::GeomFactors).then(|| d.quad_tile(old, bytes)),
+            block_bytes: c.cpu_block.map(|b| b * crate::decide::BLOCK_UNIT),
+            units: c.cpu_units,
+        }
+    }
+
+    /// The history configurations are the unchanged M3s rule's choices on the committed
+    /// records (ADR-0060 item 2).
+    #[test]
+    fn history_candidates_are_the_m3s_choices_of_the_committed_records() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/perf/data");
+        let d = decide(&load_dir(&dir).unwrap());
+        for old in LegacyClass::ALL {
+            for kind in KINDS {
+                for bytes in [4, 8] {
+                    assert_eq!(
+                        history_vector_config(old, kind, bytes),
+                        decided(&d, old, kind, bytes),
+                        "{old:?} {kind:?} {bytes}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The candidate kinds are every policy kind, and the M3s families with their types.
+    #[test]
+    fn candidate_kinds_extend_the_m3s_families() {
+        let kinds: Vec<KernelKind> = candidate_kinds().into_iter().map(|(k, _)| k).collect();
+        assert_eq!(kinds, KINDS);
+        for (kind, scalars) in crate::families::families() {
+            let (_, ours) = candidate_kinds()
+                .into_iter()
+                .find(|&(k, _)| k == kind)
+                .unwrap();
+            assert_eq!(ours, scalars, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn candidates_start_with_the_baseline_and_are_distinct() {
+        for class in [DeviceClass::Cpu, DeviceClass::Gpu] {
+            for kind in KINDS {
+                for scalar in [Scalar::F32, Scalar::F64] {
+                    let c = vector_candidates(class, kind, scalar, 16);
+                    assert_eq!(c[0], vector_baseline(class, kind, scalar.bytes()));
+                    assert_eq!(c[0].vector_size, 1);
+                    for (i, a) in c.iter().enumerate() {
+                        assert!(!c[i + 1..].contains(a), "{class:?} {kind:?}: {a:?} twice");
+                        assert_eq!(a.units.is_some(), class == DeviceClass::Cpu);
+                        assert_eq!(a.block_bytes.is_some(), class == DeviceClass::Cpu);
+                        assert_eq!(a.tile.is_some(), kind == KernelKind::GeomFactors);
+                    }
+                    if kind == KernelKind::Scalar {
+                        assert!(c.iter().all(|a| a.vector_size == 1), "{class:?}: {c:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The baselines of ADR-0060 item 2: size 1 at the CpuSimd128 tile, block and units, or at
+    /// the Gpu tile.
+    #[test]
+    fn baselines_follow_the_old_tables() {
+        let cpu = vector_baseline(DeviceClass::Cpu, KernelKind::GeomFactors, 8);
+        assert_eq!(
+            cpu,
+            VectorConfig {
+                vector_size: 1,
+                tile: Some(4),
+                block_bytes: Some(64 << 10),
+                units: Some(CpuUnits::All),
+            }
+        );
+        let fill = vector_baseline(DeviceClass::Cpu, KernelKind::Fill, 4);
+        assert_eq!(
+            (fill.vector_size, fill.block_bytes, fill.units),
+            (1, Some(64 << 10), Some(CpuUnits::Performance))
+        );
+        let gpu = vector_baseline(DeviceClass::Gpu, KernelKind::GeomFactors, 4);
+        assert_eq!(
+            gpu,
+            VectorConfig {
+                vector_size: 1,
+                tile: Some(16),
+                block_bytes: None,
+                units: None,
+            }
+        );
+    }
+
+    /// Pack and PullBack: the baseline, the Gather or GeomFactors choices of the old classes
+    /// without a tile, and the baseline at the widest size, widened to the widest candidate.
+    #[test]
+    fn pack_and_pull_back_measure_the_nearest_kinds_and_the_widest_size() {
+        let c = vector_candidates(DeviceClass::Cpu, KernelKind::PullBack, Scalar::F32, 4);
+        let base = vector_baseline(DeviceClass::Cpu, KernelKind::PullBack, 4);
+        // CpuSimd512's GeomFactors size is 16, wider than the device's 4.
+        let gf = history_vector_config(LegacyClass::CpuSimd512, KernelKind::GeomFactors, 4);
+        assert_eq!(gf.vector_size, 16);
+        assert!(c.contains(&VectorConfig { tile: None, ..gf }), "{c:?}");
+        assert!(
+            c.contains(&VectorConfig {
+                vector_size: 16,
+                ..base
+            }),
+            "{c:?}"
+        );
+        // The set is closed: passing its widest size gives it back.
+        let widest = c.iter().map(|a| a.vector_size).max().unwrap();
+        assert_eq!(
+            vector_candidates(DeviceClass::Cpu, KernelKind::PullBack, Scalar::F32, widest),
+            c
+        );
+        let p = vector_candidates(DeviceClass::Gpu, KernelKind::Pack, Scalar::F64, 4);
+        assert_eq!(
+            p.iter().map(|a| a.vector_size).collect::<Vec<_>>(),
+            [1, 4],
+            "Gpu Pack f64: baseline and widest ({p:?})"
+        );
+    }
 }
