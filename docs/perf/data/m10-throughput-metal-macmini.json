@@ -1,0 +1,402 @@
+[
+  {
+    "backend": "metal",
+    "calibration_s": 0.047626291,
+    "calls_per_run": 1,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.046660042,
+    "mesh": "P1 tetrahedron box",
+    "node_load": null,
+    "per_s": 68724005.86351809,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.046809542,
+      0.046604375,
+      0.046779208,
+      0.046660042,
+      0.046630041
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.10922475,
+    "calls_per_run": 1,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.106886542,
+    "mesh": "P1 hexahedron box",
+    "node_load": null,
+    "per_s": 56979109.68061817,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.106886542,
+      0.106812875,
+      0.106784541,
+      0.107602208,
+      0.107104959
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.001596916,
+    "calls_per_run": 13,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0009126700769230769,
+    "mesh": "P1 tetrahedron box",
+    "node_load": null,
+    "per_s": 1154520156.453874,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.0011279358461538463,
+      0.000988644076923077,
+      0.0009126700769230769,
+      0.0008999616153846153,
+      0.0008737627692307693
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.001913167,
+    "calls_per_run": 11,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0012755454545454546,
+    "mesh": "P1 hexahedron box",
+    "node_load": null,
+    "per_s": 783978333.6896871,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.0013129581818181817,
+      0.0013414204545454545,
+      0.0012293939090909092,
+      0.0012755454545454546,
+      0.0012472653636363636
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.002843666,
+    "calls_per_run": 8,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.00248273425,
+    "mesh": "P4 tetrahedron box",
+    "node_load": null,
+    "per_s": 402076863.44198936,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.002487572875,
+      0.002475843875,
+      0.00248273425,
+      0.00249522425,
+      0.0024456875
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.00319825,
+    "calls_per_run": 7,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.00257803,
+    "mesh": "P4 hexahedron box",
+    "node_load": null,
+    "per_s": 387893081.15111154,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.0026232915714285714,
+      0.002567374857142857,
+      0.0026260475714285714,
+      0.00257803,
+      0.002577541714285714
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.051275583,
+    "calls_per_run": 1,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.050911375,
+    "mesh": "P8 tetrahedron box",
+    "node_load": null,
+    "per_s": 18557424.544122014,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.051115417,
+      0.050738709,
+      0.050721875,
+      0.051117709,
+      0.050911375
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "metal",
+    "calibration_s": 0.008706583,
+    "calls_per_run": 3,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.008306903,
+    "mesh": "P8 hexahedron box",
+    "node_load": null,
+    "per_s": 116806347.6845703,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.008437194666666667,
+      0.008306903,
+      0.008359903,
+      0.008299222,
+      0.008304500000000001
+    ],
+    "vector_size_override": "policy"
+  }
+]

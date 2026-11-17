@@ -1,0 +1,594 @@
+[
+  {
+    "backend": "cuda",
+    "calibration_s": 0.006054368,
+    "calls_per_run": 4,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.0058812215,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 545237923.7884511,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0058992855,
+      0.00588022125,
+      0.006219913,
+      0.00588057375,
+      0.0058812215
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.014076883,
+    "calls_per_run": 2,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.013908498,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 437883371.73431665,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.013919266,
+      0.0139168175,
+      0.0139043375,
+      0.0138851045,
+      0.013908498
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.000097857,
+    "calls_per_run": 205,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0000681024731707317,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 15472213429.876514,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.00006880945365853658,
+      0.00006806216585365854,
+      0.0000681024731707317,
+      0.00006811950731707317,
+      0.00006795525853658537
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.000110337,
+    "calls_per_run": 182,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.00007620105494505495,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 13123177897.22273,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.00007669283516483516,
+      0.000076174510989011,
+      0.00007620105494505495,
+      0.00007616713736263737,
+      0.00007633803296703297
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.000899177,
+    "calls_per_run": 23,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0009450075217391304,
+    "mesh": "P4 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 1056340798.3916209,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0009450227391304348,
+      0.0009448836521739131,
+      0.0009447569130434783,
+      0.000945276,
+      0.0009450075217391304
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.000449413,
+    "calls_per_run": 45,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0004170554444444444,
+    "mesh": "P4 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 2397762727.5243716,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0004174058888888889,
+      0.00041729791111111116,
+      0.0004170554444444444,
+      0.0004162076888888889,
+      0.00041655048888888886
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.011292278,
+    "calls_per_run": 2,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.011229797,
+    "mesh": "P8 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 84131885.91031522,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0112141175,
+      0.0112316215,
+      0.011236198,
+      0.011229797,
+      0.011216614
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.02432291,
+    "calls_per_run": 1,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.02429283,
+    "mesh": "P8 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 39941785.2922035,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.02429283,
+      0.024279837,
+      0.024270493,
+      0.024311039,
+      0.024311102
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.005800541,
+    "calls_per_run": 4,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.00576592425,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 556140674.2379593,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.00577266075,
+      0.0057614045,
+      0.00577638775,
+      0.0057622045,
+      0.00576592425
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.01377352,
+    "calls_per_run": 2,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.013758496,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 442657395.11062837,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.013775696,
+      0.0137852645,
+      0.0137412315,
+      0.0137502715,
+      0.013758496
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.000157378,
+    "calls_per_run": 128,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0001089248828125,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 9673602328.439503,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.0001123906796875,
+      0.0001103843828125,
+      0.0001089248828125,
+      0.0001083976171875,
+      0.0001081811328125
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.00017741,
+    "calls_per_run": 113,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0001308083185840708,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 7644773748.523477,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.00013183825663716815,
+      0.0001309402831858407,
+      0.0001308083185840708,
+      0.00013025153982300887,
+      0.00013037815044247787
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.001234413,
+    "calls_per_run": 17,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.001191980411764706,
+    "mesh": "P4 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 837471815.9353882,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.001191824176470588,
+      0.0011929367647058823,
+      0.0011925979411764706,
+      0.0011909715882352941,
+      0.001191980411764706
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.002975936,
+    "calls_per_run": 7,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.002910882857142857,
+    "mesh": "P4 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 343538386.4885371,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.0029153630000000002,
+      0.002908322857142857,
+      0.002910882857142857,
+      0.0029138364285714283,
+      0.0029080714285714287
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.017327221,
+    "calls_per_run": 2,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.01726362,
+    "mesh": "P8 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 54726876.51836637,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.017276437,
+      0.0172792845,
+      0.01726362,
+      0.0172599245,
+      0.0172556685
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cuda",
+    "calibration_s": 0.053705395,
+    "calls_per_run": 1,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "NVIDIA GH200 480GB",
+    "device_class": "Gpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.05368773,
+    "mesh": "P8 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 18073012.213405184,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.05368773,
+      0.053703729,
+      0.05363733,
+      0.053625969,
+      0.053735538
+    ],
+    "vector_size_override": "policy"
+  }
+]
