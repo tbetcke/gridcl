@@ -1,6 +1,6 @@
 # ADR-0062: The halo exchange's CUDA upload bound applies with one process per GPU
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-17
 - **Raised in:** M10 T6 (`halo_exchange` benchmark and records)
 - **Design sections affected:** "Implementation roadmap", M10 Hardening, acceptance bullet 1.
@@ -74,4 +74,6 @@ Option 2. The bound exists to keep the upload as fast as the download where the 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-17, as proposed (option 2).
+
+Applied in `adr: 0062 apply`: docs/design.md ("Implementation roadmap", M10 acceptance bullet 1) and issue #25. The test change and the report's cause are M10 T6's; option 4 goes into the review's follow-ups.
