@@ -1,6 +1,6 @@
 # ADR-0061: The halo exchange's upload bound applies to GPU backends; the CPU runtime reports its ratio
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-17
 - **Raised in:** M10 T5 (host-staged exchange hardening), before T6 (`halo_exchange` benchmark and records)
 - **Design sections affected:**
@@ -68,4 +68,6 @@ Option 2. The bound exists to keep the host-staged exchange's upload as fast as 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-17, as proposed (option 2).
+
+Applied in `adr: 0061 apply`: docs/design.md ("Implementation roadmap", M10 acceptance bullet 1; "Distributed mesh model", the paragraph after Listing S2c) and issue #25. The test change is M10 T6's.
