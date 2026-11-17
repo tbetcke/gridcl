@@ -54,12 +54,18 @@ pub const TEST_DEVICE_VAR: &str = "GRIDCL_TEST_DEVICE";
 /// assert!(properties.hardware.max_bindings >= 6);
 /// ```
 pub fn test_client() -> Client {
+    client_of(|backend| backend.device())
+}
+
+/// The client of the device `open` gives for the backend `GRIDCL_TEST_DEVICE` names, or the
+/// panic of [`test_client`].
+fn client_of(open: impl FnOnce(TestBackend) -> Result<Device, DeviceUnavailable>) -> Client {
     let value = std::env::var(TEST_DEVICE_VAR).ok();
     let backend = match TestBackend::parse(value.as_deref()) {
         Ok(backend) => backend,
         Err(message) => panic!("{message}"),
     };
-    match backend.device() {
+    match open(backend) {
         Ok(device) => device.client(),
         Err(error) => panic!("{}", backend.unavailable(error)),
     }
@@ -80,8 +86,8 @@ pub fn test_client() -> Client {
 /// let client = gridcl_testing::test_client_at(0);
 /// assert!(client.properties().hardware.max_bindings >= 6);
 /// ```
-pub fn test_client_at(_index: usize) -> Client {
-    todo!("M10 T4")
+pub fn test_client_at(index: usize) -> Client {
+    client_of(|backend| backend.device_at(index))
 }
 
 /// The client of the CPU runtime, whatever `GRIDCL_TEST_DEVICE` says: the f64 side of f32-vs-f64
@@ -199,6 +205,15 @@ impl TestBackend {
             TestBackend::Metal => Device::metal_msl(WgpuDeviceKind::DefaultDevice),
             TestBackend::MetalNative => Device::metal(MetalDevice::DefaultDevice),
             TestBackend::Wgpu => Device::wgpu(WgpuDeviceKind::DefaultDevice),
+        }
+    }
+
+    /// GPU `index` of CUDA and HIP; the first device of the other backends.
+    fn device_at(self, index: usize) -> Result<Device, DeviceUnavailable> {
+        match self {
+            TestBackend::Cuda => Device::cuda(index),
+            TestBackend::Hip => Device::rocm(index),
+            _ => self.device(),
         }
     }
 
