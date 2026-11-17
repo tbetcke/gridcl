@@ -81,7 +81,7 @@ impl Group {
 /// one vector per unit of the cube, whatever the launch's plan. The test is the largest cube
 /// (256 units, or the device's smaller limits) at the device's widest vector (at most
 /// `VECTOR_PAD`), so that no plan
-/// of [`plan`] meets `TooLarge` for the shared memory where this holds. CPU classes plan one
+/// of [`plan`] meets `TooLarge` for the shared memory where this holds. The Cpu class plans one
 /// unit per group and use no shared memory, so the strategy always applies there.
 /// `strategy::choose` falls back to `loops` where it does not.
 pub(crate) fn fits(client: &Client, elem_bytes: usize) -> bool {

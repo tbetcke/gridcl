@@ -32,7 +32,7 @@ use gridcl::{Cell3, D3, DeviceGrid, QuadRule, VolumeMesh};
 use gridcl_bench::families::Machine;
 use gridcl_bench::families::mesh::{hexahedron_side, tetrahedron_side};
 use gridcl_bench::protocol::{self, RUNS, Workload, measure};
-use gridcl_bench::record::{Measure, Scalar, ThroughputRecord, write_records};
+use gridcl_bench::record::{LegacyClass, Measure, Scalar, ThroughputRecord, write_records};
 use gridcl_device::testing::with_vector_size;
 use gridcl_device::{KernelKind, VectorSizeOverride, check_precision};
 
@@ -228,6 +228,7 @@ fn run(
                 backend: machine.backend.clone(),
                 device: machine.device.clone(),
                 device_class: machine.class,
+                legacy_class: LegacyClass::of_new(machine.class),
                 target: args.target.clone(),
                 measure: *m,
                 mesh: mesh.clone(),

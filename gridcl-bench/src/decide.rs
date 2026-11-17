@@ -1,6 +1,8 @@
 //! The decision rule of "Benchmarks" as ADR-0015 reads it (items 5 and 6): per kernel family,
-//! device class and element size, the vector size, CPU block, CPU units and QuadField tile
-//! written to `gridcl-device/vector-policy.toml`.
+//! M3s device class ([`LegacyClass`]) and element size, the vector size, CPU block, CPU units
+//! and QuadField tile of the pre-M10 vector policy, frozen in
+//! `gridcl-bench/history/vector-policy-pre-m10.toml` (ADR-0058, ADR-0060 item 2). The rule is
+//! unchanged; it reads the M3s records only, and M10's candidates take its choices.
 //!
 //! - A configuration is (vector size, tile, CPU block, CPU units) (ADR-0017). On CPUs the units
 //!   are all hardware threads (`CubeDimMode::Plan` records) or the performance cores
@@ -30,10 +32,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use gridcl_device::{CpuUnits, DeviceClass, KernelKind};
+use gridcl_device::{CpuUnits, KernelKind};
 
 use crate::families;
-use crate::record::{CLASSES, CubeDimMode, KINDS, PerfData, Scalar};
+use crate::record::{CubeDimMode, KINDS, LegacyClass, PerfData, Scalar};
 
 /// The problem sizes of the decision rule.
 pub const RULE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
@@ -72,7 +74,7 @@ pub struct Timing {
 /// The choice for one (device class, kernel kind, element size) entry of the policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choice {
-    pub class: DeviceClass,
+    pub class: LegacyClass,
     pub kind: KernelKind,
     pub elem_bytes: usize,
     pub vector_size: usize,
@@ -105,14 +107,14 @@ pub enum Fit {
 pub struct Decision {
     pub choices: Vec<Choice>,
     /// (class, element size, tile) for every class and element size.
-    pub quad_tiles: Vec<(DeviceClass, usize, usize)>,
+    pub quad_tiles: Vec<(LegacyClass, usize, usize)>,
 }
 
 impl Decision {
     /// The choice of one entry.
     pub fn choice(
         &self,
-        class: DeviceClass,
+        class: LegacyClass,
         kind: KernelKind,
         elem_bytes: usize,
     ) -> Option<&Choice> {
@@ -127,7 +129,7 @@ impl Decision {
     }
 
     /// The tile of one class and element size.
-    pub fn quad_tile(&self, class: DeviceClass, elem_bytes: usize) -> usize {
+    pub fn quad_tile(&self, class: LegacyClass, elem_bytes: usize) -> usize {
         self.quad_tiles
             .iter()
             .find(|&&(c, b, _)| c == class && b == elem_bytes)
@@ -137,7 +139,7 @@ impl Decision {
     /// The text of `gridcl-device/vector-policy.toml`.
     pub fn to_toml(&self) -> String {
         let mut out = String::from(TOML_HEADER);
-        for class in CLASSES {
+        for class in LegacyClass::ALL {
             let c = format!("{class:?}");
             out.push_str(&format!(
                 "\n[{c}]\nquad_tile = {}\n[{c}.vector_size]\n",
@@ -148,7 +150,7 @@ impl Decision {
                     self.row(|bytes| self.choice(class, kind, bytes).map_or(1, |c| c.vector_size));
                 out.push_str(&format!("{kind:?} = {row}\n"));
             }
-            if class != DeviceClass::Gpu {
+            if class != LegacyClass::Gpu {
                 out.push_str(&format!("[{c}.cpu_block]\n"));
                 for kind in KINDS {
                     let row = self.row(|bytes| {
@@ -218,8 +220,8 @@ pub fn units_of(mode: CubeDimMode) -> CpuUnits {
 pub fn decide(data: &PerfData) -> Decision {
     let mut choices = Vec::new();
     let mut quad_tiles = Vec::new();
-    for class in CLASSES {
-        if class == DeviceClass::CpuSimd256 {
+    for class in LegacyClass::ALL {
+        if class == LegacyClass::CpuSimd256 {
             continue; // copied below
         }
         for bytes in ELEM_BYTES {
@@ -236,14 +238,14 @@ pub fn decide(data: &PerfData) -> Decision {
                     kind,
                     elem_bytes: bytes,
                     vector_size: entry.config.map_or(1, |c| c.0),
-                    cpu_block: (class != DeviceClass::Gpu).then(|| {
+                    cpu_block: (class != LegacyClass::Gpu).then(|| {
                         entry
                             .config
                             .and_then(|c| c.2)
                             .unwrap_or(DEFAULT_BLOCK_BYTES)
                             / BLOCK_UNIT
                     }),
-                    cpu_units: (class != DeviceClass::Gpu).then(|| {
+                    cpu_units: (class != LegacyClass::Gpu).then(|| {
                         entry
                             .config
                             .and_then(|c| c.3)
@@ -258,9 +260,9 @@ pub fn decide(data: &PerfData) -> Decision {
     }
     let copies: Vec<Choice> = choices
         .iter()
-        .filter(|c| c.class == DeviceClass::CpuSimd512)
+        .filter(|c| c.class == LegacyClass::CpuSimd512)
         .map(|c| Choice {
-            class: DeviceClass::CpuSimd256,
+            class: LegacyClass::CpuSimd256,
             reason: format!("copies CpuSimd512: {}", c.reason),
             ..c.clone()
         })
@@ -268,11 +270,11 @@ pub fn decide(data: &PerfData) -> Decision {
     choices.extend(copies);
     let tiles: Vec<_> = quad_tiles
         .iter()
-        .filter(|t| t.0 == DeviceClass::CpuSimd512)
-        .map(|&(_, b, t)| (DeviceClass::CpuSimd256, b, t))
+        .filter(|t| t.0 == LegacyClass::CpuSimd512)
+        .map(|&(_, b, t)| (LegacyClass::CpuSimd256, b, t))
         .collect();
     quad_tiles.extend(tiles);
-    let order = |c: DeviceClass| CLASSES.iter().position(|&x| x == c);
+    let order = |c: LegacyClass| LegacyClass::ALL.iter().position(|&x| x == c);
     choices.sort_by_key(|c| {
         (
             order(c.class),
@@ -304,16 +306,16 @@ pub fn scalars_of(kind: KernelKind) -> Vec<Scalar> {
 /// If one device recorded the same configuration twice.
 pub fn device_times(
     data: &PerfData,
-    class: DeviceClass,
+    class: LegacyClass,
     kind: KernelKind,
     scalar: Scalar,
     size: usize,
 ) -> BTreeMap<Device, BTreeMap<Config, Timing>> {
-    let cpu = class != DeviceClass::Gpu;
+    let cpu = class != LegacyClass::Gpu;
     let mut per_device: BTreeMap<Device, BTreeMap<Config, Timing>> = BTreeMap::new();
     let mut neutral = Vec::new();
     for r in data.sweeps.iter().filter(|r| {
-        r.device_class == class
+        r.legacy_class == Some(class)
             && r.family == kind
             && r.scalar == scalar
             && r.nominal_n == size
@@ -365,7 +367,7 @@ pub fn device_times(
 /// As [`device_times`].
 pub fn class_times(
     data: &PerfData,
-    class: DeviceClass,
+    class: LegacyClass,
     kind: KernelKind,
     scalar: Scalar,
     size: usize,
@@ -424,7 +426,7 @@ struct TypeView {
 impl TypeView {
     fn new(
         data: &PerfData,
-        class: DeviceClass,
+        class: LegacyClass,
         kind: KernelKind,
         scalar: Scalar,
     ) -> Option<TypeView> {
@@ -490,7 +492,7 @@ fn defaults(reason: impl Into<String>) -> Entry {
     }
 }
 
-fn choose(data: &PerfData, class: DeviceClass, kind: KernelKind, bytes: usize) -> Entry {
+fn choose(data: &PerfData, class: LegacyClass, kind: KernelKind, bytes: usize) -> Entry {
     let types: Vec<Scalar> = scalars_of(kind)
         .into_iter()
         .filter(|s| s.bytes() == bytes)
@@ -711,7 +713,7 @@ mod tests {
     /// A record of `target` (backend from the class) with median `t`, on all hardware threads
     /// of a CPU without a performance-core count.
     fn rec(
-        class: DeviceClass,
+        class: LegacyClass,
         target: &str,
         kind: KernelKind,
         scalar: Scalar,
@@ -720,14 +722,15 @@ mod tests {
         t: f64,
     ) -> SweepRecord {
         SweepRecord {
-            backend: if class == DeviceClass::Gpu {
+            backend: if class == LegacyClass::Gpu {
                 "gpu"
             } else {
                 "cpu"
             }
             .to_owned(),
             device: target.to_owned(),
-            device_class: class,
+            device_class: class.class(),
+            legacy_class: Some(class),
             target: target.to_owned(),
             family: kind,
             scalar,
@@ -760,12 +763,12 @@ mod tests {
         }
     }
 
-    const CPU: DeviceClass = DeviceClass::CpuSimd128;
+    const CPU: LegacyClass = LegacyClass::CpuSimd128;
     const K16: Option<usize> = Some(16 << 10);
 
     /// Records at both rule sizes for every (size, time at 10^6); 10^7 takes ten times as long.
     fn family(
-        class: DeviceClass,
+        class: LegacyClass,
         target: &str,
         kind: KernelKind,
         scalar: Scalar,
@@ -793,7 +796,7 @@ mod tests {
         }
     }
 
-    fn entry(d: &Decision, class: DeviceClass, kind: KernelKind, bytes: usize) -> &Choice {
+    fn entry(d: &Decision, class: LegacyClass, kind: KernelKind, bytes: usize) -> &Choice {
         d.choice(class, kind, bytes).unwrap()
     }
 
@@ -801,14 +804,14 @@ mod tests {
     fn no_data_gives_the_current_defaults() {
         let d = decide(&PerfData::default());
         let policy: toml::Table = d.to_toml().parse().unwrap();
-        for class in CLASSES {
+        for class in LegacyClass::ALL {
             let c = &policy[&format!("{class:?}")];
             assert_eq!(c["quad_tile"]["8"].as_integer(), Some(16));
             assert_eq!(c["vector_size"]["PullBack"]["4"].as_integer(), Some(1));
             let block = c.get("cpu_block").map(|b| b["Scalar"]["8"].as_integer());
             assert_eq!(
                 block,
-                (class != DeviceClass::Gpu).then_some(Some(4)),
+                (class != LegacyClass::Gpu).then_some(Some(4)),
                 "{class:?}"
             );
         }
@@ -816,29 +819,29 @@ mod tests {
             assert_eq!(c.vector_size, 1, "{c:?}");
             assert_eq!(
                 c.cpu_block,
-                (c.class != DeviceClass::Gpu).then_some(4),
+                (c.class != LegacyClass::Gpu).then_some(4),
                 "{c:?}"
             );
             assert_eq!(
                 c.cpu_units,
-                (c.class != DeviceClass::Gpu).then_some(CpuUnits::All),
+                (c.class != LegacyClass::Gpu).then_some(CpuUnits::All),
                 "{c:?}"
             );
         }
-        for class in CLASSES {
+        for class in LegacyClass::ALL {
             let units = policy[&format!("{class:?}")]
                 .get("cpu_units")
                 .map(|u| u["GeomFactors"]["4"].as_str());
             assert_eq!(
                 units,
-                (class != DeviceClass::Gpu).then_some(Some("all")),
+                (class != LegacyClass::Gpu).then_some(Some("all")),
                 "{class:?}"
             );
         }
         assert!(d.quad_tiles.iter().all(|&(_, _, t)| t == DEFAULT_TILE));
         assert_eq!(
             d.choices.len(),
-            CLASSES.len() * KINDS.len() * ELEM_BYTES.len()
+            LegacyClass::ALL.len() * KINDS.len() * ELEM_BYTES.len()
         );
         let pack = entry(&d, CPU, KernelKind::Pack, 4);
         assert!(pack.reason.contains("M10"), "{}", pack.reason);
@@ -946,7 +949,7 @@ mod tests {
 
     #[test]
     fn devices_of_a_class_combine_by_geometric_means() {
-        let gpu = DeviceClass::Gpu;
+        let gpu = LegacyClass::Gpu;
         let mut sweeps = Vec::new();
         // Device a gains 1.5x at size 4; device b only 1.0x: the mean is 1.22x, admitted.
         // At 8 and 16, a runs at 4 lanes (clamped) and b gains 1.3x: the mean is 1.40x.
@@ -1082,7 +1085,7 @@ mod tests {
 
     #[test]
     fn cpu_simd_256_copies_cpu_simd_512() {
-        let avx = DeviceClass::CpuSimd512;
+        let avx = LegacyClass::CpuSimd512;
         let mut sweeps = family(
             avx,
             "k",
@@ -1101,7 +1104,7 @@ mod tests {
             ],
         ));
         let d = decide(&data(sweeps));
-        for class in [avx, DeviceClass::CpuSimd256] {
+        for class in [avx, LegacyClass::CpuSimd256] {
             assert_eq!(entry(&d, class, KernelKind::Copy, 4).vector_size, 16);
             assert_eq!(entry(&d, class, KernelKind::Scalar, 8).cpu_block, Some(16));
             assert_eq!(entry(&d, class, KernelKind::Scalar, 8).vector_size, 1);
@@ -1407,7 +1410,7 @@ mod tests {
         fn check(
             data: &PerfData,
             d: &Decision,
-            class: DeviceClass,
+            class: LegacyClass,
             kind: KernelKind,
             scalar: Scalar,
         ) {
@@ -1477,7 +1480,7 @@ mod tests {
                     for v in [1usize, 2, 4, 8, 16].into_iter().filter(|&v| v <= tile) {
                         let (t, e) = tiles[i * 5 + v.ilog2() as usize];
                         for (n, scale) in [(RULE_SIZES[0], 1.0), (RULE_SIZES[1], 10.0 * (1.0 + e))] {
-                            sweeps.push(rec(DeviceClass::Gpu, "g", KernelKind::GeomFactors, Scalar::F64, n, (v, Some(tile), None), t * scale));
+                            sweeps.push(rec(LegacyClass::Gpu, "g", KernelKind::GeomFactors, Scalar::F64, n, (v, Some(tile), None), t * scale));
                         }
                     }
                 }
@@ -1508,7 +1511,7 @@ mod tests {
                 let d = decide(&data);
                 check(&data, &d, CPU, KernelKind::Fill, Scalar::F64);
                 check(&data, &d, CPU, KernelKind::Scalar, Scalar::U32);
-                check(&data, &d, DeviceClass::Gpu, KernelKind::GeomFactors, Scalar::F64);
+                check(&data, &d, LegacyClass::Gpu, KernelKind::GeomFactors, Scalar::F64);
                 for c in &d.choices {
                     prop_assert_eq!(c.fit, Fit::Rule, "{:?}", c);
                 }

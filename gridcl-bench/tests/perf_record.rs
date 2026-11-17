@@ -1,9 +1,11 @@
 //! M3s acceptance (docs/design.md, "M3s SIMD vectorization and benchmarks"; ADR-0015,
-//! ADR-0017, ADR-0018): the committed benchmark data, the generated report, the policy and the
-//! throughput records.
+//! ADR-0017, ADR-0018): the committed benchmark data, the policy and the throughput records.
+//! From M10 these are history tests (ADR-0058, ADR-0060 item 2): the M3s policy is frozen in
+//! `gridcl-bench/history/vector-policy-pre-m10.toml`, its classes are the [`LegacyClass`]es,
+//! and the M10 tests at the end of the file check the live policy and report.
 //!
 //! The checks of the decision rule are written here independently of `gridcl_bench::decide`:
-//! they read `vector-policy.toml` with the `toml` crate and recompute the class times from the
+//! they read the M3s policy with the `toml` crate and recompute the class times from the
 //! raw records.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,9 +13,8 @@ use std::path::PathBuf;
 
 use gridcl_bench::decide::decide;
 use gridcl_bench::record::{
-    CubeDimMode, Measure, PerfData, Scalar, SweepRecord, ThroughputRecord, load_dir,
+    CubeDimMode, LegacyClass, Measure, PerfData, Scalar, SweepRecord, ThroughputRecord, load_dir,
 };
-use gridcl_bench::report::{BEGIN_MARKER, END_MARKER, render};
 use gridcl_device::{DeviceClass, KernelKind};
 
 /// The decision rule's problem sizes.
@@ -24,13 +25,6 @@ const SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
 const BLOCKS: [usize; 3] = [4 << 10, 16 << 10, 64 << 10];
 /// QuadField tiles of the protocol (GeomFactors).
 const TILES: [usize; 3] = [1, 4, 16];
-
-const CLASSES: [DeviceClass; 4] = [
-    DeviceClass::CpuSimd128,
-    DeviceClass::CpuSimd256,
-    DeviceClass::CpuSimd512,
-    DeviceClass::Gpu,
-];
 
 /// Every kind in `vector-policy.toml`, with the scalar types the benchmarks measure it in.
 /// Pack and PullBack exist only from M6 and M9; `Scalar` is measured for its CPU blocks only
@@ -79,8 +73,8 @@ fn read(path: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-fn is_cpu(class: DeviceClass) -> bool {
-    class != DeviceClass::Gpu
+fn is_cpu(class: LegacyClass) -> bool {
+    class != LegacyClass::Gpu
 }
 
 /// Each timed run repeats the call k times, k fixed by the calibration call: ⌈20 ms / t_cal⌉ in
@@ -169,11 +163,11 @@ fn benchmark_data_covers_required_targets() {
         "myriad-cpu"
     };
     let required = [
-        ("m3max", "cpu", DeviceClass::CpuSimd128),
-        ("m3max", "metal", DeviceClass::Gpu),
-        ("locust", "cpu", DeviceClass::CpuSimd128),
-        (cuda, "cuda", DeviceClass::Gpu),
-        (avx512, "cpu", DeviceClass::CpuSimd512),
+        ("m3max", "cpu", LegacyClass::CpuSimd128),
+        ("m3max", "metal", LegacyClass::Gpu),
+        ("locust", "cpu", LegacyClass::CpuSimd128),
+        (cuda, "cuda", LegacyClass::Gpu),
+        (avx512, "cpu", LegacyClass::CpuSimd512),
     ];
     for (target, backend, class) in required {
         let records: Vec<&SweepRecord> = data
@@ -183,7 +177,11 @@ fn benchmark_data_covers_required_targets() {
             .collect();
         assert!(!records.is_empty(), "no sweep data for {target} {backend}");
         for r in &records {
-            assert_eq!(r.device_class, class, "{target} {backend}: device class");
+            assert_eq!(
+                r.legacy_class,
+                Some(class),
+                "{target} {backend}: device class"
+            );
         }
         // A CPU with a performance-core count is swept on its performance cores too (ADR-0017);
         // the M3 Max has one.
@@ -260,38 +258,6 @@ fn benchmark_data_covers_required_targets() {
     }
 }
 
-#[test]
-fn report_lists_every_family_class_and_type() {
-    let data = data();
-    let decision = decide(&data);
-    let text = read("docs/perf/vectorization.md");
-    let begin = text
-        .find(BEGIN_MARKER)
-        .expect("docs/perf/vectorization.md has no BEGIN GENERATED marker")
-        + BEGIN_MARKER.len();
-    let end = text[begin..]
-        .find(END_MARKER)
-        .expect("docs/perf/vectorization.md has no END GENERATED marker")
-        + begin;
-    let generated = text[begin..end].trim();
-    assert_eq!(
-        generated,
-        render(&data, &decision).trim(),
-        "the generated tables are stale: run policy_report"
-    );
-    for (kind, scalars) in kinds() {
-        if kind == KernelKind::Scalar {
-            continue; // not a candidate family
-        }
-        for class in CLASSES {
-            for scalar in &scalars {
-                let row = format!("| {kind:?} | {class:?} | {} |", scalar.name());
-                assert!(generated.contains(&row), "no row {row}");
-            }
-        }
-    }
-}
-
 /// A configuration: (requested vector size, tile, CPU block in bytes, CPU units on CPUs:
 /// `"all"` or `"performance"`).
 type Config = (usize, Option<usize>, Option<usize>, Option<&'static str>);
@@ -304,7 +270,7 @@ type Config = (usize, Option<usize>, Option<usize>, Option<&'static str>);
 /// all-threads time (ADR-0017).
 fn class_times(
     data: &PerfData,
-    class: DeviceClass,
+    class: LegacyClass,
     kind: KernelKind,
     scalar: Scalar,
     size: usize,
@@ -313,7 +279,7 @@ fn class_times(
     let mut per_device: BTreeMap<(String, String), BTreeMap<Config, f64>> = BTreeMap::new();
     let mut neutral = Vec::new();
     for r in data.sweeps.iter().filter(|r| {
-        r.device_class == class
+        r.legacy_class == Some(class)
             && r.family == kind
             && r.scalar == scalar
             && r.nominal_n == size
@@ -384,14 +350,15 @@ fn entry(table: &toml::Table, path: &[&str]) -> Option<usize> {
 #[test]
 fn policy_follows_the_decision_rule() {
     let data = data();
-    let text = read("gridcl-device/vector-policy.toml");
+    let text = read("gridcl-bench/history/vector-policy-pre-m10.toml");
     assert_eq!(
         text,
         decide(&data).to_toml(),
-        "vector-policy.toml differs from the decision rule: run policy_report"
+        "history/vector-policy-pre-m10.toml differs from the M3s decision rule, whose choices \
+         are M10's candidates (ADR-0060 item 2)"
     );
 
-    let policy: toml::Table = text.parse().expect("vector-policy.toml parses");
+    let policy: toml::Table = text.parse().expect("vector-policy-pre-m10.toml parses");
     let report = read("docs/perf/vectorization.md");
     // CpuSimd256 copies the CpuSimd512 table ("Benchmarks", "Where").
     assert_eq!(
@@ -400,9 +367,9 @@ fn policy_follows_the_decision_rule() {
         "CpuSimd256 copies CpuSimd512"
     );
     for class in [
-        DeviceClass::CpuSimd128,
-        DeviceClass::CpuSimd512,
-        DeviceClass::Gpu,
+        LegacyClass::CpuSimd128,
+        LegacyClass::CpuSimd512,
+        LegacyClass::Gpu,
     ] {
         let c = format!("{class:?}");
         for (kind, scalars) in kinds() {
@@ -578,7 +545,7 @@ struct TypeView {
 }
 
 impl TypeView {
-    fn new(data: &PerfData, class: DeviceClass, kind: KernelKind, scalar: Scalar) -> TypeView {
+    fn new(data: &PerfData, class: LegacyClass, kind: KernelKind, scalar: Scalar) -> TypeView {
         let times: Vec<BTreeMap<Config, f64>> = RULE_SIZES
             .iter()
             .map(|&size| class_times(data, class, kind, scalar, size))

@@ -75,7 +75,7 @@ use gridcl_testing::reference::{
 use super::Machine;
 use super::mesh::nearest_side;
 use crate::protocol::{calls_per_run, is_cpu, median, profile, sync};
-use crate::record::{DegreeRecord, Scalar};
+use crate::record::{DegreeRecord, LegacyClass, Scalar};
 
 /// The protocol's sizes, in quadrature points (rule 12).
 pub const DEGREE_SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
@@ -666,6 +666,7 @@ impl PointSweep<'_> {
             backend: m.backend.clone(),
             device: m.device.clone(),
             device_class: m.class,
+            legacy_class: LegacyClass::of_new(m.class),
             target: self.options.target.clone(),
             run_id: self.options.run_id.clone(),
             family: family.name().to_owned(),

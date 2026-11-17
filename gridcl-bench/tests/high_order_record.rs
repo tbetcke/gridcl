@@ -1,7 +1,9 @@
 //! M9h acceptance (docs/design.md, "M9h High-order performance", bullets 2, 3, 4 and 6, read as
 //! in ADR-0042, items 1, 6, 7, 11 and 12): the committed degree-sweep data under
-//! `docs/perf/data/m9h-*.json`, the degree policy `gridcl-geometry/degree-policy.toml` and the
-//! report `docs/perf/high-order.md`.
+//! `docs/perf/data/m9h-*.json`, the M9h degree policy and the report `docs/perf/high-order.md`.
+//! From M10 these are history tests (ADR-0058, ADR-0060 items 2 and 4): the M9h policy is
+//! frozen in `gridcl-bench/history/degree-policy-pre-m10.toml`, its classes are the
+//! [`LegacyClass`]es, and the M10 tests at the end of the file check the live policy.
 //!
 //! The checks are written here independently of gridcl-bench's decision code: they read the
 //! policy with the `toml` crate and recompute class ratios from the raw records.
@@ -27,6 +29,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+use gridcl_bench::record::LegacyClass;
 use gridcl_bench::record::{
     DEGREE_FAMILIES, DegreeRecord, HighOrderData, NodeLoad, STRATEGIES, Scalar, load_high_order_dir,
 };
@@ -38,8 +41,8 @@ const BASELINE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
 
 /// The problem sizes of the rules of a class, in quadrature points (rule 12): 10^6 and 10^7 on
 /// the Gpu class, 10^6 on the CPU classes (ADR-0052).
-fn rule_sizes(class: DeviceClass) -> &'static [usize] {
-    if class == DeviceClass::Gpu {
+fn rule_sizes(class: impl IsGpu) -> &'static [usize] {
+    if class.gpu() {
         &[1_000_000, 10_000_000]
     } else {
         &[1_000_000]
@@ -49,11 +52,28 @@ fn rule_sizes(class: DeviceClass) -> &'static [usize] {
 /// The strategies the policy of a class chooses among: all on the Gpu class; `direct`, `loops`
 /// and `sumfact` on the CPU classes, where `shared` and `cooperative` reduce to `loops`
 /// (ADR-0052).
-fn candidates(class: DeviceClass) -> &'static [&'static str] {
-    if class == DeviceClass::Gpu {
+fn candidates(class: impl IsGpu) -> &'static [&'static str] {
+    if class.gpu() {
         &STRATEGIES
     } else {
         &["direct", "loops", "sumfact"]
+    }
+}
+
+/// A class of M9h ([`LegacyClass`]) or of M10 ([`DeviceClass`]).
+trait IsGpu {
+    fn gpu(self) -> bool;
+}
+
+impl IsGpu for LegacyClass {
+    fn gpu(self) -> bool {
+        self == LegacyClass::Gpu
+    }
+}
+
+impl IsGpu for DeviceClass {
+    fn gpu(self) -> bool {
+        self == DeviceClass::Gpu
     }
 }
 
@@ -75,18 +95,18 @@ const CELLS: [&str; 7] = [
 ];
 
 /// The classes the policy holds; CpuSimd256 uses the CpuSimd512 table ("Benchmarks").
-const POLICY_CLASSES: [DeviceClass; 4] = [
-    DeviceClass::CpuSimd128,
-    DeviceClass::CpuSimd256,
-    DeviceClass::CpuSimd512,
-    DeviceClass::Gpu,
+const POLICY_CLASSES: [LegacyClass; 4] = [
+    LegacyClass::CpuSimd128,
+    LegacyClass::CpuSimd256,
+    LegacyClass::CpuSimd512,
+    LegacyClass::Gpu,
 ];
 
 /// The measured classes.
-const MEASURED_CLASSES: [DeviceClass; 3] = [
-    DeviceClass::CpuSimd128,
-    DeviceClass::CpuSimd512,
-    DeviceClass::Gpu,
+const MEASURED_CLASSES: [LegacyClass; 3] = [
+    LegacyClass::CpuSimd128,
+    LegacyClass::CpuSimd512,
+    LegacyClass::Gpu,
 ];
 
 /// The scalar types and their sizes in bytes.
@@ -176,7 +196,7 @@ fn scalars_of(backend: &str) -> Vec<Scalar> {
 
 /// The required (target, backend, class) of `records`: CpuSimd512 on Kathleen, or on a Myriad
 /// D node where Kathleen has no record (ADR-0016). The baseline and the paired runs use these.
-fn required(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, DeviceClass)> {
+fn required(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, LegacyClass)> {
     let avx512 = if records
         .iter()
         .any(|r| r.target == "kathleen" && r.backend == "cpu")
@@ -186,17 +206,17 @@ fn required(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, Device
         "myriad-cpu"
     };
     vec![
-        ("macmini", "cpu", DeviceClass::CpuSimd128),
-        ("macmini", "metal", DeviceClass::Gpu),
-        ("locust", "cpu", DeviceClass::CpuSimd128),
-        ("locust", "cuda", DeviceClass::Gpu),
-        (avx512, "cpu", DeviceClass::CpuSimd512),
+        ("macmini", "cpu", LegacyClass::CpuSimd128),
+        ("macmini", "metal", LegacyClass::Gpu),
+        ("locust", "cpu", LegacyClass::CpuSimd128),
+        ("locust", "cuda", LegacyClass::Gpu),
+        (avx512, "cpu", LegacyClass::CpuSimd512),
     ]
 }
 
 /// The (target, backend, class) of the degree sweep: [`required`] without the Grace CPU
 /// (ADR-0051).
-fn sweep_targets(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, DeviceClass)> {
+fn sweep_targets(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, LegacyClass)> {
     required(records)
         .into_iter()
         .filter(|&(target, backend, _)| (target, backend) != ("locust", "cpu"))
@@ -205,8 +225,8 @@ fn sweep_targets(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, D
 
 /// The devices among `targets` of `class` that measure `scalar`.
 fn devices(
-    targets: Vec<(&'static str, &'static str, DeviceClass)>,
-    class: DeviceClass,
+    targets: Vec<(&'static str, &'static str, LegacyClass)>,
+    class: LegacyClass,
     scalar: Scalar,
 ) -> Vec<(&'static str, &'static str)> {
     targets
@@ -374,6 +394,11 @@ fn policy() -> Policy {
     policy_at("gridcl-geometry/degree-policy.toml")
 }
 
+/// The M9h policy, frozen before M10 (ADR-0060 item 2).
+fn history_policy() -> Policy {
+    policy_at("gridcl-bench/history/degree-policy-pre-m10.toml")
+}
+
 /// The degree policy in the file `path` (relative to the workspace).
 fn policy_at(path: &str) -> Policy {
     let text = read(path);
@@ -420,7 +445,7 @@ fn policy_at(path: &str) -> Policy {
 impl Policy {
     fn ranges(
         &self,
-        class: DeviceClass,
+        class: LegacyClass,
         family: &str,
         cell: &str,
         bytes: usize,
@@ -439,7 +464,7 @@ impl Policy {
     /// The strategy of `degree`.
     fn strategy(
         &self,
-        class: DeviceClass,
+        class: LegacyClass,
         family: &str,
         cell: &str,
         bytes: usize,
@@ -511,7 +536,7 @@ fn baseline_covers_every_target_and_degree() {
             .iter()
             .filter(|r| r.target == target && r.backend == backend)
         {
-            assert_eq!(r.device_class, class, "{}: device class", describe(r));
+            assert_eq!(r.legacy_class, Some(class), "{}: device class", describe(r));
         }
         for family in DEGREE_FAMILIES {
             for &cell in cells_of(family) {
@@ -617,7 +642,7 @@ fn every_variant_launched() {
 #[test]
 fn compile_and_load_within_30_s_on_locust() {
     let data = data();
-    let policy = policy();
+    let policy = history_policy();
     let locust: Vec<&DegreeRecord> = data
         .launch
         .iter()
@@ -638,7 +663,7 @@ fn compile_and_load_within_30_s_on_locust() {
             for degree in 1..=max_degree(cell) {
                 for (scalar, bytes) in SCALARS {
                     let s = policy.strategy(
-                        DeviceClass::Gpu,
+                        LegacyClass::Gpu,
                         policy_family(family),
                         cell,
                         bytes,
@@ -681,7 +706,7 @@ fn compile_and_load_within_30_s_on_locust() {
 #[test]
 fn policy_choices_first_use_within_30_s_on_every_class() {
     let data = data();
-    let policy = policy();
+    let policy = history_policy();
     let records = sweep_records(&data);
     for class in MEASURED_CLASSES {
         for (scalar, bytes) in SCALARS {
@@ -738,7 +763,7 @@ fn policy_choices_first_use_within_30_s_on_every_class() {
 #[test]
 fn tensor_cost_ratio_reported() {
     let data = data();
-    let policy = policy();
+    let policy = history_policy();
     check_protocol(&data.degree);
     let records = &sweep_records(&data);
     let text = read("docs/perf/high-order.md");
@@ -878,7 +903,7 @@ fn quantile(v: &[f64], q: f64) -> f64 {
 fn direct_selectable(
     data: &HighOrderData,
     sweep: &[DegreeRecord],
-    class: DeviceClass,
+    class: LegacyClass,
     members: &[(&str, Option<u32>)],
     cell: &str,
     degree: u32,
@@ -998,7 +1023,7 @@ fn row_cells(line: &str) -> Option<Vec<&str>> {
 #[test]
 fn report_covers_every_family_class_and_range() {
     data(); // The report and the policy come from the data.
-    let policy = policy();
+    let policy = history_policy();
     let text = read("docs/perf/high-order.md");
     assert!(
         text.contains(BEGIN_MARKER) && text.contains(END_MARKER),
@@ -1119,7 +1144,7 @@ fn first_use_ok(
 #[test]
 fn degree_policy_follows_the_decision_rule() {
     let data = data();
-    let policy = policy();
+    let policy = history_policy();
     // `first_use_ok` gets the whole data and leaves the paired runs out itself, from the launch
     // records too, as the decision rule does.
     let records = sweep_records(&data);

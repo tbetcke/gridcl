@@ -361,9 +361,9 @@ pub fn vector_sizes() -> Vec<usize> {
         .collect()
 }
 
-/// Whether `class` is a CPU class, where block sizes apply.
+/// Whether `class` is the Cpu class, where block sizes and units apply.
 pub fn is_cpu(class: DeviceClass) -> bool {
-    class != DeviceClass::Gpu
+    class == DeviceClass::Cpu
 }
 
 #[cfg(test)]

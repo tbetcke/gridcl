@@ -1,5 +1,5 @@
 //! Applies the degree sweep's decision rule (docs/plans/M9h.md, T11b; ADR-0042, item 12) to the
-//! M9h records: writes `gridcl-geometry/degree-policy.toml` and the generated tables of
+//! M9h records: writes the frozen M9h policy and the generated M9h tables of
 //! `docs/perf/high-order.md`.
 //!
 //! ```text
@@ -8,7 +8,9 @@
 //! ```
 //!
 //! - `--data`: the `m9h-*.json` records, default `docs/perf/data/`;
-//! - `--policy`: default `gridcl-geometry/degree-policy.toml`;
+//! - `--policy`: default `gridcl-bench/history/degree-policy-pre-m10.toml`, the M9h policy
+//!   frozen before M10 (ADR-0060 item 2); M10's generic sets of
+//!   `gridcl-geometry/degree-policy.toml` are written from M10 T10 on;
 //! - `--report`: default `docs/perf/high-order.md`. Only the part between the
 //!   `BEGIN GENERATED` and `END GENERATED` markers changes; a file without markers gets them
 //!   appended, and a missing file is created with a title.
@@ -54,7 +56,7 @@ impl Args {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut parsed = Args {
             data: root.join("docs/perf/data"),
-            policy: root.join("gridcl-geometry/degree-policy.toml"),
+            policy: root.join("gridcl-bench/history/degree-policy-pre-m10.toml"),
             report: root.join("docs/perf/high-order.md"),
             check: false,
         };

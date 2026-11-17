@@ -82,6 +82,10 @@ pub struct SweepRecord {
     /// Device name as the client reports it.
     pub device: String,
     pub device_class: DeviceClass,
+    /// The pre-M10 class the record was filed under: the class an M3s or M9h record names
+    /// (ADR-0060 item 2), or `Gpu` for any Gpu record; `None` for a Cpu record written from M10
+    /// on. Only the M3s and M9h history reads it.
+    pub legacy_class: Option<LegacyClass>,
     /// Machine: `m3max`, or a target of scripts/hpc/remote-test.sh (`locust`, `kathleen`,
     /// `myriad-cpu`, `myriad-v100`, `myriad-a100`).
     pub target: String,
@@ -145,6 +149,10 @@ pub struct ThroughputRecord {
     pub backend: String,
     pub device: String,
     pub device_class: DeviceClass,
+    /// The pre-M10 class the record was filed under: the class an M3s or M9h record names
+    /// (ADR-0060 item 2), or `Gpu` for any Gpu record; `None` for a Cpu record written from M10
+    /// on. Only the M3s and M9h history reads it.
+    pub legacy_class: Option<LegacyClass>,
     pub target: String,
     pub measure: Measure,
     /// The mesh, for example `P1 tetrahedron box`.
@@ -345,13 +353,69 @@ pub const KINDS: [KernelKind; 13] = [
     KernelKind::Scalar,
 ];
 
-/// Every device class, in the order of `vector-policy.toml`.
-pub const CLASSES: [DeviceClass; 4] = [
-    DeviceClass::CpuSimd128,
-    DeviceClass::CpuSimd256,
-    DeviceClass::CpuSimd512,
-    DeviceClass::Gpu,
-];
+/// Every device class, in the order of `vector-policy.toml` (ADR-0058).
+pub const CLASSES: [DeviceClass; 2] = [DeviceClass::Cpu, DeviceClass::Gpu];
+
+/// The device classes of M3s and M9h, by SIMD width, before ADR-0058 collapsed them to
+/// `{Cpu, Gpu}`. Only the history uses them: the M3s and M9h records, their unchanged decision
+/// rules ([`decide`](crate::decide::decide),
+/// [`decide_degree`](crate::decide_degree::decide_degree)), their report sections and
+/// `gridcl-bench/history/{vector,degree}-policy-pre-m10.toml` (ADR-0060 item 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LegacyClass {
+    /// A CPU of `load_width` 128 bits or less.
+    CpuSimd128,
+    /// A CPU of `load_width` 256 bits; it copied CpuSimd512's tables.
+    CpuSimd256,
+    /// A CPU of `load_width` 512 bits.
+    CpuSimd512,
+    /// Every other device.
+    Gpu,
+}
+
+impl LegacyClass {
+    /// Every legacy class, in the order of the pre-M10 policy files.
+    pub const ALL: [LegacyClass; 4] = [
+        LegacyClass::CpuSimd128,
+        LegacyClass::CpuSimd256,
+        LegacyClass::CpuSimd512,
+        LegacyClass::Gpu,
+    ];
+
+    /// The legacy class named `name` (its pre-M10 policy key), ignoring case.
+    pub fn named(name: &str) -> Option<LegacyClass> {
+        LegacyClass::ALL
+            .into_iter()
+            .find(|c| format!("{c:?}").eq_ignore_ascii_case(name))
+    }
+
+    /// The class of ADR-0058 that the legacy class falls in.
+    pub fn class(self) -> DeviceClass {
+        match self {
+            LegacyClass::Gpu => DeviceClass::Gpu,
+            _ => DeviceClass::Cpu,
+        }
+    }
+
+    /// Whether the class is a CPU class, where blocks and units apply.
+    pub fn is_cpu(self) -> bool {
+        self != LegacyClass::Gpu
+    }
+
+    /// The legacy class of a record written from M10 on: `Gpu` for a Gpu, none for a Cpu,
+    /// which no longer has a class by SIMD width.
+    pub fn of_new(class: DeviceClass) -> Option<LegacyClass> {
+        (class == DeviceClass::Gpu).then_some(LegacyClass::Gpu)
+    }
+}
+
+/// The `device_class` of a record: its legacy class's name where it has one, else its class's.
+fn class_json(class: DeviceClass, legacy: Option<LegacyClass>) -> String {
+    match legacy {
+        Some(legacy) => format!("{legacy:?}"),
+        None => format!("{class:?}"),
+    }
+}
 
 /// The kind named `name` (its policy key, `Fill`, `ScanTile`, ...), ignoring case.
 pub fn kind_named(name: &str) -> Option<KernelKind> {
@@ -360,7 +424,7 @@ pub fn kind_named(name: &str) -> Option<KernelKind> {
         .find(|k| format!("{k:?}").eq_ignore_ascii_case(name))
 }
 
-/// The class named `name` (its policy key), ignoring case.
+/// The class named `name` (its policy key, `Cpu` or `Gpu`), ignoring case.
 pub fn class_named(name: &str) -> Option<DeviceClass> {
     CLASSES
         .into_iter()
@@ -496,7 +560,7 @@ impl SweepRecord {
         json!({
             "backend": self.backend,
             "device": self.device,
-            "device_class": format!("{:?}", self.device_class),
+            "device_class": class_json(self.device_class, self.legacy_class),
             "target": self.target,
             "family": format!("{:?}", self.family),
             "scalar": self.scalar.name(),
@@ -529,7 +593,8 @@ impl SweepRecord {
         Ok(SweepRecord {
             backend: o.string("backend")?,
             device: o.string("device")?,
-            device_class: o.class("device_class")?,
+            device_class: o.class("device_class")?.0,
+            legacy_class: o.class("device_class")?.1,
             target: o.string("target")?,
             family: o.kind("family")?,
             scalar: o.scalar("scalar")?,
@@ -563,7 +628,7 @@ impl ThroughputRecord {
         json!({
             "backend": self.backend,
             "device": self.device,
-            "device_class": format!("{:?}", self.device_class),
+            "device_class": class_json(self.device_class, self.legacy_class),
             "target": self.target,
             "measure": self.measure.name(),
             "mesh": self.mesh,
@@ -590,7 +655,8 @@ impl ThroughputRecord {
         Ok(ThroughputRecord {
             backend: o.string("backend")?,
             device: o.string("device")?,
-            device_class: o.class("device_class")?,
+            device_class: o.class("device_class")?.0,
+            legacy_class: o.class("device_class")?.1,
             target: o.string("target")?,
             measure: o.parsed("measure", Measure::named)?,
             mesh: o.string("mesh")?,
@@ -695,8 +761,13 @@ impl<'a> Fields<'a> {
         parse(&name).ok_or_else(|| format!("field {key}: unknown value '{name}'"))
     }
 
-    fn class(&self, key: &str) -> Result<DeviceClass, String> {
-        self.parsed(key, class_named)
+    /// A record's class and legacy class: a legacy name (M3s and M9h records, or `Gpu`), or
+    /// `Cpu`.
+    fn class(&self, key: &str) -> Result<(DeviceClass, Option<LegacyClass>), String> {
+        self.parsed(key, |name| match LegacyClass::named(name) {
+            Some(legacy) => Some((legacy.class(), Some(legacy))),
+            None => class_named(name).map(|c| (c, None)),
+        })
     }
 
     fn kind(&self, key: &str) -> Result<KernelKind, String> {
@@ -729,6 +800,10 @@ pub struct DegreeRecord {
     pub backend: String,
     pub device: String,
     pub device_class: DeviceClass,
+    /// The pre-M10 class the record was filed under: the class an M3s or M9h record names
+    /// (ADR-0060 item 2), or `Gpu` for any Gpu record; `None` for a Cpu record written from M10
+    /// on. Only the M3s and M9h history reads it.
+    pub legacy_class: Option<LegacyClass>,
     /// The machine: `macmini` (the local Mac, ADR-0034) or a target of
     /// scripts/hpc/remote-test.sh.
     pub target: String,
@@ -899,7 +974,7 @@ impl DegreeRecord {
         json!({
             "backend": self.backend,
             "device": self.device,
-            "device_class": format!("{:?}", self.device_class),
+            "device_class": class_json(self.device_class, self.legacy_class),
             "target": self.target,
             "run_id": self.run_id,
             "family": self.family,
@@ -945,7 +1020,8 @@ impl DegreeRecord {
         Ok(DegreeRecord {
             backend: o.string("backend")?,
             device: o.string("device")?,
-            device_class: o.class("device_class")?,
+            device_class: o.class("device_class")?.0,
+            legacy_class: o.class("device_class")?.1,
             target: o.string("target")?,
             run_id: o.string("run_id")?,
             family: o.parsed("family", |f| {
@@ -1156,7 +1232,8 @@ mod tests {
         SweepRecord {
             backend: "cpu".to_owned(),
             device: "Apple M3 Max".to_owned(),
-            device_class: DeviceClass::CpuSimd128,
+            device_class: DeviceClass::Cpu,
+            legacy_class: Some(LegacyClass::CpuSimd128),
             target: "m3max".to_owned(),
             family: KernelKind::ScanTile,
             scalar: Scalar::U32,
@@ -1191,7 +1268,8 @@ mod tests {
         ThroughputRecord {
             backend: "cpu".to_owned(),
             device: "Xeon".to_owned(),
-            device_class: DeviceClass::CpuSimd512,
+            device_class: DeviceClass::Cpu,
+            legacy_class: Some(LegacyClass::CpuSimd512),
             target: "myriad-cpu".to_owned(),
             measure: Measure::FactorsPerSecond,
             mesh: "P2 tetrahedron box".to_owned(),
@@ -1228,6 +1306,30 @@ mod tests {
         assert_eq!(SweepRecord::from_json(&r.to_json()).unwrap(), r);
         let t = throughput();
         assert_eq!(ThroughputRecord::from_json(&t.to_json()).unwrap(), t);
+        // An M10 Cpu record has no legacy class, and a Gpu one is Gpu under both (ADR-0058).
+        for class in CLASSES {
+            let r = SweepRecord {
+                device_class: class,
+                legacy_class: LegacyClass::of_new(class),
+                ..sweep()
+            };
+            assert_eq!(r.to_json()["device_class"], format!("{class:?}"));
+            assert_eq!(SweepRecord::from_json(&r.to_json()).unwrap(), r);
+        }
+    }
+
+    #[test]
+    fn legacy_classes_map_to_cpu_and_gpu() {
+        for legacy in LegacyClass::ALL {
+            assert_eq!(LegacyClass::named(&format!("{legacy:?}")), Some(legacy));
+            assert_eq!(legacy.is_cpu(), legacy.class() == DeviceClass::Cpu);
+        }
+        assert_eq!(LegacyClass::named("Cpu"), None);
+        assert_eq!(class_named("cpu"), Some(DeviceClass::Cpu));
+        assert_eq!(class_named("CpuSimd128"), None);
+        let mut v = sweep().to_json();
+        v["device_class"] = json!("Simd");
+        assert!(SweepRecord::from_json(&v).is_err());
     }
 
     /// Records written before ADR-0034 have no `levels`; they still load, with none.
@@ -1310,6 +1412,7 @@ mod tests {
             backend: "cuda".to_owned(),
             device: "NVIDIA H100".to_owned(),
             device_class: DeviceClass::Gpu,
+            legacy_class: Some(LegacyClass::Gpu),
             target: "locust".to_owned(),
             run_id: "1234".to_owned(),
             family: "PullBack".to_owned(),

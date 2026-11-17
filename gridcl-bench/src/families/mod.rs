@@ -20,7 +20,7 @@ use gridcl_device::{DeviceClass, KernelKind, check_precision};
 use crate::protocol::{
     self, Config, Measured, Workload, bandwidth_ratio, is_cpu, measure, with_config,
 };
-use crate::record::{Cores, CubeDimMode, Scalar, SweepRecord};
+use crate::record::{Cores, CubeDimMode, LegacyClass, Scalar, SweepRecord};
 
 /// The protocol's problem sizes.
 pub const SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
@@ -260,6 +260,7 @@ fn sweep_record(
         backend: machine.backend.clone(),
         device: machine.device.clone(),
         device_class: machine.class,
+        legacy_class: LegacyClass::of_new(machine.class),
         target: options.target.clone(),
         family,
         scalar,

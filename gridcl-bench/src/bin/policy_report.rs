@@ -1,5 +1,5 @@
-//! Applies the decision rule (docs/plans/M3s.md, T12; ADR-0015) to the benchmark data: writes
-//! `gridcl-device/vector-policy.toml` and the generated tables of `docs/perf/vectorization.md`.
+//! Applies the M3s decision rule (docs/plans/M3s.md, T12; ADR-0015) to the M3s records: writes
+//! the frozen M3s policy and the generated M3s tables of `docs/perf/vectorization.md`.
 //!
 //! ```text
 //! cargo run -p gridcl-bench --bin policy_report -- [--data DIR] [--policy FILE]
@@ -7,7 +7,9 @@
 //! ```
 //!
 //! - `--data`: the records, default `docs/perf/data/`;
-//! - `--policy`: default `gridcl-device/vector-policy.toml`;
+//! - `--policy`: default `gridcl-bench/history/vector-policy-pre-m10.toml`, the M3s policy
+//!   frozen before M10 (ADR-0060 item 2); M10's generic sets of
+//!   `gridcl-device/vector-policy.toml` are written from M10 T8 on;
 //! - `--report`: default `docs/perf/vectorization.md`. Only the part between the
 //!   `BEGIN GENERATED` and `END GENERATED` markers changes; a file without markers gets them
 //!   appended, and a missing file is created with a title.
@@ -52,7 +54,7 @@ impl Args {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut parsed = Args {
             data: root.join("docs/perf/data"),
-            policy: root.join("gridcl-device/vector-policy.toml"),
+            policy: root.join("gridcl-bench/history/vector-policy-pre-m10.toml"),
             report: root.join("docs/perf/vectorization.md"),
             check: false,
         };

@@ -20,8 +20,6 @@ const KINDS: [KernelKind; 13] = [
     KernelKind::Scalar,
 ];
 
-// Gated until T1, which collapses the enum (docs/plans/M10.md, Deviations log, T0).
-#[cfg(any())]
 #[test]
 fn device_class_has_exactly_cpu_and_gpu() {
     let client = gridcl_testing::test_client();

@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-use gridcl_device::{CpuUnits, DeviceClass, KernelKind, VECTOR_PAD};
+use gridcl_device::{CpuUnits, KernelKind, VECTOR_PAD};
 
 use crate::decide::{
     BLOCK_UNIT, Config, Decision, RULE_SIZES, Timing, class_times, device_times, scalars_of,
@@ -21,7 +21,7 @@ use crate::decide_degree::{
     PolicyEntry, SCALARS, Times, cells_of, max_degree, paired_checks, policy_family, tensor_ratios,
 };
 use crate::record::{
-    CLASSES, CudaResources, DEGREE_FAMILIES, DegreeRecord, HighOrderData, KINDS, PerfData,
+    CudaResources, DEGREE_FAMILIES, DegreeRecord, HighOrderData, KINDS, LegacyClass, PerfData,
     STRATEGIES, Scalar,
 };
 
@@ -126,7 +126,7 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
     )
     .unwrap();
     for kind in KINDS.into_iter().filter(|&k| k != KernelKind::Scalar) {
-        for class in CLASSES {
+        for class in LegacyClass::ALL {
             for scalar in row_scalars(kind) {
                 let bytes = scalar.bytes();
                 let times = RULE_SIZES.map(|n| class_times(data, class, kind, scalar, n));
@@ -162,7 +162,7 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
     writeln!(out, "| --- | --- | --- | --- |{size_rule}").unwrap();
     for kind in KINDS.into_iter().filter(|&k| k != KernelKind::Scalar) {
         for scalar in row_scalars(kind) {
-            for class in CLASSES {
+            for class in LegacyClass::ALL {
                 let per_size = RULE_SIZES.map(|n| device_times(data, class, kind, scalar, n));
                 for device in per_size[0].keys() {
                     let times =
@@ -195,7 +195,10 @@ pub fn render(data: &PerfData, decision: &Decision) -> String {
          segmented reduce (f64) (ADR-0015, item 7; ADR-0017).\n\n",
     );
     out.push_str("| Class | Type | Block | Units | Reason |\n| --- | --- | ---: | --- | --- |\n");
-    for class in CLASSES.into_iter().filter(|&c| c != DeviceClass::Gpu) {
+    for class in LegacyClass::ALL
+        .into_iter()
+        .filter(|&c| c != LegacyClass::Gpu)
+    {
         for scalar in scalars_of(KernelKind::Scalar) {
             let choice = decision.choice(class, KernelKind::Scalar, scalar.bytes());
             writeln!(
@@ -277,7 +280,7 @@ fn range_summary(
     last: Option<u32>,
     strategy: &str,
 ) -> (String, String) {
-    if entry.class == DeviceClass::CpuSimd256 {
+    if entry.class == LegacyClass::CpuSimd256 {
         return ("–".to_owned(), "as CpuSimd512".to_owned());
     }
     if entry.choices.is_empty() {
@@ -620,7 +623,7 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
                     for degree in 1..=max_degree(cell) {
                         for (scalar, _) in SCALARS {
                             let s = decision
-                                .entry(DeviceClass::Gpu, policy_family(family), cell, scalar)
+                                .entry(LegacyClass::Gpu, policy_family(family), cell, scalar)
                                 .expect("an entry")
                                 .strategy(degree);
                             if let Some(c) = times.locust_compile_s(family, cell, degree, scalar, s)
@@ -693,7 +696,7 @@ mod tests {
         let data = PerfData::default();
         let text = render(&data, &decide(&data));
         for kind in KINDS.into_iter().filter(|&k| k != KernelKind::Scalar) {
-            for class in CLASSES {
+            for class in LegacyClass::ALL {
                 for scalar in row_scalars(kind) {
                     let row = format!("| {kind:?} | {class:?} | {} |", scalar.name());
                     assert!(text.contains(&row), "no row {row}");
