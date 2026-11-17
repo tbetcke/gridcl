@@ -6,7 +6,7 @@ use cubecl::prelude::*;
 use cubecl::server::Handle;
 
 use crate::primitives::launch_fill;
-use crate::{GridError, Result, testing};
+use crate::{DeviceClass, GridError, Result, testing};
 
 /// Every allocation is padded to a multiple of `VECTOR_PAD` elements, the widest vector size
 /// any device class uses, so vectorized kernels never need a scalar tail.
@@ -246,8 +246,10 @@ impl<T: CubeElement> DeviceBuffer<T> {
     /// allocation, which the CPU runtime requires. The host-staged halo exchange uploads its
     /// receive buffer with it.
     ///
-    /// `data` is copied once, into one allocation of the padded length, which the write takes
-    /// over; CubeCL stages it through its pinned host pool (C23).
+    /// `data` is copied once, into one allocation of the padded length. On GPUs that copy is
+    /// moved into pinned host memory (`Client::staging`) before the write, which on CUDA
+    /// uploads 2.4 MB about six times faster than leaving the staging to `Client::write`
+    /// (C23); the CPU runtime and the wgpu and Metal runtimes have no pinned staging.
     ///
     /// # Errors
     ///
@@ -279,8 +281,11 @@ impl<T: CubeElement> DeviceBuffer<T> {
         let mut host = Vec::with_capacity(padded);
         host.extend_from_slice(bytes);
         host.resize(padded, 0);
-        self.client
-            .write(&self.handle, cubecl::bytes::Bytes::from_bytes_vec(host));
+        let mut host = cubecl::bytes::Bytes::from_bytes_vec(host);
+        if DeviceClass::for_client(&self.client) == DeviceClass::Gpu {
+            self.client.staging(core::iter::once(&mut host), false);
+        }
+        self.client.write(&self.handle, host);
         Ok(())
     }
 
