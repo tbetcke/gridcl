@@ -2035,6 +2035,16 @@ name = "gridcl-dims"
 version = "0.1.0"
 
 [[package]]
+name = "gridcl-examples"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "gridcl",
+ "gridcl-testing",
+ "mpi",
+]
+
+[[package]]
 name = "gridcl-geometry"
 version = "0.1.0"
 dependencies = [

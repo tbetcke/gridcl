@@ -54,7 +54,7 @@ pub use gridcl_geometry::{
 pub use gridcl_parallel::Mpi;
 pub use gridcl_parallel::{
     Comm, CommDyn, CommExt, CommScalar, DType, IndexMap, Neighbourhood, ReverseOp, ScatterNumeric,
-    Scatterer, Serial, Transport,
+    Scatterer, Serial, Transport, local_gpu_index,
 };
 #[cfg(feature = "metis")]
 pub use gridcl_partition::Metis;

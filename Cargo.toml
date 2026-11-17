@@ -15,6 +15,7 @@ members = [
     "gridcl-testing",
     "gridcl-mpi-tests",
     "gridcl-bench",
+    "gridcl-examples",
 ]
 # Outside the workspace (docs/design.md, "Workspace layout", dependency rule 6).
 exclude = ["conformance", "tools/env-check"]

@@ -18,5 +18,5 @@ pub use crate::{
     Mesh, MeshBuilder, MeshTags, Neighbourhood, NodeFamily, OrientationRule, Partitioner,
     PlanarMesh, PullBack, PullBackOptions, QuadField, QuadRule, Real, Result, ReverseOp,
     ScatterNumeric, Scatterer, Serial, SurfaceMesh, TagRegistry, TopoDim, Transport, VolumeMesh,
-    VtkWriter, gmsh, vtk, with_mesh,
+    VtkWriter, gmsh, local_gpu_index, vtk, with_mesh,
 };

@@ -748,6 +748,7 @@ mod tests {
             bandwidth_ratio: None,
             commit: "test".to_owned(),
             profile: "release".to_owned(),
+            load_width: None,
             cores: Cores {
                 performance: None,
                 efficiency: None,

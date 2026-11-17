@@ -1028,3 +1028,61 @@ fn units_against_one<F, TD, GD>(
     let (loops, _) = forced(mesh, Strategy::Loops, &f);
     compare(&format!("{what} against loops"), &one, &loops, false);
 }
+
+/// M10 bullet 5 (ADR-0058 item 2): `degree-policy.toml` holds exactly four sets: `[Cpu.<family>]`
+/// and `[Gpu.<family>]` for every policy family, each cell type with entries for 4- and 8-byte
+/// scalars and nothing else.
+#[test]
+fn degree_policy_has_four_sets() {
+    let text = include_str!("../degree-policy.toml");
+    let table: toml::Table = text.parse().expect("degree-policy.toml parses");
+    let sorted = |t: &toml::Table| {
+        let mut keys: Vec<String> = t.keys().cloned().collect();
+        keys.sort_unstable();
+        keys
+    };
+    assert_eq!(
+        sorted(&table),
+        ["Cpu", "Gpu"],
+        "degree-policy.toml: classes"
+    );
+    let mut families = vec![
+        "EVector",
+        "FacetNormals",
+        "Jacobian",
+        "Normals",
+        "Points",
+        "PullBack",
+    ];
+    families.sort_unstable();
+    for class in ["Cpu", "Gpu"] {
+        let section = table[class].as_table().expect("a class is a table");
+        assert_eq!(sorted(section), families, "[{class}]: families");
+        for family in &families {
+            let cells = section[*family].as_table().expect("a family is a table");
+            let mut want = if *family == "Normals" {
+                vec!["Interval", "Quadrilateral", "Triangle"]
+            } else {
+                vec![
+                    "Hexahedron",
+                    "Interval",
+                    "Prism",
+                    "Pyramid",
+                    "Quadrilateral",
+                    "Tetrahedron",
+                    "Triangle",
+                ]
+            };
+            want.sort_unstable();
+            assert_eq!(sorted(cells), want, "[{class}.{family}]: cell types");
+            for (cell, sizes) in cells {
+                let sizes = sizes.as_table().expect("a cell entry is a table");
+                assert_eq!(
+                    sorted(sizes),
+                    ["4", "8"],
+                    "[{class}.{family}] {cell}: sizes"
+                );
+            }
+        }
+    }
+}

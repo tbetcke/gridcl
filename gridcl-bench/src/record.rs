@@ -120,6 +120,9 @@ pub struct SweepRecord {
     /// `release` or `debug`.
     pub profile: String,
     pub cores: Cores,
+    /// `hardware.load_width` of the client in bits (M10 records; ADR-0058 item 1, ADR-0060
+    /// item 2); `None` in earlier records.
+    pub load_width: Option<u32>,
     /// Why a Myriad GPU ran in place of Locust (ADR-0014), or a Myriad D node in place of
     /// Kathleen (ADR-0016); empty elsewhere.
     pub fallback_reason: Option<String>,
@@ -164,6 +167,9 @@ pub struct ThroughputRecord {
     pub commit: String,
     pub profile: String,
     pub cores: Cores,
+    /// `hardware.load_width` of the client in bits (M10 records; ADR-0058 item 1, ADR-0060
+    /// item 2); `None` in earlier records.
+    pub load_width: Option<u32>,
     /// Why a Myriad D node ran in place of Kathleen (ADR-0016); empty elsewhere.
     pub fallback_reason: Option<String>,
     pub node_load: Option<NodeLoad>,
@@ -512,6 +518,7 @@ impl SweepRecord {
             "commit": self.commit,
             "profile": self.profile,
             "cores": self.cores.to_json(),
+            "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
         })
@@ -544,6 +551,7 @@ impl SweepRecord {
             commit: o.string("commit")?,
             profile: o.string("profile")?,
             cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
         })
@@ -571,6 +579,7 @@ impl ThroughputRecord {
             "commit": self.commit,
             "profile": self.profile,
             "cores": self.cores.to_json(),
+            "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
         })
@@ -597,6 +606,7 @@ impl ThroughputRecord {
             commit: o.string("commit")?,
             profile: o.string("profile")?,
             cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
         })
@@ -781,6 +791,9 @@ pub struct DegreeRecord {
     pub commit: String,
     pub profile: String,
     pub cores: Cores,
+    /// `hardware.load_width` of the client in bits (M10 records; ADR-0058 item 1, ADR-0060
+    /// item 2); `None` in earlier records.
+    pub load_width: Option<u32>,
     pub fallback_reason: Option<String>,
     pub node_load: Option<NodeLoad>,
 }
@@ -921,6 +934,7 @@ impl DegreeRecord {
             "commit": self.commit,
             "profile": self.profile,
             "cores": self.cores.to_json(),
+            "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
         })
@@ -972,6 +986,7 @@ impl DegreeRecord {
             commit: o.string("commit")?,
             profile: o.string("profile")?,
             cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
         })
@@ -1038,6 +1053,81 @@ fn strategy_named(name: &str) -> Option<String> {
     (STRATEGIES.contains(&name) || name == "policy").then(|| name.to_owned())
 }
 
+// ---------------------------------------------------------------------------------------------
+// M10 (docs/plans/M10.md; ADR-0057 to ADR-0060).
+
+/// The parts of the host-staged halo exchange that `halo_exchange` times (ADR-0059): the pack
+/// kernel, the device-to-host copy, the host neighbourhood all-to-all-v, the host-to-device copy,
+/// the unpack kernel, and the whole `Scatterer::forward` and `Scatterer::reverse` (`Add`).
+pub const HALO_PARTS: [&str; 7] = ["pack", "d2h", "mpi", "h2d", "unpack", "forward", "reverse"];
+
+/// One timed part of the host-staged halo exchange (`halo_exchange`, M10 T6; ADR-0059).
+///
+/// Each rank owns `owned_nodes` nodes of `block` values and ghosts `halo_nodes` nodes of another
+/// rank. Each timed run is followed by a device sync, and its time is the largest over the
+/// ranks; `times_s` holds the timed runs after `warmups` untimed ones.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HaloRecord {
+    pub backend: String,
+    pub device: String,
+    pub device_class: DeviceClass,
+    pub target: String,
+    pub scalar: Scalar,
+    /// MPI ranks of the run.
+    pub ranks: usize,
+    pub owned_nodes: usize,
+    pub halo_nodes: usize,
+    /// Values per node.
+    pub block: usize,
+    /// One of [`HALO_PARTS`].
+    pub part: String,
+    pub warmups: usize,
+    /// Every timed run, in seconds.
+    pub times_s: Vec<f64>,
+    pub median_s: f64,
+    pub commit: String,
+    pub profile: String,
+    pub cores: Cores,
+    /// `hardware.load_width` of the client in bits.
+    pub load_width: Option<u32>,
+    pub fallback_reason: Option<String>,
+    pub node_load: Option<NodeLoad>,
+}
+
+impl HaloRecord {
+    pub fn to_json(&self) -> Value {
+        todo!("M10 T6")
+    }
+
+    pub fn from_json(_v: &Value) -> Result<HaloRecord, String> {
+        todo!("M10 T6")
+    }
+}
+
+/// Every M10 record of a directory.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct M10Data {
+    /// `m10-vector-*.json`: the vector candidates (ADR-0060 item 2).
+    pub vector: Vec<SweepRecord>,
+    /// `m10-degree-*.json`: the degree check at p = 1, 4 and 8 and its re-measurements
+    /// (ADR-0060 item 3).
+    pub degree: Vec<DegreeRecord>,
+    /// `m10-throughput-*.json`.
+    pub throughput: Vec<ThroughputRecord>,
+    /// `m10-halo-*.json`.
+    pub halo: Vec<HaloRecord>,
+}
+
+/// The records of every `m10-*.json` file in `dir`.
+///
+/// # Errors
+///
+/// A message naming the file, for unreadable files, malformed records and `m10-` files of
+/// another kind.
+pub fn load_m10_dir(_dir: &Path) -> Result<M10Data, String> {
+    todo!("M10 T2")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1088,6 +1178,7 @@ mod tests {
             commit: "abc".to_owned(),
             profile: "release".to_owned(),
             cores: cores(),
+            load_width: None,
             fallback_reason: None,
             node_load: Some(NodeLoad {
                 before: "idle".to_owned(),
@@ -1116,6 +1207,7 @@ mod tests {
             commit: "abc".to_owned(),
             profile: "release".to_owned(),
             cores: cores(),
+            load_width: None,
             fallback_reason: Some("Kathleen drained".to_owned()),
             node_load: None,
         }
@@ -1252,6 +1344,7 @@ mod tests {
             commit: "abc".to_owned(),
             profile: "release".to_owned(),
             cores: cores(),
+            load_width: None,
             fallback_reason: None,
             node_load: Some(NodeLoad {
                 before: "idle".to_owned(),

@@ -700,6 +700,7 @@ impl PointSweep<'_> {
             commit: m.commit.clone(),
             profile: profile().to_owned(),
             cores: m.cores.clone(),
+            load_width: None,
             fallback_reason: self.options.fallback_reason.clone(),
             node_load: None,
         }

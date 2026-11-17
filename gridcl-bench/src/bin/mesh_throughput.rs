@@ -243,6 +243,7 @@ fn run(
                 commit: machine.commit.clone(),
                 profile: protocol::profile().to_owned(),
                 cores: machine.cores.clone(),
+                load_width: None,
                 fallback_reason: args.fallback_reason.clone(),
                 node_load: None,
             };

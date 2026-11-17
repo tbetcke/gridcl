@@ -10,6 +10,7 @@ mod counts;
 mod graph;
 mod hash;
 mod index_map;
+mod local_gpu;
 #[cfg(feature = "mpi")]
 mod mpi;
 mod scatterer;
@@ -19,6 +20,7 @@ pub use comm::{Comm, CommDyn, CommExt, CommScalar, DType, Neighbourhood};
 pub use gridcl_device::{GridError, ReduceOp, Result};
 pub use hash::owner_hash;
 pub use index_map::IndexMap;
+pub use local_gpu::local_gpu_index;
 #[cfg(feature = "mpi")]
 pub use mpi::Mpi;
 pub use scatterer::{ReverseOp, ScatterNumeric, Scatterer, Transport};

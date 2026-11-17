@@ -371,8 +371,15 @@ type PolicyKey = (String, String, String, usize);
 struct Policy(BTreeMap<PolicyKey, Vec<(u32, String)>>);
 
 fn policy() -> Policy {
-    let text = read("gridcl-geometry/degree-policy.toml");
-    let value: toml::Table = text.parse().expect("degree-policy.toml is TOML");
+    policy_at("gridcl-geometry/degree-policy.toml")
+}
+
+/// The degree policy in the file `path` (relative to the workspace).
+fn policy_at(path: &str) -> Policy {
+    let text = read(path);
+    let value: toml::Table = text
+        .parse()
+        .unwrap_or_else(|e| panic!("{path} is not TOML: {e}"));
     let mut out = BTreeMap::new();
     for (class, families) in &value {
         let families = families
@@ -418,12 +425,12 @@ impl Policy {
         cell: &str,
         bytes: usize,
     ) -> &[(u32, String)] {
-        let key = (
-            format!("{class:?}"),
-            family.to_owned(),
-            cell.to_owned(),
-            bytes,
-        );
+        self.ranges_of(&format!("{class:?}"), family, cell, bytes)
+    }
+
+    /// The ranges of the class named `class`.
+    fn ranges_of(&self, class: &str, family: &str, cell: &str, bytes: usize) -> &[(u32, String)] {
+        let key = (class.to_owned(), family.to_owned(), cell.to_owned(), bytes);
         self.0
             .get(&key)
             .unwrap_or_else(|| panic!("degree-policy.toml has no entry {key:?}"))
@@ -438,14 +445,24 @@ impl Policy {
         bytes: usize,
         degree: u32,
     ) -> &str {
-        self.ranges(class, family, cell, bytes)
+        self.strategy_of(&format!("{class:?}"), family, cell, bytes, degree)
+    }
+
+    /// The strategy of `degree` in the class named `class`.
+    fn strategy_of(
+        &self,
+        class: &str,
+        family: &str,
+        cell: &str,
+        bytes: usize,
+        degree: u32,
+    ) -> &str {
+        self.ranges_of(class, family, cell, bytes)
             .iter()
             .rev()
             .find(|(first, _)| *first <= degree)
             .map(|(_, s)| s.as_str())
-            .unwrap_or_else(|| {
-                panic!("{class:?}.{family}.{cell}.{bytes}: no range holds p={degree}")
-            })
+            .unwrap_or_else(|| panic!("{class}.{family}.{cell}.{bytes}: no range holds p={degree}"))
     }
 }
 
@@ -1208,6 +1225,581 @@ fn degree_policy_follows_the_decision_rule() {
                             got, want,
                             "{at}: policy {got}, decision rule {want} ({ratios:?})"
                         );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================================
+// M10 (docs/design.md, Roadmap M10, bullets 2 to 5, read as in ADR-0057, ADR-0058 and ADR-0060):
+// the degree check at p = 1, 4 and 8 under `docs/perf/data/m10-degree-*.json`, the generic degree
+// policy and M10's section of `docs/perf/high-order.md`.
+
+use gridcl_bench::candidates::degree_candidates;
+use gridcl_bench::decide_generic::decide_degree;
+use gridcl_bench::record::{M10Data, load_m10_dir};
+use gridcl_bench::report::{M10_BEGIN_MARKER, M10_END_MARKER};
+
+/// The degrees M10 measures (ADR-0057, ADR-0058 item 5).
+const M10_DEGREES: [u32; 3] = [1, 4, 8];
+
+/// The rule sizes of the candidate protocol, on every platform (ADR-0057 item 3).
+const M10_SIZES: [usize; 2] = [1_000_000, 10_000_000];
+
+/// Timed runs of the candidate protocol.
+const M10_RUNS: usize = 5;
+
+fn m10() -> M10Data {
+    let dir = root().join("docs/perf/data");
+    load_m10_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+}
+
+/// The M10 degree records; panics if there are none.
+fn m10_degree(data: &M10Data) -> &[DegreeRecord] {
+    assert!(
+        !data.degree.is_empty(),
+        "no M10 degree records (m10-degree-*.json) under docs/perf/data/"
+    );
+    &data.degree
+}
+
+/// The `DeviceClass` named `name` (`Cpu` or `Gpu`).
+fn device_class(name: &str) -> DeviceClass {
+    gridcl_bench::record::class_named(name).unwrap_or_else(|| panic!("no device class {name}"))
+}
+
+/// The name of a record's class, `Cpu` or `Gpu`.
+fn class_name(class: &impl std::fmt::Debug) -> String {
+    format!("{class:?}").trim_matches('"').to_owned()
+}
+
+/// M10's platforms (ADR-0058 item 3) as (target, backend, class), Grace included; a Myriad D
+/// node for Kathleen and Myriad's A100 or V100 for the H100 only where the primary target has
+/// no record (ADR-0014, ADR-0016).
+fn m10_platforms(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, &'static str)> {
+    let present = |t: &str, b: &str| records.iter().any(|r| r.target == t && r.backend == b);
+    let pick = |primary: &'static str, backend: &str, fallbacks: &[&'static str]| {
+        if present(primary, backend) {
+            return primary;
+        }
+        fallbacks
+            .iter()
+            .copied()
+            .find(|t| present(t, backend))
+            .unwrap_or(primary)
+    };
+    vec![
+        ("macmini", "cpu", "Cpu"),
+        ("macmini", "metal", "Gpu"),
+        ("locust", "cpu", "Cpu"),
+        (
+            pick("locust", "cuda", &["myriad-a100", "myriad-v100"]),
+            "cuda",
+            "Gpu",
+        ),
+        (pick("kathleen", "cpu", &["myriad-cpu"]), "cpu", "Cpu"),
+    ]
+}
+
+/// The platforms of `class` that measure `scalar`.
+fn m10_devices(
+    records: &[DegreeRecord],
+    class: &str,
+    scalar: Scalar,
+) -> Vec<(&'static str, &'static str)> {
+    m10_platforms(records)
+        .into_iter()
+        .filter(|&(_, b, c)| c == class && scalars_of(b).contains(&scalar))
+        .map(|(t, b, _)| (t, b))
+        .collect()
+}
+
+/// The M10 degrees of a cell: p = 1, 4 and 8, pyramids at p = 1 only.
+fn m10_degrees(cell: &str) -> Vec<u32> {
+    if cell == "Pyramid" {
+        vec![1]
+    } else {
+        M10_DEGREES.to_vec()
+    }
+}
+
+/// The candidate protocol of every M10 degree record: release builds, five timed runs,
+/// interleaved on CPUs (ADR-0055), the class of its backend, `load_width` and the core counts
+/// (ADR-0060 item 2), idle Locust, one Kathleen socket, a fallback reason on Myriad, no A4000.
+fn check_m10_protocol(records: &[DegreeRecord]) {
+    for r in records {
+        let what = describe(r);
+        assert_eq!(r.profile, "release", "{what}: record release builds only");
+        let class = if r.backend == "cpu" { "Cpu" } else { "Gpu" };
+        assert_eq!(class_name(&r.device_class), class, "{what}: device class");
+        assert!(r.load_width.is_some(), "{what}: no load_width");
+        assert_ne!(
+            r.target, "a4000",
+            "{what}: the A4000 does not vote (ADR-0037)"
+        );
+        if r.target.starts_with("myriad-") {
+            assert!(
+                r.fallback_reason.as_deref().is_some_and(|s| !s.is_empty()),
+                "{what}: a Myriad record needs a fallback_reason (ADR-0016)"
+            );
+        }
+        if r.launch_only || r.status != "ok" {
+            continue;
+        }
+        assert_eq!(r.times_s.len(), M10_RUNS, "{what}: five timed runs");
+        if r.backend == "cpu" {
+            assert!(r.interleaved, "{what}: CPU runs are interleaved (ADR-0055)");
+        }
+        check_idle(r, &what);
+        if r.target == "kathleen" {
+            assert_eq!(
+                r.cores.threads, 20,
+                "{what}: not bound to one socket (ADR-0020)"
+            );
+        }
+    }
+}
+
+/// The old classes whose M9h choices a Cpu or Gpu entry measures (CpuSimd256 had CpuSimd512's
+/// table).
+fn old_classes(class: &str) -> &'static [&'static str] {
+    if class == "Cpu" {
+        &["CpuSimd128", "CpuSimd512"]
+    } else {
+        &["Gpu"]
+    }
+}
+
+/// The baseline strategy at `degree`: `direct`, or `loops` where the sweep leaves `direct` out
+/// (ADR-0050).
+fn baseline(cell: &str, degree: u32) -> &'static str {
+    if swept(cell, degree, "direct") {
+        "direct"
+    } else {
+        "loops"
+    }
+}
+
+/// Bullet 4 (ADR-0057 item 3, ADR-0060 items 2 and 3): every degree-dependent bench family, cell
+/// type and scalar type is measured on every M10 platform at p = 1, 4 and 8 (pyramids at p = 1)
+/// and at 10^6 and 10^7 points, with its candidates: the baseline, the M9h choices of the old
+/// classes of its class (`history/degree-policy-pre-m10.toml`) and every strategy of
+/// `candidates::degree_candidates`. A failed or too slow strategy is a record too.
+#[test]
+fn m10_degree_check_covers_p1_4_8_on_every_platform() {
+    let data = m10();
+    let records = m10_degree(&data);
+    let history = policy_at("gridcl-bench/history/degree-policy-pre-m10.toml");
+    check_m10_protocol(records);
+    for (target, backend, class) in m10_platforms(records) {
+        for scalar in scalars_of(backend) {
+            let bytes = scalar.bytes();
+            for family in DEGREE_FAMILIES {
+                let pf = policy_family(family);
+                for &cell in cells_of(family) {
+                    for degree in m10_degrees(cell) {
+                        let mut want: Vec<&str> = vec![baseline(cell, degree)];
+                        for old in old_classes(class) {
+                            want.push(history.strategy_of(old, pf, cell, bytes, degree));
+                        }
+                        want.extend(degree_candidates(
+                            device_class(class),
+                            pf,
+                            cell,
+                            bytes,
+                            degree,
+                        ));
+                        for size in M10_SIZES {
+                            for iterations in iterations_of(family) {
+                                let c = Config {
+                                    target,
+                                    backend,
+                                    family,
+                                    cell,
+                                    degree,
+                                    scalar,
+                                    size,
+                                    iterations,
+                                };
+                                for &s in &want {
+                                    assert!(
+                                        records.iter().any(|r| c.matches(r) && r.strategy == s),
+                                        "{target} {backend} ({class}): no {s} record of {c:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The time per point of the summed `members` with strategy `s` on one platform at `size`, from
+/// `ok` records that ran `s` itself (`strategy_ran`), if every member has one.
+#[allow(clippy::too_many_arguments)]
+fn m10_time(
+    records: &[DegreeRecord],
+    (target, backend): (&str, &str),
+    members: &[(&str, Option<u32>)],
+    cell: &str,
+    degree: u32,
+    scalar: Scalar,
+    size: usize,
+    s: &str,
+) -> Option<f64> {
+    members
+        .iter()
+        .map(|&(family, iterations)| {
+            let c = Config {
+                target,
+                backend,
+                family,
+                cell,
+                degree,
+                scalar,
+                size,
+                iterations,
+            };
+            time(records, c, |r| r.strategy == s && r.strategy_ran == s)
+        })
+        .sum()
+}
+
+/// The bench families a policy family's time sums: J + det J + K for `Jacobian`, the pull-back
+/// at nine iterations for `PullBack`.
+fn policy_members(family: &str) -> Vec<(&str, Option<u32>)> {
+    match family {
+        "Jacobian" => vec![("Jacobian", None), ("DetJ", None), ("Pinv", None)],
+        "PullBack" => vec![("PullBack", Some(9))],
+        f => vec![(f, None)],
+    }
+}
+
+/// M10's generated section of `docs/perf/high-order.md`.
+fn m10_high_order_section() -> String {
+    let text = read("docs/perf/high-order.md");
+    let begin = text
+        .find(M10_BEGIN_MARKER)
+        .expect("docs/perf/high-order.md has no M10 BEGIN marker")
+        + M10_BEGIN_MARKER.len();
+    let end = text[begin..]
+        .find(M10_END_MARKER)
+        .expect("docs/perf/high-order.md has no M10 END marker")
+        + begin;
+    text[begin..end].trim().to_owned()
+}
+
+/// Bullet 5 (ADR-0058, ADR-0060 item 3): `degree-policy.toml` holds `[Cpu.<family>]` and
+/// `[Gpu.<family>]` only, is what `decide_generic` writes from M10's records at p = 1, 4 and 8
+/// and M9h's in between, its ranges are maximal runs starting at p = 1 whose last is not
+/// `direct`, and at p = 1, 4 and 8 every entry follows the generic rule, recomputed here from
+/// the M10 records: a family's time as in M9h (J + det J + K; the pull-back at nine iterations;
+/// records that ran the strategy itself); a strategy that failed or took over 30 s to compile
+/// on a platform of the class is not selectable (ADR-0056); admission at 10% over the baseline
+/// by the geometric mean over the platforms at each size; the bound r ≤ 1.25 on every platform
+/// and size; the smallest geometric mean of r, the simplest within 3%; otherwise the smallest
+/// worst case, which the report marks.
+#[test]
+fn degree_policy_follows_the_generic_rule() {
+    let data = m10();
+    let records = m10_degree(&data);
+    let m9h = self::data();
+    let text = read("gridcl-geometry/degree-policy.toml");
+    assert_eq!(
+        text,
+        decide_degree(&m9h, &data).to_toml(),
+        "degree-policy.toml differs from the generic rule: run high_order_report"
+    );
+    let policy = policy();
+    let section = m10_high_order_section();
+    let classes: BTreeSet<&str> = policy.0.keys().map(|k| k.0.as_str()).collect();
+    assert_eq!(
+        classes,
+        BTreeSet::from(["Cpu", "Gpu"]),
+        "degree-policy.toml classes"
+    );
+    for ((class, family, cell, bytes), ranges) in &policy.0 {
+        let at = format!("{class}.{family}.{cell}.{bytes}");
+        assert!([4, 8].contains(bytes), "{at}: scalar size");
+        assert_eq!(
+            ranges.first().map(|r| r.0),
+            Some(1),
+            "{at}: ranges start at p = 1"
+        );
+        for w in ranges.windows(2) {
+            assert!(w[0].0 < w[1].0, "{at}: ranges not ascending");
+            assert!(
+                w[0].1 != w[1].1,
+                "{at}: two adjacent ranges choose {}",
+                w[0].1
+            );
+        }
+        assert_ne!(
+            ranges.last().map(|r| r.1.as_str()),
+            Some("direct"),
+            "{at}: the open-ended last range must compile at p = 9–10 (loops or better)"
+        );
+    }
+    let geomean = |v: &[f64]| (v.iter().map(|x| x.ln()).sum::<f64>() / v.len() as f64).exp();
+    for class in ["Cpu", "Gpu"] {
+        for (scalar, bytes) in SCALARS {
+            let devices = m10_devices(records, class, scalar);
+            if devices.is_empty() {
+                continue;
+            }
+            for family in POLICY_FAMILIES {
+                let members = policy_members(family);
+                for &cell in cells_of(family) {
+                    for degree in m10_degrees(cell) {
+                        let at = format!("{class} {family} {cell} p={degree} {}", scalar.name());
+                        let t = |d: (&str, &str), size, s: &str| {
+                            m10_time(records, d, &members, cell, degree, scalar, size, s)
+                        };
+                        let first_use = |s: &str| {
+                            records.iter().all(|r| {
+                                !(devices.contains(&(r.target.as_str(), r.backend.as_str()))
+                                    && r.strategy == s
+                                    && r.cell == cell
+                                    && r.degree == degree
+                                    && r.scalar == scalar
+                                    && members.iter().any(|&(f, _)| f == r.family))
+                                    || (r.status == "ok" && r.compile_s <= 30.0)
+                            })
+                        };
+                        let selectable = |s: &str| {
+                            first_use(s)
+                                && devices
+                                    .iter()
+                                    .all(|&d| M10_SIZES.iter().all(|&n| t(d, n, s).is_some()))
+                        };
+                        let cand: Vec<&str> = candidates(device_class(class))
+                            .iter()
+                            .copied()
+                            .filter(|&s| selectable(s))
+                            .collect();
+                        let base = if cand.contains(&"direct") {
+                            "direct"
+                        } else {
+                            assert!(
+                                cand.contains(&"loops"),
+                                "{at}: neither direct nor loops ran"
+                            );
+                            "loops"
+                        };
+                        // r(s, d, n), in the order of `devices` × `M10_SIZES`.
+                        let r = |s: &str| -> Vec<f64> {
+                            let mut out = Vec::new();
+                            for &d in &devices {
+                                for &n in &M10_SIZES {
+                                    let fastest = cand
+                                        .iter()
+                                        .map(|&c| t(d, n, c).unwrap())
+                                        .fold(f64::INFINITY, f64::min);
+                                    out.push(t(d, n, s).unwrap() / fastest);
+                                }
+                            }
+                            out
+                        };
+                        let admitted: Vec<&str> = cand
+                            .iter()
+                            .copied()
+                            .filter(|&s| {
+                                s == base
+                                    || M10_SIZES.iter().all(|&n| {
+                                        let v: Vec<f64> = devices
+                                            .iter()
+                                            .map(|&d| t(d, n, s).unwrap() / t(d, n, base).unwrap())
+                                            .collect();
+                                        geomean(&v) <= 1.0 / 1.10 * (1.0 + 1e-12)
+                                    })
+                            })
+                            .collect();
+                        let worst = |s: &str| r(s).into_iter().fold(0.0, f64::max);
+                        let kept: Vec<&str> = admitted
+                            .iter()
+                            .copied()
+                            .filter(|&s| worst(s) <= 1.25 * (1.0 + 1e-12))
+                            .collect();
+                        let rank = |s: &str| STRATEGIES.iter().position(|&x| x == s).unwrap();
+                        let (want, fallback) = if kept.is_empty() {
+                            let s = admitted
+                                .iter()
+                                .copied()
+                                .min_by(|&a, &b| {
+                                    worst(a).total_cmp(&worst(b)).then(rank(a).cmp(&rank(b)))
+                                })
+                                .expect("the baseline is admitted");
+                            (s, true)
+                        } else {
+                            let g = |s: &str| geomean(&r(s));
+                            let best = kept.iter().map(|&s| g(s)).fold(f64::INFINITY, f64::min);
+                            let s = kept
+                                .iter()
+                                .copied()
+                                .filter(|&s| g(s) <= 1.03 * best * (1.0 + 1e-12))
+                                .min_by_key(|&s| rank(s))
+                                .unwrap();
+                            (s, false)
+                        };
+                        let got = policy.strategy_of(class, family, cell, bytes, degree);
+                        assert_eq!(got, want, "{at}: policy {got}, generic rule {want}");
+                        if fallback {
+                            let prefix = format!("| {class} | {family} | {cell} | {bytes} |");
+                            assert!(
+                                section
+                                    .lines()
+                                    .any(|l| l.starts_with(&prefix) && l.contains("worst case")),
+                                "{at}: no strategy meets the bound, and high-order.md does not \
+                                 mark the entry with its worst case"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Bullet 2 (ADR-0042 item 1, ADR-0060 item 5): on quadrilaterals and hexahedra, per platform,
+/// scalar type, family and rule size, the time per point at p = 8 over p = 4 under the generic
+/// policy (each degree's own choice) is at most its bound (3 for the factors and the
+/// pull-back's set-up; 1.1 · (9/5)^d for a Newton step, step = (t(9) − t(1)) / 8, set-up =
+/// t(1) − step), or the gap is reported with its cause. Every ratio, recomputed here, appears in
+/// M10's section of `docs/perf/high-order.md` as a row `| target backend | scalar | cell |
+/// family | part | s4 / s8 | 10^k | ratio | bound | cause |`, with a cause for each miss.
+#[test]
+fn tensor_cost_ratio_within_bound_or_reported() {
+    let data = m10();
+    let records = m10_degree(&data);
+    let policy = policy();
+    let section = m10_high_order_section();
+    let rows: Vec<Vec<&str>> = section.lines().filter_map(row_cells).collect();
+    let factors = ["Points", "Jacobian", "DetJ", "Pinv", "FacetNormals"];
+    for (target, backend, class) in m10_platforms(records) {
+        for scalar in scalars_of(backend) {
+            let bytes = scalar.bytes();
+            for (cell, d) in [("Quadrilateral", 2), ("Hexahedron", 3)] {
+                let mut families: Vec<&str> = factors.to_vec();
+                if cell == "Quadrilateral" {
+                    families.push("Normals");
+                }
+                families.push("PullBack");
+                for family in families {
+                    let pf = policy_family(family);
+                    let s4 = policy.strategy_of(class, pf, cell, bytes, 4);
+                    let s8 = policy.strategy_of(class, pf, cell, bytes, 8);
+                    for size in M10_SIZES {
+                        let what = format!(
+                            "{target} {backend} {} {family} {cell} {s4}/{s8} at {size} points",
+                            scalar.name()
+                        );
+                        let t = |degree, iterations| {
+                            let c = Config {
+                                target,
+                                backend,
+                                family,
+                                cell,
+                                degree,
+                                scalar,
+                                size,
+                                iterations,
+                            };
+                            let s = if degree == 4 { s4 } else { s8 };
+                            time(records, c, |r| r.strategy == s)
+                                .unwrap_or_else(|| panic!("{what}: no record of {c:?} with {s}"))
+                        };
+                        let mut parts: Vec<(&str, f64, f64)> = Vec::new();
+                        if family == "PullBack" {
+                            let step = |p| (t(p, Some(9)) - t(p, Some(1))) / 8.0;
+                            let setup = |p| t(p, Some(1)) - step(p);
+                            parts.push(("step", step(8) / step(4), 1.1 * (9.0f64 / 5.0).powi(d)));
+                            parts.push(("set-up", setup(8) / setup(4), 3.0));
+                        } else {
+                            parts.push(("factor", t(8, None) / t(4, None), 3.0));
+                        }
+                        for (part, ratio, bound) in parts {
+                            let platform = format!("{target} {backend}");
+                            let strategies = format!("{s4} / {s8}");
+                            let points = format!("10^{}", size.ilog10());
+                            let ratio_s = format!("{ratio:.2}");
+                            let bound_s = format!("{bound:.2}");
+                            let want = [
+                                platform.as_str(),
+                                scalar.name(),
+                                cell,
+                                family,
+                                part,
+                                &strategies,
+                                &points,
+                                &ratio_s,
+                                &bound_s,
+                            ];
+                            let row = rows
+                                .iter()
+                                .find(|r| r.len() >= 10 && r[..9] == want)
+                                .unwrap_or_else(|| {
+                                    panic!("high-order.md: no M10 row {want:?} ({what})")
+                                });
+                            if ratio > bound {
+                                assert!(
+                                    !row[9].is_empty() && row[9] != "–" && row[9] != "-",
+                                    "{what}: {part} ratio {ratio:.2} above {bound:.2} without a \
+                                     cause"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// ADR-0056 under the generic policy: every choice at p = 1, 4 and 8 (pyramids at p = 1) has
+/// records on every platform of its class, all of which ran and took at most 30 s to compile and
+/// load at first use.
+#[test]
+fn m10_policy_first_use_within_30_s() {
+    let data = m10();
+    let records = m10_degree(&data);
+    let policy = policy();
+    for class in ["Cpu", "Gpu"] {
+        for (scalar, bytes) in SCALARS {
+            let devices = m10_devices(records, class, scalar);
+            for family in DEGREE_FAMILIES {
+                for &cell in cells_of(family) {
+                    for degree in m10_degrees(cell) {
+                        let s =
+                            policy.strategy_of(class, policy_family(family), cell, bytes, degree);
+                        let what =
+                            format!("{class} {family} {cell} p={degree} {} {s}", scalar.name());
+                        for &(target, backend) in &devices {
+                            let of: Vec<&DegreeRecord> = records
+                                .iter()
+                                .filter(|r| {
+                                    r.target == target
+                                        && r.backend == backend
+                                        && r.family == family
+                                        && r.cell == cell
+                                        && r.degree == degree
+                                        && r.scalar == scalar
+                                        && r.strategy == s
+                                })
+                                .collect();
+                            assert!(!of.is_empty(), "{what}: no record on {target} {backend}");
+                            for r in of {
+                                assert!(
+                                    r.status == "ok" && r.compile_s <= 30.0,
+                                    "{what} on {target} {backend}: status {}, first use {:.1} s",
+                                    r.status,
+                                    r.compile_s
+                                );
+                            }
+                        }
                     }
                 }
             }

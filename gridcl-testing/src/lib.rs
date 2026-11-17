@@ -65,6 +65,25 @@ pub fn test_client() -> Client {
     }
 }
 
+/// The client of GPU `index` of the backend `GRIDCL_TEST_DEVICE` names, for a rank that opens
+/// the GPU of [`gridcl::local_gpu_index`] (ADR-0060 item 1): `Device::cuda(index)` and
+/// `Device::rocm(index)` on CUDA and HIP; the other backends ignore `index` and open the device
+/// of [`test_client`].
+///
+/// # Panics
+///
+/// As [`test_client`], and if the machine has no GPU `index`.
+///
+/// # Example
+///
+/// ```
+/// let client = gridcl_testing::test_client_at(0);
+/// assert!(client.properties().hardware.max_bindings >= 6);
+/// ```
+pub fn test_client_at(_index: usize) -> Client {
+    todo!("M10 T4")
+}
+
 /// The client of the CPU runtime, whatever `GRIDCL_TEST_DEVICE` says: the f64 side of f32-vs-f64
 /// comparisons on devices without f64 (docs/plans/M3.md, question 15).
 ///
