@@ -46,6 +46,116 @@ pub fn render_m10_vector(
     todo!("M10 T8")
 }
 
+/// The bounds of M10 bullet 1 at 10^5 halo nodes (ADR-0059, ADR-0061).
+pub const HALO_BOUND_NODES: usize = 100_000;
+/// `h2d ≤ H2D_BOUND × d2h` on Metal and CUDA.
+pub const H2D_BOUND: f64 = 1.5;
+/// `reverse ≤ REVERSE_BOUND × forward` on every platform.
+pub const REVERSE_BOUND: f64 = 2.0;
+/// The cause of the CPU runtime's upload ratio (ADR-0061).
+pub const CPU_H2D_CAUSE: &str = "the CPU runtime's read returns a view of its storage, so \
+    `to_host` is one copy and `write_host` at least two (ADR-0061)";
+
+/// M10's tables of `docs/perf/halo-exchange.md` from the `m10-halo-*.json` records (the last
+/// record of a part wins): per (target, backend, type, ranks) the median of each part in µs at
+/// each halo size, then one row per platform at 10^5 nodes,
+/// `| target backend | type | ranks | d2h µs | h2d µs | h2d / d2h | reverse / forward | bound | cause |`.
+pub fn render_m10_halo(records: &[crate::record::HaloRecord]) -> String {
+    type Key = (String, String, &'static str, usize);
+    let mut medians: BTreeMap<Key, BTreeMap<(usize, &str), f64>> = BTreeMap::new();
+    let mut about: BTreeMap<Key, (String, String)> = BTreeMap::new();
+    for r in records {
+        let key = (
+            r.target.clone(),
+            r.backend.clone(),
+            r.scalar.name(),
+            r.ranks,
+        );
+        let part = crate::record::HALO_PARTS
+            .iter()
+            .find(|p| **p == r.part)
+            .copied()
+            .unwrap_or("?");
+        medians
+            .entry(key.clone())
+            .or_default()
+            .insert((r.halo_nodes, part), r.median_s);
+        let commit: String = r.commit.chars().take(12).collect();
+        about.insert(key, (r.device.clone(), commit));
+    }
+    let us = |t: Option<&f64>| t.map_or("–".to_owned(), |t| format!("{:.1}", t * 1e6));
+    let mut out = String::new();
+    for (key, times) in &medians {
+        let (target, backend, scalar, ranks) = key;
+        let (device, commit) = &about[key];
+        let halos: BTreeSet<usize> = times.keys().map(|(h, _)| *h).collect();
+        let _ = writeln!(
+            out,
+            "**{target} {backend}, {scalar}, {ranks} rank{}** ({device}; commit {commit}). \
+             Median µs:\n",
+            if *ranks == 1 { "" } else { "s" }
+        );
+        let heads: String = halos.iter().map(|h| format!(" {h} |")).collect();
+        let rules: String = halos.iter().map(|_| " ---: |").collect();
+        let _ = writeln!(out, "| part |{heads}\n| --- |{rules}");
+        for part in crate::record::HALO_PARTS {
+            if !times.keys().any(|(_, p)| *p == part) {
+                continue;
+            }
+            let cells: String = halos
+                .iter()
+                .map(|h| format!(" {} |", us(times.get(&(*h, part)))))
+                .collect();
+            let _ = writeln!(out, "| {part} |{cells}");
+        }
+        out.push('\n');
+    }
+    let _ = writeln!(
+        out,
+        "At {HALO_BOUND_NODES} halo nodes:\n\n\
+         | target backend | type | ranks | d2h µs | h2d µs | h2d / d2h | reverse / forward | \
+         bound | cause |\n\
+         | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |"
+    );
+    for (key, times) in &medians {
+        let (target, backend, scalar, ranks) = key;
+        let at = |part| times.get(&(HALO_BOUND_NODES, part)).copied();
+        let ratio = |a: Option<f64>, b: Option<f64>| a.zip(b).map(|(a, b)| a / b);
+        let fmt = |r: Option<f64>| r.map_or("–".to_owned(), |r| format!("{r:.2}"));
+        let h2d = ratio(at("h2d"), at("d2h"));
+        let rev = ratio(at("reverse"), at("forward"));
+        let cpu = backend == "cpu";
+        let bound = if cpu {
+            format!("reverse ≤ {REVERSE_BOUND} × forward; h2d reported")
+        } else {
+            format!("h2d ≤ {H2D_BOUND} × d2h; reverse ≤ {REVERSE_BOUND} × forward")
+        };
+        let mut causes = Vec::new();
+        if cpu {
+            causes.push(CPU_H2D_CAUSE.to_owned());
+        } else if h2d.is_some_and(|r| r > H2D_BOUND) {
+            causes.push("h2d over the bound".to_owned());
+        }
+        if rev.is_some_and(|r| r > REVERSE_BOUND) {
+            causes.push("reverse over the bound".to_owned());
+        }
+        let cause = if causes.is_empty() {
+            "–".to_owned()
+        } else {
+            causes.join("; ")
+        };
+        let _ = writeln!(
+            out,
+            "| {target} {backend} | {scalar} | {ranks} | {} | {} | {} | {} | {bound} | {cause} |",
+            us(at("d2h").as_ref()),
+            us(at("h2d").as_ref()),
+            fmt(h2d),
+            fmt(rev),
+        );
+    }
+    out
+}
+
 /// The scalar types of the report's rows for `kind`: the sweep's, or f32 and f64 for the
 /// families without a kernel yet (Pack, PullBack).
 fn row_scalars(kind: KernelKind) -> Vec<Scalar> {
