@@ -19,7 +19,7 @@
 
 use gridcl_device::{CpuUnits, DeviceClass, KernelKind};
 
-use crate::record::{LegacyClass, Scalar};
+use crate::record::{LegacyClass, STRATEGIES, Scalar};
 
 /// Every kind of the vector policy with the scalar types the candidate protocol measures it
 /// in, in the order of `vector-policy.toml`: the M3s families (`families::families`) with Pack
@@ -257,20 +257,137 @@ pub fn vector_candidates(
     out
 }
 
+/// The frozen pre-M10 degree policy (ADR-0060 item 2).
+pub const HISTORY_DEGREE_TOML: &str = include_str!("../history/degree-policy-pre-m10.toml");
+/// The live degree policy, as compiled into this crate.
+pub const DEGREE_POLICY_TOML: &str = include_str!("../../gridcl-geometry/degree-policy.toml");
+
+/// The strategy of (`family`, `cell`, `bytes`) at `degree` in the table `table` of the
+/// degree-policy text `text`: the last range whose first degree is at most `degree`.
+///
+/// # Errors
+///
+/// If the text does not parse, the table lacks the entry, or a range is malformed or names an
+/// unknown strategy.
+pub fn table_strategy(
+    text: &str,
+    table: &str,
+    family: &str,
+    cell: &str,
+    bytes: usize,
+    degree: u32,
+) -> Result<&'static str, String> {
+    let policy: toml::Table = text.parse().map_err(|e| format!("{e}"))?;
+    let what = format!("[{table}.{family}] {cell} {bytes}");
+    let ranges = policy
+        .get(table)
+        .and_then(|t| t.get(family))
+        .and_then(|f| f.get(cell))
+        .and_then(|c| c.get(bytes.to_string()))
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| format!("{what}: no entry"))?;
+    let mut strategy = None;
+    for range in ranges {
+        let pair = range
+            .as_array()
+            .filter(|p| p.len() == 2)
+            .ok_or_else(|| format!("{what}: range {range}"))?;
+        let first = pair[0]
+            .as_integer()
+            .ok_or_else(|| format!("{what}: first degree {}", pair[0]))?;
+        let name = pair[1]
+            .as_str()
+            .ok_or_else(|| format!("{what}: strategy {}", pair[1]))?;
+        let s = STRATEGIES
+            .iter()
+            .copied()
+            .find(|&s| s == name)
+            .ok_or_else(|| format!("{what}: unknown strategy {name}"))?;
+        if first <= i64::from(degree) {
+            strategy = Some(s);
+        }
+    }
+    strategy.ok_or_else(|| format!("{what}: no range holds p = {degree}"))
+}
+
+/// The baseline strategy of a degree-policy entry at `degree` (ADR-0057 item 3): `direct`, or
+/// `loops` where the sweep leaves `direct` out (tetrahedra, hexahedra and prisms at p ≥ 5,
+/// ADR-0050). Where `direct` is measured but fails or takes over 30 s to compile and load,
+/// `degree_sweep --candidates` adds `loops` (ADR-0056).
+pub fn degree_baseline(cell: &str, degree: u32) -> &'static str {
+    if degree >= 5 && matches!(cell, "Tetrahedron" | "Hexahedron" | "Prism") {
+        "loops"
+    } else {
+        "direct"
+    }
+}
+
+/// The M9h choice of the old class `old` for (`family`, `cell`, `bytes`) at `degree`, from the
+/// frozen policy.
+pub fn history_strategy(
+    old: LegacyClass,
+    family: &str,
+    cell: &str,
+    bytes: usize,
+    degree: u32,
+) -> &'static str {
+    table_strategy(
+        HISTORY_DEGREE_TOML,
+        &format!("{old:?}"),
+        family,
+        cell,
+        bytes,
+        degree,
+    )
+    .unwrap_or_else(|e| panic!("gridcl-bench/history/degree-policy-pre-m10.toml: {e}"))
+}
+
+/// The strategy the live degree policy names for (`class`, `family`, `cell`, `bytes`) at
+/// `degree`.
+pub fn policy_strategy(
+    class: DeviceClass,
+    family: &str,
+    cell: &str,
+    bytes: usize,
+    degree: u32,
+) -> &'static str {
+    table_strategy(
+        DEGREE_POLICY_TOML,
+        &format!("{class:?}"),
+        family,
+        cell,
+        bytes,
+        degree,
+    )
+    .unwrap_or_else(|e| panic!("gridcl-geometry/degree-policy.toml: {e}"))
+}
+
 /// The candidate strategies of the degree-policy entry (`class`, policy `family`, `cell`,
-/// `bytes`) at `degree`, baseline first.
+/// `bytes`) at `degree`, baseline first, each once: the baseline ([`degree_baseline`]), the M9h
+/// choices of the class's old classes ([`old_classes`]) and the live policy's choice.
 pub fn degree_candidates(
-    _class: DeviceClass,
-    _family: &str,
-    _cell: &str,
-    _bytes: usize,
-    _degree: u32,
+    class: DeviceClass,
+    family: &str,
+    cell: &str,
+    bytes: usize,
+    degree: u32,
 ) -> Vec<&'static str> {
-    todo!("M10 T2b")
+    let mut out = vec![degree_baseline(cell, degree)];
+    let history = old_classes(class)
+        .iter()
+        .map(|&old| history_strategy(old, family, cell, bytes, degree));
+    for s in history.chain([policy_strategy(class, family, cell, bytes, degree)]) {
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::decide::decide;
     use crate::record::{KINDS, load_dir};
@@ -375,6 +492,96 @@ mod tests {
                 units: None,
             }
         );
+    }
+
+    /// The history strategies are the unchanged M9h rule's choices on the committed records
+    /// (ADR-0060 item 2), at every degree of every entry of every old class.
+    #[test]
+    fn history_strategies_are_the_m9h_choices_of_the_committed_records() {
+        use crate::decide_degree::{POLICY_FAMILIES, SCALARS, cells_of, max_degree};
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/perf/data");
+        let data = crate::record::load_high_order_dir(&dir).unwrap();
+        let d = crate::decide_degree::decide_degree(&data);
+        for old in LegacyClass::ALL {
+            for family in POLICY_FAMILIES {
+                for &cell in cells_of(family) {
+                    for (scalar, bytes) in SCALARS {
+                        let e = d.entry(old, family, cell, scalar).expect("an entry");
+                        for p in 1..=max_degree(cell) + 2 {
+                            assert_eq!(
+                                history_strategy(old, family, cell, bytes, p),
+                                e.strategy(p),
+                                "{old:?} {family} {cell} {bytes} p={p}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The expected sets: the baseline first, then the M9h choices of the old classes and the
+    /// live policy's, each once.
+    #[test]
+    fn degree_candidates_are_the_baseline_history_and_policy() {
+        use crate::decide_degree::{POLICY_FAMILIES, SCALARS, cells_of, max_degree};
+        for class in [DeviceClass::Cpu, DeviceClass::Gpu] {
+            for family in POLICY_FAMILIES {
+                for &cell in cells_of(family) {
+                    for (_, bytes) in SCALARS {
+                        for p in 1..=max_degree(cell) {
+                            let c = degree_candidates(class, family, cell, bytes, p);
+                            let at = format!("{class:?} {family} {cell} {bytes} p={p}");
+                            assert_eq!(c[0], degree_baseline(cell, p), "{at}");
+                            let mut want: BTreeSet<&str> = old_classes(class)
+                                .iter()
+                                .map(|&o| history_strategy(o, family, cell, bytes, p))
+                                .collect();
+                            want.insert(policy_strategy(class, family, cell, bytes, p));
+                            want.insert(c[0]);
+                            let got: BTreeSet<&str> = c.iter().copied().collect();
+                            assert_eq!(got.len(), c.len(), "{at}: {c:?} repeats");
+                            assert_eq!(got, want, "{at}");
+                            if class == DeviceClass::Cpu {
+                                assert!(
+                                    c.iter().all(|s| ["direct", "loops", "sumfact"].contains(s)),
+                                    "{at}: {c:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Spot checks against the frozen tables: CpuSimd128 and CpuSimd512 both choose sumfact
+        // for Points on hexahedra; Gpu's baseline at p = 8 on hexahedra is loops.
+        assert_eq!(
+            degree_candidates(DeviceClass::Cpu, "Points", "Hexahedron", 8, 1),
+            ["direct", "sumfact"]
+        );
+        assert_eq!(
+            degree_candidates(DeviceClass::Gpu, "EVector", "Hexahedron", 4, 8)[0],
+            "loops"
+        );
+        assert_eq!(degree_baseline("Triangle", 8), "direct");
+        assert_eq!(degree_baseline("Prism", 5), "loops");
+        assert_eq!(degree_baseline("Prism", 4), "direct");
+    }
+
+    #[test]
+    fn table_strategy_reads_ranges_and_rejects_bad_tables() {
+        let text = "[Cpu.Points]\nHexahedron = { 4 = [[1, \"direct\"], [3, \"sumfact\"]] }\n";
+        let at = |p| table_strategy(text, "Cpu", "Points", "Hexahedron", 4, p);
+        assert_eq!(at(1), Ok("direct"));
+        assert_eq!(at(2), Ok("direct"));
+        assert_eq!(at(3), Ok("sumfact"));
+        assert_eq!(at(10), Ok("sumfact"));
+        assert!(table_strategy(text, "Gpu", "Points", "Hexahedron", 4, 1).is_err());
+        assert!(table_strategy(text, "Cpu", "Points", "Hexahedron", 8, 1).is_err());
+        let bad = "[Cpu.Points]\nHexahedron = { 4 = [[1, \"fast\"]] }\n";
+        assert!(table_strategy(bad, "Cpu", "Points", "Hexahedron", 4, 1).is_err());
+        let late = "[Cpu.Points]\nHexahedron = { 4 = [[2, \"loops\"]] }\n";
+        assert!(table_strategy(late, "Cpu", "Points", "Hexahedron", 4, 1).is_err());
     }
 
     /// Pack and PullBack: the baseline, the Gather or GeomFactors choices of the old classes

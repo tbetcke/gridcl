@@ -1,7 +1,7 @@
 //! Unit tests of the generic rule on synthetic records (ADR-0058 item 4).
 
 use super::*;
-use crate::record::{Cores, SweepRecord};
+use crate::record::{Cores, DegreeRecord, SweepRecord};
 
 /// A candidate record: `config` of `kind` in `scalar` on (`target`, `backend`) at `size`,
 /// median `t`. CPU records on all hardware threads unless `config.units` is `Performance`;
@@ -352,6 +352,528 @@ fn defaults_and_toml_without_records() {
     assert_eq!(gpu["quad_tile"]["8"].as_integer(), Some(16));
 }
 
+// ---------------------------------------------------------------------------------------------
+// The degree rule.
+
+const MAC: (&str, &str) = ("macmini", "cpu");
+const GRACE: (&str, &str) = ("locust", "cpu");
+const KATHLEEN: (&str, &str) = ("kathleen", "cpu");
+
+/// A timed degree record of the bench family `family` with `strategy` on `platform`: `t`
+/// seconds per point at `size` points, first use `compile` seconds.
+#[allow(clippy::too_many_arguments)]
+fn drec(
+    (target, backend): (&str, &str),
+    family: &str,
+    cell: &str,
+    degree: u32,
+    scalar: Scalar,
+    size: usize,
+    strategy: &str,
+    t: f64,
+) -> DegreeRecord {
+    let class = if backend == "cpu" {
+        DeviceClass::Cpu
+    } else {
+        DeviceClass::Gpu
+    };
+    DegreeRecord {
+        backend: backend.to_owned(),
+        device: "test".to_owned(),
+        device_class: class,
+        legacy_class: crate::record::LegacyClass::of_new(class),
+        target: target.to_owned(),
+        run_id: "test".to_owned(),
+        family: family.to_owned(),
+        cell: cell.to_owned(),
+        gdim: crate::decide_degree::gdim_of(family, cell),
+        degree,
+        node_family: "equispaced".to_owned(),
+        scalar,
+        strategy: strategy.to_owned(),
+        strategy_ran: strategy.to_owned(),
+        nominal_points: size,
+        cells: size / 10,
+        points_per_cell: 10,
+        iterations: (family == "PullBack").then_some(9),
+        vector_size: 1,
+        vector_size_ran: 1,
+        policy_vector_size: 1,
+        tile: 4,
+        block_bytes: None,
+        units_per_group: 1,
+        status: "ok".to_owned(),
+        launch_only: false,
+        interleaved: backend == "cpu",
+        check_error: Some(1e-15),
+        check_tolerance: Some(1e-12),
+        times_s: vec![t * size as f64; 5],
+        median_s: t * size as f64,
+        calls_per_run: 1,
+        calibration_s: 0.02,
+        compile_s: 1.0,
+        kernel_cache: "off".to_owned(),
+        commit: "test".to_owned(),
+        profile: "release".to_owned(),
+        cores: Cores {
+            performance: None,
+            efficiency: None,
+            threads: 8,
+            levels: Vec::new(),
+        },
+        load_width: Some(128),
+        fallback_reason: None,
+        node_load: None,
+    }
+}
+
+/// Points records on hexahedra in f64 at `degree` on `platform`, at `sizes`: (strategy, time).
+fn points(
+    platform: (&str, &str),
+    degree: u32,
+    sizes: &[usize],
+    times: &[(&str, f64)],
+) -> Vec<DegreeRecord> {
+    sizes
+        .iter()
+        .flat_map(|&n| {
+            times.iter().map(move |&(s, t)| {
+                drec(
+                    platform,
+                    "Points",
+                    "Hexahedron",
+                    degree,
+                    Scalar::F64,
+                    n,
+                    s,
+                    t,
+                )
+            })
+        })
+        .collect()
+}
+
+/// M10 records of Points on hexahedra in f64 at `degree` on the three Cpu platforms.
+fn m10_points(degree: u32, times: &[(&str, f64)]) -> Vec<DegreeRecord> {
+    [MAC, GRACE, KATHLEEN]
+        .into_iter()
+        .flat_map(|d| points(d, degree, &CANDIDATE_SIZES, times))
+        .collect()
+}
+
+/// M9h records of Points on hexahedra in f64 at `degree` on M9h's Cpu platforms (no Grace), at
+/// 10^6 points.
+fn m9h_points(degree: u32, times: &[(&str, f64)]) -> Vec<DegreeRecord> {
+    [MAC, KATHLEEN]
+        .into_iter()
+        .flat_map(|d| points(d, degree, &CANDIDATE_SIZES[..1], times))
+        .collect()
+}
+
+fn decide_degree_of(m9h: Vec<DegreeRecord>, m10: Vec<DegreeRecord>) -> DegreeDecision {
+    decide_degree(
+        &HighOrderData {
+            degree: m9h,
+            ..HighOrderData::default()
+        },
+        &M10Data {
+            degree: m10,
+            ..M10Data::default()
+        },
+    )
+}
+
+fn cpu_points(d: &DegreeDecision) -> &DegreeEntry {
+    d.entry(DeviceClass::Cpu, "Points", "Hexahedron", Scalar::F64)
+        .expect("an entry")
+}
+
+/// Every M10 degree and every M9h degree in between, from the given records: sumfact 20%
+/// faster than direct everywhere except at `direct_at`, where direct wins.
+fn full_points(direct_at: &[u32]) -> (Vec<DegreeRecord>, Vec<DegreeRecord>) {
+    let times = |p: u32| -> Vec<(&'static str, f64)> {
+        let fast = if direct_at.contains(&p) { 0.5 } else { 1.0 };
+        let mut t = vec![("loops", 1.0), ("sumfact", 0.8)];
+        if p <= 4 {
+            t.push(("direct", fast));
+        }
+        t
+    };
+    let mut m9h = Vec::new();
+    let mut m10 = Vec::new();
+    for p in 1..=8 {
+        if M10_DEGREES.contains(&p) {
+            m10.extend(m10_points(p, &times(p)));
+        } else {
+            m9h.extend(m9h_points(p, &times(p)));
+        }
+    }
+    (m9h, m10)
+}
+
+/// p = 1, 4 and 8 come from M10 on its three Cpu platforms at 10^6 and 10^7; the degrees in
+/// between from M9h on the Mac and Kathleen at 10^6; the ranges are maximal runs.
+#[test]
+fn degrees_in_between_come_from_m9h() {
+    let (m9h, m10) = full_points(&[2, 3]);
+    let d = decide_degree_of(m9h, m10);
+    let e = cpu_points(&d);
+    for k in &e.picks {
+        let m10_degree = M10_DEGREES.contains(&k.degree);
+        let want = if m10_degree {
+            DegreeSource::M10
+        } else {
+            DegreeSource::M9h
+        };
+        assert_eq!(k.source, want, "p = {}", k.degree);
+        let targets: Vec<&str> = k.platforms.iter().map(|p| p.platform.target).collect();
+        if m10_degree {
+            assert_eq!(
+                targets,
+                ["macmini", "locust", "kathleen"],
+                "p = {}",
+                k.degree
+            );
+            assert_eq!(k.sizes, CANDIDATE_SIZES);
+        } else {
+            assert_eq!(targets, ["macmini", "kathleen"], "p = {}", k.degree);
+            assert_eq!(k.sizes, [1_000_000]);
+        }
+    }
+    assert_eq!(
+        e.ranges,
+        [(1, "sumfact"), (2, "direct"), (4, "sumfact")],
+        "{:?}",
+        e.picks
+    );
+    assert_eq!(
+        e.spans(),
+        [
+            (1, Some(1), "sumfact"),
+            (2, Some(3), "direct"),
+            (4, None, "sumfact")
+        ]
+    );
+}
+
+/// A `direct` choice at p = 8 is followed by an open-ended `loops` range; without data an entry
+/// is `loops` throughout.
+#[test]
+fn the_last_range_is_open_ended_and_compiles() {
+    let mut m10 = Vec::new();
+    for p in M10_DEGREES {
+        m10.extend(m10_points(p, &[("direct", 0.5), ("loops", 1.0)]));
+    }
+    let d = decide_degree_of(Vec::new(), m10);
+    let e = cpu_points(&d);
+    assert_eq!(e.strategy(8), "direct");
+    assert_eq!(e.ranges.last(), Some(&(9, "loops")));
+    // p = 2, 3 and 5–7 have no data: loops, which splits the direct runs.
+    assert_eq!(e.pick(2).unwrap().fit, GenericFit::Default);
+    assert_eq!(
+        e.ranges,
+        [
+            (1, "direct"),
+            (2, "loops"),
+            (4, "direct"),
+            (5, "loops"),
+            (8, "direct"),
+            (9, "loops")
+        ]
+    );
+    let none = decide_degree_of(Vec::new(), Vec::new());
+    assert!(none.entries.iter().all(|e| e.ranges == [(1, "loops")]));
+}
+
+/// A strategy that took over 30 s to compile and load on one platform of the class is not
+/// selectable, even where it is the fastest; with `direct` out, `loops` is the baseline.
+#[test]
+fn slow_first_use_is_not_selectable() {
+    let mut m10 = m10_points(4, &[("direct", 1.0), ("loops", 0.95), ("sumfact", 0.5)]);
+    for r in m10
+        .iter_mut()
+        .filter(|r| r.target == "locust" && r.strategy == "sumfact")
+    {
+        r.compile_s = 31.0;
+    }
+    let d = decide_degree_of(Vec::new(), m10.clone());
+    let k = cpu_points(&d).pick(4).unwrap();
+    assert_eq!(k.selectable, ["direct", "loops"]);
+    assert_eq!((k.base, k.strategy), ("direct", "direct"));
+    for r in m10
+        .iter_mut()
+        .filter(|r| r.target == "macmini" && r.strategy == "direct")
+    {
+        r.status = "failed: test".to_owned();
+    }
+    let d = decide_degree_of(Vec::new(), m10);
+    let k = cpu_points(&d).pick(4).unwrap();
+    assert_eq!(k.selectable, ["loops"]);
+    assert_eq!((k.base, k.strategy), ("loops", "loops"));
+}
+
+/// M9h records whose check error is not finite are left out (ADR-0060 item 3).
+#[test]
+fn non_finite_checks_are_left_out() {
+    let mut m9h = m9h_points(2, &[("direct", 1.0), ("loops", 1.0), ("sumfact", 0.5)]);
+    let d = decide_degree_of(m9h.clone(), Vec::new());
+    assert_eq!(cpu_points(&d).strategy(2), "sumfact");
+    for r in m9h
+        .iter_mut()
+        .filter(|r| r.strategy == "sumfact" && r.target == "kathleen")
+    {
+        r.check_error = Some(f64::NAN);
+    }
+    let d = decide_degree_of(m9h.clone(), Vec::new());
+    let k = cpu_points(&d).pick(2).unwrap();
+    assert_eq!(k.source, DegreeSource::M9h);
+    assert_eq!(k.selectable, ["direct", "loops"]);
+    assert_eq!(k.strategy, "direct");
+    for r in m9h.iter_mut().filter(|r| r.strategy == "sumfact") {
+        r.check_error = Some(f64::INFINITY);
+    }
+    let d = decide_degree_of(m9h, Vec::new());
+    assert_eq!(
+        cpu_points(&d).pick(2).unwrap().selectable,
+        ["direct", "loops"]
+    );
+}
+
+/// The generic rule at one degree: admission by the geometric mean, the bound on every
+/// platform, the fallback with the smallest worst case.
+#[test]
+fn degree_picks_follow_the_generic_rule() {
+    // sumfact is 2x faster on the Mac and Kathleen, 1.3x slower on Grace: admitted by the
+    // geometric mean (0.5 · 0.5 · 1.3)^(1/3) ≈ 0.69, but r = 1.3 on Grace breaks the bound;
+    // direct has r = 2 on two platforms: no strategy meets the bound, and the smallest worst
+    // case is sumfact's 1.3.
+    let mut m10 = Vec::new();
+    for (d, s) in [(MAC, 0.5), (GRACE, 1.3), (KATHLEEN, 0.5)] {
+        m10.extend(points(
+            d,
+            1,
+            &CANDIDATE_SIZES,
+            &[("direct", 1.0), ("sumfact", s)],
+        ));
+    }
+    let d = decide_degree_of(Vec::new(), m10);
+    let k = cpu_points(&d).pick(1).unwrap();
+    assert_eq!(k.strategy, "sumfact");
+    match k.fit {
+        GenericFit::Fallback { worst } => assert!((worst - 1.3).abs() < 1e-12, "{worst}"),
+        f => panic!("{f:?}"),
+    }
+    assert!(k.reason.contains("worst case r = 1.30"), "{}", k.reason);
+    let r: Vec<(&str, &str, f64)> = k
+        .platforms
+        .iter()
+        .map(|p| (p.platform.target, p.best, p.r))
+        .collect();
+    assert_eq!(r[1].0, "locust");
+    assert_eq!(r[1].1, "direct");
+    assert!((r[1].2 - 1.3).abs() < 1e-12);
+    // 8% faster everywhere: not admitted.
+    let d = decide_degree_of(
+        Vec::new(),
+        m10_points(1, &[("direct", 1.0), ("sumfact", 0.92)]),
+    );
+    let k = cpu_points(&d).pick(1).unwrap();
+    assert_eq!((k.strategy, k.fit), ("direct", GenericFit::Bound));
+    assert!(k.reason.starts_with("direct: no strategy"), "{}", k.reason);
+}
+
+/// On Gpu every strategy is a candidate, and Metal measures f32 only.
+#[test]
+fn gpu_entries_take_every_strategy() {
+    let times = [
+        ("direct", 1.0),
+        ("loops", 0.9),
+        ("sumfact", 0.8),
+        ("shared", 0.5),
+        ("cooperative", 0.51),
+    ];
+    let mut m10 = Vec::new();
+    for d in [METAL, CUDA] {
+        for n in CANDIDATE_SIZES {
+            for &(s, t) in &times {
+                m10.push(drec(d, "Points", "Quadrilateral", 4, Scalar::F32, n, s, t));
+                m10.push(drec(
+                    d,
+                    "Points",
+                    "Quadrilateral",
+                    4,
+                    Scalar::F64,
+                    n,
+                    s,
+                    t * 2.0,
+                ));
+            }
+        }
+    }
+    let d = decide_degree_of(Vec::new(), m10);
+    let f32 = d
+        .entry(DeviceClass::Gpu, "Points", "Quadrilateral", Scalar::F32)
+        .unwrap()
+        .pick(4)
+        .unwrap();
+    assert_eq!(f32.selectable, STRATEGIES);
+    assert_eq!(
+        f32.strategy, "shared",
+        "cooperative is within 3% but less simple"
+    );
+    assert_eq!(f32.platforms.len(), 2);
+    let f64 = d
+        .entry(DeviceClass::Gpu, "Points", "Quadrilateral", Scalar::F64)
+        .unwrap()
+        .pick(4)
+        .unwrap();
+    let targets: Vec<&str> = f64.platforms.iter().map(|p| p.platform.target).collect();
+    assert_eq!(targets, ["locust"], "Metal has no f64");
+}
+
+/// The Jacobian family sums J, det J and K; a member missing on one platform makes the
+/// strategy unselectable.
+#[test]
+fn policy_families_sum_their_members() {
+    let mut m10 = Vec::new();
+    for d in [MAC, GRACE, KATHLEEN] {
+        for n in CANDIDATE_SIZES {
+            for f in ["Jacobian", "DetJ", "Pinv"] {
+                m10.push(drec(d, f, "Hexahedron", 1, Scalar::F64, n, "direct", 1.0));
+                if !(f == "Pinv" && d == GRACE) {
+                    m10.push(drec(d, f, "Hexahedron", 1, Scalar::F64, n, "sumfact", 0.5));
+                }
+            }
+        }
+    }
+    let d = decide_degree_of(Vec::new(), m10);
+    let k = d
+        .entry(DeviceClass::Cpu, "Jacobian", "Hexahedron", Scalar::F64)
+        .unwrap()
+        .pick(1)
+        .unwrap();
+    assert_eq!(k.selectable, ["direct"]);
+    assert_eq!(k.strategy, "direct");
+}
+
+/// A degree M10 re-measured (ADR-0060 item 3) replaces M9h's choice there, with M10's
+/// platforms and sizes.
+#[test]
+fn remeasured_degrees_replace_m9h() {
+    let (mut m9h, mut m10) = full_points(&[]);
+    m9h.extend(m9h_points(2, &[("direct", 0.1)]));
+    let d = decide_degree_of(m9h.clone(), m10.clone());
+    assert_eq!(cpu_points(&d).strategy(2), "direct");
+    m10.extend(m10_points(
+        2,
+        &[("direct", 1.0), ("loops", 1.0), ("sumfact", 0.8)],
+    ));
+    let d = decide_degree_of(m9h, m10);
+    let k = cpu_points(&d).pick(2).unwrap();
+    assert_eq!((k.source, k.strategy), (DegreeSource::M10, "sumfact"));
+    assert_eq!(cpu_points(&d).ranges, [(1, "sumfact")]);
+}
+
+/// A check whose time at 10^6 points moved by more than 10% from M9h's, or that falls back,
+/// lists its range's unmeasured first and last degree for re-measurement.
+#[test]
+fn moves_and_fallbacks_mark_ranges_for_remeasurement() {
+    // Ranges: sumfact 1, direct 2–3, sumfact 4–8.
+    let (mut m9h, m10) = full_points(&[2, 3]);
+    m9h.extend(m9h_points(
+        4,
+        &[("direct", 1.0), ("loops", 1.0), ("sumfact", 0.8)],
+    ));
+    let d = decide_degree_of(m9h.clone(), m10.clone());
+    let e = cpu_points(&d);
+    // M10 and M9h agree at p = 4 on the Mac and Kathleen, for all three strategies; Grace has
+    // no M9h record.
+    let at4: Vec<&DegreeMove> = e.moves.iter().filter(|m| m.degree == 4).collect();
+    assert_eq!(at4.len(), 6);
+    assert!(
+        at4.iter()
+            .all(|m| !m.moved() && m.platform.target != "locust")
+    );
+    assert!(e.remeasure.is_empty(), "{:?}", e.remeasure);
+    // sumfact at p = 4 on Kathleen was 20% slower in M9h: the boundary 3 | 4 of the range 4–8
+    // is re-measured at 3 (4 is M10's).
+    for r in m9h
+        .iter_mut()
+        .filter(|r| r.degree == 4 && r.target == "kathleen" && r.strategy == "sumfact")
+    {
+        r.median_s *= 1.2;
+    }
+    let d = decide_degree_of(m9h, m10);
+    let e = cpu_points(&d);
+    let moved: Vec<(&str, &str)> = e
+        .moves
+        .iter()
+        .filter(|m| m.moved())
+        .map(|m| (m.platform.target, m.strategy))
+        .collect();
+    assert_eq!(moved, [("kathleen", "sumfact")]);
+    assert_eq!(e.remeasure, [3]);
+    // A fallback at p = 1 in the range 1–3: its boundary 3 | 4 is re-measured at 3.
+    let (m9h, mut m10) = full_points(&[1, 2, 3]);
+    for r in m10
+        .iter_mut()
+        .filter(|r| r.degree == 1 && r.target == "locust" && r.strategy == "direct")
+    {
+        r.median_s *= 3.0;
+    }
+    let d = decide_degree_of(m9h, m10);
+    let e = cpu_points(&d);
+    assert!(
+        matches!(e.pick(1).unwrap().fit, GenericFit::Fallback { .. }),
+        "{:?}",
+        e.pick(1)
+    );
+    assert_eq!(e.ranges[0], (1, "direct"));
+    assert_eq!(e.remeasure, [3]);
+}
+
+/// The TOML holds exactly `[Cpu.<family>]` and `[Gpu.<family>]`, every cell type of each
+/// family, 4- and 8-byte ranges, and reads back.
+#[test]
+fn degree_toml_holds_the_four_sets() {
+    let (m9h, m10) = full_points(&[2, 3]);
+    let d = decide_degree_of(m9h, m10);
+    let text = d.to_toml();
+    let table: toml::Table = text.parse().unwrap();
+    let classes: Vec<&String> = table.keys().collect();
+    assert_eq!(classes, ["Cpu", "Gpu"]);
+    for class in ["Cpu", "Gpu"] {
+        let families: BTreeSet<&str> = table[class]
+            .as_table()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(families, BTreeSet::from(POLICY_FAMILIES));
+        for family in POLICY_FAMILIES {
+            let cells: BTreeSet<&str> = table[class][family]
+                .as_table()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(
+                cells,
+                cells_of(family).iter().copied().collect(),
+                "{family}"
+            );
+        }
+    }
+    let at = |p| crate::candidates::table_strategy(&text, "Cpu", "Points", "Hexahedron", 8, p);
+    assert_eq!(at(1), Ok("sumfact"));
+    assert_eq!(at(3), Ok("direct"));
+    assert_eq!(at(9), Ok("sumfact"));
+    assert_eq!(
+        crate::candidates::table_strategy(&text, "Gpu", "PullBack", "Pyramid", 4, 1),
+        Ok("loops")
+    );
+}
+
 mod prop {
     use super::*;
     use proptest::prelude::*;
@@ -374,6 +896,43 @@ mod prop {
             prop_assert_eq!(a.fallback, b.fallback);
             prop_assert_eq!(a.admitted, b.admitted);
             prop_assert!((a.worst - b.worst).abs() <= 1e-12 * a.worst);
+        }
+
+        /// The degree choice does not depend on which platform measured which times: permuting
+        /// the platforms' records gives the same strategy, fit and baseline.
+        #[test]
+        fn degree_choice_does_not_depend_on_platform_order(
+            times in proptest::collection::vec(0.2f64..1.0, 3 * 3 * 2),
+            rotate in 1usize..3,
+        ) {
+            const S: [&str; 3] = ["direct", "loops", "sumfact"];
+            let platforms = [MAC, GRACE, KATHLEEN];
+            let records = |shift: usize| -> Vec<DegreeRecord> {
+                let mut out = Vec::new();
+                for (m, &d) in platforms.iter().enumerate() {
+                    let src = (m + shift) % 3;
+                    for (k, &n) in CANDIDATE_SIZES.iter().enumerate() {
+                        for (c, s) in S.into_iter().enumerate() {
+                            let t = times[(src * 3 + c) * 2 + k];
+                            out.push(drec(d, "Points", "Hexahedron", 1, Scalar::F64, n, s, t));
+                        }
+                    }
+                }
+                out
+            };
+            let a = decide_degree_of(Vec::new(), records(0));
+            let b = decide_degree_of(Vec::new(), records(rotate));
+            let (a, b) = (cpu_points(&a).pick(1).unwrap(), cpu_points(&b).pick(1).unwrap());
+            prop_assert_eq!(a.strategy, b.strategy);
+            prop_assert_eq!(a.base, b.base);
+            let worst = |k: &DegreePick| match k.fit {
+                GenericFit::Fallback { worst } => Some(worst),
+                _ => None,
+            };
+            prop_assert_eq!(worst(a).is_some(), worst(b).is_some());
+            if let (Some(x), Some(y)) = (worst(a), worst(b)) {
+                prop_assert!((x - y).abs() <= 1e-12 * x);
+            }
         }
     }
 }
