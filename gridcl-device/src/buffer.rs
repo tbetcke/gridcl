@@ -246,6 +246,9 @@ impl<T: CubeElement> DeviceBuffer<T> {
     /// allocation, which the CPU runtime requires. The host-staged halo exchange uploads its
     /// receive buffer with it.
     ///
+    /// `data` is copied once, into one allocation of the padded length, which the write takes
+    /// over; CubeCL stages it through its pinned host pool (C23).
+    ///
     /// # Errors
     ///
     /// `LengthMismatch` if `data.len()` is not [`len`](DeviceBuffer::len).
@@ -271,8 +274,11 @@ impl<T: CubeElement> DeviceBuffer<T> {
         if data.is_empty() {
             return Ok(());
         }
-        let mut host = T::as_bytes(data).to_vec();
-        host.resize(self.padded * size_of::<T>(), 0);
+        let bytes = T::as_bytes(data);
+        let padded = self.padded * size_of::<T>();
+        let mut host = Vec::with_capacity(padded);
+        host.extend_from_slice(bytes);
+        host.resize(padded, 0);
         self.client
             .write(&self.handle, cubecl::bytes::Bytes::from_bytes_vec(host));
         Ok(())
@@ -502,6 +508,25 @@ mod tests {
                 found: 16
             })
         ));
+    }
+
+    /// `write_host` writes the padded allocation: the padding reads back as zeros, also where
+    /// the memory held other values before (a released buffer of the same size).
+    #[test]
+    fn write_host_zeroes_the_padding() {
+        let client = gridcl_testing::test_client();
+        for len in [1, 5, VECTOR_PAD, VECTOR_PAD + 3] {
+            let padded = pad_len(len).unwrap();
+            drop(DeviceBuffer::from_host(&client, &vec![u32::MAX; padded]).unwrap());
+            let mut b = DeviceBuffer::<u32>::uninit(&client, len).unwrap();
+            let data: Vec<u32> = (1..=len as u32).collect();
+            b.write_host(&data).unwrap();
+            b.write_host(&data).unwrap();
+            let bytes = client.read_one(b.handle().clone()).unwrap();
+            let words = decode::<u32>(&bytes, padded).unwrap();
+            assert_eq!(&words[..len], &data[..], "len {len}");
+            assert!(words[len..].iter().all(|&w| w == 0), "len {len}: {words:?}");
+        }
     }
 
     #[test]

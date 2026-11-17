@@ -2023,7 +2023,6 @@ name = "gridcl-device"
 version = "0.1.0"
 dependencies = [
  "cubecl",
- "cubecl-runtime",
  "gridcl-testing",
  "libc",
  "proptest",

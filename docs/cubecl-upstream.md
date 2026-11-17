@@ -228,3 +228,21 @@ Never put user ids, host names or project codes in an entry (CLAUDE.md).
 - **gridcl workaround:** the callee takes `&mut` where the caller holds `&mut`, and comptime enum values are built inside `comptime!(Some(grp))` (and `comptime!(None)` alike).
 - **Suggestion:** have `map_args` pass references through unchanged (or add `From<&'a mut NativeExpand<T>> for &'a NativeExpand<T>`), and treat tuple-variant constructors of comptime arguments as constants; at least document both in the macro guide.
 - **Status:** not reported.
+
+### C23 `Client::staging` adds nothing to `Client::write` below 100 MB, and offers no pinned buffer to fill in place
+
+- **Version:** cubecl-runtime 0.11.0 (`src/client.rs:844`, `Client::staging`), cubecl-server 0.11.0 (`src/command/staging.rs:15` and `:42`, `src/command/base.rs:446–480`, `write_to_gpu`), cubecl-cuda 0.11.0 (`src/compute/server.rs:105`), cubecl-cpu, cubecl-metal and cubecl-wgpu 0.11.0 (`staging` returns `UnsupportedIoOperation`).
+- **Observation:** `write_to_gpu` already copies every write below `STAGE_MAX` (100 MB) that is not pinned into a buffer of the stream's pinned host pool (`reserve_pinned`), on the server, before the DMA. `Client::staging` does the same copy on the caller's side (`copy_into`, then swaps the pinned buffer in), through `submit_blocking`, which its own comment says blocks the compute queue; on the CPU, Metal and wgpu runtimes it does nothing. Neither hands out a pinned buffer that a caller could fill directly (for example as an MPI receive buffer), so a host-staged upload costs one copy into an owned `Bytes` and one into pinned memory whichever path it takes.
+- **Evidence:** M10 T5, reading the sources above while planning `DeviceBuffer::write_host`'s pinned upload (ADR-0059).
+- **gridcl workaround:** `write_host` copies `data` once, into one allocation of the padded length (it used to copy twice: `to_vec`, then a reallocating `resize`), and leaves the pinned staging to `Client::write`; it does not call `Client::staging`. The halo exchange reuses its host receive buffers across calls.
+- **Suggestion:** a client call that reserves pinned host memory of a given size from the pool and returns it as `Bytes` (marked `Pinned`), so a caller can receive into it and pass it to `write` without a further copy; document that `write` stages through the pool below `STAGE_MAX`.
+- **Status:** not reported.
+
+### C24 CPU runtime: idle workers spin on queued kernels that are not ready, so two processes on one machine stall for whole time slices
+
+- **Version:** cubecl-cpu 0.11.0 (`src/compute/threadpool/scheduler/dispatcher.rs:148–157`, `DispatcherWorker::work`; `src/runtime.rs:168`, one worker per available CPU).
+- **Observation:** a worker that receives a task of a kernel whose predecessors are still running keeps it `aside` and polls it with `std::hint::spin_loop()`, without yielding (only the empty-queue loop yields, `:119–128`). Every process sizes its pool to all CPUs (`available_parallelism`; macOS has no affinity mask to narrow it). When two processes run kernels at once, as two MPI ranks on one machine do, the spinning workers of each take the cores that the other's running units need, and a chain of dependent kernels queued without a sync advances about one OS time slice per kernel.
+- **Evidence:** M10 T5 on the Mac mini (12 CPUs), two MPI ranks on the CPU runtime, release build, N = 10^6 owned nodes per rank, block 3, f64: `Scatterer::reverse` (about six kernels queued after the exchange) took 34–51 ms at halos of 10^3, 10^4 and 10^5 nodes, against 0.5–1.7 ms for the same chain in one process and 0.15–1.6 ms for `forward` (one kernel after the exchange); with a sync after every kernel it took 0.4–2.6 ms (2026-11-17).
+- **gridcl workaround:** on the Cpu class, `Scatterer::reverse` waits for each kernel before queueing the next and queues nothing during the exchange; on GPUs it does neither (each sync costs about 0.3 ms on Metal).
+- **Suggestion:** let a worker yield (or park) after a bounded spin on tasks that are not ready, as the empty-queue loop does, and let the pool size be set (an environment variable or a client option) so ranks sharing a node can split the cores.
+- **Status:** not reported.
