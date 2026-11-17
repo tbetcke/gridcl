@@ -1,6 +1,6 @@
 # ADR-0063: FacetNormals on intervals in f32 at sizes f32 can resolve
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-17
 - **Raised in:** M10 T9
 - **Design sections affected:** "Benchmarks" (Degree sweep (M9h), the M10 sentences); Roadmap M10 bullet 4 as read by ADR-0057 item 3 and ADR-0060 items 2 and 3
@@ -82,4 +82,4 @@ The existing p = 4 records at 10^6 points are already clean.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-17, as proposed (option 4). Applied in `adr: 0063 apply`: docs/design.md ("Benchmarks", Degree sweep (M9h)) and issue #25 (comment). The code, test and re-measurement changes are M10 T9's.
