@@ -40,10 +40,83 @@ pub const M10_END_MARKER: &str = "<!-- END GENERATED M10 -->";
 /// class, a row `| kind | class | bytes | target backend | best | choice | r | reason |`
 /// (ADR-0058 item 6).
 pub fn render_m10_vector(
-    _data: &crate::record::M10Data,
-    _decision: &crate::decide_generic::VectorDecision,
+    data: &crate::record::M10Data,
+    decision: &crate::decide_generic::VectorDecision,
 ) -> String {
-    todo!("M10 T8")
+    use crate::decide_generic::{ADMIT, BOUND, GenericFit, WITHIN, describe};
+    let mut platforms: BTreeMap<(String, String), (BTreeSet<String>, BTreeSet<String>)> =
+        BTreeMap::new();
+    for r in &data.vector {
+        let p = platforms
+            .entry((r.target.clone(), r.backend.clone()))
+            .or_default();
+        p.0.insert(r.device.clone());
+        p.1.insert(r.commit.chars().take(7).collect());
+    }
+    let mut out = String::from(
+        "Written by `policy_report` from the `m10-vector-*.json` records with the generic rule \
+         (ADR-0058 item 4).\n\nRecords:\n\n",
+    );
+    for ((target, backend), (devices, commits)) in &platforms {
+        let devices: Vec<&str> = devices.iter().map(String::as_str).collect();
+        let commits: Vec<&str> = commits.iter().map(String::as_str).collect();
+        let _ = writeln!(
+            out,
+            "- {target} {backend}: {} (commit {})",
+            devices.join(", "),
+            commits.join(", ")
+        );
+    }
+    let fallbacks = decision
+        .entries
+        .iter()
+        .filter(|e| matches!(e.fit, GenericFit::Fallback { .. }))
+        .count();
+    let defaults = decision
+        .entries
+        .iter()
+        .filter(|e| e.fit == GenericFit::Default)
+        .count();
+    let _ = writeln!(
+        out,
+        "\nPer entry of the four sets and platform of its class: the platform's best \
+         configuration (smallest geometric mean of r over its types and sizes), the generic \
+         choice, the platform's r for that choice (largest over its types and the sizes 10^6 \
+         and 10^7), and the reason. Admission at {ADMIT}× over the baseline, bound r ≤ \
+         {BOUND}, simplest within {WITHIN}×. {} of {} entries need the fallback (smallest \
+         worst case); {defaults} take the default (no data, or not used).\n",
+        fallbacks,
+        decision.entries.len()
+    );
+    out.push_str(
+        "| kind | class | bytes | target backend | best | choice | r | reason |\n\
+         | --- | --- | ---: | --- | --- | --- | ---: | --- |\n",
+    );
+    for e in &decision.entries {
+        let head = format!("| {:?} | {:?} | {} |", e.kind, e.class, e.bytes);
+        if e.platforms.is_empty() {
+            let _ = writeln!(
+                out,
+                "{head} – | – | {} | – | {} |",
+                describe(&e.choice),
+                e.reason
+            );
+            continue;
+        }
+        for p in &e.platforms {
+            let _ = writeln!(
+                out,
+                "{head} {} {} | {} | {} | {:.2} | {} |",
+                p.platform.target,
+                p.platform.backend,
+                describe(&p.best),
+                describe(&e.choice),
+                p.r,
+                e.reason
+            );
+        }
+    }
+    out
 }
 
 /// The bounds of M10 bullet 1 at 10^5 halo nodes (ADR-0059, ADR-0061, ADR-0062).
@@ -357,6 +430,28 @@ pub fn splice(text: &str, generated: &str) -> Result<String, String> {
         + begin
         + END_MARKER.len();
     Ok(format!("{}{block}{}", &text[..begin], &text[end..]))
+}
+
+/// `text` with the part between [`M10_BEGIN_MARKER`] and [`M10_END_MARKER`] replaced by
+/// `generated`.
+///
+/// # Errors
+///
+/// If `text` lacks either marker, or has them out of order.
+pub fn splice_m10(text: &str, generated: &str) -> Result<String, String> {
+    let begin = text
+        .find(M10_BEGIN_MARKER)
+        .ok_or("no M10 BEGIN GENERATED marker")?;
+    let end = text[begin..]
+        .find(M10_END_MARKER)
+        .ok_or("an M10 BEGIN GENERATED marker without END GENERATED M10")?
+        + begin;
+    Ok(format!(
+        "{}{M10_BEGIN_MARKER}\n\n{}\n\n{}",
+        &text[..begin],
+        generated.trim(),
+        &text[end..]
+    ))
 }
 
 // ---------------------------------------------------------------------------------------------

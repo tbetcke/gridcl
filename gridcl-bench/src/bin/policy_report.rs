@@ -1,22 +1,29 @@
-//! Applies the M3s decision rule (docs/plans/M3s.md, T12; ADR-0015) to the M3s records: writes
-//! the frozen M3s policy and the generated M3s tables of `docs/perf/vectorization.md`.
+//! Writes the vector policy and the generated tables of `docs/perf/vectorization.md`:
+//!
+//! - M10's four generic sets of `gridcl-device/vector-policy.toml` and M10's tables, from the
+//!   `m10-vector-*.json` records by the generic rule (ADR-0058 item 4; `decide_generic`);
+//! - the frozen M3s policy and M3s tables, from the M3s records by the M3s decision rule
+//!   (docs/plans/M3s.md, T12; ADR-0015, ADR-0060 item 2).
 //!
 //! ```text
-//! cargo run -p gridcl-bench --bin policy_report -- [--data DIR] [--policy FILE]
-//!     [--report FILE] [--check]
+//! cargo run -p gridcl-bench --bin policy_report -- [--data DIR] [--vector-policy FILE]
+//!     [--policy FILE] [--report FILE] [--check]
 //! ```
 //!
 //! - `--data`: the records, default `docs/perf/data/`;
+//! - `--vector-policy`: default `gridcl-device/vector-policy.toml`, M10's generic sets;
 //! - `--policy`: default `gridcl-bench/history/vector-policy-pre-m10.toml`, the M3s policy
-//!   frozen before M10 (ADR-0060 item 2); M10's generic sets of
-//!   `gridcl-device/vector-policy.toml` are written from M10 T8 on;
-//! - `--report`: default `docs/perf/vectorization.md`. Only the part between the
-//!   `BEGIN GENERATED` and `END GENERATED` markers changes; a file without markers gets them
-//!   appended, and a missing file is created with a title.
-//! - `--check`: writes nothing, and fails if either file differs from what it would write.
+//!   frozen before M10;
+//! - `--report`: default `docs/perf/vectorization.md`. Only the parts between the
+//!   `BEGIN GENERATED` and `END GENERATED` markers and between the M10 markers change; a file
+//!   without the M3s markers gets them appended, and a missing file is created with a title.
+//!   The M10 markers must be present.
+//! - `--check`: writes nothing, and fails if a file differs from what it would write.
 //!
-//! Entries the rule leaves unresolved (no admitted configuration within 10% of the fastest,
-//! ADR-0018) are listed on stderr, and the binary fails after writing.
+//! M3s entries the rule leaves unresolved (no admitted configuration within 10% of the
+//! fastest, ADR-0018) are listed on stderr, and the binary fails after writing. M10 entries
+//! that need the generic rule's fallback (no candidate within the bound) are listed on stderr;
+//! the report marks them with their worst case.
 //!
 //! Default paths are relative to the workspace root.
 
@@ -24,10 +31,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use gridcl_bench::decide::decide;
-use gridcl_bench::record::load_dir;
-use gridcl_bench::report::{render, splice};
+use gridcl_bench::decide_generic::{GenericFit, decide_vector};
+use gridcl_bench::record::{load_dir, load_m10_dir};
+use gridcl_bench::report::{render, render_m10_vector, splice, splice_m10};
 
-const USAGE: &str = "usage: policy_report [--data DIR] [--policy FILE] [--report FILE] [--check]";
+const USAGE: &str = "usage: policy_report [--data DIR] [--vector-policy FILE] [--policy FILE] \
+                     [--report FILE] [--check]";
 
 /// The title of a report the binary creates.
 const TITLE: &str = "# Vectorization study (M3s)\n";
@@ -44,6 +53,7 @@ fn main() -> ExitCode {
 
 struct Args {
     data: PathBuf,
+    vector_policy: PathBuf,
     policy: PathBuf,
     report: PathBuf,
     check: bool,
@@ -54,6 +64,7 @@ impl Args {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut parsed = Args {
             data: root.join("docs/perf/data"),
+            vector_policy: root.join("gridcl-device/vector-policy.toml"),
             policy: root.join("gridcl-bench/history/vector-policy-pre-m10.toml"),
             report: root.join("docs/perf/vectorization.md"),
             check: false,
@@ -66,6 +77,7 @@ impl Args {
             };
             match flag.as_str() {
                 "--data" => parsed.data = value()?,
+                "--vector-policy" => parsed.vector_policy = value()?,
                 "--policy" => parsed.policy = value()?,
                 "--report" => parsed.report = value()?,
                 "--check" => parsed.check = true,
@@ -88,9 +100,18 @@ fn run(args: &Args) -> Result<(), String> {
     };
     let report = splice(&old_report, &render(&data, &decision))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
+    let m10 = load_m10_dir(&args.data)?;
+    let generic = decide_vector(&m10);
+    let vector_policy = generic.to_toml();
+    let report = splice_m10(&report, &render_m10_vector(&m10, &generic))
+        .map_err(|e| format!("{}: {e}", args.report.display()))?;
 
     let mut stale = Vec::new();
-    for (path, text) in [(&args.policy, &policy), (&args.report, &report)] {
+    for (path, text) in [
+        (&args.vector_policy, &vector_policy),
+        (&args.policy, &policy),
+        (&args.report, &report),
+    ] {
         let current = std::fs::read_to_string(path).ok();
         if current.as_deref() == Some(text.as_str()) {
             continue;
@@ -103,10 +124,19 @@ fn run(args: &Args) -> Result<(), String> {
         }
     }
     eprintln!(
-        "policy_report: {} sweep and {} throughput records",
+        "policy_report: {} sweep and {} throughput records (M3s), {} vector records (M10)",
         data.sweeps.len(),
-        data.throughput.len()
+        data.throughput.len(),
+        m10.vector.len()
     );
+    for e in &generic.entries {
+        if let GenericFit::Fallback { worst } = e.fit {
+            eprintln!(
+                "policy_report: M10 {:?} {:?} {}-byte: fallback, worst case r = {worst:.2}",
+                e.class, e.kind, e.bytes
+            );
+        }
+    }
     let unresolved: Vec<String> = decision
         .unresolved()
         .map(|c| {

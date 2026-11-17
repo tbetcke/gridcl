@@ -5,26 +5,25 @@
 # ADR-0058): the QuadField tile width by scalar size; the vector size per kernel family and
 # scalar size; on Cpu, the CPU block per kernel family and scalar size of the widest stream, in
 # units of 4 KiB, and the CPU units (all hardware threads or the performance cores; ADR-0017).
-# Interim values until M10 T8: [Cpu] holds the M3s CpuSimd128 entries and [Gpu] the M3s Gpu
-# entries (gridcl-bench/history/vector-policy-pre-m10.toml). From T8, written by
-# `cargo run -p gridcl-bench --bin policy_report` from docs/perf/data/ with the generic decision
-# rule of docs/perf/vectorization.md; do not edit by hand.
+# Written by `cargo run -p gridcl-bench --bin policy_report` from the M10 candidate records in
+# docs/perf/data/ with the generic decision rule of docs/perf/vectorization.md (ADR-0058 item 4);
+# do not edit by hand.
 
 [Cpu]
-quad_tile = { 4 = 4, 8 = 4 }
+quad_tile = { 4 = 4, 8 = 16 }
 [Cpu.vector_size]
 Fill = { 4 = 16, 8 = 1 }
-Copy = { 4 = 8, 8 = 1 }
+Copy = { 4 = 1, 8 = 1 }
 Reduce = { 4 = 16, 8 = 1 }
-ScanTile = { 4 = 16, 8 = 1 }
+ScanTile = { 4 = 1, 8 = 1 }
 SortDigits = { 4 = 1, 8 = 1 }
 Gather = { 4 = 1, 8 = 1 }
-Pack = { 4 = 1, 8 = 1 }
+Pack = { 4 = 1, 8 = 16 }
 TopologyKeys = { 4 = 1, 8 = 1 }
-PermutationInfo = { 4 = 1, 8 = 1 }
-EVector = { 4 = 16, 8 = 8 }
-GeomFactors = { 4 = 4, 8 = 4 }
-PullBack = { 4 = 1, 8 = 1 }
+PermutationInfo = { 4 = 16, 8 = 1 }
+EVector = { 4 = 1, 8 = 8 }
+GeomFactors = { 4 = 4, 8 = 16 }
+PullBack = { 4 = 4, 8 = 16 }
 Scalar = { 4 = 1, 8 = 1 }
 [Cpu.cpu_block]
 Fill = { 4 = 16, 8 = 16 }
@@ -35,10 +34,10 @@ SortDigits = { 4 = 16, 8 = 4 }
 Gather = { 4 = 16, 8 = 16 }
 Pack = { 4 = 4, 8 = 4 }
 TopologyKeys = { 4 = 16, 8 = 4 }
-PermutationInfo = { 4 = 16, 8 = 4 }
+PermutationInfo = { 4 = 1, 8 = 4 }
 EVector = { 4 = 16, 8 = 4 }
-GeomFactors = { 4 = 1, 8 = 16 }
-PullBack = { 4 = 4, 8 = 4 }
+GeomFactors = { 4 = 1, 8 = 1 }
+PullBack = { 4 = 1, 8 = 1 }
 Scalar = { 4 = 16, 8 = 1 }
 [Cpu.cpu_units]
 Fill = { 4 = "performance", 8 = "all" }
@@ -49,7 +48,7 @@ SortDigits = { 4 = "performance", 8 = "all" }
 Gather = { 4 = "performance", 8 = "performance" }
 Pack = { 4 = "all", 8 = "all" }
 TopologyKeys = { 4 = "performance", 8 = "all" }
-PermutationInfo = { 4 = "performance", 8 = "all" }
+PermutationInfo = { 4 = "all", 8 = "all" }
 EVector = { 4 = "all", 8 = "performance" }
 GeomFactors = { 4 = "all", 8 = "all" }
 PullBack = { 4 = "all", 8 = "all" }
@@ -59,8 +58,8 @@ Scalar = { 4 = "performance", 8 = "performance" }
 quad_tile = { 4 = 16, 8 = 16 }
 [Gpu.vector_size]
 Fill = { 4 = 1, 8 = 1 }
-Copy = { 4 = 4, 8 = 1 }
-Reduce = { 4 = 16, 8 = 4 }
+Copy = { 4 = 1, 8 = 1 }
+Reduce = { 4 = 16, 8 = 1 }
 ScanTile = { 4 = 8, 8 = 1 }
 SortDigits = { 4 = 4, 8 = 1 }
 Gather = { 4 = 1, 8 = 1 }
