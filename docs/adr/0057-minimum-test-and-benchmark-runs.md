@@ -78,3 +78,5 @@ Accepted by the maintainer on 2026-11-16, with options chosen in the same sessio
 - degree runs at p = 1, 4 and 8, with the ranges in between taken from M9h's data.
 
 Applied in `adr: 0057 apply`: docs/design.md ("Benchmarks", Roadmap M10, Listing H1), CLAUDE.md, IMPLEMENTATION.md, the skills plan-milestone, review-milestone and hpc-test, and issue #25.
+
+Amended by ADR-0065 (accepted 2026-11-18): from M10c, the `[Cpu]` vector entries replace item 3's configurations with a grid (vector sizes 1, 4, 8 and 16, blocks of 4, 16 and 64 KiB, both unit settings) and are timed in shuffled interleaved rounds in two processes.

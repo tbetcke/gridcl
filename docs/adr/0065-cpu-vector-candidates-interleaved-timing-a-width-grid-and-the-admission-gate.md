@@ -1,6 +1,6 @@
 # ADR-0065: Cpu vector candidates: interleaved timing, a width grid and the admission gate
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-18
 - **Raised in:** after M10 (maintainer request to improve the CPU policy, 2026-11-18; M10 Review, follow-ups; M10 Deviations log, T8)
 - **Design sections affected:**
@@ -179,4 +179,6 @@ M10c's scope:
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-18, as proposed (item 1: option 3; item 2: option 3; item 3: option 2, in all four sets; item 4: option 2; item 5: option 2, milestone M10c).
+
+Applied in `adr: 0065 apply`: docs/design.md ("Benchmarks": What it runs, What it reports, the generic rule's Fallback, Record; "Implementation roadmap": the table and the new M10c section) and closing notes in ADR-0057, ADR-0058 and ADR-0060. Issue "M10c CPU vector policy" opened from the roadmap section.
