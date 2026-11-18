@@ -2,8 +2,9 @@
 //! tolerance helpers and the Python oracles.
 //!
 //! This crate is not published. Its features forward CubeCL's runtime features; besides it,
-//! only gridcl-bench and gridcl-device (`gpu-aware-cuda`) enable them (docs/design.md,
-//! "Cargo features", "Dependency rules").
+//! only gridcl-bench and gridcl-examples enable them. gridcl-device's `gpu-aware-cuda` is an
+//! empty, reserved feature (docs/design.md, "Cargo features", "Dependency rules"; ADR-0059,
+//! ADR-0060).
 
 mod comm;
 pub mod comm_checks;

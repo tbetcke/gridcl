@@ -112,3 +112,10 @@ Neither definition changes whether bullet 2 is met. ADR-0060 item 5 meets it by 
 Accepted by the maintainer on 2026-11-18, as proposed (item 1: option 2; item 2: option 2, each degree's own choice, no runs).
 
 Applied in `adr: 0064 apply`: docs/design.md (Listing S2c, the paragraph after it, "Transports", the crate table's gridcl-bench row, Roadmap M10 bullet 2), closing notes in ADR-0042 and ADR-0060, the doc comment of `tensor_cost_ratio_within_bound_or_reported`, and issue #25.
+
+Addendum at the M10 review (maintainer, 2026-11-18: fix all outstanding minors), applied in `M10 review: minors`:
+
+- **"Transports":** "On GPUs" becomes "On CUDA and HIP … the other runtimes have no pinned staging". `write_host` now calls `Client::staging` only where it pins (`Client::name` is `cuda` or `hip`; C23). On Metal and wgpu it staged nothing but still made a blocking submit.
+- **The paragraph after Listing S2c:** the reverse sentence adds "(`Insert`: a gather by `rev_first`; …)". `Insert` skips the placement and the reduce.
+- **Listing S2c:** adds `targets`, the distinct owned indices that `reverse` packs from and writes back to.
+- **The crate table's gridcl-bench row:** adds gridcl-device's feature `testing`.

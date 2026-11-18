@@ -6,7 +6,7 @@ use cubecl::prelude::*;
 use cubecl::server::Handle;
 
 use crate::primitives::launch_fill;
-use crate::{DeviceClass, GridError, Result, testing};
+use crate::{GridError, Result, testing};
 
 /// Every allocation is padded to a multiple of `VECTOR_PAD` elements, the widest vector size
 /// any device class uses, so vectorized kernels never need a scalar tail.
@@ -246,10 +246,12 @@ impl<T: CubeElement> DeviceBuffer<T> {
     /// allocation, which the CPU runtime requires. The host-staged halo exchange uploads its
     /// receive buffer with it.
     ///
-    /// `data` is copied once, into one allocation of the padded length. On GPUs that copy is
-    /// moved into pinned host memory (`Client::staging`) before the write, which on CUDA
-    /// uploads 2.4 MB about six times faster than leaving the staging to `Client::write`
-    /// (C23); the CPU runtime and the wgpu and Metal runtimes have no pinned staging.
+    /// `data` is copied once, into one allocation of the padded length. On CUDA and HIP that
+    /// copy is moved into pinned host memory (`Client::staging`) before the write, which on
+    /// CUDA uploads 2.4 MB about six times faster than leaving the staging to `Client::write`
+    /// (C23). The CPU runtime and the wgpu runtimes (Metal, Vulkan) have no pinned staging, and
+    /// the call is skipped there: it would only block the caller until the device's queue
+    /// reaches it.
     ///
     /// # Errors
     ///
@@ -282,7 +284,7 @@ impl<T: CubeElement> DeviceBuffer<T> {
         host.extend_from_slice(bytes);
         host.resize(padded, 0);
         let mut host = cubecl::bytes::Bytes::from_bytes_vec(host);
-        if DeviceClass::for_client(&self.client) == DeviceClass::Gpu {
+        if stages_in_pinned_memory(&self.client) {
             self.client.staging(core::iter::once(&mut host), false);
         }
         self.client.write(&self.handle, host);
@@ -385,6 +387,13 @@ pub fn pad_len(len: usize) -> Result<usize> {
     len.max(1)
         .checked_next_multiple_of(VECTOR_PAD)
         .ok_or(GridError::TooLarge)
+}
+
+/// Whether `Client::staging` moves host data into pinned memory on `client`'s runtime: CUDA
+/// and HIP. The CPU runtime and the wgpu runtimes return `UnsupportedIoOperation` after a
+/// blocking submit (C23).
+fn stages_in_pinned_memory(client: &Client) -> bool {
+    matches!(client.name(), "cuda" | "hip")
 }
 
 /// Bytes for `len` elements, or an error if the device cannot hold them in one allocation.
@@ -536,6 +545,20 @@ mod tests {
             assert_eq!(&words[..len], &data[..], "len {len}");
             assert!(words[len..].iter().all(|&w| w == 0), "len {len}: {words:?}");
         }
+    }
+
+    /// `write_host` stages through pinned memory exactly on the runtimes that have it (C23):
+    /// CUDA and HIP, not the CPU runtime, Metal or Vulkan.
+    #[test]
+    fn write_host_stages_only_where_staging_pins() {
+        let client = gridcl_testing::test_client();
+        let device = std::env::var(gridcl_testing::TEST_DEVICE_VAR).unwrap_or_default();
+        assert_eq!(
+            stages_in_pinned_memory(&client),
+            matches!(device.as_str(), "cuda" | "hip"),
+            "GRIDCL_TEST_DEVICE={device:?}, runtime {}",
+            client.name()
+        );
     }
 
     #[test]

@@ -946,10 +946,15 @@ fn m10_record_time(
         .map(|r| r.time_per_point())
 }
 
-/// The cause of a p = 8 / p = 4 ratio over its bound, from the strategies and M9h's evidence
-/// (docs/perf/high-order.md, "Decision rule (T11b)", bullet 3; ADR-0060 item 5).
-fn tensor_cause(part: &str, d: i32, s4: &str, s8: &str) -> String {
+/// The cause of a p = 8 / p = 4 ratio over its bound on `backend`, from the strategies and
+/// M9h's evidence (docs/perf/high-order.md, "Decision rule (T11b)", bullet 3; ADR-0060 item 5):
+/// the sum-factorised intermediates spill registers on GPUs and overflow L1 on CPUs.
+fn tensor_cause(backend: &str, part: &str, d: i32, s4: &str, s8: &str) -> String {
     let mut cause = match s8 {
+        "sumfact" | "shared" | "cooperative" if backend == "cpu" => format!(
+            "`{s8}` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 \
+             (M9h's evidence)"
+        ),
         "sumfact" | "shared" | "cooperative" => format!(
             "`{s8}` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's \
              evidence)"
@@ -1272,7 +1277,7 @@ pub fn render_m10_high_order(
                             rows += 1;
                             let cause = if ratio > bound {
                                 misses += 1;
-                                tensor_cause(part, d, s4, s8)
+                                tensor_cause(p.backend, part, d, s4, s8)
                             } else {
                                 "–".to_owned()
                             };

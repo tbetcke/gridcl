@@ -49,7 +49,7 @@
   tabulation is first cached, including the 1D tabulations and lexicographic node
   permutations of sum-factorised kernels), explicit to_host()/read_node(), the count read
   of run-length and unique-by-key, the per-block read that finishes measure in f64, the
-  debug-build index checks of gather and scatter, the host-staged halo exchange, the
+  debug-build index checks of gather, scatter, pack and unpack, the host-staged halo exchange, the
   boundary-entity ownership exchange of entity creation (the candidate count, keys and the
   local indices of owned candidates to the host; owners, global numbers and ghost
   placements back), the upload of an IndexMap's send and receive index lists when its first
@@ -131,7 +131,7 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   software for gridcl on it lives under `~/local_disk`, never in its network home. Say why when
   you schedule it.
 - Myriad V100 (`myriad-v100`) and A100 (`myriad-a100`) only: as the fallback when the A4000
-  workstation is unavailable too, or a benchmark cannot get an idle node; for multi-GPU and GPU-aware MPI tests (`--gpus 2`); to compare
+  workstation is unavailable too, or a benchmark cannot get an idle node; for multi-GPU tests (`--gpus 2`; the GPU-aware transport is deferred, ADR-0059); to compare
   architecture-dependent results; for CUDA-version- or architecture-specific changes; or when
   the user asks. Say why when you schedule them.
 - Kathleen (`kathleen`, Slurm, Xeon Gold 6248 with AVX-512) runs every CPU-only remote run

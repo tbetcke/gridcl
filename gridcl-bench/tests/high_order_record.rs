@@ -1704,9 +1704,9 @@ fn degree_policy_follows_the_generic_rule() {
 
 /// Bullet 2 (ADR-0042 item 1 as amended by ADR-0064, ADR-0060 item 5): on quadrilaterals and
 /// hexahedra, per platform, scalar type, family and rule size, the time per point at p = 8 over
-/// p = 4 under the generic policy (each degree's own choice) is at most its bound (3 for the factors and the
-/// pull-back's set-up; 1.1 · (9/5)^d for a Newton step, step = (t(9) − t(1)) / 8, set-up =
-/// t(1) − step), or the gap is reported with its cause. Every ratio, recomputed here, appears in
+/// p = 4 under the generic policy (each degree's own choice) is at most its bound (3 for the
+/// factors and the pull-back's set-up; 1.1 · (9/5)^d for a Newton step, step = (t(9) − t(1)) /
+/// 8, set-up = t(1) − step), or the gap is reported with its cause. Every ratio, recomputed here, appears in
 /// M10's section of `docs/perf/high-order.md` as a row `| target backend | scalar | cell |
 /// family | part | s4 / s8 | 10^k | ratio | bound | cause |`, with a cause for each miss.
 #[test]

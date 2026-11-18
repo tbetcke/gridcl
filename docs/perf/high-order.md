@@ -4372,19 +4372,19 @@ Per platform, scalar type, cell, bench family and rule size: the time per point 
 | macmini cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 9.66 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
 | macmini cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.53 | 3.56 | – |
 | macmini cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 4.75 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
-| macmini cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 5.54 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 7.72 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 5.62 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 3.98 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 5.61 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.24 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 5.34 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.79 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| macmini cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.61 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 5.54 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 7.72 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 5.62 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 3.98 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 5.61 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.24 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 5.34 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.79 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.61 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | macmini cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.81 | 3.00 | – |
-| macmini cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 18.64 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 18.64 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | macmini cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 0.45 | 3.00 | – |
-| macmini cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 36.20 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 36.20 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | macmini cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | -0.30 | 3.00 | – |
 | macmini cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 1.43 | 3.00 | – |
 | macmini cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.12 | 3.00 | – |
@@ -4404,17 +4404,17 @@ Per platform, scalar type, cell, bench family and rule size: the time per point 
 | macmini cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 2.37 | 3.00 | – |
 | macmini cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 2.79 | 3.00 | – |
 | macmini cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 1.82 | 3.00 | – |
-| macmini cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 4.44 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 4.44 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | macmini cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 2.03 | 3.00 | – |
-| macmini cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 4.51 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 4.51 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | macmini cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 2.26 | 3.00 | – |
-| macmini cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 3.97 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 3.97 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | macmini cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 1.89 | 3.00 | – |
-| macmini cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.26 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.26 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | macmini cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.73 | 3.00 | – |
-| macmini cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 9.72 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 9.72 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | macmini cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 0.00 | 3.00 | – |
-| macmini cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 7.35 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 7.35 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | macmini cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | -0.08 | 3.00 | – |
 | macmini metal | f32 | Quadrilateral | Points | factor | shared / shared | 10^6 | 1.70 | 3.00 | – |
 | macmini metal | f32 | Quadrilateral | Points | factor | shared / shared | 10^7 | 2.22 | 3.00 | – |
@@ -4446,35 +4446,35 @@ Per platform, scalar type, cell, bench family and rule size: the time per point 
 | macmini metal | f32 | Hexahedron | PullBack | set-up | loops / loops | 10^6 | 14.76 | 3.00 | `loops` sets up the pull-back with C′, (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
 | macmini metal | f32 | Hexahedron | PullBack | step | loops / loops | 10^7 | 6.42 | 6.42 | `loops` does (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
 | macmini metal | f32 | Hexahedron | PullBack | set-up | loops / loops | 10^7 | 6.25 | 3.00 | `loops` sets up the pull-back with C′, (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
-| locust cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 3.60 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 3.60 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
-| locust cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 4.02 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 4.02 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 0.94 | 3.00 | – |
 | locust cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 3.00 | 3.00 | – |
 | locust cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
-| locust cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 3.62 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 3.62 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 0.92 | 3.00 | – |
 | locust cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.76 | 3.00 | – |
 | locust cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
-| locust cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 4.36 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 4.36 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.40 | 3.00 | – |
 | locust cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 10.64 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
 | locust cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 3.18 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
 | locust cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.43 | 3.56 | – |
 | locust cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 8.80 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
-| locust cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 11.65 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 11.65 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 2.87 | 3.00 | – |
-| locust cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 11.85 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 11.85 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 2.90 | 3.00 | – |
-| locust cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 11.19 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 10.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.45 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.74 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 6.43 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 23.79 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 11.19 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 10.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.45 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.74 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 6.43 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 23.79 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | locust cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 1.10 | 3.00 | – |
-| locust cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 19.49 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 19.49 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | locust cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 1.09 | 3.00 | – |
 | locust cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 0.82 | 3.00 | – |
 | locust cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.13 | 3.00 | – |
@@ -4492,19 +4492,19 @@ Per platform, scalar type, cell, bench family and rule size: the time per point 
 | locust cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 4.18 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
 | locust cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.61 | 3.56 | – |
 | locust cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 5.37 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
-| locust cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.65 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.65 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 1.54 | 3.00 | – |
-| locust cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 12.58 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 12.58 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 2.13 | 3.00 | – |
-| locust cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 11.60 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 11.60 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 2.81 | 3.00 | – |
-| locust cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 10.55 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 10.55 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | locust cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 2.05 | 3.00 | – |
-| locust cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 3.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| locust cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 21.95 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 3.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 21.95 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | locust cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 0.51 | 3.00 | – |
-| locust cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 8.76 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 8.76 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | locust cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 0.45 | 3.00 | – |
 | locust cuda | f32 | Quadrilateral | Points | factor | shared / shared | 10^6 | 1.24 | 3.00 | – |
 | locust cuda | f32 | Quadrilateral | Points | factor | shared / shared | 10^7 | 1.28 | 3.00 | – |
@@ -4582,20 +4582,20 @@ Per platform, scalar type, cell, bench family and rule size: the time per point 
 | kathleen cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 5.26 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
 | kathleen cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.60 | 3.56 | – |
 | kathleen cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 2.87 | 3.00 | – |
-| kathleen cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 8.86 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 4.93 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 7.52 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 3.24 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 8.40 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.10 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 7.56 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 4.79 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 8.86 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 4.93 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 7.52 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 3.24 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 8.40 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.10 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 7.56 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 4.79 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | kathleen cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.50 | 3.00 | – |
-| kathleen cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 22.80 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 22.80 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | kathleen cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | -0.32 | 3.00 | – |
-| kathleen cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 44.99 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
-| kathleen cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 3.70 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 44.99 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 3.70 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | kathleen cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 1.43 | 3.00 | – |
 | kathleen cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 0.92 | 3.00 | – |
 | kathleen cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 1.42 | 3.00 | – |
@@ -4612,19 +4612,19 @@ Per platform, scalar type, cell, bench family and rule size: the time per point 
 | kathleen cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 2.56 | 3.00 | – |
 | kathleen cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 3.31 | 3.56 | – |
 | kathleen cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 3.63 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
-| kathleen cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.37 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 3.11 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 6.15 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.37 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 3.11 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 6.15 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | kathleen cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 1.72 | 3.00 | – |
-| kathleen cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 13.01 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.51 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
-| kathleen cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 6.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 13.01 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.51 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 6.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | kathleen cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 1.70 | 3.00 | – |
-| kathleen cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.95 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.95 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
 | kathleen cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.52 | 3.00 | – |
-| kathleen cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 29.22 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 29.22 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | kathleen cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 1.31 | 3.00 | – |
-| kathleen cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 20.86 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 20.86 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
 | kathleen cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 2.28 | 3.00 | – |
 
 124 of 270 ratios exceed their bound.
