@@ -3,13 +3,15 @@
 # `vector_sweep --grid` processes on the CPU runtime, seeds 1 and 2, one after the other, each
 # writing `m10c-vector-cpu-<target>-s<seed>.json` into the output directory.
 #
-# Usage: scripts/bench/cpu-vector-grid.sh --target NAME --out-dir DIR [--bind COMMAND]
+# Usage: scripts/bench/cpu-vector-grid.sh --target NAME [--out-dir DIR] [--bind COMMAND]
 #            [--max-load L] [--seeds 1,2] [-- VECTOR_SWEEP_OPTIONS...]
 #        scripts/bench/cpu-vector-grid.sh annotate RESULTS_DIR DIR TARGET
 #   --target: macmini, locust or kathleen (myriad-cpu only as Kathleen's fallback, with
 #       --fallback-reason after `--`).
-#   --bind: a command prefix for each process, e.g. 'numactl --physcpubind=0-19 --membind=0'
-#       on one Kathleen socket (ADR-0020).
+#   --out-dir: where the files go; default the job's results directory in a scripts/hpc job
+#       (the parent of GRIDCL_MPI_TEST_DIR, fetched with the job), else target/m10c-grid.
+#   --bind: a command prefix for each process; default 'numactl --physcpubind=0-19
+#       --membind=0' (one socket and its memory, ADR-0020) for --target kathleen, else none.
 #   --max-load: before each process, wait until the 1-minute load average is below L (at most
 #       15 minutes, else fail); for the Mac mini (2), where no scheduler keeps the node free.
 #   --seeds: the process seeds (default 1,2).
@@ -67,7 +69,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ -n "$target" ]] || die "--target NAME is required"
-[[ -n "$out_dir" ]] || die "--out-dir DIR is required"
+if [[ -z "$out_dir" ]]; then
+    if [[ -n "${GRIDCL_MPI_TEST_DIR:-}" ]]; then
+        out_dir=$(dirname "$GRIDCL_MPI_TEST_DIR")
+    else
+        out_dir=target/m10c-grid
+    fi
+fi
+if [[ -z "$bind" && "$target" == kathleen ]]; then
+    bind="numactl --physcpubind=0-19 --membind=0"
+fi
 [[ -z "$max_load" || "$max_load" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--max-load '$max_load'"
 [[ "${GRIDCL_TEST_DEVICE:-cpu}" == cpu ]] || die "the grid runs on the CPU runtime only"
 export GRIDCL_TEST_DEVICE=cpu
@@ -104,7 +115,7 @@ wait_for_load() {
 cargo build --release -p gridcl-bench --bin vector_sweep
 [[ -x "$bin" ]] || die "$bin not built"
 mkdir -p "$out_dir"
-echo "== $(uname -a)"
+echo "== $(uname -a); out-dir $out_dir; bind '${bind}'"
 command -v numactl >/dev/null && numactl --hardware | head -5 || true
 
 IFS=, read -r -a seed_list <<<"$seeds"
