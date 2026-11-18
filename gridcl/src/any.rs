@@ -23,11 +23,17 @@ use crate::Mesh;
 /// # Ok::<(), GridError>(())
 /// ```
 pub enum AnyMesh<F: Real, C: Comm = Serial> {
+    /// A mesh of intervals on a line.
     Curve1(Mesh<F, D1, D1, C>),
+    /// A mesh of intervals in the plane.
     Curve2(Mesh<F, D1, D2, C>),
+    /// A mesh of intervals in space.
     Curve3(Mesh<F, D1, D3, C>),
+    /// A mesh of planar cells in the plane.
     Planar(Mesh<F, D2, D2, C>),
+    /// A mesh of planar cells in space.
     Surface(Mesh<F, D2, D3, C>),
+    /// A mesh of volume cells in space.
     Volume(Mesh<F, D3, D3, C>),
 }
 
@@ -44,11 +50,17 @@ pub enum AnyMesh<F: Real, C: Comm = Serial> {
 /// # Ok::<(), GridError>(())
 /// ```
 pub enum AnyMeshRef<'a, F: Real, C: Comm = Serial> {
+    /// A mesh of intervals on a line.
     Curve1(&'a Mesh<F, D1, D1, C>),
+    /// A mesh of intervals in the plane.
     Curve2(&'a Mesh<F, D1, D2, C>),
+    /// A mesh of intervals in space.
     Curve3(&'a Mesh<F, D1, D3, C>),
+    /// A mesh of planar cells in the plane.
     Planar(&'a Mesh<F, D2, D2, C>),
+    /// A mesh of planar cells in space.
     Surface(&'a Mesh<F, D2, D3, C>),
+    /// A mesh of volume cells in space.
     Volume(&'a Mesh<F, D3, D3, C>),
 }
 

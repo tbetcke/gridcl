@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 # The direct mpi dependency initialises MPI (`mpi::initialize`) and aborts the job on a panic.
 mpi = ["gridcl/mpi", "gridcl-testing/mpi", "dep:mpi"]

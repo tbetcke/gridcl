@@ -14,6 +14,24 @@
 //! values between ranks through a [`Scatterer`] (docs/design.md, "Distributed mesh model").
 //! The external partitioners `Metis`, `Scotch`, `PtScotch` and `ParMetis` are behind the
 //! features of the same names in lower case ([`MeshBuilder::partitioner`]).
+//!
+//! # Examples and walkthrough
+//!
+//! The API walkthrough of docs/design.md ("API walkthrough") follows one program from a Gmsh
+//! file to output: reading the file and fixing the dimensions once (Listing B8), a volume mesh
+//! to a boundary surface mesh (Listing B9), and the halo exchange and output (Listing B13).
+//! The crate gridcl-examples holds them as programs, each runnable with
+//! `cargo run --release -p gridcl-examples --example <name>`:
+//!
+//! - `read_gmsh`: reads a Gmsh file and fixes the dimensions once (Listing B8);
+//! - `surface_submesh`: a boundary surface mesh with its normals, Jacobians and area
+//!   (Listing B9);
+//! - `geometric_factors`: geometric factors at p = 1, 4 and 8 on a curved sphere;
+//! - `vtk_output`: VTU output of a mesh and a point field (Listing B13);
+//! - `halo_exchange`: `forward` and `reverse` on a mesh's node index map under MPI
+//!   (Listing B13; feature `mpi`, run with `mpirun`).
+//!
+//! `scripts/run-examples.sh` builds and runs them all.
 
 mod any;
 mod builder;

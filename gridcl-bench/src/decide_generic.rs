@@ -56,6 +56,7 @@ pub struct Platform {
     pub target: &'static str,
     /// The backend: `cpu`, `metal` or `cuda`.
     pub backend: &'static str,
+    /// The device class of the backend.
     pub class: DeviceClass,
 }
 
@@ -114,6 +115,7 @@ pub fn geomean(v: &[f64]) -> f64 {
 /// The outcome of the generic rule on one entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuleOutcome<K> {
+    /// The candidate chosen.
     pub choice: K,
     /// No candidate met the bound: the choice has the smallest worst case.
     pub fallback: bool,
@@ -221,7 +223,10 @@ pub enum GenericFit {
     /// The simplest kept candidate within 3% of the smallest geometric mean of r.
     Bound,
     /// No candidate met the bound: the smallest worst case, `worst`.
-    Fallback { worst: f64 },
+    Fallback {
+        /// The largest r of the choice over the members and sizes.
+        worst: f64,
+    },
     /// No member measured the entry, or not every candidate the rule needs: the baseline at
     /// vector size 1 on all hardware threads.
     Default,
@@ -230,6 +235,7 @@ pub enum GenericFit {
 /// One platform's view of a vector entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlatformRatio {
+    /// The platform.
     pub platform: Platform,
     /// The candidate with the smallest geometric mean of r over the platform's members and
     /// sizes (the simplest on ties).
@@ -241,12 +247,17 @@ pub struct PlatformRatio {
 /// One entry of the generic vector policy.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VectorEntry {
+    /// The device class.
     pub class: DeviceClass,
+    /// The kernel family.
     pub kind: KernelKind,
     /// Element size in bytes, 4 or 8.
     pub bytes: usize,
+    /// The baseline ([`vector_baseline`]).
     pub baseline: VectorConfig,
+    /// The configuration chosen.
     pub choice: VectorConfig,
+    /// How the rule reached the choice.
     pub fit: GenericFit,
     /// Per platform of the class that measured the entry, in [`m10_platforms`] order.
     pub platforms: Vec<PlatformRatio>,
@@ -653,6 +664,7 @@ pub enum DegreeSource {
 /// One platform's view of a degree choice.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyRatio {
+    /// The platform.
     pub platform: Platform,
     /// The selectable strategy with the smallest geometric mean of r over the rule sizes (the
     /// simplest on ties).
@@ -664,8 +676,11 @@ pub struct StrategyRatio {
 /// The generic rule's outcome at one degree of one degree-policy entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreePick {
+    /// The measured degree.
     pub degree: u32,
+    /// The records the pick was made from.
     pub source: DegreeSource,
+    /// The strategy chosen.
     pub strategy: &'static str,
     /// `Default` where neither `direct` nor `loops` is selectable: `loops` is stored.
     pub fit: GenericFit,
@@ -686,8 +701,11 @@ pub struct DegreePick {
 /// item 3).
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeMove {
+    /// The degree.
     pub degree: u32,
+    /// The platform.
     pub platform: Platform,
+    /// The strategy timed.
     pub strategy: &'static str,
     /// M10's time per point over M9h's.
     pub ratio: f64,
@@ -704,9 +722,13 @@ impl DegreeMove {
 /// at every measured degree, its degree ranges and M10's check of them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeEntry {
+    /// The device class.
     pub class: DeviceClass,
+    /// The policy family, a key of `degree-policy.toml`.
     pub family: &'static str,
+    /// The cell type name, as `Hexahedron`.
     pub cell: &'static str,
+    /// The scalar type, which gives the scalar size of the entry.
     pub scalar: Scalar,
     /// The choice at p = 1, …, the cell's highest measured degree (8, pyramids 3).
     pub picks: Vec<DegreePick>,

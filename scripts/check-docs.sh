@@ -5,7 +5,9 @@
 # Usage: scripts/check-docs.sh [default|libraries]
 #   default    cargo doc at default features (CI: cpu job)
 #   libraries  with gridcl/mpi,gridcl/hdf5,gridcl/scotch,gridcl/ptscotch,gridcl/metis (CI: the
-#              ptscotch job; needs MPI, HDF5, Scotch and PT-Scotch)
+#              ptscotch job; needs MPI, a parallel HDF5, Scotch and PT-Scotch), and
+#              gridcl-testing/mpi: with gridcl/mpi, gridcl-testing's ThreadComm builds only with
+#              it (CommDyn::raw)
 #   (none)     both
 #
 # Exit status: 0 if every run passes, cargo's status otherwise.
@@ -15,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 export RUSTDOCFLAGS="${RUSTDOCFLAGS:+$RUSTDOCFLAGS }-Dwarnings -Dmissing_docs"
 
-libraries="gridcl/mpi,gridcl/hdf5,gridcl/scotch,gridcl/ptscotch,gridcl/metis"
+libraries="gridcl/mpi,gridcl/hdf5,gridcl/scotch,gridcl/ptscotch,gridcl/metis,gridcl-testing/mpi"
 
 run() {
     echo "check-docs: cargo doc --workspace --no-deps $*" >&2

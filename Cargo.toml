@@ -26,6 +26,11 @@ edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
 
+# Every public item is documented, in every workspace crate, unpublished ones included; only
+# bindgen-generated modules allow missing docs (ADR-0060, item 7).
+[workspace.lints.rust]
+missing_docs = "deny"
+
 [workspace.dependencies]
 cubecl = "=0.11.0"
 cubecl-runtime = "=0.11.0"

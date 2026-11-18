@@ -78,7 +78,10 @@ impl DeviceScalar for u32 {}
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub enum ReduceOp {
+    /// The sum, in a fixed order.
     Sum,
+    /// The smallest value.
     Min,
+    /// The largest value.
     Max,
 }

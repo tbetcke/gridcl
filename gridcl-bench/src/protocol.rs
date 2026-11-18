@@ -207,11 +207,13 @@ pub fn kernel_cache() -> &'static str {
 /// One measured configuration of a family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// The requested vector size.
     pub vector_size: usize,
     /// CPU block target in bytes; `None` keeps the policy's (and on GPUs there is none).
     pub block_bytes: Option<usize>,
     /// QuadField tile width; `None` keeps the policy's.
     pub tile: Option<usize>,
+    /// How the CPU `cube_dim` is chosen.
     pub cube_dim: CubeDimMode,
 }
 
@@ -222,6 +224,7 @@ pub struct Measured {
     pub vector_size_ran: usize,
     /// Units per cube of the family's plans.
     pub units: u32,
+    /// The warm-up call, in seconds: compile time plus one call.
     pub warmup_s: f64,
     /// The untimed calibration call that fixed `calls_per_run`.
     pub calibration_s: f64,
@@ -232,6 +235,7 @@ pub struct Measured {
 }
 
 impl Measured {
+    /// The median of `times_s`.
     pub fn median_s(&self) -> f64 {
         median(&self.times_s)
     }

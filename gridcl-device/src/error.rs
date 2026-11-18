@@ -64,32 +64,55 @@ pub enum GridError {
     /// A size or index does not fit the type that must hold it.
     TooLarge,
     /// One allocation of `bytes` bytes exceeds the device's `max_page_size`.
-    AllocationTooLarge { bytes: usize, max: u64 },
+    AllocationTooLarge {
+        /// The size of the requested allocation in bytes.
+        bytes: usize,
+        /// The device's `max_page_size` in bytes.
+        max: u64,
+    },
     /// The device does not support the scalar type.
     UnsupportedPrecision {
+        /// The name of the scalar type, as `"f64"`.
         scalar: &'static str,
+        /// The name of the device.
         device: &'static str,
     },
     /// Two lengths that must agree differ.
-    LengthMismatch { expected: usize, found: usize },
+    LengthMismatch {
+        /// The required length.
+        expected: usize,
+        /// The length given.
+        found: usize,
+    },
     /// The compute server reported an error.
     Server(ServerError),
     /// The node family is not offered on this cell type (GLL exists on intervals,
     /// quadrilaterals and hexahedra only).
     UnsupportedNodeFamily {
+        /// The name of the cell type.
         cell: &'static str,
+        /// The name of the node family.
         family: &'static str,
     },
     /// The degree is not supported on this cell type (degrees start at 1).
-    UnsupportedDegree { cell: &'static str, degree: u32 },
+    UnsupportedDegree {
+        /// The name of the cell type.
+        cell: &'static str,
+        /// The degree asked for.
+        degree: u32,
+    },
     /// A cell type used where a different topological dimension is required.
     WrongCellDim {
+        /// The name of the cell type given.
         found: &'static str,
+        /// The topological dimension required.
         expected_tdim: usize,
     },
     /// A mesh of dimensions `found` = (tdim, gdim) where `expected` was required.
     DimensionMismatch {
+        /// The required (tdim, gdim).
         expected: (usize, usize),
+        /// The mesh's (tdim, gdim).
         found: (usize, usize),
     },
     /// The entities of this dimension have not been created (and those of the cell dimension
@@ -102,7 +125,12 @@ pub enum GridError {
     /// Two vertices, nodes or cells share an origin id.
     DuplicateOriginId(i64),
     /// An index is not below the length it indexes.
-    IndexOutOfRange { index: usize, len: usize },
+    IndexOutOfRange {
+        /// The offending index.
+        index: usize,
+        /// The length it must be below.
+        len: usize,
+    },
     /// A node is a vertex of one cell and a non-vertex node of another; the payload is the
     /// node's input index.
     NodeRoleMismatch(usize),
@@ -113,31 +141,60 @@ pub enum GridError {
     /// A method declared before the milestone that implements it.
     NotYetImplemented(&'static str),
     /// A tag element (Gmsh element tag `tag`, of dimension `dim`) matches no mesh entity.
-    UnmatchedTagElement { dim: usize, tag: i64 },
+    UnmatchedTagElement {
+        /// The topological dimension of the element.
+        dim: usize,
+        /// The Gmsh element tag.
+        tag: i64,
+    },
     /// A file could not be read or written: the path and the `std::io::Error` text.
     Io(String),
     /// A malformed file: the format, the byte offset of the error and what was wrong. An error
     /// in the file's content rather than its syntax (or in a model being written) has no byte
     /// offset: `offset` is then 0 and the message says so.
     Parse {
+        /// The name of the file format.
         format: &'static str,
+        /// The byte offset of the error in the file, or 0 for an error in its content.
         offset: u64,
+        /// What was wrong.
         message: String,
     },
     /// The file's element type is not supported (A.7 for Gmsh).
-    UnsupportedElementType { format: &'static str, type_id: i32 },
+    UnsupportedElementType {
+        /// The name of the file format.
+        format: &'static str,
+        /// The format's id of the element type.
+        type_id: i32,
+    },
     /// No tag of this name exists in dimension `dim`.
-    UnknownTag { name: String, dim: usize },
+    UnknownTag {
+        /// The tag name asked for.
+        name: String,
+        /// The topological dimension searched.
+        dim: usize,
+    },
     /// An MPI count or displacement of `count` elements exceeds `i32::MAX` (ADR-0026).
-    MessageTooLarge { count: usize },
+    MessageTooLarge {
+        /// The count or displacement, in elements.
+        count: usize,
+    },
     /// A collective operation failed on another rank; `rank` is the lowest failing rank
     /// (ADR-0026).
-    RemoteFailure { rank: usize },
+    RemoteFailure {
+        /// The lowest rank on which the operation failed.
+        rank: usize,
+    },
     /// A partitioner library returned the status `code`; gridcl's own conditions use negative
     /// codes: −1 for ParMETIS with an empty rank, −2 for a self-loop, −3 for an asymmetric
     /// graph (ADR-0029, item 6). With `name` `"metis"`, a code after validation is METIS's own
     /// status (`rstatus_et`: −2 input error, −3 out of memory, −4 other error).
-    PartitionerFailed { name: &'static str, code: i32 },
+    PartitionerFailed {
+        /// The partitioner's name, as `"metis"`.
+        name: &'static str,
+        /// The library's status, or gridcl's negative code.
+        code: i32,
+    },
     /// A distributed partitioner was asked for more than one part on a communicator without an
     /// MPI handle (`CommDyn::raw` is `None`), on any number of ranks (ADR-0029, item 6).
     NeedsMpiCommunicator(&'static str),

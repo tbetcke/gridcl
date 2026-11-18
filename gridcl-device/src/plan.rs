@@ -39,7 +39,9 @@ const MAX_KERNEL_BUFFERS: u32 = 6;
 /// ```
 #[derive(Clone, Debug)]
 pub struct LaunchPlan {
+    /// Cubes in the launch.
     pub cube_count: CubeCount,
+    /// Units per cube.
     pub cube_dim: CubeDim,
     /// Lanes per vector; 1 is a scalar launch.
     pub vector_size: usize,

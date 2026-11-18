@@ -88,11 +88,17 @@ impl Strategy {
 /// the pseudo-inverse; `PullBack` covers the device basis evaluator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StrategyFamily {
+    /// The E-vector of a geometry block.
     EVector,
+    /// Physical points.
     Points,
+    /// J, det J and the pseudo-inverse.
     Jacobian,
+    /// Cell normals of codimension-1 meshes (intervals, triangles and quadrilaterals).
     Normals,
+    /// Facet normals.
     FacetNormals,
+    /// The pull-back, with the device basis evaluator.
     PullBack,
 }
 

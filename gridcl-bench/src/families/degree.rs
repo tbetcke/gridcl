@@ -106,18 +106,28 @@ pub const CELLS: [CellType; 7] = [
 /// The bench families of the degree sweep, in the order of `record::DEGREE_FAMILIES`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DegreeFamily {
+    /// The E-vector of a geometry block.
     EVector,
+    /// Physical points.
     Points,
+    /// The Jacobian J.
     Jacobian,
+    /// det J.
     DetJ,
+    /// The pseudo-inverse of J.
     Pinv,
+    /// Cell normals of codimension-1 meshes.
     Normals,
+    /// Facet normals.
     FacetNormals,
+    /// The pull-back.
     PullBack,
+    /// The device basis evaluator of the pull-back.
     BasisEval,
 }
 
 impl DegreeFamily {
+    /// Every family, in the order of `record::DEGREE_FAMILIES`.
     pub const ALL: [DegreeFamily; 9] = [
         DegreeFamily::EVector,
         DegreeFamily::Points,
@@ -235,16 +245,21 @@ pub struct DegreeOptions {
     pub target: String,
     /// The job or run the records belong to (rule 11's paired runs share it).
     pub run_id: String,
+    /// The bench families to run.
     pub families: Vec<DegreeFamily>,
+    /// The cell types to run.
     pub cells: Vec<CellType>,
+    /// The degrees of the coordinate element to run.
     pub degrees: Vec<u32>,
+    /// The node families of the coordinate element to run.
     pub node_families: Vec<NodeFamily>,
+    /// The scalar types to run.
     pub scalars: Vec<Scalar>,
     /// Quadrature points, ascending.
     pub sizes: Vec<usize>,
-    /// With `candidates`: each family at its entry's rule sizes
-    /// ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063) instead of
-    /// `sizes`; a (cell, degree, scalar) runs the union of its families' sizes.
+    /// With `candidates`: each family at its entry's rule sizes ([`degree_rule_sizes`],
+    /// ADR-0063) instead of `sizes`; a (cell, degree, scalar) runs the union of its families'
+    /// sizes.
     pub entry_sizes: bool,
     /// Strategy names: [`STRATEGIES`](crate::record::STRATEGIES) or `policy`. Ignored with
     /// `candidates`.
@@ -258,15 +273,19 @@ pub struct DegreeOptions {
     /// (family, strategy) pairs not run and not recorded: on CUDA, `direct`'s pull-back where
     /// its first use takes longer than a process's time limit (T2, T3; C18).
     pub skip: Vec<(DegreeFamily, String)>,
+    /// A `--launch-only` run: one call per configuration, no timing (rule 7).
     pub launch_only: bool,
     /// The vector sizes of a launch-only run.
     pub launch_vector_sizes: LaunchVectorSizes,
+    /// Timed runs per configuration.
     pub runs: usize,
     /// Rule 11's paired timing: the strategies of a configuration each get their warm-up,
     /// check and calibration, then their timed runs alternate (run 1 of every strategy, then
     /// run 2, ...), so that they sample the same state of the machine. Without it each
     /// strategy's runs follow its calibration directly.
     pub interleave: bool,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); every record
+    /// carries it.
     pub fallback_reason: Option<String>,
     /// Records of an earlier run of the sweep (`degree_sweep --resume`): their configurations
     /// are not run again, and their outcomes carry over to larger sizes as measured ones do.

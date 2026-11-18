@@ -428,8 +428,11 @@ pub enum Fit {
 /// The rule's outcome at one degree of one policy entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeChoice {
+    /// The measured degree.
     pub degree: u32,
+    /// The strategy chosen.
     pub strategy: &'static str,
+    /// How the rule reached the choice.
     pub fit: Fit,
     /// The baseline: `direct`, or `loops` where `direct` is not selectable.
     pub base: &'static str,
@@ -462,9 +465,13 @@ impl DegreeChoice {
 /// measured degrees and its degree ranges.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyEntry {
+    /// The device class.
     pub class: LegacyClass,
+    /// The policy family, a key of `degree-policy.toml`.
     pub family: &'static str,
+    /// The cell type name, as `Hexahedron`.
     pub cell: &'static str,
+    /// The scalar type, which gives the scalar size of the entry.
     pub scalar: Scalar,
     /// The choice at each measured degree; empty for CpuSimd256 (a copy) and where the class
     /// measured nothing in this scalar type.
@@ -499,6 +506,7 @@ type Ranges = Vec<(u32, &'static str)>;
 /// The whole degree policy.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeDecision {
+    /// Every entry of the policy.
     pub entries: Vec<PolicyEntry>,
 }
 
@@ -805,16 +813,23 @@ pub fn tensor_bound(what: &str, d: i32) -> f64 {
 /// p = 8, the geometric mean over the class's devices.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TensorRatio {
+    /// The device class.
     pub class: LegacyClass,
+    /// The scalar type.
     pub scalar: Scalar,
+    /// `Quadrilateral` or `Hexahedron`.
     pub cell: &'static str,
+    /// The bench family, one of [`DEGREE_FAMILIES`](crate::record::DEGREE_FAMILIES).
     pub family: &'static str,
     /// `factor`, or the pull-back's `step` or `set-up` (rule 1).
     pub part: &'static str,
+    /// The strategy the policy selects at p = 8.
     pub strategy: &'static str,
+    /// The rule size, in quadrature points.
     pub size: usize,
     /// `None` where a device lacks a record.
     pub ratio: Option<f64>,
+    /// The bound on `ratio` ([`tensor_bound`]).
     pub bound: f64,
     /// The speedup at p = 8 over M9's kernels: T3's `direct` time over the strategy's, the
     /// geometric mean over the devices; `None` where a device has no baseline record (ADR-0053).
@@ -948,17 +963,21 @@ pub fn paired_ratio(a: &DegreeRecord, b: &DegreeRecord) -> f64 {
 /// quarters of the run pairs).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PairedCheck {
+    /// The device class.
     pub class: LegacyClass,
+    /// The scalar type.
     pub scalar: Scalar,
     /// (target, backend, run id) of each device with a paired run.
     pub runs: Vec<(String, String, String)>,
-    /// Configurations compared, left out because `direct` is not selectable for the class, and
-    /// without records on every device.
+    /// Configurations compared.
     pub compared: usize,
+    /// Configurations left out because `direct` is not selectable for the class.
     pub excluded: usize,
+    /// Configurations left out because they lack records on some device.
     pub missing: usize,
-    /// The largest median and lower-quartile class ratios, with their configurations.
+    /// The largest median class ratio, with its configuration.
     pub worst_median: Option<(f64, String)>,
+    /// The largest lower-quartile class ratio, with its configuration.
     pub worst_lower: Option<(f64, String)>,
     /// The configurations whose lower-quartile class ratio exceeds [`PAIRED_BOUND`].
     pub failures: Vec<String>,

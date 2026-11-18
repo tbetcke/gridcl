@@ -54,6 +54,7 @@ pub const ELEM_BYTES: [usize; 2] = [4, 8];
 pub const BLOCK_UNIT: usize = 4 << 10;
 /// The policy's values where there is no data: vector size 1, tile 16, 16 KiB blocks.
 pub const DEFAULT_TILE: usize = 16;
+/// The policy's CPU block where there is no data, in bytes (16 KiB).
 pub const DEFAULT_BLOCK_BYTES: usize = 16 << 10;
 
 /// A configuration: (requested vector size, tile, CPU block in bytes, CPU units).
@@ -74,9 +75,13 @@ pub struct Timing {
 /// The choice for one (device class, kernel kind, element size) entry of the policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choice {
+    /// The device class of the entry.
     pub class: LegacyClass,
+    /// The kernel family of the entry.
     pub kind: KernelKind,
+    /// The element size of the entry, in bytes.
     pub elem_bytes: usize,
+    /// The vector size chosen.
     pub vector_size: usize,
     /// CPU block in units of 4 KiB; `None` on `Gpu`.
     pub cpu_block: Option<usize>,
@@ -105,6 +110,7 @@ pub enum Fit {
 /// Every entry of the policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Decision {
+    /// The choice of every (class, kernel kind, element size) entry.
     pub choices: Vec<Choice>,
     /// (class, element size, tile) for every class and element size.
     pub quad_tiles: Vec<(LegacyClass, usize, usize)>,

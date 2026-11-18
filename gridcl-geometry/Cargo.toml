@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 autotests = false
 
+[lints]
+workspace = true
+
 [features]
 # Test support, not part of the stable API: the hidden `gridcl_geometry::testing` (strategy
 # overrides; ADR-0042, item 3). gridcl-testing turns it on for every workspace test.

@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 default = ["cpu"]
 # Runtime features, as in gridcl-testing (docs/design.md, "Cargo features"; ADR-0060 item 6).

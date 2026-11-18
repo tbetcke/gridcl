@@ -70,33 +70,47 @@ pub fn workload(
 pub struct SweepOptions {
     /// Machine: `m3max`, or a target of scripts/hpc/remote-test.sh.
     pub target: String,
+    /// Kernel families to measure.
     pub families: Vec<KernelKind>,
     /// Scalar types to keep; `None` measures every type of each family.
     pub scalars: Option<Vec<Scalar>>,
+    /// Problem sizes.
     pub sizes: Vec<usize>,
     /// Vector sizes to keep; `None` measures every size the device offers.
     pub vector_sizes: Option<Vec<usize>>,
     /// CPU block targets in bytes (CPU devices only).
     pub blocks: Vec<usize>,
+    /// The ways of choosing the CPU `cube_dim` to measure.
     pub cube_dims: Vec<CubeDimMode>,
+    /// Timed runs per configuration.
     pub runs: usize,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); every record
+    /// carries it.
     pub fallback_reason: Option<String>,
 }
 
 /// What every record of a run shares.
 #[derive(Clone, Debug)]
 pub struct Machine {
+    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it.
     pub backend: String,
+    /// Device name as the client reports it.
     pub device: String,
+    /// Device class of the client.
     pub class: DeviceClass,
+    /// The commit the benchmark ran from.
     pub commit: String,
+    /// Core counts of the machine.
     pub cores: Cores,
+    /// State of CubeCL's persistent kernel cache: `on` or `off`.
     pub kernel_cache: String,
     /// `hardware.load_width` of the client in bits (ADR-0058 item 1, ADR-0060 item 2).
     pub load_width: u32,
 }
 
 impl Machine {
+    /// The shared fields of a run on `client`: its backend, device and class, the commit, the
+    /// core counts and the kernel-cache state.
     pub fn new(client: &Client) -> Machine {
         Machine {
             backend: protocol::backend(),
@@ -252,7 +266,10 @@ pub struct CandidateOptions {
     pub scalars: Option<Vec<Scalar>>,
     /// Problem sizes; the protocol's are [`protocol::CANDIDATE_SIZES`].
     pub sizes: Vec<usize>,
+    /// Timed runs per configuration.
     pub runs: usize,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); every record
+    /// carries it.
     pub fallback_reason: Option<String>,
 }
 

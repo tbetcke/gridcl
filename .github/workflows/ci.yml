@@ -65,9 +65,9 @@ jobs:
           cargo test -p gridcl-partition --features metis
           cargo test -p gridcl --features metis --test integration partition_threads::
           cargo test -p gridcl --features metis --doc -- partitioner
-      - run: cargo doc --workspace --no-deps
-        env:
-          RUSTDOCFLAGS: -Dwarnings
+      # Rustdoc without warnings and every public item documented (ADR-0060 item 7); the
+      # partitioner and I/O features in ptscotch.yml.
+      - run: scripts/check-docs.sh default
       - run: scripts/check-workspace-deps.sh
       # Negative check: the script must still find MPI (exit 3) when a feature pulls it in.
       - run: |

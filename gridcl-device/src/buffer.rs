@@ -438,7 +438,9 @@ fn decode<T: CubeElement>(bytes: &[u8], len: usize) -> Result<Vec<T>> {
 /// assert_eq!(triangles.data.len() / triangles.stride as usize, 2);
 /// ```
 pub struct DeviceStrided<T: CubeElement> {
+    /// The rows, one after another.
     pub data: DeviceBuffer<T>,
+    /// The number of entries in each row.
     pub stride: u32,
 }
 
@@ -457,7 +459,9 @@ pub struct DeviceStrided<T: CubeElement> {
 /// assert_eq!(csr.offsets.len() - 1, 2);
 /// ```
 pub struct DeviceCsr {
+    /// Row `i` holds `indices[offsets[i]..offsets[i + 1]]`; one more entry than rows.
     pub offsets: DeviceBuffer<u32>,
+    /// The entries of all rows, one row after another.
     pub indices: DeviceBuffer<u32>,
 }
 

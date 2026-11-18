@@ -22,17 +22,30 @@ use crate::{VECTOR_PAD, testing};
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KernelKind {
+    /// The `fill` primitive: one value into every element of a buffer.
     Fill,
+    /// The `copy` primitive: a buffer into another of the same length.
     Copy,
+    /// The `reduce` primitive: each level writes one fixed-order partial per cube until one value
+    /// is left.
     Reduce,
+    /// The tile phase of the scan.
     ScanTile,
+    /// The digit counts of the radix sort.
     SortDigits,
+    /// `gather`.
     Gather,
+    /// Pack and unpack, the device side of the halo exchange.
     Pack,
+    /// The sub-entity keys of entity creation.
     TopologyKeys,
+    /// The per-cell orientation words of the permutation info.
     PermutationInfo,
+    /// The E-vector of a geometry block: its node coordinates, cell by cell.
     EVector,
+    /// The geometry factors at quadrature points.
     GeomFactors,
+    /// The Newton iteration of the pull-back.
     PullBack,
     /// Kernels not on the candidate list; always vector size 1 (ADR-0015).
     Scalar,
@@ -145,7 +158,9 @@ impl DeviceClass {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CpuUnits {
+    /// One unit per hardware thread.
     All,
+    /// One unit per performance core.
     Performance,
 }
 
@@ -186,9 +201,13 @@ pub(crate) const QUAD_TILE_VAR: &str = "GRIDCL_QUAD_TILE";
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VectorSizeOverride {
+    /// Vector size 1.
     Scalar,
+    /// The vector policy's size, under the full rule.
     Policy,
+    /// The first of the device's `io_optimized_vector_sizes` for the scalar size.
     Widest,
+    /// This vector size, a power of two from 1 to `VECTOR_PAD`.
     Fixed(usize),
 }
 

@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 autotests = false
 
+[lints]
+workspace = true
+
 [features]
 # Benchmark support, not a library feature: the hidden `gridcl_topology::bench` module.
 # gridcl-bench turns it on (docs/design.md, "Cargo features"; ADR-0015).
