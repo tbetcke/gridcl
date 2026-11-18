@@ -95,3 +95,5 @@ Accepted by the maintainer on 2026-11-16, with options chosen in the same sessio
 Applied in `adr: 0058 apply`: docs/design.md (the sections above), CLAUDE.md, the hpc-test skill and issue #25.
 
 Amended by ADR-0060 (item 3, accepted 2026-11-16): item 5's comparison with M9h is at 10^6 points, and a range that misses the bound or moves by more than 10% is re-measured, with candidates only, at the inner degrees next to each of its boundaries.
+
+Amended by ADR-0065 (accepted 2026-11-18): item 4's fallback applies the bound and the choice to all candidates when no admitted configuration meets the bound, and takes the admitted configuration with the smallest worst-case r only if none does; admission and r use the platforms present where a platform leaves out a size.

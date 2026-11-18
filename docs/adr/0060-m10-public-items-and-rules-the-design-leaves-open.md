@@ -119,3 +119,5 @@ Accepted by the maintainer on 2026-11-16, as proposed (option 2, items 1–7); t
 Applied in `adr: 0060 apply`: docs/design.md (Listing B8, Listing S2c, "Benchmarks": What it runs and Degree sweep (M9h), the crate table, "Cargo features", Roadmap M10's reading line), closing notes in ADR-0053 and ADR-0058, and issue #25.
 
 Note (ADR-0064, accepted 2026-11-18): item 2's `LegacyClass` is `pub` in the unpublished gridcl-bench, so that its tests in `gridcl-bench/tests/` can read it (M10 Deviations log, T1).
+
+Amended by ADR-0065 (accepted 2026-11-18): from M10c, item 2's candidate sources and the wider sweep no longer apply to `[Cpu]` vector entries, which measure ADR-0065's grid.
