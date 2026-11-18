@@ -399,6 +399,11 @@ fn history_policy() -> Policy {
     policy_at("gridcl-bench/history/degree-policy-pre-m10.toml")
 }
 
+/// M10's generic policy, frozen when M10c re-derived the live one (ADR-0065).
+fn history_m10_policy() -> Policy {
+    policy_at("gridcl-bench/history/degree-policy-m10.toml")
+}
+
 /// The degree policy in the file `path` (relative to the workspace).
 fn policy_at(path: &str) -> Policy {
     let text = read(path);
@@ -1263,9 +1268,9 @@ fn degree_policy_follows_the_decision_rule() {
 // policy and M10's section of `docs/perf/high-order.md`.
 
 use gridcl_bench::candidates::degree_candidates;
-use gridcl_bench::decide_generic::decide_degree;
+use gridcl_bench::decide_generic::{GenericRule, decide_degree};
 use gridcl_bench::record::{M10Data, load_m10_dir};
-use gridcl_bench::report::{M10_BEGIN_MARKER, M10_END_MARKER};
+use gridcl_bench::report::{M10_BEGIN_MARKER, M10_END_MARKER, M10C_BEGIN_MARKER, M10C_END_MARKER};
 
 /// The degrees M10 measures (ADR-0057, ADR-0058 item 5).
 const M10_DEGREES: [u32; 3] = [1, 4, 8];
@@ -1429,6 +1434,7 @@ fn m10_degree_check_covers_p1_4_8_on_every_platform() {
     let data = m10();
     let records = m10_degree(&data);
     let history = policy_at("gridcl-bench/history/degree-policy-pre-m10.toml");
+    let own = history_m10_policy();
     check_m10_protocol(records);
     for (target, backend, class) in m10_platforms(records) {
         for scalar in scalars_of(backend) {
@@ -1441,6 +1447,7 @@ fn m10_degree_check_covers_p1_4_8_on_every_platform() {
                         for old in old_classes(class) {
                             want.push(history.strategy_of(old, pf, cell, bytes, degree));
                         }
+                        want.push(own.strategy_of(class, pf, cell, bytes, degree));
                         want.extend(degree_candidates(
                             device_class(class),
                             pf,
@@ -1516,30 +1523,42 @@ fn policy_members(family: &str) -> Vec<(&str, Option<u32>)> {
     }
 }
 
-/// M10's generated section of `docs/perf/high-order.md`.
-fn m10_high_order_section() -> String {
+/// The generated part of `docs/perf/high-order.md` between `begin_marker` and `end_marker`.
+fn high_order_section(begin_marker: &str, end_marker: &str) -> String {
     let text = read("docs/perf/high-order.md");
     let begin = text
-        .find(M10_BEGIN_MARKER)
-        .expect("docs/perf/high-order.md has no M10 BEGIN marker")
-        + M10_BEGIN_MARKER.len();
+        .find(begin_marker)
+        .unwrap_or_else(|| panic!("docs/perf/high-order.md has no {begin_marker}"))
+        + begin_marker.len();
     let end = text[begin..]
-        .find(M10_END_MARKER)
-        .expect("docs/perf/high-order.md has no M10 END marker")
+        .find(end_marker)
+        .unwrap_or_else(|| panic!("docs/perf/high-order.md has no {end_marker}"))
         + begin;
     text[begin..end].trim().to_owned()
 }
 
-/// Bullet 5 (ADR-0058, ADR-0060 item 3): `degree-policy.toml` holds `[Cpu.<family>]` and
-/// `[Gpu.<family>]` only, is what `decide_generic` writes from M10's records at p = 1, 4 and 8
-/// and M9h's in between, its ranges are maximal runs starting at p = 1 whose last is not
-/// `direct`, and at p = 1, 4 and 8 every entry follows the generic rule, recomputed here from
-/// the M10 records: a family's time as in M9h (J + det J + K; the pull-back at nine iterations;
-/// records that ran the strategy itself); a strategy that failed or took over 30 s to compile
-/// on a platform of the class is not selectable (ADR-0056); admission at 10% over the baseline
-/// by the geometric mean over the platforms at each size; the bound r ≤ 1.25 on every platform
-/// and size; the smallest geometric mean of r, the simplest within 3%; otherwise the smallest
-/// worst case, which the report marks.
+/// M10's generated section of `docs/perf/high-order.md`.
+fn m10_high_order_section() -> String {
+    high_order_section(M10_BEGIN_MARKER, M10_END_MARKER)
+}
+
+/// M10c's generated section of `docs/perf/high-order.md`.
+fn m10c_high_order_section() -> String {
+    high_order_section(M10C_BEGIN_MARKER, M10C_END_MARKER)
+}
+
+/// Bullet 5 (ADR-0058, ADR-0060 item 3) and M10c bullet 2 (ADR-0065 item 3): `degree-policy.toml`
+/// holds `[Cpu.<family>]` and `[Gpu.<family>]` only, is what `decide_generic` writes under the
+/// M10c rule from M10's records at p = 1, 4 and 8 and M9h's in between, its ranges are maximal
+/// runs starting at p = 1 whose last is not `direct`, and at p = 1, 4 and 8 every entry follows
+/// the rule, recomputed here from the M10 records: a family's time as in M9h (J + det J + K; the
+/// pull-back at nine iterations; records that ran the strategy itself); a strategy that failed
+/// or took over 30 s to compile on a platform of the class is not selectable (ADR-0056);
+/// admission at 10% over the baseline by the geometric mean over the platforms at each size; the
+/// bound r ≤ 1.25 on every platform and size; the smallest geometric mean of r, the simplest
+/// within 3%; if no admitted strategy meets the bound, the bound and the choice over all
+/// selectable strategies; only if none meets it, the admitted one with the smallest worst case,
+/// which M10c's section of the report marks with its worst case and cause.
 #[test]
 fn degree_policy_follows_the_generic_rule() {
     let data = m10();
@@ -1548,11 +1567,12 @@ fn degree_policy_follows_the_generic_rule() {
     let text = read("gridcl-geometry/degree-policy.toml");
     assert_eq!(
         text,
-        decide_degree(&m9h, &data).to_toml(),
+        decide_degree(&m9h, &data, GenericRule::M10c).to_toml(),
         "degree-policy.toml differs from the generic rule: run high_order_report"
     );
     let policy = policy();
-    let section = m10_high_order_section();
+    let section = m10c_high_order_section();
+    let rows: Vec<Vec<&str>> = section.lines().filter_map(row_cells).collect();
     let classes: BTreeSet<&str> = policy.0.keys().map(|k| k.0.as_str()).collect();
     assert_eq!(
         classes,
@@ -1657,11 +1677,11 @@ fn degree_policy_follows_the_generic_rule() {
                             })
                             .collect();
                         let worst = |s: &str| r(s).into_iter().fold(0.0, f64::max);
-                        let kept: Vec<&str> = admitted
-                            .iter()
-                            .copied()
-                            .filter(|&s| worst(s) <= 1.25 * (1.0 + 1e-12))
-                            .collect();
+                        let within = |s: &&str| worst(s) <= 1.25 * (1.0 + 1e-12);
+                        let mut kept: Vec<&str> = admitted.iter().copied().filter(within).collect();
+                        if kept.is_empty() {
+                            kept = cand.iter().copied().filter(within).collect();
+                        }
                         let rank = |s: &str| STRATEGIES.iter().position(|&x| x == s).unwrap();
                         let (want, fallback) = if kept.is_empty() {
                             let s = admitted
@@ -1686,13 +1706,18 @@ fn degree_policy_follows_the_generic_rule() {
                         let got = policy.strategy_of(class, family, cell, bytes, degree);
                         assert_eq!(got, want, "{at}: policy {got}, generic rule {want}");
                         if fallback {
-                            let prefix = format!("| {class} | {family} | {cell} | {bytes} |");
+                            let (b, p) = (bytes.to_string(), degree.to_string());
+                            let marked = rows.iter().any(|row| {
+                                row.len() == 12
+                                    && row[..5] == [class, family, cell, &b, &p]
+                                    && row[10].contains("worst case")
+                                    && !["", "–", "-"].contains(&row[11])
+                            });
                             assert!(
-                                section
-                                    .lines()
-                                    .any(|l| l.starts_with(&prefix) && l.contains("worst case")),
-                                "{at}: no strategy meets the bound, and high-order.md does not \
-                                 mark the entry with its worst case"
+                                marked,
+                                "{at}: no strategy meets the bound, and M10c's section of \
+                                 high-order.md does not mark the entry with its worst case and \
+                                 cause"
                             );
                         }
                     }
@@ -1713,7 +1738,8 @@ fn degree_policy_follows_the_generic_rule() {
 fn tensor_cost_ratio_within_bound_or_reported() {
     let data = m10();
     let records = m10_degree(&data);
-    let policy = policy();
+    // M10's section reports the ratios of M10's policy (frozen as history; ADR-0065).
+    let policy = history_m10_policy();
     let section = m10_high_order_section();
     let rows: Vec<Vec<&str>> = section.lines().filter_map(row_cells).collect();
     let factors = ["Points", "Jacobian", "DetJ", "Pinv", "FacetNormals"];

@@ -58,6 +58,8 @@ fn rec(
         load_width: Some(128),
         fallback_reason: None,
         node_load: None,
+        seed: None,
+        positions: None,
     }
 }
 
@@ -98,10 +100,13 @@ fn gpu_records(
 }
 
 fn decide_of(records: Vec<SweepRecord>) -> VectorDecision {
-    decide_vector(&M10Data {
-        vector: records,
-        ..M10Data::default()
-    })
+    decide_vector(
+        &M10Data {
+            vector: records,
+            ..M10Data::default()
+        },
+        GenericRule::M10,
+    )
 }
 
 fn entry(d: &VectorDecision, class: DeviceClass, kind: KernelKind, bytes: usize) -> &VectorEntry {
@@ -140,7 +145,7 @@ fn the_bound_holds_on_every_platform() {
     let d = decide_of(records);
     let e = entry(&d, DeviceClass::Gpu, k, 4);
     assert_eq!(
-        (e.fit, e.choice.vector_size),
+        (e.fit.clone(), e.choice.vector_size),
         (GenericFit::Bound, 8),
         "{}",
         e.reason
@@ -167,8 +172,8 @@ fn fallback_takes_the_smallest_worst_case() {
     let d = decide_of(records);
     let e = entry(&d, DeviceClass::Gpu, k, 4);
     assert_eq!(e.choice.vector_size, 4);
-    match e.fit {
-        GenericFit::Fallback { worst } => assert!((worst - 1.5).abs() < 1e-12),
+    match &e.fit {
+        GenericFit::Fallback { worst, .. } => assert!((worst - 1.5).abs() < 1e-12),
         f => panic!("{f:?}"),
     }
     assert!(e.reason.contains("worst case"), "{}", e.reason);
@@ -204,7 +209,7 @@ fn shared_entries_count_each_four_byte_type() {
     let shared = decide_of(records);
     let e = entry(&shared, DeviceClass::Gpu, k, 4);
     assert_eq!(
-        (e.fit, e.choice.vector_size),
+        (e.fit.clone(), e.choice.vector_size),
         (GenericFit::Bound, 2),
         "{}",
         e.reason
@@ -480,6 +485,7 @@ fn decide_degree_of(m9h: Vec<DegreeRecord>, m10: Vec<DegreeRecord>) -> DegreeDec
             degree: m10,
             ..M10Data::default()
         },
+        GenericRule::M10,
     )
 }
 
@@ -659,8 +665,8 @@ fn degree_picks_follow_the_generic_rule() {
     let d = decide_degree_of(Vec::new(), m10);
     let k = cpu_points(&d).pick(1).unwrap();
     assert_eq!(k.strategy, "sumfact");
-    match k.fit {
-        GenericFit::Fallback { worst } => assert!((worst - 1.3).abs() < 1e-12, "{worst}"),
+    match &k.fit {
+        GenericFit::Fallback { worst, .. } => assert!((worst - 1.3).abs() < 1e-12, "{worst}"),
         f => panic!("{f:?}"),
     }
     assert!(k.reason.contains("worst case r = 1.30"), "{}", k.reason);
@@ -678,7 +684,7 @@ fn degree_picks_follow_the_generic_rule() {
         m10_points(1, &[("direct", 1.0), ("sumfact", 0.92)]),
     );
     let k = cpu_points(&d).pick(1).unwrap();
-    assert_eq!((k.strategy, k.fit), ("direct", GenericFit::Bound));
+    assert_eq!((k.strategy, k.fit.clone()), ("direct", GenericFit::Bound));
     assert!(k.reason.starts_with("direct: no strategy"), "{}", k.reason);
 }
 
@@ -925,8 +931,8 @@ mod prop {
             let (a, b) = (cpu_points(&a).pick(1).unwrap(), cpu_points(&b).pick(1).unwrap());
             prop_assert_eq!(a.strategy, b.strategy);
             prop_assert_eq!(a.base, b.base);
-            let worst = |k: &DegreePick| match k.fit {
-                GenericFit::Fallback { worst } => Some(worst),
+            let worst = |k: &DegreePick| match &k.fit {
+                GenericFit::Fallback { worst, .. } => Some(*worst),
                 _ => None,
             };
             prop_assert_eq!(worst(a).is_some(), worst(b).is_some());

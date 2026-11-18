@@ -153,6 +153,12 @@ pub struct SweepRecord {
     pub fallback_reason: Option<String>,
     /// Locust's node-load snapshots.
     pub node_load: Option<NodeLoad>,
+    /// The seed of the process that measured the record in interleaved rounds (M10c grid
+    /// records; ADR-0065 item 1); `None` in earlier records.
+    pub seed: Option<u64>,
+    /// The record's position in each round's shuffled order, one per timed run, in the order of
+    /// `times_s` (M10c grid records); `None` in earlier records.
+    pub positions: Option<Vec<usize>>,
 }
 
 /// What a throughput record measures (docs/plans/M3s.md, T13).
@@ -593,7 +599,7 @@ impl NodeLoad {
 impl SweepRecord {
     /// The record as a JSON object, in the field order of the files.
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut v = json!({
             "backend": self.backend,
             "device": self.device,
             "device_class": class_json(self.device_class, self.legacy_class),
@@ -621,7 +627,16 @@ impl SweepRecord {
             "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
-        })
+        });
+        // Earlier records have neither field; they are written only where set.
+        let o = v.as_object_mut().expect("a JSON object");
+        if let Some(seed) = self.seed {
+            o.insert("seed".to_owned(), json!(seed));
+        }
+        if let Some(positions) = &self.positions {
+            o.insert("positions".to_owned(), json!(positions));
+        }
+        v
     }
 
     /// The record of a JSON object.
@@ -660,6 +675,15 @@ impl SweepRecord {
             load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
+            seed: o.opt_u64("seed")?,
+            positions: o
+                .opt("positions")
+                .map(|p| {
+                    p.as_array()
+                        .and_then(|a| a.iter().map(as_usize).collect::<Option<Vec<usize>>>())
+                        .ok_or_else(|| "field positions is not an array of indices".to_owned())
+                })
+                .transpose()?,
         })
     }
 }
@@ -783,6 +807,10 @@ impl<'a> Fields<'a> {
 
     fn u32(&self, key: &str) -> Result<u32, String> {
         self.typed(key, "a u32", as_u32)
+    }
+
+    fn opt_u64(&self, key: &str) -> Result<Option<u64>, String> {
+        self.opt_typed(key, "a u64", Value::as_u64)
     }
 
     fn opt_u32(&self, key: &str) -> Result<Option<u32>, String> {
@@ -1344,27 +1372,38 @@ pub struct M10Data {
     pub throughput: Vec<ThroughputRecord>,
     /// `m10-halo-*.json`.
     pub halo: Vec<HaloRecord>,
+    /// `m10c-vector-cpu-*.json`: M10c's `[Cpu]` vector grid, timed in interleaved rounds in two
+    /// processes (ADR-0065 items 1 and 2).
+    pub cpu_grid: Vec<SweepRecord>,
 }
 
-/// The records of every `m10-*.json` file in `dir`; degree records only at their entry's rule
-/// sizes ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063).
+/// The records of every `m10-*.json` and `m10c-*.json` file in `dir`; degree records only at
+/// their entry's rule sizes ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes),
+/// ADR-0063).
 ///
 /// # Errors
 ///
-/// A message naming the file, for unreadable files, malformed records and `m10-` files of
-/// another kind.
+/// A message naming the file, for unreadable files, malformed records and `m10-` or `m10c-`
+/// files of another kind.
 pub fn load_m10_dir(dir: &Path) -> Result<M10Data, String> {
     let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut names: Vec<String> = entries
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| name.starts_with("m10-") && name.ends_with(".json"))
+        .filter(|name| {
+            (name.starts_with("m10-") || name.starts_with("m10c-")) && name.ends_with(".json")
+        })
         .collect();
     names.sort();
     let mut data = M10Data::default();
     for name in names {
         let path = dir.join(&name);
-        if name.starts_with("m10-vector-") {
+        if name.starts_with("m10c-vector-cpu-") {
+            data.cpu_grid
+                .extend(read_records(&path, SweepRecord::from_json)?);
+        } else if name.starts_with("m10c-") {
+            return Err(format!("{}: not an m10c-vector-cpu- file", path.display()));
+        } else if name.starts_with("m10-vector-") {
             data.vector
                 .extend(read_records(&path, SweepRecord::from_json)?);
         } else if name.starts_with("m10-degree-") {
@@ -1456,6 +1495,8 @@ mod tests {
                 before: "idle".to_owned(),
                 after: "busy: gpu".to_owned(),
             }),
+            seed: None,
+            positions: None,
         }
     }
 

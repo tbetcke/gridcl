@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use gridcl_bench::decide::decide;
-use gridcl_bench::decide_generic::{GenericFit, decide_vector};
+use gridcl_bench::decide_generic::{GenericFit, GenericRule, decide_vector};
 use gridcl_bench::record::{load_dir, load_m10_dir};
 use gridcl_bench::report::{render, render_m10_vector, splice, splice_m10};
 
@@ -101,7 +101,7 @@ fn run(args: &Args) -> Result<(), String> {
     let report = splice(&old_report, &render(&data, &decision))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
     let m10 = load_m10_dir(&args.data)?;
-    let generic = decide_vector(&m10);
+    let generic = decide_vector(&m10, GenericRule::M10);
     let vector_policy = generic.to_toml();
     let report = splice_m10(&report, &render_m10_vector(&m10, &generic))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
@@ -130,7 +130,7 @@ fn run(args: &Args) -> Result<(), String> {
         m10.vector.len()
     );
     for e in &generic.entries {
-        if let GenericFit::Fallback { worst } = e.fit {
+        if let GenericFit::Fallback { worst, .. } = e.fit {
             eprintln!(
                 "policy_report: M10 {:?} {:?} {}-byte: fallback, worst case r = {worst:.2}",
                 e.class, e.kind, e.bytes

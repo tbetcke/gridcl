@@ -436,6 +436,8 @@ fn sweep_record(
         load_width: Some(machine.load_width),
         fallback_reason: fallback_reason.clone(),
         node_load: None,
+        seed: None,
+        positions: None,
     }
 }
 

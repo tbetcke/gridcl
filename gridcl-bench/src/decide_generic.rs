@@ -217,8 +217,23 @@ pub fn generic_rule<K: Copy + Ord>(
     }
 }
 
+/// The version of the generic rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GenericRule {
+    /// M10's rule (ADR-0058 item 4): the fallback takes the admitted candidate with the smallest
+    /// worst case; every candidate has a time on every member and size. M10's report sections
+    /// and frozen policies (`gridcl-bench/history/*-m10.toml`) stay as this rule wrote them.
+    M10,
+    /// M10c's rule (ADR-0065 items 3 and 4): if no admitted candidate meets the bound, the bound
+    /// and the choice apply to all candidates, and only if none meets it the admitted candidate
+    /// with the smallest worst case is taken; a member without a time at a size is left out of
+    /// that size's admission mean, r and the bound. `[Cpu]` vector entries read the grid
+    /// records of two processes (`M10Data::cpu_grid`).
+    M10c,
+}
+
 /// How the generic rule reached an entry.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GenericFit {
     /// The simplest kept candidate within 3% of the smallest geometric mean of r.
     Bound,
@@ -226,6 +241,9 @@ pub enum GenericFit {
     Fallback {
         /// The largest r of the choice over the members and sizes.
         worst: f64,
+        /// Why no candidate meets the bound, in one line for the report (M10c; empty under
+        /// [`GenericRule::M10`]).
+        cause: String,
     },
     /// No member measured the entry, or not every candidate the rule needs: the baseline at
     /// vector size 1 on all hardware threads.
@@ -419,8 +437,11 @@ fn member_times(
     out
 }
 
-/// The generic vector policy from the M10 candidate records.
-pub fn decide_vector(data: &M10Data) -> VectorDecision {
+/// The generic vector policy from the M10 candidate records, by `rule`.
+pub fn decide_vector(data: &M10Data, rule: GenericRule) -> VectorDecision {
+    if rule == GenericRule::M10c {
+        todo!("M10c: the grid records and the fallback without the admission gate (T2)")
+    }
     let vector = &data.vector;
     let present = |t: &str, b: &str| vector.iter().any(|r| r.target == t && r.backend == b);
     let platforms = m10_platforms(present);
@@ -566,6 +587,7 @@ fn vector_reason(
         return (
             GenericFit::Fallback {
                 worst: outcome.worst,
+                cause: String::new(),
             },
             format!(
                 "worst case r = {:.2}: no admitted candidate within {BOUND} on every platform \
@@ -886,7 +908,10 @@ fn m9h_platforms(m9h: &HighOrderData, class: DeviceClass, scalar: Scalar) -> Vec
 ///   compared ([`DegreeEntry::moves`]); a range whose check falls back or moves by more than
 ///   10% lists the unmeasured degrees on both sides of each of its boundaries in
 ///   [`DegreeEntry::remeasure`].
-pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data) -> DegreeDecision {
+pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data, rule: GenericRule) -> DegreeDecision {
+    if rule == GenericRule::M10c {
+        todo!("M10c: the fallback without the admission gate (T2)")
+    }
     let m9h = finite_checks(m9h);
     let m10_data = HighOrderData {
         degree: m10.degree.clone(),
@@ -1129,6 +1154,7 @@ fn degree_reason(
         return (
             GenericFit::Fallback {
                 worst: outcome.worst,
+                cause: String::new(),
             },
             format!(
                 "worst case r = {:.2}: no admitted strategy within {BOUND} on every platform \

@@ -99,7 +99,7 @@ fn run(args: &Args) -> Result<(), String> {
     let report = splice(&old_report, &render_high_order(&data, &decision))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
     let m10 = load_m10_dir(&args.data)?;
-    let generic = decide_generic::decide_degree(&data, &m10);
+    let generic = decide_generic::decide_degree(&data, &m10, decide_generic::GenericRule::M10);
     let degree_policy = generic.to_toml();
     let report = splice_m10(&report, &render_m10_high_order(&m10, &generic))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
@@ -149,8 +149,8 @@ fn run(args: &Args) -> Result<(), String> {
     for e in &generic.entries {
         let at = format!("{:?} {} {} {}", e.class, e.family, e.cell, e.scalar.name());
         for k in e.picks.iter().filter(|k| k.source == DegreeSource::M10) {
-            match k.fit {
-                GenericFit::Fallback { worst } => eprintln!(
+            match &k.fit {
+                GenericFit::Fallback { worst, .. } => eprintln!(
                     "high_order_report: M10 fallback {at} p={}: {} (worst r {worst:.2})",
                     k.degree, k.strategy
                 ),

@@ -257,10 +257,37 @@ pub fn vector_candidates(
     out
 }
 
+/// M10's vector policy, frozen as history when M10c re-derived the live one (ADR-0065): the
+/// "own policy" of M10's candidate sets.
+pub const M10_VECTOR_TOML: &str = include_str!("../history/vector-policy-m10.toml");
+
+/// The vector sizes of the M10c grid of `[Cpu]` vector entries (ADR-0065 item 2).
+pub const GRID_VECTOR_SIZES: [usize; 4] = [1, 4, 8, 16];
+/// The CPU blocks of the M10c grid, in bytes.
+pub const GRID_BLOCKS: [usize; 3] = [4 << 10, 16 << 10, 64 << 10];
+
+/// The cases the M10c grid leaves out, as (target, kind, scalar, size): those that do not fit a
+/// platform's memory (ADR-0065 item 4; further cases from the M10c smoke run are named in the
+/// plan's Deviations log).
+pub const GRID_OMITTED: &[(&str, KernelKind, Scalar, usize)] =
+    &[("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000)];
+
+/// The M10c grid of the `[Cpu]` vector entry of `kind` in `scalar` (ADR-0065 item 2), in the
+/// simplicity order: vector sizes 1, 4, 8 and 16, blocks of 4, 16 and 64 KiB, and both unit
+/// settings (a device without performance cores runs all threads, which count for both;
+/// ADR-0017). GeomFactors uses tile 4 up to size 4 and tile 16 above; Scalar has blocks and units
+/// only. 24 configurations (Scalar 6).
+pub fn cpu_grid(kind: KernelKind, scalar: Scalar) -> Vec<VectorConfig> {
+    let _ = (kind, scalar);
+    todo!("M10c grid (T3)")
+}
+
 /// The frozen pre-M10 degree policy (ADR-0060 item 2).
 pub const HISTORY_DEGREE_TOML: &str = include_str!("../history/degree-policy-pre-m10.toml");
 /// The live degree policy, as compiled into this crate.
 pub const DEGREE_POLICY_TOML: &str = include_str!("../../gridcl-geometry/degree-policy.toml");
+/// M10's degree policy, frozen as history when M10c re-derived the live one (ADR-0065).
+pub const M10_DEGREE_TOML: &str = include_str!("../history/degree-policy-m10.toml");
 
 /// The strategy of (`family`, `cell`, `bytes`) at `degree` in the table `table` of the
 /// degree-policy text `text`: the last range whose first degree is at most `degree`.

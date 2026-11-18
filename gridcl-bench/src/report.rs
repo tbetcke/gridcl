@@ -36,6 +36,63 @@ pub const M10_BEGIN_MARKER: &str = "<!-- BEGIN GENERATED M10; do not edit -->";
 /// The line after M10's generated tables.
 pub const M10_END_MARKER: &str = "<!-- END GENERATED M10 -->";
 
+/// The line before M10c's generated tables in `docs/perf/vectorization.md` and
+/// `docs/perf/high-order.md` (M10's sections stay as M10's rule wrote them; ADR-0065).
+pub const M10C_BEGIN_MARKER: &str = "<!-- BEGIN GENERATED M10c; do not edit -->";
+/// The line after M10c's generated tables.
+pub const M10C_END_MARKER: &str = "<!-- END GENERATED M10c -->";
+
+/// One Cpu platform's noise between the two processes of the M10c grid (ADR-0065 item 1): over
+/// every launch both processes timed (member, size and configuration), the ratio of the larger
+/// to the smaller of the two medians.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProcessNoise {
+    /// The target, as `macmini`.
+    pub target: String,
+    /// The backend, `cpu`.
+    pub backend: String,
+    /// Launches timed by both processes.
+    pub launches: usize,
+    /// The median ratio.
+    pub median: f64,
+    /// The 90th percentile (nearest rank).
+    pub p90: f64,
+    /// The largest ratio.
+    pub max: f64,
+}
+
+/// The noise between processes of each platform of the grid records `grid`, in target order.
+pub fn process_noise(grid: &[crate::record::SweepRecord]) -> Vec<ProcessNoise> {
+    let _ = grid;
+    todo!("M10c noise between processes (T6)")
+}
+
+/// M10c's tables of `docs/perf/vectorization.md`: the records and their conditions, each Cpu
+/// platform's noise between processes (`| target backend | launches | median | p90 | max |`),
+/// and per entry of the four sets and platform of its class a row
+/// `| kind | class | bytes | target backend | best | choice | r | reason | cause |`, under the
+/// M10c rule (ADR-0065).
+pub fn render_m10c_vector(
+    data: &crate::record::M10Data,
+    decision: &crate::decide_generic::VectorDecision,
+) -> String {
+    let _ = (data, decision);
+    todo!("M10c vectorization section (T6)")
+}
+
+/// M10c's tables of `docs/perf/high-order.md`: the degree decision under the M10c rule at the
+/// M10 degrees with each fallback's worst case and cause (`| class | family | cell | bytes | p |
+/// target backend | best | choice | r | first use s | reason | cause |`), the degree ranges, and
+/// the per-degree choices that changed against M10's decision `m10`.
+pub fn render_m10c_high_order(
+    data: &crate::record::M10Data,
+    decision: &crate::decide_generic::DegreeDecision,
+    m10: &crate::decide_generic::DegreeDecision,
+) -> String {
+    let _ = (data, decision, m10);
+    todo!("M10c high-order section (T6)")
+}
+
 /// M10's tables of `docs/perf/vectorization.md`: per entry of the four sets and platform of its
 /// class, a row `| kind | class | bytes | target backend | best | choice | r | reason |`
 /// (ADR-0058 item 6).
