@@ -1,7 +1,7 @@
 # Partitioner tests (docs/design.md, "CI matrix"; M7), on Ubuntu's Scotch, PT-Scotch, ParMETIS and
 # Open MPI, in the two feature sets of ADR-0033. Nightly, on changes to gridcl-partition/,
 # ptscotch-sys/, parmetis-sys/, the pipeline's dual graph, the Gmsh reader, the M7 and M8 MPI
-# targets or their test infrastructure, and by hand.
+# targets or their test infrastructure, and scripts/check-docs.sh, and by hand.
 name: ptscotch
 
 on:
@@ -20,6 +20,7 @@ on:
       - "gridcl-testing/src/meshes/boxes.rs"
       - "gridcl-testing/src/io_parallel.rs"
       - "scripts/mpi-test.sh"
+      - "scripts/check-docs.sh"
       - ".github/workflows/ptscotch.yml"
   workflow_dispatch:
 
@@ -49,10 +50,10 @@ jobs:
             features: scotch,ptscotch,parmetis
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: PT-Scotch, ParMETIS, Open MPI and libclang (bindgen)
+      - name: PT-Scotch, ParMETIS, Open MPI, its parallel HDF5 (check-docs.sh) and libclang (bindgen)
         uses: ./.github/actions/apt-install
         with:
-          packages: libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libclang-dev
+          packages: libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libhdf5-openmpi-dev libclang-dev
       - run: mpirun --version
       - name: Rust toolchain from rust-toolchain.toml
         run: |
@@ -63,6 +64,22 @@ jobs:
         with:
           key: ptscotch-${{ matrix.set }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Rustdoc with the partitioner and I/O features (ADR-0060 item 7): gridcl/metis, so in the
+      # metis set only (METIS and ParMETIS exclude each other, ADR-0033).
+      - name: HDF5_DIR for Open MPI's parallel HDF5
+        if: matrix.set == 'metis'
+        run: |
+          # hdf5-metno-sys looks for include/ and lib/ under HDF5_DIR; Ubuntu keeps the headers
+          # and libraries of its MPI builds in separate trees (as in ci.yml's mpi jobs).
+          so=$(dpkg -L libhdf5-openmpi-dev | grep '/libhdf5\.so$' | head -n 1)
+          test -n "$so"
+          root=$RUNNER_TEMP/hdf5-openmpi
+          mkdir -p "$root"
+          ln -sfn /usr/include/hdf5/openmpi "$root/include"
+          ln -sfn "$(dirname "$so")" "$root/lib"
+          echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
+      - if: matrix.set == 'metis'
+        run: scripts/check-docs.sh libraries
       - run: cargo test -p ptscotch-sys --features mpi
       - run: cargo test -p parmetis-sys --features mpi
       # ADR-0029, item 13: Ubuntu's PT-Scotch under MPI's Threading::Single on 2 ranks.

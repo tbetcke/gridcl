@@ -19,8 +19,11 @@ pub fn fixtures_dir() -> PathBuf {
 /// One physical group, as Gmsh reports it.
 #[derive(Clone, Debug)]
 pub struct PhysicalGroup {
+    /// The dimension of the group's elements.
     pub dim: usize,
+    /// The physical tag.
     pub tag: i32,
+    /// The physical name, if the file gives one.
     pub name: Option<String>,
     /// The number of elements in the group.
     pub size: usize,
@@ -34,7 +37,12 @@ pub enum Expect {
     /// A mesh.
     Mesh,
     /// `DuplicateOriginId(id)` for a repeated node tag (`nodes`) or element tag.
-    DuplicateOriginId { id: i64, nodes: bool },
+    DuplicateOriginId {
+        /// The repeated tag.
+        id: i64,
+        /// Whether the repeated tag is a node tag rather than an element tag.
+        nodes: bool,
+    },
 }
 
 /// One fixture file.
@@ -51,18 +59,23 @@ pub struct Fixture {
     pub num_mesh_nodes: usize,
     /// Element counts per Gmsh type id.
     pub element_counts: BTreeMap<i32, usize>,
-    /// The expected (D_TOP, D_GEO).
+    /// The expected D_TOP.
     pub tdim: usize,
+    /// The expected D_GEO.
     pub gdim: usize,
+    /// The physical groups of the file.
     pub physical_groups: Vec<PhysicalGroup>,
     /// For a serendipity file, the file of the same mesh written as complete P2.
     pub twin: Option<String>,
+    /// Whether the file is partitioned.
     pub partitioned: bool,
     /// The number of partitions; 0 for an unpartitioned file.
     pub num_partitions: usize,
     /// The sorted D_TOP element tags of each partition.
     pub partition_elements: Vec<Vec<i64>>,
+    /// Whether the file has periodic entities (a `$Periodic` section).
     pub periodic: bool,
+    /// What reading the file must give.
     pub expect: Expect,
 }
 
@@ -83,6 +96,7 @@ impl Fixture {
 pub struct Manifest {
     /// The Gmsh version that wrote the corpus.
     pub gmsh_version: String,
+    /// Every fixture of the corpus.
     pub files: Vec<Fixture>,
 }
 

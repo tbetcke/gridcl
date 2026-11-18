@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # The distributed partitioners call the libraries on `CommDyn::raw`, which needs MPI (ADR-0029,
 # item 4).

@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 autotests = false
 
+[lints]
+workspace = true
+
 [features]
 # VTKHDF output (ADR-0035, rule 9).
 hdf5 = ["dep:hdf5-metno", "dep:ndarray"]

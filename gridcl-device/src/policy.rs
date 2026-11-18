@@ -22,17 +22,30 @@ use crate::{VECTOR_PAD, testing};
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KernelKind {
+    /// The `fill` primitive: one value into every element of a buffer.
     Fill,
+    /// The `copy` primitive: a buffer into another of the same length.
     Copy,
+    /// The `reduce` primitive: each level writes one fixed-order partial per cube until one value
+    /// is left.
     Reduce,
+    /// The tile phase of the scan.
     ScanTile,
+    /// The digit counts of the radix sort.
     SortDigits,
+    /// `gather`.
     Gather,
+    /// Pack and unpack, the device side of the halo exchange.
     Pack,
+    /// The sub-entity keys of entity creation.
     TopologyKeys,
+    /// The per-cell orientation words of the permutation info.
     PermutationInfo,
+    /// The E-vector of a geometry block: its node coordinates, cell by cell.
     EVector,
+    /// The geometry factors at quadrature points.
     GeomFactors,
+    /// The Newton iteration of the pull-back.
     PullBack,
     /// Kernels not on the candidate list; always vector size 1 (ADR-0015).
     Scalar,
@@ -75,7 +88,8 @@ impl KernelKind {
     }
 }
 
-/// Device classes the policy distinguishes, derived from `Client::properties()`.
+/// Device classes the policy distinguishes, derived from `Client::properties()`. Each class has
+/// one generic set per scalar size (4 and 8 bytes), not one per platform (ADR-0058).
 ///
 /// # Example
 ///
@@ -84,58 +98,49 @@ impl KernelKind {
 ///
 /// let client = gridcl_testing::test_client();
 /// let class = DeviceClass::for_client(&client);
-/// assert_eq!(class == DeviceClass::Gpu, client.properties().hardware.num_cpu_cores.is_none());
+/// assert_eq!(class == DeviceClass::Cpu, client.properties().hardware.num_cpu_cores.is_some());
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviceClass {
-    CpuSimd128,
-    CpuSimd256,
-    CpuSimd512,
+    /// A CPU: the device reports `hardware.num_cpu_cores`.
+    Cpu,
+    /// Every other device.
     Gpu,
 }
 
 impl DeviceClass {
-    const ALL: [DeviceClass; 4] = [
-        DeviceClass::CpuSimd128,
-        DeviceClass::CpuSimd256,
-        DeviceClass::CpuSimd512,
-        DeviceClass::Gpu,
-    ];
+    const ALL: [DeviceClass; 2] = [DeviceClass::Cpu, DeviceClass::Gpu];
 
-    /// A device with `hardware.num_cpu_cores` is a CPU, classed by `hardware.load_width` (512
-    /// bits: CpuSimd512, 256: CpuSimd256, else CpuSimd128); every other device is Gpu.
-    /// `load_width` alone does not tell a CPU from wgpu, which also reports 128 bits.
+    /// A device with `hardware.num_cpu_cores` is `Cpu`; every other device is `Gpu`.
+    /// `load_width` does not tell a CPU from wgpu, which also reports 128 bits, and does not
+    /// class CPUs (ADR-0058).
     pub fn for_client(client: &Client) -> DeviceClass {
         DeviceClass::from_properties(&testing::properties(client))
     }
 
     pub(crate) fn from_properties(props: &DeviceProperties) -> DeviceClass {
-        match (props.hardware.num_cpu_cores, props.hardware.load_width) {
-            (None, _) => DeviceClass::Gpu,
-            (Some(_), 512) => DeviceClass::CpuSimd512,
-            (Some(_), 256) => DeviceClass::CpuSimd256,
-            (Some(_), _) => DeviceClass::CpuSimd128,
+        match props.hardware.num_cpu_cores {
+            Some(_) => DeviceClass::Cpu,
+            None => DeviceClass::Gpu,
         }
     }
 
     pub(crate) fn is_cpu(self) -> bool {
-        self != DeviceClass::Gpu
+        self == DeviceClass::Cpu
     }
 
     fn name(self) -> &'static str {
         match self {
-            DeviceClass::CpuSimd128 => "CpuSimd128",
-            DeviceClass::CpuSimd256 => "CpuSimd256",
-            DeviceClass::CpuSimd512 => "CpuSimd512",
+            DeviceClass::Cpu => "Cpu",
             DeviceClass::Gpu => "Gpu",
         }
     }
 
     fn index(self) -> usize {
-        DeviceClass::ALL
-            .iter()
-            .position(|&c| c == self)
-            .expect("every class is in ALL")
+        match self {
+            DeviceClass::Cpu => 0,
+            DeviceClass::Gpu => 1,
+        }
     }
 }
 
@@ -153,7 +158,9 @@ impl DeviceClass {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CpuUnits {
+    /// One unit per hardware thread.
     All,
+    /// One unit per performance core.
     Performance,
 }
 
@@ -194,9 +201,13 @@ pub(crate) const QUAD_TILE_VAR: &str = "GRIDCL_QUAD_TILE";
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VectorSizeOverride {
+    /// Vector size 1.
     Scalar,
+    /// The vector policy's size, under the full rule.
     Policy,
+    /// The first of the device's `io_optimized_vector_sizes` for the scalar size.
     Widest,
+    /// This vector size, a power of two from 1 to `VECTOR_PAD`.
     Fixed(usize),
 }
 
@@ -296,12 +307,7 @@ impl VectorPolicy {
     }
 
     pub(crate) fn for_class(class: DeviceClass) -> &'static VectorPolicy {
-        static POLICIES: [OnceLock<VectorPolicy>; 4] = [
-            OnceLock::new(),
-            OnceLock::new(),
-            OnceLock::new(),
-            OnceLock::new(),
-        ];
+        static POLICIES: [OnceLock<VectorPolicy>; 2] = [OnceLock::new(), OnceLock::new()];
         POLICIES[class.index()].get_or_init(|| {
             VectorPolicy::parse(POLICY_TOML, class)
                 .unwrap_or_else(|e| panic!("gridcl-device/vector-policy.toml: {e}"))
@@ -402,9 +408,16 @@ impl VectorPolicy {
         }))
     }
 
-    /// The policy of `class` in the TOML text `text`.
+    /// The policy of `class` in the TOML text `text`, which holds exactly the tables `[Cpu]` and
+    /// `[Gpu]` (ADR-0058).
     fn parse(text: &str, class: DeviceClass) -> Result<VectorPolicy, String> {
         let table: toml::Table = text.parse().map_err(|e| format!("{e}"))?;
+        if let Some(other) = table
+            .keys()
+            .find(|k| !DeviceClass::ALL.iter().any(|c| c.name() == k.as_str()))
+        {
+            return Err(format!("[{other}] is not a device class (Cpu or Gpu)"));
+        }
         let c = class.name();
         let section = table
             .get(c)
@@ -547,7 +560,7 @@ fn parse_sizes<T>(
 mod tests {
     use super::*;
 
-    /// M3s acceptance (bullet 4): every kind and class has `vector_size` and per-size
+    /// M3s acceptance (bullet 4), for the two classes of ADR-0058: every kind and class has `vector_size` and per-size
     /// `quad_tile` entries, and every CPU class `cpu_block` and `cpu_units` entries; every
     /// numeric value is a power of two from 1 to 16, every `cpu_units` value is `all` or
     /// `performance` (ADR-0017), and `Scalar` runs at vector size 1.
@@ -671,24 +684,24 @@ mod tests {
             assert!(VectorPolicy::parse(&base, class).is_ok(), "{class:?}");
         }
         let bad_size = base.replacen("Fill = { 4 = 1", "Fill = { 4 = 3", 1);
-        assert!(VectorPolicy::parse(&bad_size, DeviceClass::CpuSimd128).is_err());
+        assert!(VectorPolicy::parse(&bad_size, DeviceClass::Cpu).is_err());
         let bad_tile = base.replacen("quad_tile = { 4 = 16", "quad_tile = { 4 = 32", 1);
-        assert!(VectorPolicy::parse(&bad_tile, DeviceClass::CpuSimd128).is_err());
+        assert!(VectorPolicy::parse(&bad_tile, DeviceClass::Cpu).is_err());
         let scalar_tile = base.replacen("quad_tile = { 4 = 16", "quad_tile = 16", 1);
-        assert!(VectorPolicy::parse(&scalar_tile, DeviceClass::CpuSimd128).is_err());
+        assert!(VectorPolicy::parse(&scalar_tile, DeviceClass::Cpu).is_err());
         for units in ["0", "2", "3", "32"] {
             let bad_block = base.replacen("Fill = { 4 = 4", &format!("Fill = {{ 4 = {units}"), 1);
-            let accepted = VectorPolicy::parse(&bad_block, DeviceClass::CpuSimd128).is_ok();
+            let accepted = VectorPolicy::parse(&bad_block, DeviceClass::Cpu).is_ok();
             assert_eq!(accepted, units == "2", "cpu_block {units}");
         }
-        let no_blocks = base.replacen("[CpuSimd128.cpu_block]", "[CpuSimd128.other]", 1);
-        assert!(VectorPolicy::parse(&no_blocks, DeviceClass::CpuSimd128).is_err());
+        let no_blocks = base.replacen("[Cpu.cpu_block]", "[Cpu.other]", 1);
+        assert!(VectorPolicy::parse(&no_blocks, DeviceClass::Cpu).is_err());
         let gpu_blocks = format!("{base}[Gpu.cpu_block]\nFill = {{ 4 = 4, 8 = 4 }}\n");
         assert!(VectorPolicy::parse(&gpu_blocks, DeviceClass::Gpu).is_err());
         let missing = base.replacen("PullBack = { 4 = 1, 8 = 1 }\n", "", 1);
-        assert!(VectorPolicy::parse(&missing, DeviceClass::CpuSimd128).is_err());
+        assert!(VectorPolicy::parse(&missing, DeviceClass::Cpu).is_err());
         let vector_scalar = base.replacen("Scalar = { 4 = 1", "Scalar = { 4 = 2", 1);
-        assert!(VectorPolicy::parse(&vector_scalar, DeviceClass::CpuSimd128).is_err());
+        assert!(VectorPolicy::parse(&vector_scalar, DeviceClass::Cpu).is_err());
         for (value, ok) in [
             ("\"performance\"", true),
             ("\"all\"", true),
@@ -701,7 +714,7 @@ mod tests {
                 &format!("Reduce = {{ 4 = {value}"),
                 1,
             );
-            let parsed = VectorPolicy::parse(&units, DeviceClass::CpuSimd128);
+            let parsed = VectorPolicy::parse(&units, DeviceClass::Cpu);
             assert_eq!(parsed.is_ok(), ok, "cpu_units {value}");
             if value == "\"performance\"" {
                 let policy = parsed.unwrap();
@@ -712,10 +725,16 @@ mod tests {
                 assert_eq!(policy.cpu_units(KernelKind::Reduce, 8), Some(CpuUnits::All));
             }
         }
-        let no_units = base.replacen("[CpuSimd128.cpu_units]", "[CpuSimd128.other]", 1);
-        assert!(VectorPolicy::parse(&no_units, DeviceClass::CpuSimd128).is_err());
+        let no_units = base.replacen("[Cpu.cpu_units]", "[Cpu.other]", 1);
+        assert!(VectorPolicy::parse(&no_units, DeviceClass::Cpu).is_err());
         let gpu_units = format!("{base}[Gpu.cpu_units]\nFill = {{ 4 = \"all\", 8 = \"all\" }}\n");
         assert!(VectorPolicy::parse(&gpu_units, DeviceClass::Gpu).is_err());
+        // Exactly the two classes (ADR-0058): an old per-SIMD-width table is rejected.
+        let old_class = format!("{base}[CpuSimd512]\nquad_tile = {{ 4 = 16, 8 = 16 }}\n");
+        for class in DeviceClass::ALL {
+            let e = VectorPolicy::parse(&old_class, class).unwrap_err();
+            assert!(e.contains("[CpuSimd512] is not a device class"), "{e}");
+        }
     }
 
     #[test]
@@ -755,20 +774,12 @@ mod tests {
     #[test]
     fn device_class_from_properties() {
         let mut props = gridcl_testing::test_client().properties().clone();
-        props.hardware.num_cpu_cores = None;
-        for width in [128, 256, 512] {
+        for width in [64, 128, 256, 512] {
             props.hardware.load_width = width;
+            props.hardware.num_cpu_cores = None;
             assert_eq!(DeviceClass::from_properties(&props), DeviceClass::Gpu);
-        }
-        props.hardware.num_cpu_cores = Some(8);
-        for (width, class) in [
-            (64, DeviceClass::CpuSimd128),
-            (128, DeviceClass::CpuSimd128),
-            (256, DeviceClass::CpuSimd256),
-            (512, DeviceClass::CpuSimd512),
-        ] {
-            props.hardware.load_width = width;
-            assert_eq!(DeviceClass::from_properties(&props), class);
+            props.hardware.num_cpu_cores = Some(8);
+            assert_eq!(DeviceClass::from_properties(&props), DeviceClass::Cpu);
         }
     }
 }

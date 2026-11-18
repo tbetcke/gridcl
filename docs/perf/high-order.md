@@ -2887,3 +2887,2152 @@ Per bench family and strategy on Locust, over cell types, degrees, scalar types 
 | BasisEval | cooperative | 102 | 128 | 28 | 320 | 512 | Hexahedron 8 f64 |
 
 <!-- END GENERATED -->
+
+## M10: the generic degree sets (ADR-0058, ADR-0060)
+
+M10 measures the degree-dependent families at p = 1, 4 and 8 (pyramids at p = 1) with the
+candidate protocol of docs/design.md, "Benchmarks" (ADR-0057 item 3, ADR-0060 item 2): the
+baseline, M9h's choices for the old classes of each class and the live policy's, at 10^6 and
+10^7 points (FacetNormals on intervals in f32 at sizes f32 can resolve, ADR-0063), five timed
+runs, interleaved on CPUs (ADR-0055), on the Mac mini's CPU runtime and Metal, Locust's Grace
+CPU and GH200, and one Kathleen socket. `gridcl-geometry/degree-policy.toml` holds `[Cpu]` and
+`[Gpu]` only, chosen by the generic rule of ADR-0058 item 4: per entry and degree, a strategy
+is admitted if it is at least 10% faster than the baseline (`direct`, or `loops` where `direct`
+is not selectable) by the geometric mean over the class's platforms at each size; among the
+admitted whose r (time over the platform's best selectable strategy) is at most 1.25 on every
+platform and size, the simplest within 3% of the smallest geometric mean of r wins; otherwise
+the smallest worst case, marked in the table. Degrees 2, 3 and 5–7 come from M9h's records
+(ADR-0060 item 3).
+
+<!-- BEGIN GENERATED M10; do not edit -->
+
+Written by `high_order_report` from the `m10-degree-*.json` records at p = 1, 4 and 8 and M9h's records in between, with the generic rule (ADR-0058 item 4, ADR-0060 item 3). FacetNormals on intervals in f32 is measured at the sizes of ADR-0063.
+
+Records:
+
+- kathleen cpu: Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz (commit 65b8ef2, ff43a31)
+- locust cpu: Neoverse-V2 (commit 65b8ef2, ff43a31)
+- locust cuda: NVIDIA GH200 480GB (commit 65b8ef2, ff43a31)
+- macmini cpu: Apple M6 (commit 65b8ef2, ff43a31)
+- macmini metal: Apple M6 (commit 65b8ef2, ff43a31)
+
+### Choices at p = 1, 4 and 8
+
+Per entry, measured degree and platform of its class: the platform's best selectable strategy (smallest geometric mean of r over the rule sizes), the generic choice, the platform's r for it (largest over the sizes), the largest first-use compile and load time of the choice's records there, and the reason. Admission at 10% over the baseline by the geometric mean over the platforms at each size, bound r ≤ 1.25, simplest within 3%. 29 of 530 choices need the fallback (smallest worst case); 0 take the default `loops` (neither `direct` nor `loops` selectable).
+
+| class | family | cell | bytes | p | target backend | best | choice | r | first use s | reason |
+| --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | ---: | --- |
+| Cpu | EVector | Interval | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Interval | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 5 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 5 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 5 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 6 | macmini cpu | loops | direct | 1.07 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 6 | locust cpu | loops | direct | 1.06 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 6 | kathleen cpu | loops | direct | 1.10 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 7 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 7 | locust cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 7 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.10x / 1.13x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | EVector | Triangle | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.01 | loops 1.10x / 1.13x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | EVector | Triangle | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.02 | loops 1.10x / 1.13x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | EVector | Triangle | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 5 | macmini cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 5 | locust cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 5 | kathleen cpu | direct | direct | 1.00 | 0.22 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 6 | macmini cpu | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 6 | locust cpu | loops | direct | 1.05 | 0.31 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 6 | kathleen cpu | loops | direct | 1.17 | 0.31 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 7 | macmini cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 7 | locust cpu | direct | direct | 1.00 | 0.44 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 7 | kathleen cpu | direct | direct | 1.00 | 0.47 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 8 | macmini cpu | loops | direct | 1.01 | 0.29 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 8 | locust cpu | loops | direct | 1.09 | 0.65 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Triangle | 8 | 8 | kathleen cpu | loops | direct | 1.14 | 0.72 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.25 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.17 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.26 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.26 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.78 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 8 | locust cpu | direct | direct | 1.00 | 1.82 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Quadrilateral | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 2.33 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 4 | macmini cpu | loops | direct | 1.11 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 4 | locust cpu | loops | direct | 1.13 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 4 | kathleen cpu | loops | direct | 1.12 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 5 | macmini cpu | loops | loops | 1.00 | 0.00 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 5 | locust cpu | loops | loops | 1.00 | 0.00 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 5 | kathleen cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.32 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.68 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.80 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 5 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 5 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Tetrahedron | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.57 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.43 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 4 | 5 | macmini cpu | loops | direct | 1.05 | 0.49 | worst case r = 1.64: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 5 | locust cpu | loops | direct | 1.64 | 1.16 | worst case r = 1.64: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 5 | kathleen cpu | loops | direct | 1.04 | 1.21 | worst case r = 1.64: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 6 | macmini cpu | loops | direct | 1.23 | 1.00 | worst case r = 1.75: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 6 | locust cpu | loops | direct | 1.75 | 2.38 | worst case r = 1.75: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 6 | kathleen cpu | loops | direct | 1.09 | 2.87 | worst case r = 1.75: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 7 | macmini cpu | loops | direct | 1.05 | 2.15 | worst case r = 1.88: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 7 | locust cpu | loops | direct | 1.88 | 4.85 | worst case r = 1.88: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 7 | kathleen cpu | loops | direct | 1.14 | 6.91 | worst case r = 1.88: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 8 | macmini cpu | loops | direct | 1.03 | 4.12 | worst case r = 1.48: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 8 | locust cpu | loops | direct | 1.48 | 8.99 | worst case r = 1.48: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 4 | 8 | kathleen cpu | loops | direct | 1.03 | 13.77 | worst case r = 1.48: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Hexahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 4 | macmini cpu | direct | direct | 1.00 | 3.38 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 4 | locust cpu | direct | direct | 1.00 | 7.28 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 11.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 5 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 5 | kathleen cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 6 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 6 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 6 | kathleen cpu | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 7 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 7 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 7 | kathleen cpu | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Hexahedron | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.28 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 5 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 5 | kathleen cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 7 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 7 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 7 | kathleen cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 4 | 8 | macmini cpu | loops | direct | 1.03 | 1.38 | worst case r = 1.67: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Prism | 4 | 8 | locust cpu | loops | direct | 1.67 | 3.22 | worst case r = 1.67: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Prism | 4 | 8 | kathleen cpu | loops | direct | 1.06 | 4.19 | worst case r = 1.67: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | EVector | Prism | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 4 | macmini cpu | direct | direct | 1.00 | 1.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 4 | locust cpu | direct | direct | 1.00 | 2.70 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 3.89 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 5 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 5 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Prism | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 2 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 2 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 2 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 3 | macmini cpu | loops | direct | 1.14 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 3 | locust cpu | loops | direct | 1.11 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 4 | 3 | kathleen cpu | loops | direct | 1.22 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | EVector | Pyramid | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 8 | 4 | macmini cpu | loops | direct | 1.24 | 0.02 | worst case r = 1.99: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Interval | 8 | 4 | locust cpu | loops | direct | 1.99 | 0.05 | worst case r = 1.99: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Interval | 8 | 4 | kathleen cpu | loops | direct | 1.01 | 0.02 | worst case r = 1.99: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Interval | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Interval | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 2 | macmini cpu | loops | direct | 1.03 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 2 | locust cpu | direct | direct | 1.01 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 2 | kathleen cpu | loops | direct | 1.11 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 4 | 3 | macmini cpu | loops | direct | 1.11 | 0.01 | worst case r = 1.31: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Triangle | 4 | 3 | locust cpu | loops | direct | 1.06 | 0.02 | worst case r = 1.31: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Triangle | 4 | 3 | kathleen cpu | loops | direct | 1.31 | 0.03 | worst case r = 1.31: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Triangle | 4 | 4 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.33x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Triangle | 4 | 4 | locust cpu | loops | loops | 1.00 | 0.03 | loops 1.33x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Triangle | 4 | 4 | kathleen cpu | loops | loops | 1.00 | 0.02 | loops 1.33x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Triangle | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.48x / 1.32x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Triangle | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.02 | loops 1.48x / 1.32x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Triangle | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.02 | loops 1.48x / 1.32x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Triangle | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 8 | 4 | macmini cpu | loops | direct | 1.05 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 8 | 4 | kathleen cpu | loops | direct | 1.17 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Triangle | 8 | 8 | macmini cpu | loops | direct | 1.13 | 0.05 | worst case r = 1.34: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Triangle | 8 | 8 | locust cpu | loops | direct | 1.16 | 0.20 | worst case r = 1.34: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Triangle | 8 | 8 | kathleen cpu | loops | direct | 1.34 | 0.07 | worst case r = 1.34: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 4 | 2 | macmini cpu | sumfact | direct | 1.23 | 0.01 | worst case r = 1.82: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 4 | 2 | locust cpu | sumfact | direct | 1.07 | 0.02 | worst case r = 1.82: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 4 | 2 | kathleen cpu | sumfact | direct | 1.82 | 0.02 | worst case r = 1.82: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 4 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.01 | sumfact 2.19x / 1.78x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 2.19x / 1.78x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 2.19x / 1.78x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.01 | sumfact 2.54x / 2.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 2.54x / 2.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 2.54x / 2.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.01 | sumfact 6.48x / 5.63x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 6.48x / 5.63x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 6.48x / 5.63x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 8 | 2 | macmini cpu | sumfact | direct | 1.04 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 8 | 2 | locust cpu | sumfact | direct | 1.24 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 8 | 2 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Quadrilateral | 8 | 3 | macmini cpu | sumfact | direct | 1.28 | 0.02 | worst case r = 1.61: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 8 | 3 | locust cpu | direct | direct | 1.00 | 0.06 | worst case r = 1.61: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 8 | 3 | kathleen cpu | sumfact | direct | 1.61 | 0.04 | worst case r = 1.61: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Quadrilateral | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.84x / 1.11x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.007; worst r 1.04) |
+| Cpu | Points | Quadrilateral | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.84x / 1.11x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.007; worst r 1.04) |
+| Cpu | Points | Quadrilateral | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.04 | 0.03 | sumfact 1.84x / 1.11x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.007; worst r 1.04) |
+| Cpu | Points | Quadrilateral | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 3.61x / 2.40x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 3.61x / 2.40x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 3.61x / 2.40x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Tetrahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 2 | macmini cpu | loops | direct | 1.18 | 0.01 | worst case r = 1.46: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 4 | 2 | locust cpu | direct | direct | 1.00 | 0.03 | worst case r = 1.46: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 4 | 2 | kathleen cpu | loops | direct | 1.46 | 0.03 | worst case r = 1.46: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 4 | 3 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.66x / 1.40x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Tetrahedron | 4 | 3 | locust cpu | loops | loops | 1.00 | 0.03 | loops 1.66x / 1.40x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Tetrahedron | 4 | 3 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.66x / 1.40x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Tetrahedron | 4 | 4 | macmini cpu | loops | direct | 1.37 | 0.03 | worst case r = 2.20: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 4 | 4 | locust cpu | loops | direct | 1.17 | 0.06 | worst case r = 2.20: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 4 | 4 | kathleen cpu | loops | direct | 2.20 | 0.08 | worst case r = 2.20: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 4 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 5 | locust cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 5 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 2 | macmini cpu | direct | direct | 1.05 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 2 | locust cpu | loops | direct | 1.23 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 2 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 3 | macmini cpu | loops | direct | 1.07 | 0.03 | worst case r = 1.37: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 8 | 3 | locust cpu | loops | direct | 1.15 | 0.09 | worst case r = 1.37: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 8 | 3 | kathleen cpu | loops | direct | 1.37 | 0.06 | worst case r = 1.37: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Tetrahedron | 8 | 4 | macmini cpu | loops | direct | 1.08 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 4 | locust cpu | loops | direct | 1.15 | 0.26 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 4 | kathleen cpu | loops | direct | 1.07 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 5 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 5 | kathleen cpu | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Tetrahedron | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.06 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Hexahedron | 4 | 1 | macmini cpu | sumfact | sumfact | 1.00 | 0.01 | sumfact 1.42x / 1.14x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 1 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.42x / 1.14x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 1 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.42x / 1.14x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 14.44x / 9.71x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 14.44x / 9.71x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 14.44x / 9.71x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.18 | sumfact 44.87x / 53.91x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.33 | sumfact 44.87x / 53.91x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.58 | sumfact 44.87x / 53.91x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Hexahedron | 8 | 1 | locust cpu | direct | direct | 1.01 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Hexahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Hexahedron | 8 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.30x / 1.67x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.017; worst r 1.11) |
+| Cpu | Points | Hexahedron | 8 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 1.30x / 1.67x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.017; worst r 1.11) |
+| Cpu | Points | Hexahedron | 8 | 2 | kathleen cpu | sumfact | sumfact | 1.11 | 0.06 | sumfact 1.30x / 1.67x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.017; worst r 1.11) |
+| Cpu | Points | Hexahedron | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 7.13x / 3.81x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.12 | sumfact 7.13x / 3.81x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 7.13x / 3.81x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.20 | sumfact 27.23x / 35.76x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.37 | sumfact 27.23x / 35.76x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Hexahedron | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.58 | sumfact 27.23x / 35.76x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Prism | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Prism | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Prism | 4 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.01 | sumfact 1.94x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.94x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 2 | kathleen cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.94x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 4.53x / 4.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 4.53x / 4.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 4.53x / 4.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 7.58x / 7.02x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 7.58x / 7.02x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.13 | sumfact 7.58x / 7.02x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 1 | macmini cpu | sumfact | direct | 1.12 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Prism | 8 | 1 | locust cpu | direct | direct | 1.02 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Prism | 8 | 1 | kathleen cpu | sumfact | direct | 1.04 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Prism | 8 | 2 | macmini cpu | sumfact | direct | 1.37 | 0.03 | worst case r = 1.80: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Prism | 8 | 2 | locust cpu | sumfact | direct | 1.18 | 0.08 | worst case r = 1.80: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Prism | 8 | 2 | kathleen cpu | sumfact | direct | 1.80 | 0.05 | worst case r = 1.80: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Prism | 8 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 2.35x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 2.35x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 2.35x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 3.81x / 2.10x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 3.81x / 2.10x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 3.81x / 2.10x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 6.15x / 6.18x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 6.15x / 6.18x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Prism | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.13 | sumfact 6.15x / 6.18x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Pyramid | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Pyramid | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Pyramid | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Pyramid | 4 | 2 | macmini cpu | loops | direct | 1.49 | 0.01 | worst case r = 1.49: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 4 | 2 | locust cpu | loops | direct | 1.22 | 0.03 | worst case r = 1.49: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 4 | 2 | kathleen cpu | loops | direct | 1.47 | 0.04 | worst case r = 1.49: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 4 | 3 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.66x / 1.83x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Pyramid | 4 | 3 | locust cpu | loops | loops | 1.00 | 0.02 | loops 1.66x / 1.83x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Pyramid | 4 | 3 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.66x / 1.83x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Points | Pyramid | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Pyramid | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Pyramid | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Points | Pyramid | 8 | 2 | macmini cpu | loops | direct | 1.11 | 0.02 | worst case r = 1.46: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 8 | 2 | locust cpu | direct | direct | 1.02 | 0.08 | worst case r = 1.46: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 8 | 2 | kathleen cpu | loops | direct | 1.46 | 0.05 | worst case r = 1.46: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 8 | 3 | macmini cpu | loops | direct | 1.15 | 0.05 | worst case r = 1.59: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 8 | 3 | locust cpu | loops | direct | 1.08 | 0.22 | worst case r = 1.59: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Points | Pyramid | 8 | 3 | kathleen cpu | loops | direct | 1.59 | 0.08 | worst case r = 1.59: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Jacobian | Interval | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Interval | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 6 | macmini cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 6 | locust cpu | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 6 | kathleen cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Triangle | 8 | 7 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.20x / 1.17x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Triangle | 8 | 7 | locust cpu | loops | loops | 1.00 | 0.03 | loops 1.20x / 1.17x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Triangle | 8 | 7 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.20x / 1.17x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Triangle | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.29x / 1.22x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Triangle | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.03 | loops 1.29x / 1.22x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Triangle | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.29x / 1.22x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 4 | 2 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 4 | 2 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 4 | 2 | kathleen cpu | sumfact | direct | 1.15 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 4 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.34x / 1.21x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.34x / 1.21x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.34x / 1.21x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.72x / 1.42x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.72x / 1.42x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.72x / 1.42x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 3.70x / 3.34x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 3.70x / 3.34x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 3.70x / 3.34x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.13 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 2 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 2 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 2 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.28x / 1.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | Jacobian | Quadrilateral | 8 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.28x / 1.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | Jacobian | Quadrilateral | 8 | 3 | kathleen cpu | direct | sumfact | 1.02 | 0.05 | sumfact 1.28x / 1.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | Jacobian | Quadrilateral | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.45x / 1.32x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.45x / 1.32x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.45x / 1.32x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 3.96x / 2.89x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 3.96x / 2.89x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 3.96x / 2.89x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Tetrahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 4 | macmini cpu | loops | direct | 1.16 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 4 | locust cpu | loops | direct | 1.16 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 5 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 5 | kathleen cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.17 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 3 | macmini cpu | loops | direct | 1.23 | 0.13 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 3 | locust cpu | loops | direct | 1.21 | 0.28 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 3 | kathleen cpu | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 4 | macmini cpu | loops | loops | 1.00 | 0.02 | loops 1.27x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.006; worst r 1.04) |
+| Cpu | Jacobian | Tetrahedron | 8 | 4 | locust cpu | loops | loops | 1.00 | 0.05 | loops 1.27x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.006; worst r 1.04) |
+| Cpu | Jacobian | Tetrahedron | 8 | 4 | kathleen cpu | direct | loops | 1.04 | 0.03 | loops 1.27x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.006; worst r 1.04) |
+| Cpu | Jacobian | Tetrahedron | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.06 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.32 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 4 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.72x / 1.94x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.72x / 1.94x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 2 | kathleen cpu | sumfact | sumfact | 1.00 | 0.14 | sumfact 1.72x / 1.94x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 7.78x / 6.25x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 7.78x / 6.25x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 7.78x / 6.25x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.20 | sumfact 24.97x / 46.29x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.36 | sumfact 24.97x / 46.29x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.61 | sumfact 24.97x / 46.29x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.16 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Hexahedron | 8 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 1.96x / 1.81x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.28 | sumfact 1.96x / 1.81x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 2 | kathleen cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 1.96x / 1.81x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 11.73x / 7.99x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.23 | sumfact 11.73x / 7.99x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.09 | sumfact 11.73x / 7.99x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.28 | sumfact 22.01x / 31.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.60 | sumfact 22.01x / 31.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Hexahedron | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.63 | sumfact 22.01x / 31.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Prism | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Prism | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Prism | 4 | 2 | macmini cpu | sumfact | direct | 1.43 | 0.03 | worst case r = 1.43: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Jacobian | Prism | 4 | 2 | locust cpu | sumfact | direct | 1.28 | 0.07 | worst case r = 1.43: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Jacobian | Prism | 4 | 2 | kathleen cpu | direct | direct | 1.02 | 0.08 | worst case r = 1.43: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Jacobian | Prism | 4 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 2.00x / 1.61x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 2.00x / 1.61x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 2.00x / 1.61x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 4.31x / 2.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 4.31x / 2.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 4.31x / 2.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 6.04x / 6.08x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 6.04x / 6.08x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.16 | sumfact 6.04x / 6.08x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Prism | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Prism | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Prism | 8 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.44x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | Jacobian | Prism | 8 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.14 | sumfact 1.44x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | Jacobian | Prism | 8 | 2 | kathleen cpu | sumfact | sumfact | 1.02 | 0.06 | sumfact 1.44x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | Jacobian | Prism | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 4.30x / 2.96x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.14 | sumfact 4.30x / 2.96x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 4.30x / 2.96x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 5.07x / 5.44x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.23 | sumfact 5.07x / 5.44x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Prism | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.17 | sumfact 5.07x / 5.44x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Jacobian | Pyramid | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Pyramid | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Pyramid | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Pyramid | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Pyramid | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Jacobian | Pyramid | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 6 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 6 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 6 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 7 | macmini cpu | loops | direct | 1.03 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 7 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 7 | kathleen cpu | loops | direct | 1.18 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 6 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 6 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 6 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 7 | macmini cpu | loops | direct | 1.02 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 7 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 7 | kathleen cpu | direct | direct | 1.02 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Interval | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 5 | macmini cpu | loops | direct | 1.11 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 5 | locust cpu | loops | direct | 1.08 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 5 | kathleen cpu | loops | direct | 1.06 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 6 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 6 | locust cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 6 | kathleen cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 7 | macmini cpu | loops | direct | 1.16 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 7 | locust cpu | loops | direct | 1.13 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 7 | kathleen cpu | direct | direct | 1.03 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.01 | loops 1.15x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.02 | loops 1.15x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.15x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Triangle | 8 | 5 | macmini cpu | loops | loops | 1.00 | 0.02 | loops 1.24x / 1.13x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.004; worst r 1.02) |
+| Cpu | Normals | Triangle | 8 | 5 | locust cpu | loops | loops | 1.00 | 0.05 | loops 1.24x / 1.13x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.004; worst r 1.02) |
+| Cpu | Normals | Triangle | 8 | 5 | kathleen cpu | loops | loops | 1.02 | 0.04 | loops 1.24x / 1.13x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.004; worst r 1.02) |
+| Cpu | Normals | Triangle | 8 | 6 | macmini cpu | loops | loops | 1.00 | 0.02 | loops 1.38x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 6 | locust cpu | loops | loops | 1.00 | 0.04 | loops 1.38x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 6 | kathleen cpu | loops | loops | 1.00 | 0.04 | loops 1.38x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 7 | macmini cpu | loops | loops | 1.00 | 0.02 | loops 1.29x / 1.36x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 7 | locust cpu | loops | loops | 1.00 | 0.04 | loops 1.29x / 1.36x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 7 | kathleen cpu | loops | loops | 1.00 | 0.04 | loops 1.29x / 1.36x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.02 | loops 1.39x / 1.31x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.04 | loops 1.39x / 1.31x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Triangle | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.04 | loops 1.39x / 1.31x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 4 | 2 | macmini cpu | sumfact | direct | 1.23 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 4 | 2 | locust cpu | sumfact | direct | 1.20 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 4 | 2 | kathleen cpu | sumfact | direct | 1.05 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 4 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.24x / 1.20x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.24x / 1.20x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.24x / 1.20x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.64x / 1.51x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.64x / 1.51x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.64x / 1.51x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 2.96x / 3.35x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 2.96x / 3.35x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 2.96x / 3.35x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | Normals | Quadrilateral | 8 | 2 | macmini cpu | sumfact | direct | 1.29 | 0.04 | worst case r = 1.32: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Normals | Quadrilateral | 8 | 2 | locust cpu | sumfact | direct | 1.32 | 0.09 | worst case r = 1.32: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Normals | Quadrilateral | 8 | 2 | kathleen cpu | sumfact | direct | 1.03 | 0.06 | worst case r = 1.32: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | Normals | Quadrilateral | 8 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.46x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.09 | sumfact 1.46x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.46x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.80x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 1.80x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.80x / 1.54x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 4.62x / 4.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.17 | sumfact 4.62x / 4.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | Normals | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.09 | sumfact 4.62x / 4.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Interval | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^5 and 10^6 |
+| Cpu | FacetNormals | Interval | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^5 and 10^6 |
+| Cpu | FacetNormals | Interval | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^5 and 10^6 |
+| Cpu | FacetNormals | Interval | 4 | 8 | macmini cpu | loops | direct | 1.14 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^4 and 10^5 |
+| Cpu | FacetNormals | Interval | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^4 and 10^5 |
+| Cpu | FacetNormals | Interval | 4 | 8 | kathleen cpu | loops | direct | 1.02 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^4 and 10^5 |
+| Cpu | FacetNormals | Interval | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 5 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 5 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 5 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 6 | macmini cpu | loops | direct | 1.05 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 6 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 6 | kathleen cpu | loops | direct | 1.05 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 7 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 7 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 7 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Interval | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 6 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 6 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 6 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 7 | macmini cpu | loops | direct | 1.19 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 7 | locust cpu | direct | direct | 1.05 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 7 | kathleen cpu | direct | direct | 1.04 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.19 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.40 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Triangle | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 2 | macmini cpu | sumfact | direct | 1.19 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 2 | locust cpu | sumfact | direct | 1.01 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 2 | kathleen cpu | sumfact | direct | 1.11 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.41x / 1.38x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.41x / 1.38x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 3 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.41x / 1.38x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 2.15x / 1.56x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 2.15x / 1.56x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 2.15x / 1.56x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 4.36x / 3.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 4.36x / 3.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 4.36x / 3.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 2 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 2 | locust cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 2 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.04 | sumfact 1.27x / 1.23x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 1.27x / 1.23x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 3 | kathleen cpu | sumfact | sumfact | 1.02 | 0.05 | sumfact 1.27x / 1.23x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.02) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.59x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.59x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.59x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 3.13x / 2.75x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 3.13x / 2.75x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 3.13x / 2.75x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 5 | macmini cpu | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 5 | locust cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 5 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.04 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 2 | macmini cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 2 | locust cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 2 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 3 | macmini cpu | loops | loops | 1.00 | 0.03 | loops 1.31x / 1.43x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 8 | 3 | locust cpu | loops | loops | 1.00 | 0.05 | loops 1.31x / 1.43x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 8 | 3 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.31x / 1.43x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 8 | 4 | macmini cpu | loops | loops | 1.00 | 0.03 | loops 1.31x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 8 | 4 | locust cpu | loops | loops | 1.00 | 0.06 | loops 1.31x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 8 | 4 | kathleen cpu | loops | loops | 1.00 | 0.03 | loops 1.31x / 1.33x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Tetrahedron | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.07 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Hexahedron | 4 | 1 | macmini cpu | sumfact | direct | 1.53 | 0.02 | worst case r = 1.53: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | FacetNormals | Hexahedron | 4 | 1 | locust cpu | sumfact | direct | 1.14 | 0.04 | worst case r = 1.53: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | FacetNormals | Hexahedron | 4 | 1 | kathleen cpu | direct | direct | 1.08 | 0.05 | worst case r = 1.53: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | FacetNormals | Hexahedron | 4 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 1.65x / 1.78x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.65x / 1.78x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 2 | kathleen cpu | sumfact | sumfact | 1.00 | 0.09 | sumfact 1.65x / 1.78x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.03 | sumfact 5.54x / 6.95x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 5.54x / 6.95x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 5.54x / 6.95x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.19 | sumfact 18.45x / 17.36x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.35 | sumfact 18.45x / 17.36x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.62 | sumfact 18.45x / 17.36x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 8 | 1 | macmini cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.23x / 1.29x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.024; worst r 1.10) |
+| Cpu | FacetNormals | Hexahedron | 8 | 1 | locust cpu | sumfact | sumfact | 1.00 | 0.14 | sumfact 1.23x / 1.29x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.024; worst r 1.10) |
+| Cpu | FacetNormals | Hexahedron | 8 | 1 | kathleen cpu | direct | sumfact | 1.10 | 0.07 | sumfact 1.23x / 1.29x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.024; worst r 1.10) |
+| Cpu | FacetNormals | Hexahedron | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 10.64x / 10.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.20 | sumfact 10.64x / 10.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.09 | sumfact 10.64x / 10.12x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.29 | sumfact 15.52x / 16.26x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.57 | sumfact 15.52x / 16.26x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Hexahedron | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.63 | sumfact 15.52x / 16.26x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Prism | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Prism | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Prism | 4 | 3 | macmini cpu | sumfact | direct | 1.72 | 0.08 | worst case r = 1.72: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | FacetNormals | Prism | 4 | 3 | locust cpu | sumfact | direct | 1.45 | 0.16 | worst case r = 1.72: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | FacetNormals | Prism | 4 | 3 | kathleen cpu | direct | direct | 1.08 | 0.18 | worst case r = 1.72: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | FacetNormals | Prism | 4 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.68x / 1.20x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.013; worst r 1.08) |
+| Cpu | FacetNormals | Prism | 4 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.68x / 1.20x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.013; worst r 1.08) |
+| Cpu | FacetNormals | Prism | 4 | 4 | kathleen cpu | sumfact | sumfact | 1.08 | 0.06 | sumfact 1.68x / 1.20x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.013; worst r 1.08) |
+| Cpu | FacetNormals | Prism | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.38x / 1.37x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.002; worst r 1.01) |
+| Cpu | FacetNormals | Prism | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.10 | sumfact 1.38x / 1.37x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.002; worst r 1.01) |
+| Cpu | FacetNormals | Prism | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.01 | 0.16 | sumfact 1.38x / 1.37x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.002; worst r 1.01) |
+| Cpu | FacetNormals | Prism | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Prism | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.13 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Prism | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Prism | 8 | 2 | macmini cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.22x / 1.55x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 2 | locust cpu | sumfact | sumfact | 1.00 | 0.13 | sumfact 1.22x / 1.55x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 2 | kathleen cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.22x / 1.55x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 3 | macmini cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.44x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.027; worst r 1.11) |
+| Cpu | FacetNormals | Prism | 8 | 3 | locust cpu | sumfact | sumfact | 1.00 | 0.12 | sumfact 1.44x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.027; worst r 1.11) |
+| Cpu | FacetNormals | Prism | 8 | 3 | kathleen cpu | loops | sumfact | 1.11 | 0.06 | sumfact 1.44x / 1.37x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.027; worst r 1.11) |
+| Cpu | FacetNormals | Prism | 8 | 4 | macmini cpu | sumfact | sumfact | 1.00 | 0.06 | sumfact 1.93x / 1.83x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 4 | locust cpu | sumfact | sumfact | 1.00 | 0.14 | sumfact 1.93x / 1.83x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 4 | kathleen cpu | sumfact | sumfact | 1.00 | 0.07 | sumfact 1.93x / 1.83x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 1.49x / 1.51x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.22 | sumfact 1.49x / 1.51x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Prism | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.17 | sumfact 1.49x / 1.51x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | FacetNormals | Pyramid | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Pyramid | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Pyramid | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Pyramid | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Pyramid | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | FacetNormals | Pyramid | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 8 | locust cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Interval | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 8 | macmini cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.29 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.17 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.43 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.59 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 8 | locust cpu | direct | direct | 1.00 | 1.35 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Triangle | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.34 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 6 | macmini cpu | direct | direct | 1.06 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 6 | locust cpu | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 6 | kathleen cpu | direct | direct | 1.00 | 0.19 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 7 | macmini cpu | direct | direct | 1.03 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 7 | locust cpu | direct | direct | 1.00 | 0.16 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 7 | kathleen cpu | direct | direct | 1.00 | 0.21 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | macmini cpu | direct | direct | 1.09 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | locust cpu | direct | direct | 1.00 | 0.22 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | kathleen cpu | direct | direct | 1.00 | 0.29 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.17 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 4 | locust cpu | direct | direct | 1.00 | 0.45 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | macmini cpu | direct | direct | 1.00 | 0.53 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | locust cpu | direct | direct | 1.15 | 1.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | kathleen cpu | direct | direct | 1.00 | 0.32 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.23 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.25 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 5 | macmini cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 5 | locust cpu | loops | loops | 1.00 | 0.06 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 5 | kathleen cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 8 | macmini cpu | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 8 | locust cpu | loops | loops | 1.00 | 0.07 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 4 | 8 | kathleen cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.17 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.58 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 4 | locust cpu | direct | direct | 1.00 | 1.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.32 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 5 | macmini cpu | loops | loops | 1.00 | 0.07 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 5 | locust cpu | loops | loops | 1.00 | 0.16 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 5 | kathleen cpu | loops | loops | 1.00 | 0.10 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 8 | macmini cpu | loops | loops | 1.00 | 0.08 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 8 | locust cpu | loops | loops | 1.00 | 0.16 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Tetrahedron | 8 | 8 | kathleen cpu | loops | loops | 1.00 | 0.10 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 2 | macmini cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 2 | locust cpu | direct | direct | 1.00 | 0.13 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 2 | kathleen cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 3 | macmini cpu | sumfact | direct | 1.07 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 3 | locust cpu | sumfact | direct | 1.06 | 0.31 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 3 | kathleen cpu | direct | direct | 1.00 | 0.38 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 4 | 4 | macmini cpu | direct | direct | 1.10 | 0.31 | worst case r = 1.30: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | PullBack | Hexahedron | 4 | 4 | locust cpu | sumfact | direct | 1.30 | 0.69 | worst case r = 1.30: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | PullBack | Hexahedron | 4 | 4 | kathleen cpu | sumfact | direct | 1.18 | 0.78 | worst case r = 1.30: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | PullBack | Hexahedron | 4 | 5 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 1.69x / 1.20x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 4 | 5 | locust cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 1.69x / 1.20x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 4 | 5 | kathleen cpu | sumfact | sumfact | 1.00 | 0.12 | sumfact 1.69x / 1.20x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.33 | sumfact 1.74x / 1.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.37 | sumfact 1.74x / 1.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.65 | sumfact 1.74x / 1.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 2 | macmini cpu | direct | direct | 1.00 | 0.29 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 2 | locust cpu | direct | direct | 1.00 | 0.68 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 2 | kathleen cpu | direct | direct | 1.00 | 0.23 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 3 | macmini cpu | direct | direct | 1.00 | 0.66 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 3 | locust cpu | sumfact | direct | 1.06 | 1.44 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 3 | kathleen cpu | direct | direct | 1.02 | 0.47 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Hexahedron | 8 | 4 | macmini cpu | sumfact | direct | 1.16 | 1.43 | worst case r = 1.53: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | PullBack | Hexahedron | 8 | 4 | locust cpu | sumfact | direct | 1.21 | 3.15 | worst case r = 1.53: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | PullBack | Hexahedron | 8 | 4 | kathleen cpu | sumfact | direct | 1.53 | 1.00 | worst case r = 1.53: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Cpu | PullBack | Hexahedron | 8 | 5 | macmini cpu | sumfact | sumfact | 1.00 | 0.08 | sumfact 1.81x / 1.84x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 8 | 5 | locust cpu | sumfact | sumfact | 1.00 | 0.18 | sumfact 1.81x / 1.84x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 8 | 5 | kathleen cpu | sumfact | sumfact | 1.00 | 0.13 | sumfact 1.81x / 1.84x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.34 | sumfact 1.86x / 1.68x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.44 | sumfact 1.86x / 1.68x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Hexahedron | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 1.61 | sumfact 1.86x / 1.68x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.13 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 4 | 4 | macmini cpu | direct | direct | 1.00 | 0.19 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 4 | 4 | locust cpu | direct | direct | 1.00 | 0.41 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 4 | 4 | kathleen cpu | direct | direct | 1.00 | 0.48 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 4 | 5 | macmini cpu | sumfact | sumfact | 1.00 | 0.05 | sumfact 2.57x / 1.83x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 4 | 5 | locust cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 2.57x / 1.83x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 4 | 5 | kathleen cpu | sumfact | sumfact | 1.00 | 0.54 | sumfact 2.57x / 1.83x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 4 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.12 | sumfact 2.03x / 2.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 4 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.14 | sumfact 2.03x / 2.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 4 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.22 | sumfact 2.03x / 2.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.23 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 8 | 4 | macmini cpu | direct | direct | 1.00 | 0.96 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 8 | 4 | locust cpu | direct | direct | 1.00 | 2.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 8 | 4 | kathleen cpu | direct | direct | 1.00 | 0.61 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Prism | 8 | 5 | macmini cpu | sumfact | sumfact | 1.00 | 0.09 | sumfact 2.63x / 2.55x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 8 | 5 | locust cpu | sumfact | sumfact | 1.00 | 0.20 | sumfact 2.63x / 2.55x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 8 | 5 | kathleen cpu | sumfact | sumfact | 1.00 | 0.15 | sumfact 2.63x / 2.55x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 8 | 8 | macmini cpu | sumfact | sumfact | 1.00 | 0.11 | sumfact 2.77x / 2.75x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 8 | 8 | locust cpu | sumfact | sumfact | 1.00 | 0.23 | sumfact 2.77x / 2.75x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Prism | 8 | 8 | kathleen cpu | sumfact | sumfact | 1.00 | 0.22 | sumfact 2.77x / 2.75x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Cpu | PullBack | Pyramid | 4 | 1 | macmini cpu | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Pyramid | 4 | 1 | locust cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Pyramid | 4 | 1 | kathleen cpu | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Pyramid | 8 | 1 | macmini cpu | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Pyramid | 8 | 1 | locust cpu | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Cpu | PullBack | Pyramid | 8 | 1 | kathleen cpu | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Interval | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.16 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Triangle | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.16 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.36 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Quadrilateral | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.37 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 5 | macmini metal | loops | loops | 1.00 | 0.00 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 5 | locust cuda | loops | loops | 1.00 | 0.00 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 8 | macmini metal | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 4 | 8 | locust cuda | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 8 | 4 | locust cuda | loops | direct | 1.16 | 0.21 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 8 | 5 | locust cuda | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Tetrahedron | 8 | 8 | locust cuda | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.36 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 4 | 4 | locust cuda | direct | direct | 1.00 | 1.33 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 4 | 8 | macmini metal | loops | loops | 1.00 | 0.01 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 4 | 8 | locust cuda | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 8 | 4 | locust cuda | direct | direct | 1.00 | 1.30 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Hexahedron | 8 | 8 | locust cuda | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.19 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.56 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 4 | 8 | macmini metal | loops | direct | 1.54 | 2.00 | worst case r = 1.54: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | EVector | Prism | 4 | 8 | locust cuda | direct | direct | 1.00 | 13.86 | worst case r = 1.54: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | EVector | Prism | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.56 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Prism | 8 | 8 | locust cuda | direct | direct | 1.00 | 13.63 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Pyramid | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Pyramid | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | EVector | Pyramid | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Interval | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.10 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Triangle | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 4 | 3 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 4 | 3 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 4 | 4 | macmini metal | direct | shared | 1.00 | 0.03 | shared 1.17x / 1.18x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.001; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 4 | 4 | locust cuda | shared | shared | 1.00 | 0.07 | shared 1.17x / 1.18x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.001; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 4 | 5 | macmini metal | shared | shared | 1.00 | 0.03 | shared 1.36x / 1.45x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 4 | 5 | locust cuda | shared | shared | 1.00 | 0.10 | shared 1.36x / 1.45x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 4 | 6 | macmini metal | shared | shared | 1.00 | 0.03 | shared 1.57x / 1.63x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 4 | 6 | locust cuda | shared | shared | 1.00 | 0.14 | shared 1.57x / 1.63x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 4 | 7 | macmini metal | direct | shared | 1.62 | 0.02 | worst case r = 1.62: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | Points | Quadrilateral | 4 | 7 | locust cuda | shared | shared | 1.00 | 0.19 | worst case r = 1.62: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | Points | Quadrilateral | 4 | 8 | macmini metal | direct | shared | 1.27 | 0.03 | worst case r = 1.27: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | Points | Quadrilateral | 4 | 8 | locust cuda | shared | shared | 1.00 | 0.25 | worst case r = 1.27: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | Points | Quadrilateral | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 8 | 3 | locust cuda | sumfact | direct | 1.21 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Quadrilateral | 8 | 4 | locust cuda | shared | shared | 1.00 | 0.07 | shared 1.62x / 1.34x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Quadrilateral | 8 | 8 | locust cuda | shared | shared | 1.00 | 0.26 | shared 4.81x / 4.74x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Tetrahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 4 | 8 | macmini metal | cooperative | cooperative | 1.00 | 0.02 | cooperative 4.64x / 1.70x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Tetrahedron | 4 | 8 | locust cuda | cooperative | cooperative | 1.00 | 0.05 | cooperative 4.64x / 1.70x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Tetrahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.12 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 8 | 5 | locust cuda | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Tetrahedron | 8 | 8 | locust cuda | cooperative | cooperative | 1.00 | 0.06 | cooperative 11.97x / 3.55x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Hexahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Hexahedron | 4 | 2 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Hexahedron | 4 | 2 | locust cuda | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Hexahedron | 4 | 3 | macmini metal | shared | shared | 1.00 | 0.05 | shared 1.93x / 2.02x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 4 | 3 | locust cuda | shared | shared | 1.00 | 0.29 | shared 1.93x / 2.02x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 4 | 4 | macmini metal | sumfact | sumfact | 1.00 | 0.08 | sumfact 8.53x / 8.47x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 4 | 4 | locust cuda | sumfact | sumfact | 1.00 | 0.84 | sumfact 8.53x / 8.47x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 4 | 8 | macmini metal | sumfact | sumfact | 1.00 | 0.19 | sumfact 66.48x / 72.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 22.80 | sumfact 66.48x / 72.12x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Hexahedron | 8 | 2 | locust cuda | shared | direct | 1.36 | 0.08 | worst case r = 1.36: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | Points | Hexahedron | 8 | 3 | locust cuda | sumfact | sumfact | 1.00 | 0.33 | sumfact 3.53x / 2.72x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 8 | 4 | locust cuda | sumfact | sumfact | 1.00 | 0.92 | sumfact 7.11x / 6.98x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Hexahedron | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 23.95 | sumfact 25.76x / 36.36x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Prism | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Prism | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Prism | 4 | 3 | macmini metal | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Prism | 4 | 3 | locust cuda | direct | direct | 1.00 | 0.14 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Prism | 4 | 4 | macmini metal | sumfact | sumfact | 1.00 | 0.02 | sumfact 1.27x / 1.31x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Prism | 4 | 4 | locust cuda | sumfact | sumfact | 1.00 | 0.11 | sumfact 1.27x / 1.31x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Prism | 4 | 8 | macmini metal | sumfact | sumfact | 1.00 | 0.06 | sumfact 24.17x / 19.73x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Prism | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.21 | sumfact 24.17x / 19.73x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Prism | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Prism | 8 | 4 | locust cuda | shared | shared | 1.00 | 0.14 | shared 16.82x / 10.09x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Prism | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.26 | sumfact 48.85x / 55.22x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Points | Pyramid | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Pyramid | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Points | Pyramid | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Interval | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.13 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Triangle | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.18 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Quadrilateral | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Quadrilateral | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Quadrilateral | 4 | 3 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Quadrilateral | 4 | 3 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Quadrilateral | 4 | 4 | macmini metal | shared | shared | 1.00 | 0.03 | shared 1.24x / 1.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Quadrilateral | 4 | 4 | locust cuda | shared | shared | 1.00 | 0.08 | shared 1.24x / 1.28x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Quadrilateral | 4 | 8 | macmini metal | shared | shared | 1.00 | 0.04 | shared 4.11x / 5.26x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Quadrilateral | 4 | 8 | locust cuda | shared | shared | 1.00 | 0.36 | shared 4.11x / 5.26x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Quadrilateral | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Quadrilateral | 8 | 4 | locust cuda | sumfact | sumfact | 1.00 | 0.08 | sumfact 1.56x / 1.23x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Quadrilateral | 8 | 8 | locust cuda | shared | shared | 1.00 | 0.31 | shared 7.15x / 6.69x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Tetrahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.19 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 5 | macmini metal | loops | loops | 1.00 | 0.02 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 5 | locust cuda | loops | loops | 1.00 | 0.04 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 8 | macmini metal | cooperative | cooperative | 1.00 | 0.03 | cooperative 3.77x / 1.28x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Tetrahedron | 4 | 8 | locust cuda | cooperative | cooperative | 1.00 | 0.09 | cooperative 3.77x / 1.28x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Tetrahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Tetrahedron | 8 | 8 | locust cuda | cooperative | cooperative | 1.00 | 0.06 | cooperative 9.96x / 2.93x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Hexahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Hexahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Hexahedron | 4 | 4 | macmini metal | shared | shared | 1.00 | 0.06 | shared 13.33x / 14.55x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Hexahedron | 4 | 4 | locust cuda | shared | shared | 1.00 | 1.04 | shared 13.33x / 14.55x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Hexahedron | 4 | 8 | macmini metal | sumfact | sumfact | 1.00 | 0.23 | sumfact 34.10x / 28.43x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Hexahedron | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 25.17 | sumfact 34.10x / 28.43x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Hexahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Hexahedron | 8 | 4 | locust cuda | sumfact | sumfact | 1.00 | 1.22 | sumfact 4.29x / 4.84x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Hexahedron | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 27.15 | sumfact 14.02x / 18.27x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Prism | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Prism | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Prism | 4 | 2 | macmini metal | direct | shared | 1.24 | 0.03 | shared 1.13x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.073; worst r 1.24) |
+| Gpu | Jacobian | Prism | 4 | 2 | locust cuda | shared | shared | 1.00 | 0.13 | shared 1.13x / 1.16x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.073; worst r 1.24) |
+| Gpu | Jacobian | Prism | 4 | 4 | macmini metal | shared | shared | 1.00 | 0.03 | shared 4.51x / 4.67x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Prism | 4 | 4 | locust cuda | shared | shared | 1.00 | 0.12 | shared 4.51x / 4.67x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Prism | 4 | 8 | macmini metal | sumfact | sumfact | 1.00 | 0.07 | sumfact 17.88x / 19.26x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Prism | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.30 | sumfact 17.88x / 19.26x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Prism | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Prism | 8 | 4 | locust cuda | shared | shared | 1.00 | 0.12 | shared 8.97x / 9.36x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Prism | 8 | 8 | locust cuda | shared | shared | 1.00 | 0.29 | shared 43.30x / 46.26x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Jacobian | Pyramid | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Pyramid | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Jacobian | Pyramid | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Interval | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.22 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Triangle | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.23 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Quadrilateral | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Quadrilateral | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Quadrilateral | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Quadrilateral | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Quadrilateral | 4 | 8 | macmini metal | shared | shared | 1.00 | 0.05 | shared 6.29x / 7.62x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Normals | Quadrilateral | 4 | 8 | locust cuda | shared | shared | 1.00 | 0.49 | shared 6.29x / 7.62x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Normals | Quadrilateral | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | Normals | Quadrilateral | 8 | 4 | locust cuda | shared | shared | 1.00 | 0.13 | shared 1.37x / 1.29x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | Normals | Quadrilateral | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.54 | sumfact 27.00x / 14.02x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Interval | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Interval | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Interval | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^5 and 10^6 |
+| Gpu | FacetNormals | Interval | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^5 and 10^6 |
+| Gpu | FacetNormals | Interval | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.01 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^4 and 10^5 |
+| Gpu | FacetNormals | Interval | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^4 and 10^5 |
+| Gpu | FacetNormals | Interval | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Interval | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Interval | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Triangle | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.15 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Quadrilateral | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Quadrilateral | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Quadrilateral | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Quadrilateral | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Quadrilateral | 4 | 8 | macmini metal | shared | shared | 1.00 | 0.04 | shared 2.70x / 3.21x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Quadrilateral | 4 | 8 | locust cuda | shared | shared | 1.00 | 0.30 | shared 2.70x / 3.21x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Quadrilateral | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Quadrilateral | 8 | 4 | locust cuda | shared | shared | 1.00 | 0.10 | shared 1.14x / 1.11x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Quadrilateral | 8 | 8 | locust cuda | shared | shared | 1.00 | 0.33 | shared 2.25x / 1.57x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Tetrahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.09 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 7 | macmini metal | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 7 | locust cuda | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 8 | macmini metal | loops | cooperative | 1.77 | 0.03 | worst case r = 1.77: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | FacetNormals | Tetrahedron | 4 | 8 | locust cuda | cooperative | cooperative | 1.00 | 0.07 | worst case r = 1.77: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | FacetNormals | Tetrahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.25 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Tetrahedron | 8 | 5 | locust cuda | shared | shared | 1.00 | 0.06 | shared 1.72x / 1.11x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Tetrahedron | 8 | 8 | locust cuda | loops | loops | 1.00 | 0.07 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Hexahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Hexahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Hexahedron | 4 | 4 | macmini metal | shared | shared | 1.00 | 0.07 | shared 10.26x / 9.98x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Hexahedron | 4 | 4 | locust cuda | shared | shared | 1.00 | 1.06 | shared 10.26x / 9.98x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Hexahedron | 4 | 8 | macmini metal | sumfact | sumfact | 1.00 | 0.22 | sumfact 27.69x / 24.23x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Hexahedron | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 25.11 | sumfact 27.69x / 24.23x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Hexahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Hexahedron | 8 | 4 | locust cuda | sumfact | sumfact | 1.00 | 1.22 | sumfact 1.10x / 1.88x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Hexahedron | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 27.27 | sumfact 8.10x / 6.45x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Prism | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Prism | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Prism | 4 | 3 | macmini metal | direct | direct | 1.00 | 0.11 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Prism | 4 | 3 | locust cuda | direct | direct | 1.00 | 0.24 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Prism | 4 | 4 | macmini metal | shared | shared | 1.00 | 0.04 | shared 1.91x / 2.17x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.005; worst r 1.02) |
+| Gpu | FacetNormals | Prism | 4 | 4 | locust cuda | shared | shared | 1.02 | 0.13 | shared 1.91x / 2.17x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.005; worst r 1.02) |
+| Gpu | FacetNormals | Prism | 4 | 8 | macmini metal | sumfact | sumfact | 1.00 | 0.07 | sumfact 4.55x / 4.69x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Prism | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.27 | sumfact 4.55x / 4.69x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Prism | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Prism | 8 | 4 | locust cuda | shared | shared | 1.00 | 0.14 | shared 3.22x / 3.21x over direct at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Prism | 8 | 8 | locust cuda | shared | shared | 1.00 | 0.28 | shared 5.46x / 4.58x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | FacetNormals | Pyramid | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Pyramid | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.05 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | FacetNormals | Pyramid | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.02 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 4 | 4 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 4 | 8 | locust cuda | direct | direct | 1.00 | 0.21 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 8 | 4 | locust cuda | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Interval | 8 | 8 | locust cuda | direct | direct | 1.00 | 0.26 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.08 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 4 | 4 | locust cuda | direct | direct | 1.00 | 1.82 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 4 | 8 | macmini metal | loops | loops | 1.00 | 0.03 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 4 | 8 | locust cuda | loops | loops | 1.00 | 0.10 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 8 | 4 | locust cuda | direct | direct | 1.00 | 2.16 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Triangle | 8 | 8 | locust cuda | loops | loops | 1.00 | 0.12 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.03 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 4 | 4 | macmini metal | direct | direct | 1.00 | 0.06 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 4 | 4 | locust cuda | direct | direct | 1.00 | 1.83 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 4 | 8 | macmini metal | direct | direct | 1.00 | 0.20 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 4 | 8 | locust cuda | direct | direct | 1.00 | 23.17 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.07 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 8 | 4 | locust cuda | direct | direct | 1.00 | 1.96 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Quadrilateral | 8 | 8 | locust cuda | direct | direct | 1.00 | 26.30 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.30 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 4 | 4 | macmini metal | loops | loops | 1.00 | 0.05 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 4 | 4 | locust cuda | loops | loops | 1.00 | 0.11 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 4 | 8 | macmini metal | loops | loops | 1.00 | 0.06 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 4 | 8 | locust cuda | loops | loops | 1.00 | 0.10 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.33 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 8 | 4 | locust cuda | loops | loops | 1.00 | 0.17 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Tetrahedron | 8 | 8 | locust cuda | loops | loops | 1.00 | 0.10 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.77 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 4 | 4 | macmini metal | loops | loops | 1.00 | 0.04 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 4 | 4 | locust cuda | loops | loops | 1.00 | 0.14 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 4 | 8 | macmini metal | loops | loops | 1.00 | 0.18 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 4 | 8 | locust cuda | loops | loops | 1.00 | 0.29 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.77 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 8 | 4 | locust cuda | loops | loops | 1.00 | 0.12 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Hexahedron | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.66 | sumfact 1.37x / 1.31x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | PullBack | Prism | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.56 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 4 | 4 | macmini metal | loops | loops | 1.00 | 0.04 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 4 | 4 | locust cuda | loops | loops | 1.00 | 0.16 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 4 | 7 | macmini metal | loops | loops | 1.00 | 0.06 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 4 | 7 | locust cuda | loops | loops | 1.00 | 0.10 | loops: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 4 | 8 | macmini metal | loops | sumfact | 1.33 | 0.09 | worst case r = 1.33: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | PullBack | Prism | 4 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.28 | worst case r = 1.33: no admitted strategy within 1.25 on every platform and size; the smallest worst case |
+| Gpu | PullBack | Prism | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.56 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Prism | 8 | 4 | locust cuda | sumfact | sumfact | 1.00 | 0.21 | sumfact 1.82x / 1.40x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | PullBack | Prism | 8 | 8 | locust cuda | sumfact | sumfact | 1.00 | 0.28 | sumfact 2.02x / 1.59x over loops at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) |
+| Gpu | PullBack | Pyramid | 4 | 1 | macmini metal | direct | direct | 1.00 | 0.04 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Pyramid | 4 | 1 | locust cuda | direct | direct | 1.00 | 0.52 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+| Gpu | PullBack | Pyramid | 8 | 1 | locust cuda | direct | direct | 1.00 | 0.56 | direct: no strategy at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 |
+
+### Degree ranges
+
+The ranges of `gridcl-geometry/degree-policy.toml`; the source of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h elsewhere.
+
+| class | family | cell | bytes | ranges | M9h degrees |
+| --- | --- | --- | ---: | --- | --- |
+| Cpu | EVector | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | EVector | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | EVector | Triangle | 4 | 1–7 direct, 8– loops | 2, 3 |
+| Cpu | EVector | Triangle | 8 | 1–8 direct, 9– loops | 2, 3 |
+| Cpu | EVector | Quadrilateral | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | EVector | Quadrilateral | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | EVector | Tetrahedron | 4 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | EVector | Tetrahedron | 8 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | EVector | Hexahedron | 4 | 1–8 direct, 9– loops | 2, 3 |
+| Cpu | EVector | Hexahedron | 8 | 1–4 direct, 5– loops | 2, 3 |
+| Cpu | EVector | Prism | 4 | 1–4 direct, 5–7 loops, 8 direct, 9– loops | 2, 3, 6 |
+| Cpu | EVector | Prism | 8 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | EVector | Pyramid | 4 | 1–3 direct, 4– loops | – |
+| Cpu | EVector | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Cpu | Points | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | Points | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | Points | Triangle | 4 | 1–3 direct, 4– loops | 5, 6, 7 |
+| Cpu | Points | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | Points | Quadrilateral | 4 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | Points | Quadrilateral | 8 | 1–3 direct, 4– sumfact | 5, 6, 7 |
+| Cpu | Points | Tetrahedron | 4 | 1–2 direct, 3 loops, 4 direct, 5– loops | 6, 7 |
+| Cpu | Points | Tetrahedron | 8 | 1–4 direct, 5– loops | 6, 7 |
+| Cpu | Points | Hexahedron | 4 | 1– sumfact | 2, 3, 5, 6, 7 |
+| Cpu | Points | Hexahedron | 8 | 1 direct, 2– sumfact | 3, 5, 6, 7 |
+| Cpu | Points | Prism | 4 | 1 direct, 2– sumfact | 3, 5, 6, 7 |
+| Cpu | Points | Prism | 8 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | Points | Pyramid | 4 | 1–2 direct, 3– loops | – |
+| Cpu | Points | Pyramid | 8 | 1–3 direct, 4– loops | – |
+| Cpu | Jacobian | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | Jacobian | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | Jacobian | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | Jacobian | Triangle | 8 | 1–6 direct, 7– loops | 2, 3, 5 |
+| Cpu | Jacobian | Quadrilateral | 4 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | Jacobian | Quadrilateral | 8 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | Jacobian | Tetrahedron | 4 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | Jacobian | Tetrahedron | 8 | 1–3 direct, 4– loops | 2, 5, 6, 7 |
+| Cpu | Jacobian | Hexahedron | 4 | 1 direct, 2– sumfact | 3, 5, 6, 7 |
+| Cpu | Jacobian | Hexahedron | 8 | 1 direct, 2– sumfact | 3, 5, 6, 7 |
+| Cpu | Jacobian | Prism | 4 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | Jacobian | Prism | 8 | 1 direct, 2– sumfact | 3, 5, 6, 7 |
+| Cpu | Jacobian | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Cpu | Jacobian | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Cpu | Normals | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5 |
+| Cpu | Normals | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5 |
+| Cpu | Normals | Triangle | 4 | 1–7 direct, 8– loops | 2, 3 |
+| Cpu | Normals | Triangle | 8 | 1–4 direct, 5– loops | 2, 3 |
+| Cpu | Normals | Quadrilateral | 4 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | Normals | Quadrilateral | 8 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | FacetNormals | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | FacetNormals | Interval | 8 | 1–8 direct, 9– loops | 2, 3 |
+| Cpu | FacetNormals | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5 |
+| Cpu | FacetNormals | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 1–2 direct, 3– loops | 5, 6, 7 |
+| Cpu | FacetNormals | Hexahedron | 4 | 1 direct, 2– sumfact | 3, 5, 6, 7 |
+| Cpu | FacetNormals | Hexahedron | 8 | 1– sumfact | 2, 3, 5, 6, 7 |
+| Cpu | FacetNormals | Prism | 4 | 1–3 direct, 4– sumfact | 2, 5, 6, 7 |
+| Cpu | FacetNormals | Prism | 8 | 1 direct, 2– sumfact | 5, 6, 7 |
+| Cpu | FacetNormals | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Cpu | FacetNormals | Pyramid | 8 | 1–2 direct, 3– loops | 2, 3 |
+| Cpu | PullBack | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | PullBack | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | PullBack | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | PullBack | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | PullBack | Quadrilateral | 4 | 1–8 direct, 9– loops | 2, 3, 5 |
+| Cpu | PullBack | Quadrilateral | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Cpu | PullBack | Tetrahedron | 4 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | PullBack | Tetrahedron | 8 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Cpu | PullBack | Hexahedron | 4 | 1–4 direct, 5– sumfact | 6, 7 |
+| Cpu | PullBack | Hexahedron | 8 | 1–4 direct, 5– sumfact | 6, 7 |
+| Cpu | PullBack | Prism | 4 | 1–4 direct, 5– sumfact | 2, 3, 6, 7 |
+| Cpu | PullBack | Prism | 8 | 1–4 direct, 5– sumfact | 2, 3, 6, 7 |
+| Cpu | PullBack | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Cpu | PullBack | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | EVector | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Quadrilateral | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Quadrilateral | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Tetrahedron | 4 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Gpu | EVector | Tetrahedron | 8 | 1–4 direct, 5– loops | 2, 3, 6, 7 |
+| Gpu | EVector | Hexahedron | 4 | 1–7 direct, 8– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Hexahedron | 8 | 1–7 direct, 8– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Prism | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Prism | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | EVector | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | EVector | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | Points | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Points | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Points | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Points | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Points | Quadrilateral | 4 | 1–3 direct, 4– shared | 2 |
+| Gpu | Points | Quadrilateral | 8 | 1–3 direct, 4– shared | 2, 5, 6, 7 |
+| Gpu | Points | Tetrahedron | 4 | 1–4 direct, 5–6 loops, 7– cooperative | 2, 3, 5, 6, 7 |
+| Gpu | Points | Tetrahedron | 8 | 1–4 direct, 5 loops, 6– cooperative | 2, 3, 6, 7 |
+| Gpu | Points | Hexahedron | 4 | 1–2 direct, 3 shared, 4 sumfact, 5 shared, 6– sumfact | 5, 6, 7 |
+| Gpu | Points | Hexahedron | 8 | 1–2 direct, 3– sumfact | 5, 6, 7 |
+| Gpu | Points | Prism | 4 | 1–3 direct, 4 sumfact, 5–6 shared, 7– sumfact | 2, 5, 6, 7 |
+| Gpu | Points | Prism | 8 | 1 direct, 2–4 shared, 5–6 sumfact, 7 shared, 8– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | Points | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | Points | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | Jacobian | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Quadrilateral | 4 | 1–3 direct, 4– shared | 2, 5, 6, 7 |
+| Gpu | Jacobian | Quadrilateral | 8 | 1–3 direct, 4–5 sumfact, 6– shared | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Tetrahedron | 4 | 1–4 direct, 5–7 loops, 8– cooperative | 2, 3, 6, 7 |
+| Gpu | Jacobian | Tetrahedron | 8 | 1–4 direct, 5 loops, 6– cooperative | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Hexahedron | 4 | 1 direct, 2–5 shared, 6– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Hexahedron | 8 | 1–2 direct, 3– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Prism | 4 | 1 direct, 2 shared, 3 sumfact, 4 shared, 5 sumfact, 6–7 shared, 8– sumfact | 3, 5, 6, 7 |
+| Gpu | Jacobian | Prism | 8 | 1 direct, 2– shared | 2, 3, 5, 6, 7 |
+| Gpu | Jacobian | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | Jacobian | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | Normals | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Normals | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Normals | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Normals | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | Normals | Quadrilateral | 4 | 1–4 direct, 5– shared | 2, 3, 5, 6, 7 |
+| Gpu | Normals | Quadrilateral | 8 | 1–3 direct, 4–7 shared, 8– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Triangle | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Triangle | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Quadrilateral | 4 | 1–5 direct, 6– shared | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Quadrilateral | 8 | 1–3 direct, 4– shared | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Tetrahedron | 4 | 1–4 direct, 5–7 loops, 8– cooperative | 2, 3, 5, 6 |
+| Gpu | FacetNormals | Tetrahedron | 8 | 1–4 direct, 5 shared, 6– loops | 2, 3, 6, 7 |
+| Gpu | FacetNormals | Hexahedron | 4 | 1 direct, 2 shared, 3 sumfact, 4–5 shared, 6– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Hexahedron | 8 | 1–2 direct, 3– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Prism | 4 | 1–3 direct, 4–5 shared, 6– sumfact | 2, 5, 6, 7 |
+| Gpu | FacetNormals | Prism | 8 | 1 direct, 2– shared | 2, 3, 5, 6, 7 |
+| Gpu | FacetNormals | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | FacetNormals | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | PullBack | Interval | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Interval | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Triangle | 4 | 1–7 direct, 8– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Triangle | 8 | 1–7 direct, 8– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Quadrilateral | 4 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Quadrilateral | 8 | 1–8 direct, 9– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Tetrahedron | 4 | 1–3 direct, 4– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Tetrahedron | 8 | 1–3 direct, 4– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Hexahedron | 4 | 1–2 direct, 3– loops | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Hexahedron | 8 | 1–3 direct, 4 loops, 5– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Prism | 4 | 1–3 direct, 4 loops, 5–6 sumfact, 7 loops, 8– sumfact | 2, 3, 5, 6 |
+| Gpu | PullBack | Prism | 8 | 1–3 direct, 4– sumfact | 2, 3, 5, 6, 7 |
+| Gpu | PullBack | Pyramid | 4 | 1–3 direct, 4– loops | 2, 3 |
+| Gpu | PullBack | Pyramid | 8 | 1–3 direct, 4– loops | 2, 3 |
+
+### The policy against `direct` at p ≤ 4
+
+Per platform and scalar type, over the entries at p = 1 and 4 whose platform timed `direct` at every rule size: the time of the generic choice over `direct`'s (the family's members summed; the pull-back at nine iterations), the geometric mean over entries and sizes, and the largest (ADR-0060 item 4). Bound by nothing but the generic rule.
+
+| target backend | type | compared | geometric mean | largest | at |
+| --- | --- | ---: | ---: | ---: | --- |
+| macmini cpu | f32 | 190 | 0.820 | 1.000 | PullBack Pyramid p=1 10^7 |
+| macmini cpu | f64 | 190 | 0.823 | 1.000 | PullBack Pyramid p=1 10^7 |
+| macmini metal | f32 | 156 | 0.815 | 1.503 | PullBack Tetrahedron p=4 10^6 |
+| locust cpu | f32 | 190 | 0.861 | 1.000 | PullBack Pyramid p=1 10^7 |
+| locust cpu | f64 | 190 | 0.848 | 1.000 | PullBack Pyramid p=1 10^7 |
+| locust cuda | f32 | 156 | 0.924 | 1.703 | PullBack Prism p=4 10^6 |
+| locust cuda | f64 | 148 | 0.860 | 1.668 | PullBack Hexahedron p=4 10^6 |
+| kathleen cpu | f32 | 190 | 0.833 | 1.083 | FacetNormals Prism p=4 10^7 |
+| kathleen cpu | f64 | 190 | 0.886 | 1.106 | Points Hexahedron p=2 10^6 |
+
+### p = 8 over p = 4 on tensor cells
+
+Per platform, scalar type, cell, bench family and rule size: the time per point at p = 8 over p = 4 under the generic policy (each degree's own choice), against ADR-0042 item 1's bounds: 3 for the factors and the pull-back's set-up, 1.1 · (9/5)^d for a Newton step; step = (t(9) − t(1)) / 8, set-up = t(1) − step. Bullet 2 is met by reporting (ADR-0060 item 5): each miss names its cause, from the strategies and M9h's evidence.
+
+| target backend | scalar | cell | family | part | s4 / s8 | points | ratio | bound | cause |
+| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| macmini cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 1.66 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.35 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 1.64 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 1.28 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 1.50 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.62 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 1.38 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 1.30 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.64 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.61 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 1.67 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.66 | 3.00 | – |
+| macmini cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 2.27 | 3.56 | – |
+| macmini cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 9.66 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.53 | 3.56 | – |
+| macmini cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 4.75 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 5.54 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 7.72 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 5.62 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 3.98 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 5.61 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.24 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 5.34 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.79 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.61 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.81 | 3.00 | – |
+| macmini cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 18.64 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 0.45 | 3.00 | – |
+| macmini cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 36.20 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | -0.30 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 1.43 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.12 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 1.53 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 1.69 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.46 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 1.49 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 1.26 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.54 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.92 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 1.43 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.38 | 3.00 | – |
+| macmini cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 2.55 | 3.56 | – |
+| macmini cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 3.53 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 3.06 | 3.56 | – |
+| macmini cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 2.37 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 2.79 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 1.82 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 4.44 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 2.03 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 4.51 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 2.26 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 3.97 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 1.89 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.26 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| macmini cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.73 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 9.72 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 0.00 | 3.00 | – |
+| macmini cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 7.35 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| macmini cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | -0.08 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Points | factor | shared / shared | 10^6 | 1.70 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Points | factor | shared / shared | 10^7 | 2.22 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Jacobian | factor | shared / shared | 10^6 | 1.53 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Jacobian | factor | shared / shared | 10^7 | 1.72 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | DetJ | factor | shared / shared | 10^6 | 1.89 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | DetJ | factor | shared / shared | 10^7 | 2.60 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Pinv | factor | shared / shared | 10^6 | 1.56 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Pinv | factor | shared / shared | 10^7 | 1.71 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | FacetNormals | factor | direct / shared | 10^6 | 1.76 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | FacetNormals | factor | direct / shared | 10^7 | 1.85 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Normals | factor | direct / shared | 10^6 | 1.76 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | Normals | factor | direct / shared | 10^7 | 2.22 | 3.00 | – |
+| macmini metal | f32 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 23.62 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini metal | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 8.06 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini metal | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 23.52 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini metal | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 11.67 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| macmini metal | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 3.08 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| macmini metal | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 2.44 | 3.00 | – |
+| macmini metal | f32 | Hexahedron | Jacobian | factor | shared / sumfact | 10^6 | 2.89 | 3.00 | – |
+| macmini metal | f32 | Hexahedron | Jacobian | factor | shared / sumfact | 10^7 | 3.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| macmini metal | f32 | Hexahedron | DetJ | factor | shared / sumfact | 10^6 | 3.14 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| macmini metal | f32 | Hexahedron | DetJ | factor | shared / sumfact | 10^7 | 4.31 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| macmini metal | f32 | Hexahedron | Pinv | factor | shared / sumfact | 10^6 | 2.87 | 3.00 | – |
+| macmini metal | f32 | Hexahedron | Pinv | factor | shared / sumfact | 10^7 | 3.21 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| macmini metal | f32 | Hexahedron | FacetNormals | factor | shared / sumfact | 10^6 | 2.22 | 3.00 | – |
+| macmini metal | f32 | Hexahedron | FacetNormals | factor | shared / sumfact | 10^7 | 3.93 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| macmini metal | f32 | Hexahedron | PullBack | step | loops / loops | 10^6 | 23.28 | 6.42 | `loops` does (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| macmini metal | f32 | Hexahedron | PullBack | set-up | loops / loops | 10^6 | 14.76 | 3.00 | `loops` sets up the pull-back with C′, (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| macmini metal | f32 | Hexahedron | PullBack | step | loops / loops | 10^7 | 6.42 | 6.42 | `loops` does (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| macmini metal | f32 | Hexahedron | PullBack | set-up | loops / loops | 10^7 | 6.25 | 3.00 | `loops` sets up the pull-back with C′, (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| locust cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 3.60 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 4.02 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 0.94 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 3.00 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 3.62 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 0.92 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.76 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 4.36 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.40 | 3.00 | – |
+| locust cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 10.64 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 3.18 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.43 | 3.56 | – |
+| locust cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 8.80 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 11.65 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 2.87 | 3.00 | – |
+| locust cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 11.85 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 2.90 | 3.00 | – |
+| locust cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 11.19 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 10.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.45 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.74 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 6.43 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 23.79 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 1.10 | 3.00 | – |
+| locust cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 19.49 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 1.09 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 0.82 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.13 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 0.49 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 1.00 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 0.43 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 0.53 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 1.11 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.33 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.75 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 2.21 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.49 | 3.00 | – |
+| locust cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 4.72 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 4.18 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.61 | 3.56 | – |
+| locust cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 5.37 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.65 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 1.54 | 3.00 | – |
+| locust cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 12.58 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 2.13 | 3.00 | – |
+| locust cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 11.60 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 2.81 | 3.00 | – |
+| locust cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 10.55 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 2.05 | 3.00 | – |
+| locust cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 3.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| locust cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 21.95 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 0.51 | 3.00 | – |
+| locust cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 8.76 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| locust cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 0.45 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Points | factor | shared / shared | 10^6 | 1.24 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Points | factor | shared / shared | 10^7 | 1.28 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Jacobian | factor | shared / shared | 10^6 | 1.36 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Jacobian | factor | shared / shared | 10^7 | 1.34 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | DetJ | factor | shared / shared | 10^6 | 1.35 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | DetJ | factor | shared / shared | 10^7 | 1.46 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Pinv | factor | shared / shared | 10^6 | 1.31 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Pinv | factor | shared / shared | 10^7 | 1.47 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | FacetNormals | factor | direct / shared | 10^6 | 1.03 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | FacetNormals | factor | direct / shared | 10^7 | 1.71 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Normals | factor | direct / shared | 10^6 | 1.72 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | Normals | factor | direct / shared | 10^7 | 1.71 | 3.00 | – |
+| locust cuda | f32 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 14.99 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 16.31 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 6.75 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 9.82 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 31.35 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 10.80 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f32 | Hexahedron | Jacobian | factor | shared / sumfact | 10^6 | 60.11 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | Jacobian | factor | shared / sumfact | 10^7 | 26.90 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | DetJ | factor | shared / sumfact | 10^6 | 68.21 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | DetJ | factor | shared / sumfact | 10^7 | 33.10 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | Pinv | factor | shared / sumfact | 10^6 | 52.10 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | Pinv | factor | shared / sumfact | 10^7 | 22.53 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | FacetNormals | factor | shared / sumfact | 10^6 | 28.04 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | FacetNormals | factor | shared / sumfact | 10^7 | 12.77 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f32 | Hexahedron | PullBack | step | loops / loops | 10^6 | 50.29 | 6.42 | `loops` does (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| locust cuda | f32 | Hexahedron | PullBack | set-up | loops / loops | 10^6 | 29.93 | 3.00 | `loops` sets up the pull-back with C′, (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| locust cuda | f32 | Hexahedron | PullBack | step | loops / loops | 10^7 | 35.46 | 6.42 | `loops` does (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| locust cuda | f32 | Hexahedron | PullBack | set-up | loops / loops | 10^7 | 25.68 | 3.00 | `loops` sets up the pull-back with C′, (p + 1)^3 work per point: (9/5)^3 = 5.83 from p = 4 to 8 |
+| locust cuda | f64 | Quadrilateral | Points | factor | shared / shared | 10^6 | 1.79 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | Points | factor | shared / shared | 10^7 | 1.89 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | Jacobian | factor | sumfact / shared | 10^6 | 1.64 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | Jacobian | factor | sumfact / shared | 10^7 | 1.61 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | DetJ | factor | sumfact / shared | 10^6 | 1.78 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | DetJ | factor | sumfact / shared | 10^7 | 1.85 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | Pinv | factor | sumfact / shared | 10^6 | 1.62 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | Pinv | factor | sumfact / shared | 10^7 | 1.73 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | FacetNormals | factor | shared / shared | 10^6 | 2.48 | 3.00 | – |
+| locust cuda | f64 | Quadrilateral | FacetNormals | factor | shared / shared | 10^7 | 4.16 | 3.00 | `shared` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Quadrilateral | Normals | factor | shared / sumfact | 10^6 | 4.07 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f64 | Quadrilateral | Normals | factor | shared / sumfact | 10^7 | 5.33 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `shared` to `sumfact` |
+| locust cuda | f64 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 16.15 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 6.18 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f64 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 9.90 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 5.55 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| locust cuda | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.47 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 4.64 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 41.89 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 9.77 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 45.21 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 9.85 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 11.22 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.58 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 5.94 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 3.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence) |
+| locust cuda | f64 | Hexahedron | PullBack | step | loops / sumfact | 10^6 | 25.64 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `loops` to `sumfact` |
+| locust cuda | f64 | Hexahedron | PullBack | set-up | loops / sumfact | 10^6 | 1.63 | 3.00 | – |
+| locust cuda | f64 | Hexahedron | PullBack | step | loops / sumfact | 10^7 | 15.10 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's evidence); the choice changes from `loops` to `sumfact` |
+| locust cuda | f64 | Hexahedron | PullBack | set-up | loops / sumfact | 10^7 | 0.90 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 2.43 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 1.31 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 1.47 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 1.17 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 2.70 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.55 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 2.32 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 1.15 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.42 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.50 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 2.63 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.20 | 3.00 | – |
+| kathleen cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 4.14 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| kathleen cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 5.26 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| kathleen cpu | f32 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 2.60 | 3.56 | – |
+| kathleen cpu | f32 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 2.87 | 3.00 | – |
+| kathleen cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 8.86 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 4.93 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 7.52 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 3.24 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 8.40 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.10 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 7.56 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 3.18 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 4.79 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f32 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.50 | 3.00 | – |
+| kathleen cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 22.80 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | -0.32 | 3.00 | – |
+| kathleen cpu | f32 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 44.99 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f32 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 3.70 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^6 | 1.43 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Points | factor | sumfact / sumfact | 10^7 | 0.92 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^6 | 1.42 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Jacobian | factor | sumfact / sumfact | 10^7 | 1.00 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^6 | 1.63 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | DetJ | factor | sumfact / sumfact | 10^7 | 1.22 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^6 | 1.70 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Pinv | factor | sumfact / sumfact | 10^7 | 1.09 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^6 | 1.34 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.25 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^6 | 1.56 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | Normals | factor | sumfact / sumfact | 10^7 | 1.12 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^6 | 5.15 | 3.56 | `direct` does (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| kathleen cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^6 | 2.56 | 3.00 | – |
+| kathleen cpu | f64 | Quadrilateral | PullBack | step | direct / direct | 10^7 | 3.31 | 3.56 | – |
+| kathleen cpu | f64 | Quadrilateral | PullBack | set-up | direct / direct | 10^7 | 3.63 | 3.00 | `direct` sets up the pull-back with C′, (p + 1)^2 work per point: (9/5)^2 = 3.24 from p = 4 to 8 |
+| kathleen cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^6 | 10.37 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Points | factor | sumfact / sumfact | 10^7 | 3.11 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^6 | 6.15 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Jacobian | factor | sumfact / sumfact | 10^7 | 1.72 | 3.00 | – |
+| kathleen cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^6 | 13.01 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | DetJ | factor | sumfact / sumfact | 10^7 | 4.51 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^6 | 6.03 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | Pinv | factor | sumfact / sumfact | 10^7 | 1.70 | 3.00 | – |
+| kathleen cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^6 | 3.95 | 3.00 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence) |
+| kathleen cpu | f64 | Hexahedron | FacetNormals | factor | sumfact / sumfact | 10^7 | 1.52 | 3.00 | – |
+| kathleen cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^6 | 29.22 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^6 | 1.31 | 3.00 | – |
+| kathleen cpu | f64 | Hexahedron | PullBack | step | direct / sumfact | 10^7 | 20.86 | 6.42 | `sumfact` keeps (p + 1)^2 · q intermediates per lane, which overflow L1 at p = 8 (M9h's evidence); the choice changes from `direct` to `sumfact` |
+| kathleen cpu | f64 | Hexahedron | PullBack | set-up | direct / sumfact | 10^7 | 2.28 | 3.00 | – |
+
+124 of 270 ratios exceed their bound.
+
+### M10 against M9h
+
+Per entry at p = 1, 4 and 8, platform and strategy both timed at the entry's first rule size (10^6 points): M10's time over M9h's. 397 of 939 comparisons move by more than 10%; a range whose check moves, or falls back, is re-measured with candidates at the unmeasured degrees next to each of its boundaries (ADR-0060 item 3).
+
+| class | family | cell | bytes | p | target backend | strategy | M10 / M9h |
+| --- | --- | --- | ---: | ---: | --- | --- | ---: |
+| Cpu | EVector | Interval | 8 | 1 | kathleen cpu | direct | 1.22 |
+| Cpu | EVector | Interval | 8 | 4 | kathleen cpu | direct | 1.14 |
+| Cpu | EVector | Interval | 8 | 8 | kathleen cpu | direct | 1.47 |
+| Cpu | EVector | Triangle | 4 | 1 | macmini cpu | direct | 1.15 |
+| Cpu | EVector | Triangle | 4 | 1 | kathleen cpu | direct | 0.85 |
+| Cpu | EVector | Triangle | 4 | 8 | macmini cpu | direct | 1.18 |
+| Cpu | EVector | Triangle | 4 | 8 | kathleen cpu | direct | 0.83 |
+| Cpu | EVector | Triangle | 8 | 1 | kathleen cpu | direct | 1.21 |
+| Cpu | EVector | Triangle | 8 | 4 | kathleen cpu | direct | 0.51 |
+| Cpu | EVector | Triangle | 8 | 8 | macmini cpu | direct | 0.90 |
+| Cpu | EVector | Triangle | 8 | 8 | macmini cpu | loops | 0.89 |
+| Cpu | EVector | Triangle | 8 | 8 | kathleen cpu | direct | 0.25 |
+| Cpu | EVector | Triangle | 8 | 8 | kathleen cpu | loops | 0.25 |
+| Cpu | EVector | Quadrilateral | 4 | 1 | macmini cpu | direct | 1.17 |
+| Cpu | EVector | Quadrilateral | 4 | 1 | kathleen cpu | direct | 1.18 |
+| Cpu | EVector | Quadrilateral | 4 | 4 | macmini cpu | direct | 1.14 |
+| Cpu | EVector | Quadrilateral | 4 | 4 | kathleen cpu | direct | 1.16 |
+| Cpu | EVector | Quadrilateral | 4 | 8 | macmini cpu | direct | 1.12 |
+| Cpu | EVector | Quadrilateral | 4 | 8 | kathleen cpu | direct | 1.13 |
+| Cpu | EVector | Quadrilateral | 8 | 1 | kathleen cpu | direct | 1.29 |
+| Cpu | EVector | Quadrilateral | 8 | 4 | kathleen cpu | direct | 0.29 |
+| Cpu | EVector | Quadrilateral | 8 | 8 | kathleen cpu | direct | 0.21 |
+| Cpu | EVector | Tetrahedron | 4 | 1 | macmini cpu | direct | 1.26 |
+| Cpu | EVector | Tetrahedron | 4 | 4 | macmini cpu | direct | 1.43 |
+| Cpu | EVector | Tetrahedron | 4 | 4 | macmini cpu | loops | 1.41 |
+| Cpu | EVector | Tetrahedron | 8 | 1 | kathleen cpu | direct | 0.81 |
+| Cpu | EVector | Tetrahedron | 8 | 4 | kathleen cpu | direct | 0.13 |
+| Cpu | EVector | Tetrahedron | 8 | 8 | kathleen cpu | loops | 0.63 |
+| Cpu | EVector | Hexahedron | 4 | 1 | macmini cpu | direct | 1.34 |
+| Cpu | EVector | Hexahedron | 4 | 1 | kathleen cpu | direct | 0.89 |
+| Cpu | EVector | Hexahedron | 4 | 4 | macmini cpu | direct | 1.79 |
+| Cpu | EVector | Hexahedron | 4 | 8 | macmini cpu | loops | 5.15 |
+| Cpu | EVector | Hexahedron | 8 | 1 | kathleen cpu | direct | 1.12 |
+| Cpu | EVector | Hexahedron | 8 | 4 | macmini cpu | direct | 0.89 |
+| Cpu | EVector | Hexahedron | 8 | 4 | kathleen cpu | direct | 0.16 |
+| Cpu | EVector | Hexahedron | 8 | 8 | kathleen cpu | loops | 0.38 |
+| Cpu | EVector | Prism | 4 | 1 | macmini cpu | direct | 1.58 |
+| Cpu | EVector | Prism | 4 | 1 | kathleen cpu | direct | 0.87 |
+| Cpu | EVector | Prism | 4 | 4 | macmini cpu | direct | 6.79 |
+| Cpu | EVector | Prism | 4 | 4 | kathleen cpu | direct | 0.87 |
+| Cpu | EVector | Prism | 4 | 8 | macmini cpu | loops | 4.49 |
+| Cpu | EVector | Prism | 8 | 1 | kathleen cpu | direct | 0.26 |
+| Cpu | EVector | Prism | 8 | 4 | kathleen cpu | direct | 0.07 |
+| Cpu | EVector | Prism | 8 | 8 | kathleen cpu | loops | 0.51 |
+| Cpu | EVector | Pyramid | 4 | 1 | macmini cpu | direct | 1.37 |
+| Cpu | EVector | Pyramid | 4 | 1 | kathleen cpu | direct | 0.75 |
+| Cpu | EVector | Pyramid | 8 | 1 | kathleen cpu | direct | 0.76 |
+| Cpu | Points | Interval | 4 | 1 | kathleen cpu | direct | 1.24 |
+| Cpu | Points | Interval | 4 | 4 | macmini cpu | direct | 1.52 |
+| Cpu | Points | Interval | 8 | 1 | macmini cpu | direct | 1.93 |
+| Cpu | Points | Interval | 8 | 4 | macmini cpu | direct | 0.88 |
+| Cpu | Points | Interval | 8 | 4 | macmini cpu | loops | 0.82 |
+| Cpu | Points | Interval | 8 | 4 | kathleen cpu | direct | 0.86 |
+| Cpu | Points | Triangle | 4 | 1 | macmini cpu | direct | 1.38 |
+| Cpu | Points | Triangle | 4 | 1 | kathleen cpu | direct | 1.38 |
+| Cpu | Points | Triangle | 4 | 4 | macmini cpu | direct | 1.16 |
+| Cpu | Points | Triangle | 4 | 4 | macmini cpu | loops | 1.30 |
+| Cpu | Points | Triangle | 4 | 4 | kathleen cpu | direct | 0.87 |
+| Cpu | Points | Triangle | 4 | 4 | kathleen cpu | loops | 0.61 |
+| Cpu | Points | Triangle | 4 | 8 | kathleen cpu | direct | 0.33 |
+| Cpu | Points | Triangle | 4 | 8 | kathleen cpu | loops | 0.34 |
+| Cpu | Points | Triangle | 8 | 1 | macmini cpu | direct | 1.34 |
+| Cpu | Points | Triangle | 8 | 4 | macmini cpu | direct | 0.59 |
+| Cpu | Points | Triangle | 8 | 4 | macmini cpu | loops | 0.63 |
+| Cpu | Points | Triangle | 8 | 4 | kathleen cpu | loops | 1.11 |
+| Cpu | Points | Triangle | 8 | 8 | macmini cpu | direct | 0.19 |
+| Cpu | Points | Triangle | 8 | 8 | macmini cpu | loops | 0.24 |
+| Cpu | Points | Triangle | 8 | 8 | kathleen cpu | loops | 0.85 |
+| Cpu | Points | Quadrilateral | 4 | 1 | macmini cpu | direct | 1.64 |
+| Cpu | Points | Quadrilateral | 4 | 1 | kathleen cpu | direct | 1.12 |
+| Cpu | Points | Quadrilateral | 4 | 4 | kathleen cpu | direct | 0.38 |
+| Cpu | Points | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | 0.35 |
+| Cpu | Points | Quadrilateral | 4 | 8 | macmini cpu | sumfact | 1.11 |
+| Cpu | Points | Quadrilateral | 4 | 8 | kathleen cpu | direct | 0.35 |
+| Cpu | Points | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | 0.27 |
+| Cpu | Points | Quadrilateral | 8 | 1 | macmini cpu | direct | 1.24 |
+| Cpu | Points | Quadrilateral | 8 | 4 | macmini cpu | direct | 0.52 |
+| Cpu | Points | Quadrilateral | 8 | 4 | macmini cpu | sumfact | 0.89 |
+| Cpu | Points | Quadrilateral | 8 | 4 | kathleen cpu | direct | 1.20 |
+| Cpu | Points | Quadrilateral | 8 | 8 | macmini cpu | direct | 0.14 |
+| Cpu | Points | Quadrilateral | 8 | 8 | macmini cpu | sumfact | 0.35 |
+| Cpu | Points | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | 0.79 |
+| Cpu | Points | Tetrahedron | 4 | 1 | macmini cpu | direct | 1.53 |
+| Cpu | Points | Tetrahedron | 4 | 1 | kathleen cpu | direct | 0.79 |
+| Cpu | Points | Tetrahedron | 4 | 4 | kathleen cpu | direct | 0.47 |
+| Cpu | Points | Tetrahedron | 4 | 4 | kathleen cpu | loops | 0.41 |
+| Cpu | Points | Tetrahedron | 4 | 8 | kathleen cpu | loops | 2.82 |
+| Cpu | Points | Tetrahedron | 8 | 1 | macmini cpu | direct | 1.30 |
+| Cpu | Points | Tetrahedron | 8 | 1 | kathleen cpu | direct | 1.21 |
+| Cpu | Points | Tetrahedron | 8 | 4 | macmini cpu | direct | 0.14 |
+| Cpu | Points | Tetrahedron | 8 | 4 | macmini cpu | loops | 0.15 |
+| Cpu | Points | Tetrahedron | 8 | 8 | macmini cpu | loops | 0.35 |
+| Cpu | Points | Hexahedron | 4 | 1 | kathleen cpu | direct | 1.79 |
+| Cpu | Points | Hexahedron | 4 | 1 | kathleen cpu | sumfact | 1.25 |
+| Cpu | Points | Hexahedron | 4 | 4 | kathleen cpu | direct | 0.50 |
+| Cpu | Points | Hexahedron | 4 | 4 | kathleen cpu | sumfact | 0.37 |
+| Cpu | Points | Hexahedron | 4 | 8 | kathleen cpu | loops | 2.75 |
+| Cpu | Points | Hexahedron | 4 | 8 | kathleen cpu | sumfact | 2.10 |
+| Cpu | Points | Hexahedron | 8 | 1 | macmini cpu | sumfact | 1.24 |
+| Cpu | Points | Hexahedron | 8 | 4 | macmini cpu | direct | 0.12 |
+| Cpu | Points | Hexahedron | 8 | 4 | macmini cpu | sumfact | 0.20 |
+| Cpu | Points | Hexahedron | 8 | 8 | macmini cpu | loops | 0.30 |
+| Cpu | Points | Hexahedron | 8 | 8 | macmini cpu | sumfact | 0.33 |
+| Cpu | Points | Prism | 4 | 1 | macmini cpu | direct | 1.49 |
+| Cpu | Points | Prism | 4 | 1 | kathleen cpu | direct | 2.73 |
+| Cpu | Points | Prism | 4 | 4 | macmini cpu | direct | 1.11 |
+| Cpu | Points | Prism | 4 | 4 | macmini cpu | sumfact | 1.23 |
+| Cpu | Points | Prism | 4 | 4 | kathleen cpu | direct | 0.55 |
+| Cpu | Points | Prism | 4 | 4 | kathleen cpu | sumfact | 0.54 |
+| Cpu | Points | Prism | 4 | 8 | kathleen cpu | loops | 2.44 |
+| Cpu | Points | Prism | 4 | 8 | kathleen cpu | sumfact | 2.25 |
+| Cpu | Points | Prism | 8 | 1 | macmini cpu | direct | 0.69 |
+| Cpu | Points | Prism | 8 | 1 | macmini cpu | sumfact | 1.11 |
+| Cpu | Points | Prism | 8 | 1 | kathleen cpu | direct | 0.86 |
+| Cpu | Points | Prism | 8 | 1 | kathleen cpu | sumfact | 0.86 |
+| Cpu | Points | Prism | 8 | 4 | macmini cpu | direct | 0.09 |
+| Cpu | Points | Prism | 8 | 4 | macmini cpu | sumfact | 0.10 |
+| Cpu | Points | Prism | 8 | 8 | macmini cpu | loops | 0.27 |
+| Cpu | Points | Prism | 8 | 8 | macmini cpu | sumfact | 0.29 |
+| Cpu | Points | Pyramid | 4 | 1 | kathleen cpu | direct | 0.87 |
+| Cpu | Points | Pyramid | 8 | 1 | macmini cpu | direct | 1.40 |
+| Cpu | Jacobian | Interval | 4 | 4 | macmini cpu | direct | 1.14 |
+| Cpu | Jacobian | Interval | 4 | 4 | kathleen cpu | direct | 1.22 |
+| Cpu | Jacobian | Interval | 4 | 8 | macmini cpu | direct | 1.54 |
+| Cpu | Jacobian | Interval | 8 | 1 | macmini cpu | direct | 1.71 |
+| Cpu | Jacobian | Interval | 8 | 1 | kathleen cpu | direct | 1.15 |
+| Cpu | Jacobian | Interval | 8 | 4 | macmini cpu | direct | 1.51 |
+| Cpu | Jacobian | Interval | 8 | 8 | kathleen cpu | direct | 0.81 |
+| Cpu | Jacobian | Triangle | 4 | 1 | macmini cpu | direct | 1.39 |
+| Cpu | Jacobian | Triangle | 4 | 1 | kathleen cpu | direct | 1.27 |
+| Cpu | Jacobian | Triangle | 4 | 4 | macmini cpu | direct | 1.11 |
+| Cpu | Jacobian | Triangle | 4 | 4 | kathleen cpu | direct | 0.66 |
+| Cpu | Jacobian | Triangle | 4 | 8 | macmini cpu | direct | 0.89 |
+| Cpu | Jacobian | Triangle | 4 | 8 | kathleen cpu | direct | 0.31 |
+| Cpu | Jacobian | Triangle | 8 | 1 | macmini cpu | direct | 1.43 |
+| Cpu | Jacobian | Triangle | 8 | 8 | macmini cpu | direct | 0.39 |
+| Cpu | Jacobian | Triangle | 8 | 8 | macmini cpu | loops | 0.29 |
+| Cpu | Jacobian | Triangle | 8 | 8 | kathleen cpu | direct | 0.87 |
+| Cpu | Jacobian | Triangle | 8 | 8 | kathleen cpu | loops | 0.82 |
+| Cpu | Jacobian | Quadrilateral | 4 | 1 | macmini cpu | direct | 1.41 |
+| Cpu | Jacobian | Quadrilateral | 4 | 1 | kathleen cpu | direct | 1.30 |
+| Cpu | Jacobian | Quadrilateral | 4 | 4 | kathleen cpu | direct | 0.45 |
+| Cpu | Jacobian | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | 0.43 |
+| Cpu | Jacobian | Quadrilateral | 4 | 8 | kathleen cpu | direct | 0.33 |
+| Cpu | Jacobian | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | 0.26 |
+| Cpu | Jacobian | Quadrilateral | 8 | 1 | macmini cpu | direct | 1.41 |
+| Cpu | Jacobian | Quadrilateral | 8 | 4 | macmini cpu | sumfact | 0.87 |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | macmini cpu | direct | 0.39 |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | macmini cpu | sumfact | 0.39 |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | kathleen cpu | direct | 0.89 |
+| Cpu | Jacobian | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | 0.89 |
+| Cpu | Jacobian | Tetrahedron | 4 | 1 | kathleen cpu | direct | 0.90 |
+| Cpu | Jacobian | Tetrahedron | 4 | 4 | kathleen cpu | direct | 0.41 |
+| Cpu | Jacobian | Tetrahedron | 4 | 4 | kathleen cpu | loops | 0.46 |
+| Cpu | Jacobian | Tetrahedron | 4 | 8 | kathleen cpu | loops | 2.60 |
+| Cpu | Jacobian | Tetrahedron | 8 | 1 | macmini cpu | direct | 1.15 |
+| Cpu | Jacobian | Tetrahedron | 8 | 4 | macmini cpu | direct | 0.40 |
+| Cpu | Jacobian | Tetrahedron | 8 | 4 | macmini cpu | loops | 0.31 |
+| Cpu | Jacobian | Tetrahedron | 8 | 8 | macmini cpu | loops | 0.79 |
+| Cpu | Jacobian | Hexahedron | 4 | 1 | kathleen cpu | direct | 1.40 |
+| Cpu | Jacobian | Hexahedron | 4 | 4 | kathleen cpu | direct | 0.31 |
+| Cpu | Jacobian | Hexahedron | 4 | 4 | kathleen cpu | sumfact | 0.29 |
+| Cpu | Jacobian | Hexahedron | 4 | 8 | kathleen cpu | loops | 2.59 |
+| Cpu | Jacobian | Hexahedron | 4 | 8 | kathleen cpu | sumfact | 1.87 |
+| Cpu | Jacobian | Hexahedron | 8 | 1 | macmini cpu | direct | 1.30 |
+| Cpu | Jacobian | Hexahedron | 8 | 4 | macmini cpu | direct | 0.28 |
+| Cpu | Jacobian | Hexahedron | 8 | 4 | macmini cpu | sumfact | 0.21 |
+| Cpu | Jacobian | Hexahedron | 8 | 8 | macmini cpu | loops | 0.56 |
+| Cpu | Jacobian | Hexahedron | 8 | 8 | macmini cpu | sumfact | 0.52 |
+| Cpu | Jacobian | Hexahedron | 8 | 8 | kathleen cpu | loops | 0.89 |
+| Cpu | Jacobian | Prism | 4 | 1 | kathleen cpu | direct | 1.37 |
+| Cpu | Jacobian | Prism | 4 | 4 | macmini cpu | direct | 1.12 |
+| Cpu | Jacobian | Prism | 4 | 4 | kathleen cpu | direct | 0.54 |
+| Cpu | Jacobian | Prism | 4 | 4 | kathleen cpu | sumfact | 0.44 |
+| Cpu | Jacobian | Prism | 4 | 8 | kathleen cpu | loops | 2.23 |
+| Cpu | Jacobian | Prism | 4 | 8 | kathleen cpu | sumfact | 2.48 |
+| Cpu | Jacobian | Prism | 8 | 1 | macmini cpu | direct | 1.32 |
+| Cpu | Jacobian | Prism | 8 | 4 | macmini cpu | direct | 0.18 |
+| Cpu | Jacobian | Prism | 8 | 4 | macmini cpu | sumfact | 0.19 |
+| Cpu | Jacobian | Prism | 8 | 8 | macmini cpu | loops | 0.51 |
+| Cpu | Jacobian | Prism | 8 | 8 | macmini cpu | sumfact | 0.57 |
+| Cpu | Jacobian | Pyramid | 4 | 1 | kathleen cpu | direct | 0.88 |
+| Cpu | Jacobian | Pyramid | 8 | 1 | macmini cpu | direct | 1.19 |
+| Cpu | Normals | Interval | 4 | 1 | macmini cpu | direct | 1.69 |
+| Cpu | Normals | Interval | 4 | 1 | kathleen cpu | direct | 1.46 |
+| Cpu | Normals | Interval | 4 | 4 | macmini cpu | direct | 1.48 |
+| Cpu | Normals | Interval | 4 | 8 | kathleen cpu | direct | 1.67 |
+| Cpu | Normals | Interval | 8 | 1 | macmini cpu | direct | 1.40 |
+| Cpu | Normals | Interval | 8 | 1 | kathleen cpu | direct | 0.71 |
+| Cpu | Normals | Interval | 8 | 4 | macmini cpu | direct | 1.29 |
+| Cpu | Normals | Interval | 8 | 8 | macmini cpu | direct | 1.12 |
+| Cpu | Normals | Triangle | 4 | 1 | macmini cpu | direct | 1.29 |
+| Cpu | Normals | Triangle | 4 | 1 | kathleen cpu | direct | 1.59 |
+| Cpu | Normals | Triangle | 4 | 4 | kathleen cpu | direct | 0.27 |
+| Cpu | Normals | Triangle | 4 | 8 | macmini cpu | direct | 0.88 |
+| Cpu | Normals | Triangle | 4 | 8 | macmini cpu | loops | 0.85 |
+| Cpu | Normals | Triangle | 4 | 8 | kathleen cpu | direct | 0.30 |
+| Cpu | Normals | Triangle | 4 | 8 | kathleen cpu | loops | 0.29 |
+| Cpu | Normals | Triangle | 8 | 1 | macmini cpu | direct | 1.36 |
+| Cpu | Normals | Triangle | 8 | 8 | macmini cpu | direct | 0.45 |
+| Cpu | Normals | Triangle | 8 | 8 | macmini cpu | loops | 0.34 |
+| Cpu | Normals | Triangle | 8 | 8 | kathleen cpu | direct | 0.87 |
+| Cpu | Normals | Triangle | 8 | 8 | kathleen cpu | loops | 0.87 |
+| Cpu | Normals | Quadrilateral | 4 | 1 | kathleen cpu | direct | 1.87 |
+| Cpu | Normals | Quadrilateral | 4 | 4 | kathleen cpu | direct | 0.32 |
+| Cpu | Normals | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | 0.29 |
+| Cpu | Normals | Quadrilateral | 4 | 8 | kathleen cpu | direct | 0.31 |
+| Cpu | Normals | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | 0.28 |
+| Cpu | Normals | Quadrilateral | 8 | 1 | macmini cpu | direct | 1.38 |
+| Cpu | Normals | Quadrilateral | 8 | 1 | kathleen cpu | direct | 1.14 |
+| Cpu | Normals | Quadrilateral | 8 | 4 | kathleen cpu | direct | 0.86 |
+| Cpu | Normals | Quadrilateral | 8 | 8 | macmini cpu | direct | 0.42 |
+| Cpu | Normals | Quadrilateral | 8 | 8 | macmini cpu | sumfact | 0.35 |
+| Cpu | FacetNormals | Interval | 4 | 1 | macmini cpu | direct | 1.55 |
+| Cpu | FacetNormals | Interval | 4 | 1 | kathleen cpu | direct | 1.22 |
+| Cpu | FacetNormals | Interval | 4 | 4 | kathleen cpu | direct | 2.22 |
+| Cpu | FacetNormals | Interval | 8 | 1 | kathleen cpu | direct | 0.69 |
+| Cpu | FacetNormals | Interval | 8 | 4 | macmini cpu | direct | 1.41 |
+| Cpu | FacetNormals | Interval | 8 | 4 | kathleen cpu | direct | 0.72 |
+| Cpu | FacetNormals | Interval | 8 | 8 | macmini cpu | direct | 1.26 |
+| Cpu | FacetNormals | Triangle | 4 | 4 | kathleen cpu | direct | 0.78 |
+| Cpu | FacetNormals | Triangle | 4 | 8 | kathleen cpu | direct | 0.42 |
+| Cpu | FacetNormals | Triangle | 8 | 4 | kathleen cpu | direct | 1.10 |
+| Cpu | FacetNormals | Triangle | 8 | 8 | macmini cpu | direct | 0.77 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 1 | kathleen cpu | direct | 1.15 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 4 | kathleen cpu | direct | 0.59 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 4 | kathleen cpu | sumfact | 0.53 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 8 | kathleen cpu | direct | 0.51 |
+| Cpu | FacetNormals | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | 0.34 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 1 | macmini cpu | direct | 1.15 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 4 | macmini cpu | direct | 0.64 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 4 | macmini cpu | sumfact | 0.75 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 8 | macmini cpu | direct | 0.56 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 8 | macmini cpu | sumfact | 0.54 |
+| Cpu | FacetNormals | Quadrilateral | 8 | 8 | kathleen cpu | direct | 0.76 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 1 | kathleen cpu | direct | 0.74 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 4 | kathleen cpu | direct | 0.33 |
+| Cpu | FacetNormals | Tetrahedron | 4 | 8 | kathleen cpu | loops | 1.36 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 1 | kathleen cpu | direct | 1.51 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 4 | macmini cpu | direct | 0.44 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 4 | macmini cpu | loops | 0.38 |
+| Cpu | FacetNormals | Tetrahedron | 8 | 8 | macmini cpu | loops | 0.19 |
+| Cpu | FacetNormals | Hexahedron | 4 | 1 | kathleen cpu | direct | 0.39 |
+| Cpu | FacetNormals | Hexahedron | 4 | 1 | kathleen cpu | sumfact | 0.57 |
+| Cpu | FacetNormals | Hexahedron | 4 | 4 | kathleen cpu | direct | 0.32 |
+| Cpu | FacetNormals | Hexahedron | 4 | 4 | kathleen cpu | sumfact | 0.50 |
+| Cpu | FacetNormals | Hexahedron | 4 | 8 | kathleen cpu | loops | 1.44 |
+| Cpu | FacetNormals | Hexahedron | 4 | 8 | kathleen cpu | sumfact | 1.23 |
+| Cpu | FacetNormals | Hexahedron | 8 | 1 | macmini cpu | sumfact | 0.80 |
+| Cpu | FacetNormals | Hexahedron | 8 | 1 | kathleen cpu | direct | 1.25 |
+| Cpu | FacetNormals | Hexahedron | 8 | 1 | kathleen cpu | sumfact | 1.25 |
+| Cpu | FacetNormals | Hexahedron | 8 | 4 | macmini cpu | direct | 0.35 |
+| Cpu | FacetNormals | Hexahedron | 8 | 4 | macmini cpu | sumfact | 0.21 |
+| Cpu | FacetNormals | Hexahedron | 8 | 8 | macmini cpu | loops | 0.45 |
+| Cpu | FacetNormals | Hexahedron | 8 | 8 | macmini cpu | sumfact | 0.38 |
+| Cpu | FacetNormals | Prism | 4 | 1 | kathleen cpu | direct | 0.57 |
+| Cpu | FacetNormals | Prism | 4 | 4 | macmini cpu | sumfact | 1.16 |
+| Cpu | FacetNormals | Prism | 4 | 4 | kathleen cpu | direct | 0.54 |
+| Cpu | FacetNormals | Prism | 4 | 4 | kathleen cpu | sumfact | 0.53 |
+| Cpu | FacetNormals | Prism | 4 | 8 | kathleen cpu | loops | 1.39 |
+| Cpu | FacetNormals | Prism | 4 | 8 | kathleen cpu | sumfact | 1.58 |
+| Cpu | FacetNormals | Prism | 8 | 1 | kathleen cpu | direct | 1.25 |
+| Cpu | FacetNormals | Prism | 8 | 4 | macmini cpu | direct | 0.17 |
+| Cpu | FacetNormals | Prism | 8 | 4 | macmini cpu | sumfact | 0.16 |
+| Cpu | FacetNormals | Prism | 8 | 8 | macmini cpu | loops | 0.43 |
+| Cpu | FacetNormals | Prism | 8 | 8 | macmini cpu | sumfact | 0.44 |
+| Cpu | FacetNormals | Pyramid | 4 | 1 | kathleen cpu | direct | 0.53 |
+| Cpu | PullBack | Interval | 4 | 1 | macmini cpu | direct | 0.38 |
+| Cpu | PullBack | Interval | 4 | 1 | kathleen cpu | direct | 0.19 |
+| Cpu | PullBack | Interval | 4 | 4 | macmini cpu | direct | 0.22 |
+| Cpu | PullBack | Interval | 4 | 4 | kathleen cpu | direct | 0.21 |
+| Cpu | PullBack | Interval | 4 | 8 | macmini cpu | direct | 0.25 |
+| Cpu | PullBack | Interval | 4 | 8 | kathleen cpu | direct | 0.23 |
+| Cpu | PullBack | Interval | 8 | 1 | macmini cpu | direct | 0.34 |
+| Cpu | PullBack | Interval | 8 | 1 | kathleen cpu | direct | 0.09 |
+| Cpu | PullBack | Interval | 8 | 4 | macmini cpu | direct | 0.15 |
+| Cpu | PullBack | Interval | 8 | 4 | kathleen cpu | direct | 0.13 |
+| Cpu | PullBack | Interval | 8 | 8 | macmini cpu | direct | 0.14 |
+| Cpu | PullBack | Interval | 8 | 8 | kathleen cpu | direct | 0.17 |
+| Cpu | PullBack | Triangle | 4 | 1 | macmini cpu | direct | 0.24 |
+| Cpu | PullBack | Triangle | 4 | 1 | kathleen cpu | direct | 0.27 |
+| Cpu | PullBack | Triangle | 4 | 4 | macmini cpu | direct | 0.22 |
+| Cpu | PullBack | Triangle | 4 | 4 | kathleen cpu | direct | 0.20 |
+| Cpu | PullBack | Triangle | 4 | 8 | macmini cpu | direct | 0.09 |
+| Cpu | PullBack | Triangle | 4 | 8 | macmini cpu | loops | 0.14 |
+| Cpu | PullBack | Triangle | 4 | 8 | kathleen cpu | direct | 0.06 |
+| Cpu | PullBack | Triangle | 4 | 8 | kathleen cpu | loops | 0.07 |
+| Cpu | PullBack | Triangle | 8 | 1 | macmini cpu | direct | 0.22 |
+| Cpu | PullBack | Triangle | 8 | 1 | kathleen cpu | direct | 0.12 |
+| Cpu | PullBack | Triangle | 8 | 4 | macmini cpu | direct | 0.26 |
+| Cpu | PullBack | Triangle | 8 | 4 | kathleen cpu | direct | 0.21 |
+| Cpu | PullBack | Triangle | 8 | 8 | macmini cpu | direct | 0.32 |
+| Cpu | PullBack | Triangle | 8 | 8 | kathleen cpu | direct | 0.14 |
+| Cpu | PullBack | Quadrilateral | 4 | 1 | macmini cpu | direct | 0.26 |
+| Cpu | PullBack | Quadrilateral | 4 | 1 | kathleen cpu | direct | 0.26 |
+| Cpu | PullBack | Quadrilateral | 4 | 4 | macmini cpu | direct | 0.27 |
+| Cpu | PullBack | Quadrilateral | 4 | 4 | kathleen cpu | direct | 0.18 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | macmini cpu | direct | 0.10 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | macmini cpu | sumfact | 0.16 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | kathleen cpu | direct | 0.08 |
+| Cpu | PullBack | Quadrilateral | 4 | 8 | kathleen cpu | sumfact | 0.08 |
+| Cpu | PullBack | Quadrilateral | 8 | 1 | macmini cpu | direct | 0.24 |
+| Cpu | PullBack | Quadrilateral | 8 | 1 | kathleen cpu | direct | 0.10 |
+| Cpu | PullBack | Quadrilateral | 8 | 4 | macmini cpu | direct | 0.36 |
+| Cpu | PullBack | Quadrilateral | 8 | 4 | kathleen cpu | direct | 0.21 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | macmini cpu | direct | 0.27 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | macmini cpu | sumfact | 0.39 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | kathleen cpu | direct | 0.12 |
+| Cpu | PullBack | Quadrilateral | 8 | 8 | kathleen cpu | sumfact | 0.11 |
+| Cpu | PullBack | Tetrahedron | 4 | 1 | macmini cpu | direct | 0.22 |
+| Cpu | PullBack | Tetrahedron | 4 | 1 | kathleen cpu | direct | 0.30 |
+| Cpu | PullBack | Tetrahedron | 4 | 4 | macmini cpu | direct | 0.07 |
+| Cpu | PullBack | Tetrahedron | 4 | 4 | kathleen cpu | direct | 0.06 |
+| Cpu | PullBack | Tetrahedron | 4 | 8 | macmini cpu | loops | 0.21 |
+| Cpu | PullBack | Tetrahedron | 4 | 8 | kathleen cpu | loops | 0.12 |
+| Cpu | PullBack | Tetrahedron | 8 | 1 | macmini cpu | direct | 0.33 |
+| Cpu | PullBack | Tetrahedron | 8 | 1 | kathleen cpu | direct | 0.14 |
+| Cpu | PullBack | Tetrahedron | 8 | 4 | macmini cpu | direct | 0.27 |
+| Cpu | PullBack | Tetrahedron | 8 | 4 | kathleen cpu | direct | 0.06 |
+| Cpu | PullBack | Tetrahedron | 8 | 8 | macmini cpu | loops | 0.30 |
+| Cpu | PullBack | Tetrahedron | 8 | 8 | kathleen cpu | loops | 0.10 |
+| Cpu | PullBack | Hexahedron | 4 | 1 | macmini cpu | direct | 0.24 |
+| Cpu | PullBack | Hexahedron | 4 | 1 | kathleen cpu | direct | 0.31 |
+| Cpu | PullBack | Hexahedron | 4 | 4 | macmini cpu | direct | 0.09 |
+| Cpu | PullBack | Hexahedron | 4 | 4 | macmini cpu | sumfact | 0.11 |
+| Cpu | PullBack | Hexahedron | 4 | 4 | kathleen cpu | direct | 0.05 |
+| Cpu | PullBack | Hexahedron | 4 | 4 | kathleen cpu | sumfact | 0.07 |
+| Cpu | PullBack | Hexahedron | 4 | 8 | macmini cpu | loops | 0.22 |
+| Cpu | PullBack | Hexahedron | 4 | 8 | macmini cpu | sumfact | 0.21 |
+| Cpu | PullBack | Hexahedron | 4 | 8 | kathleen cpu | loops | 0.26 |
+| Cpu | PullBack | Hexahedron | 4 | 8 | kathleen cpu | sumfact | 0.17 |
+| Cpu | PullBack | Hexahedron | 8 | 1 | macmini cpu | direct | 0.39 |
+| Cpu | PullBack | Hexahedron | 8 | 1 | kathleen cpu | direct | 0.14 |
+| Cpu | PullBack | Hexahedron | 8 | 4 | macmini cpu | direct | 0.40 |
+| Cpu | PullBack | Hexahedron | 8 | 4 | macmini cpu | sumfact | 0.22 |
+| Cpu | PullBack | Hexahedron | 8 | 4 | kathleen cpu | direct | 0.06 |
+| Cpu | PullBack | Hexahedron | 8 | 4 | kathleen cpu | sumfact | 0.09 |
+| Cpu | PullBack | Hexahedron | 8 | 8 | macmini cpu | loops | 0.29 |
+| Cpu | PullBack | Hexahedron | 8 | 8 | macmini cpu | sumfact | 0.32 |
+| Cpu | PullBack | Hexahedron | 8 | 8 | kathleen cpu | loops | 0.05 |
+| Cpu | PullBack | Hexahedron | 8 | 8 | kathleen cpu | sumfact | 0.05 |
+| Cpu | PullBack | Prism | 4 | 1 | macmini cpu | direct | 0.20 |
+| Cpu | PullBack | Prism | 4 | 1 | kathleen cpu | direct | 0.28 |
+| Cpu | PullBack | Prism | 4 | 4 | macmini cpu | direct | 0.08 |
+| Cpu | PullBack | Prism | 4 | 4 | kathleen cpu | direct | 0.05 |
+| Cpu | PullBack | Prism | 4 | 8 | macmini cpu | loops | 0.19 |
+| Cpu | PullBack | Prism | 4 | 8 | macmini cpu | sumfact | 0.20 |
+| Cpu | PullBack | Prism | 4 | 8 | kathleen cpu | loops | 0.20 |
+| Cpu | PullBack | Prism | 4 | 8 | kathleen cpu | sumfact | 0.40 |
+| Cpu | PullBack | Prism | 8 | 1 | macmini cpu | direct | 0.40 |
+| Cpu | PullBack | Prism | 8 | 1 | kathleen cpu | direct | 0.17 |
+| Cpu | PullBack | Prism | 8 | 4 | macmini cpu | direct | 0.36 |
+| Cpu | PullBack | Prism | 8 | 4 | kathleen cpu | direct | 0.05 |
+| Cpu | PullBack | Prism | 8 | 8 | macmini cpu | loops | 0.24 |
+| Cpu | PullBack | Prism | 8 | 8 | macmini cpu | sumfact | 0.30 |
+| Cpu | PullBack | Prism | 8 | 8 | kathleen cpu | loops | 0.07 |
+| Cpu | PullBack | Prism | 8 | 8 | kathleen cpu | sumfact | 0.07 |
+| Cpu | PullBack | Pyramid | 4 | 1 | macmini cpu | direct | 0.24 |
+| Cpu | PullBack | Pyramid | 4 | 1 | kathleen cpu | direct | 0.24 |
+| Cpu | PullBack | Pyramid | 8 | 1 | macmini cpu | direct | 0.42 |
+| Cpu | PullBack | Pyramid | 8 | 1 | kathleen cpu | direct | 0.14 |
+| Gpu | EVector | Interval | 4 | 1 | macmini metal | direct | 1.84 |
+| Gpu | EVector | Quadrilateral | 8 | 1 | locust cuda | direct | 0.88 |
+| Gpu | EVector | Tetrahedron | 4 | 1 | locust cuda | direct | 0.69 |
+| Gpu | EVector | Tetrahedron | 8 | 4 | locust cuda | direct | 0.88 |
+| Gpu | EVector | Pyramid | 4 | 1 | locust cuda | direct | 0.69 |
+| Gpu | Points | Interval | 4 | 4 | macmini metal | direct | 0.89 |
+| Gpu | Points | Interval | 4 | 4 | locust cuda | direct | 0.74 |
+| Gpu | Points | Interval | 4 | 8 | macmini metal | direct | 0.89 |
+| Gpu | Points | Interval | 4 | 8 | locust cuda | direct | 0.78 |
+| Gpu | Points | Interval | 8 | 1 | locust cuda | direct | 0.85 |
+| Gpu | Points | Interval | 8 | 4 | locust cuda | direct | 0.86 |
+| Gpu | Points | Triangle | 4 | 4 | locust cuda | direct | 0.77 |
+| Gpu | Points | Triangle | 4 | 8 | locust cuda | direct | 0.88 |
+| Gpu | Points | Triangle | 8 | 8 | locust cuda | direct | 0.89 |
+| Gpu | Points | Quadrilateral | 4 | 1 | macmini metal | direct | 0.86 |
+| Gpu | Points | Quadrilateral | 4 | 1 | locust cuda | direct | 0.75 |
+| Gpu | Points | Quadrilateral | 4 | 4 | macmini metal | direct | 0.78 |
+| Gpu | Points | Quadrilateral | 4 | 8 | macmini metal | direct | 0.71 |
+| Gpu | Points | Quadrilateral | 8 | 8 | locust cuda | direct | 0.75 |
+| Gpu | Points | Tetrahedron | 8 | 1 | locust cuda | direct | 0.86 |
+| Gpu | Points | Hexahedron | 4 | 1 | locust cuda | direct | 0.80 |
+| Gpu | Points | Hexahedron | 8 | 4 | locust cuda | direct | 1.15 |
+| Gpu | Points | Prism | 4 | 1 | locust cuda | direct | 0.84 |
+| Gpu | Points | Pyramid | 4 | 1 | macmini metal | direct | 0.72 |
+| Gpu | Jacobian | Interval | 4 | 4 | macmini metal | direct | 0.89 |
+| Gpu | Jacobian | Interval | 4 | 8 | macmini metal | direct | 0.89 |
+| Gpu | Jacobian | Interval | 4 | 8 | locust cuda | direct | 0.85 |
+| Gpu | Jacobian | Triangle | 4 | 1 | locust cuda | direct | 0.86 |
+| Gpu | Jacobian | Quadrilateral | 4 | 1 | locust cuda | direct | 0.90 |
+| Gpu | Jacobian | Quadrilateral | 4 | 8 | locust cuda | shared | 0.89 |
+| Gpu | Jacobian | Tetrahedron | 4 | 1 | locust cuda | direct | 0.85 |
+| Gpu | Jacobian | Prism | 4 | 1 | locust cuda | direct | 0.84 |
+| Gpu | FacetNormals | Interval | 4 | 1 | macmini metal | direct | 0.89 |
+| Gpu | FacetNormals | Tetrahedron | 8 | 1 | locust cuda | direct | 0.85 |
+| Gpu | FacetNormals | Prism | 4 | 1 | macmini metal | direct | 0.89 |
+| Gpu | FacetNormals | Prism | 4 | 1 | locust cuda | direct | 0.84 |
+
+No range needs re-measurement.
+
+<!-- END GENERATED M10 -->

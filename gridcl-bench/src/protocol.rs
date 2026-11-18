@@ -8,6 +8,10 @@
 //! the CPU block, `with_quad_tile` for the QuadField tile, and `with_cpu_units` with
 //! `with_performance_cores` for the CPU units (ADR-0017). The size that actually ran comes from
 //! `record_plans`.
+//!
+//! The candidate protocol of M10 and of a CubeCL pin bump (ADR-0057 item 3) keeps the warm-up,
+//! the calibration and the 20 ms runs, with [`CANDIDATE_RUNS`] timed runs at
+//! [`CANDIDATE_SIZES`].
 
 use std::any::Any;
 use std::process::Command;
@@ -25,6 +29,32 @@ use crate::record::{Cores, CubeDimMode, PerfLevel};
 
 /// Timed runs per configuration.
 pub const RUNS: usize = 10;
+/// Timed runs per configuration of the candidate protocol (ADR-0057 item 3).
+pub const CANDIDATE_RUNS: usize = 5;
+/// Problem sizes of the candidate protocol, in items or quadrature points, on every device
+/// class (ADR-0057 item 3).
+pub const CANDIDATE_SIZES: [usize; 2] = [1_000_000, 10_000_000];
+
+/// The rule sizes of a degree-policy entry in the candidate protocol, in quadrature points:
+/// [`CANDIDATE_SIZES`], except FacetNormals on intervals with 4-byte scalars, where 10^6 or
+/// 10^7 equispaced points exceed f32's resolution: 10^5 and 10^6 at p = 4–6, 10^4 and 10^5 at
+/// p = 7–8 (ADR-0063). `family` is a bench or policy family name, `cell` a `CellType` name.
+///
+/// ```
+/// use gridcl_bench::protocol::{CANDIDATE_SIZES, degree_rule_sizes};
+/// assert_eq!(degree_rule_sizes("FacetNormals", "Interval", 4, 8), [10_000, 100_000]);
+/// assert_eq!(degree_rule_sizes("FacetNormals", "Interval", 8, 8), CANDIDATE_SIZES);
+/// ```
+pub fn degree_rule_sizes(family: &str, cell: &str, bytes: usize, degree: u32) -> [usize; 2] {
+    if family == "FacetNormals" && cell == "Interval" && bytes == 4 {
+        match degree {
+            4..=6 => return [100_000, 1_000_000],
+            7.. => return [10_000, 100_000],
+            _ => {}
+        }
+    }
+    CANDIDATE_SIZES
+}
 /// The shortest timed run: a run repeats the call until about this long (ADR-0018).
 pub const MIN_RUN: Duration = Duration::from_millis(20);
 /// The most calls per timed run.
@@ -177,11 +207,13 @@ pub fn kernel_cache() -> &'static str {
 /// One measured configuration of a family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// The requested vector size.
     pub vector_size: usize,
     /// CPU block target in bytes; `None` keeps the policy's (and on GPUs there is none).
     pub block_bytes: Option<usize>,
     /// QuadField tile width; `None` keeps the policy's.
     pub tile: Option<usize>,
+    /// How the CPU `cube_dim` is chosen.
     pub cube_dim: CubeDimMode,
 }
 
@@ -192,6 +224,7 @@ pub struct Measured {
     pub vector_size_ran: usize,
     /// Units per cube of the family's plans.
     pub units: u32,
+    /// The warm-up call, in seconds: compile time plus one call.
     pub warmup_s: f64,
     /// The untimed calibration call that fixed `calls_per_run`.
     pub calibration_s: f64,
@@ -202,6 +235,7 @@ pub struct Measured {
 }
 
 impl Measured {
+    /// The median of `times_s`.
     pub fn median_s(&self) -> f64 {
         median(&self.times_s)
     }
@@ -361,9 +395,9 @@ pub fn vector_sizes() -> Vec<usize> {
         .collect()
 }
 
-/// Whether `class` is a CPU class, where block sizes apply.
+/// Whether `class` is the Cpu class, where block sizes and units apply.
 pub fn is_cpu(class: DeviceClass) -> bool {
-    class != DeviceClass::Gpu
+    class == DeviceClass::Cpu
 }
 
 #[cfg(test)]

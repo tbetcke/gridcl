@@ -15,6 +15,7 @@ members = [
     "gridcl-testing",
     "gridcl-mpi-tests",
     "gridcl-bench",
+    "gridcl-examples",
 ]
 # Outside the workspace (docs/design.md, "Workspace layout", dependency rule 6).
 exclude = ["conformance", "tools/env-check"]
@@ -24,6 +25,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
+
+# Every public item is documented, in every workspace crate, unpublished ones included; only
+# bindgen-generated modules allow missing docs (ADR-0060, item 7).
+[workspace.lints.rust]
+missing_docs = "deny"
 
 [workspace.dependencies]
 cubecl = "=0.11.0"

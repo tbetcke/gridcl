@@ -1,12 +1,14 @@
 //! `Scatterer`: the host-staged halo exchange with a deterministic reverse (docs/design.md,
 //! "Transports"; ADR-0009, ADR-0026).
 
+use std::any::Any;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use gridcl_device::{
-    Client, CubeElement, DeviceBuffer, DeviceScalar, ReduceOp, device_properties, gather, pack,
-    scatter, segmented_reduce, unpack,
+    Client, CubeElement, DeviceBuffer, DeviceClass, DeviceScalar, ReduceOp, device_properties,
+    gather, pack, segmented_reduce, unpack,
 };
 
 use crate::index_map::Exchange;
@@ -22,27 +24,22 @@ pub(crate) struct SharedIndices {
     recv_idx: DeviceBuffer<u32>,
     /// The distinct owned local indices that some rank ghosts, ascending: the reverse targets.
     targets: DeviceBuffer<u32>,
-    /// 0..targets.len(): where the targets' own values go in the reverse buffer.
-    target_slots: DeviceBuffer<u32>,
 }
 
 impl SharedIndices {
     fn new(client: &Client, e: &Exchange, targets: &[u32]) -> Result<Self> {
-        let slots: Vec<u32> = (0..targets.len() as u32).collect();
         Ok(SharedIndices {
             client: client.clone(),
             send_idx: DeviceBuffer::from_host(client, &e.send_idx)?,
             recv_idx: DeviceBuffer::from_host(client, &e.recv_idx)?,
             targets: DeviceBuffer::from_host(client, targets)?,
-            target_slots: DeviceBuffer::from_host(client, &slots)?,
         })
     }
-    /// The allocated bytes of the four lists.
+    /// The allocated bytes of the three lists.
     pub(crate) fn footprint_bytes(&self) -> usize {
         self.send_idx.footprint_bytes()
             + self.recv_idx.footprint_bytes()
             + self.targets.footprint_bytes()
-            + self.target_slots.footprint_bytes()
     }
     /// Shares of the device buffers.
     fn share(&self) -> Self {
@@ -51,8 +48,19 @@ impl SharedIndices {
             send_idx: self.send_idx.share(),
             recv_idx: self.recv_idx.share(),
             targets: self.targets.share(),
-            target_slots: self.target_slots.share(),
         }
+    }
+}
+
+/// Waits for the work queued on `client`.
+fn sync(client: &Client) -> Result<()> {
+    let mut done = client.sync();
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    loop {
+        if let std::task::Poll::Ready(r) = done.as_mut().poll(&mut cx) {
+            return r.map_err(GridError::from);
+        }
+        std::thread::yield_now();
     }
 }
 
@@ -91,15 +99,34 @@ pub struct Scatterer {
     /// Values per rank: `num_local · block`.
     len: usize,
     indices: SharedIndices,
-    /// Element indices into the reverse buffer `[target values | received values]`: each
-    /// target component's own value, then its contributions in receive order.
-    rev_order: DeviceBuffer<u32>,
-    /// Segment offsets of `rev_order`, one segment per target component.
+    /// Segment offsets of the reverse buffer, one segment per target component: its own
+    /// value, then its contributions in receive order.
     rev_segments: DeviceBuffer<u32>,
-    /// Element index of each target component's first contribution (`Insert`).
+    /// Element index in the reverse buffer of each target component's own value, in the
+    /// order of `pack(x, targets)`.
+    rev_own: DeviceBuffer<u32>,
+    /// Element index in the reverse buffer of each received value.
+    rev_received: DeviceBuffer<u32>,
+    /// Element index in the received values of each target component's first contribution
+    /// (`Insert`).
     rev_first: DeviceBuffer<u32>,
-    /// Element index in `x` of each target component.
-    rev_targets: DeviceBuffer<u32>,
+    /// The device and host buffers of each scalar type, reused across calls ([`Buffers`]).
+    buffers: RefCell<Vec<Box<dyn Any>>>,
+}
+
+/// The buffers of one scalar type that a [`Scatterer`] reuses across calls, all on the device
+/// of `owned`. The lengths are fixed by the map and the block: `owned` and `host_owned` hold
+/// the blocks of the send list (forward's packed send, reverse's received values), `ghost` and
+/// `host_ghost` those of the ghosts (forward's received values, reverse's packed send);
+/// `own` the reverse targets' own blocks and `all` the reverse buffer, the targets' own and
+/// received values in segment order.
+struct Buffers<T: CubeElement> {
+    owned: DeviceBuffer<T>,
+    ghost: DeviceBuffer<T>,
+    host_owned: Vec<T>,
+    host_ghost: Vec<T>,
+    own: DeviceBuffer<T>,
+    all: DeviceBuffer<T>,
 }
 
 impl Scatterer {
@@ -142,19 +169,24 @@ impl Scatterer {
                 .expect("every send index is a target");
             contributions[k].push(j);
         }
-        let mut order = Vec::with_capacity((t + r) * block);
+        // Segment (k, c) holds target k's own component c, then component c of each block j
+        // that k receives, in receive order. All indices are below (t + r) · block, which fits
+        // u32 (checked above).
         let mut segments = Vec::with_capacity(t * block + 1);
+        let mut own = Vec::with_capacity(t * block);
+        let mut received = vec![0_u32; r * block];
         let mut first = Vec::with_capacity(t * block);
-        let mut target_elems = Vec::with_capacity(t * block);
+        let mut at = 0_usize;
         segments.push(0_u32);
-        for (k, js) in contributions.iter().enumerate() {
+        for js in &contributions {
             for c in 0..block {
-                // All below (t + r) · block, which fits u32 (checked above).
-                order.push((k * block + c) as u32);
-                order.extend(js.iter().map(|&j| ((t + j) * block + c) as u32));
-                segments.push(order.len() as u32);
-                first.push(((t + js[0]) * block + c) as u32);
-                target_elems.push((targets[k] as usize * block + c) as u32);
+                own.push(at as u32);
+                for (i, &j) in js.iter().enumerate() {
+                    received[j * block + c] = (at + 1 + i) as u32;
+                }
+                at += 1 + js.len();
+                segments.push(at as u32);
+                first.push((js[0] * block + c) as u32);
             }
         }
         Ok(Scatterer {
@@ -163,11 +195,43 @@ impl Scatterer {
             block,
             len,
             indices,
-            rev_order: DeviceBuffer::from_host(client, &order)?,
             rev_segments: DeviceBuffer::from_host(client, &segments)?,
+            rev_own: DeviceBuffer::from_host(client, &own)?,
+            rev_received: DeviceBuffer::from_host(client, &received)?,
             rev_first: DeviceBuffer::from_host(client, &first)?,
-            rev_targets: DeviceBuffer::from_host(client, &target_elems)?,
+            buffers: RefCell::new(Vec::new()),
         })
+    }
+
+    /// This scatterer's buffers of T on `client`'s device, taken out of the cache (and put
+    /// back by [`put_buffers`](Self::put_buffers)), or new ones.
+    fn take_buffers<T: CubeElement>(&self, client: &Client) -> Result<Buffers<T>> {
+        let mut cache = self.buffers.borrow_mut();
+        if let Some(i) = cache.iter().position(|b| b.is::<Buffers<T>>()) {
+            let b = cache.swap_remove(i);
+            let b = *b.downcast::<Buffers<T>>().expect("checked by `is`");
+            if same_device(b.owned.client(), client) {
+                return Ok(b);
+            }
+        }
+        drop(cache);
+        let blocks = |n: usize| n * self.block;
+        let (sent, ghosts) = (self.indices.send_idx.len(), self.indices.recv_idx.len());
+        let targets = self.indices.targets.len();
+        let zero = <T as bytemuck::Zeroable>::zeroed();
+        Ok(Buffers {
+            owned: DeviceBuffer::uninit(client, blocks(sent))?,
+            ghost: DeviceBuffer::uninit(client, blocks(ghosts))?,
+            host_owned: vec![zero; blocks(sent)],
+            host_ghost: vec![zero; blocks(ghosts)],
+            own: DeviceBuffer::uninit(client, blocks(targets))?,
+            all: DeviceBuffer::uninit(client, blocks(targets + sent))?,
+        })
+    }
+
+    /// Returns `b` to the cache.
+    fn put_buffers<T: CubeElement>(&self, b: Buffers<T>) {
+        self.buffers.borrow_mut().push(Box::new(b));
     }
 
     /// Owner → ghosts: every ghost block receives its owner's block. Owned values are
@@ -183,19 +247,32 @@ impl Scatterer {
         const { assert!(size_of::<T>().is_multiple_of(4), "forward moves u32 words") };
         self.check_len(x.len())?;
         let e = &self.exchange;
-        let ghosts = self.exchange_blocks(
-            x,
-            &self.indices.send_idx,
-            &e.forward,
-            &e.send_counts,
-            &e.recv_counts,
-        )?;
-        if let Some(ghosts) = ghosts {
-            let mut received = DeviceBuffer::<T>::uninit(x.client(), ghosts.len())?;
-            received.write_host(&ghosts)?;
-            unpack(&received, &self.indices.recv_idx, self.block, x)?;
+        if e.forward.comm().is_none() {
+            return Ok(());
         }
-        Ok(())
+        let mut b = self.take_buffers::<T>(x.client())?;
+        let result = (|| {
+            let Buffers {
+                owned,
+                ghost,
+                host_ghost,
+                ..
+            } = &mut b;
+            self.exchange_blocks(
+                x,
+                &self.indices.send_idx,
+                &e.forward,
+                &e.send_counts,
+                &e.recv_counts,
+                owned,
+                host_ghost,
+                || Ok(()),
+            )?;
+            ghost.write_host(host_ghost)?;
+            unpack(ghost, &self.indices.recv_idx, self.block, x)
+        })();
+        self.put_buffers(b);
+        result
     }
 
     /// Ghosts → owner by a segmented reduce: deterministic and free of atomics. Each owned
@@ -203,6 +280,10 @@ impl Scatterer {
     /// by neighbour rank and then by ghost position on that rank (ADR-0009, ADR-0026). Ghost
     /// values and owned values nobody ghosts are unchanged. Collective over the map's
     /// communicator.
+    ///
+    /// Only the received values are uploaded (ADR-0059): the targets' own values are packed on
+    /// the device (during the exchange on GPUs), and both are placed on the device in the
+    /// order of the reduce, each segment the target's own value and then its contributions.
     ///
     /// # Errors
     ///
@@ -218,41 +299,77 @@ impl Scatterer {
         }
         self.check_len(x.len())?;
         let e = &self.exchange;
-        let received = self.exchange_blocks(
-            x,
-            &self.indices.recv_idx,
-            &e.reverse,
-            &e.recv_counts,
-            &e.send_counts,
-        )?;
-        let Some(received) = received else {
-            return Ok(());
-        };
-        let own_len = self.indices.targets.len() * self.block;
-        if own_len == 0 {
+        if e.reverse.comm().is_none() {
             return Ok(());
         }
-        // [target values | received values]: the received values are uploaded behind room
-        // for the targets' own values, which are then packed and unpacked into place.
-        let mut host = vec![<T as bytemuck::Zeroable>::zeroed(); own_len];
-        host.extend_from_slice(&received);
-        let mut all = DeviceBuffer::<T>::uninit(&client, host.len())?;
-        all.write_host(&host)?;
-        let mut own = DeviceBuffer::<T>::uninit(&client, own_len)?;
-        pack(x, &self.indices.targets, self.block, &mut own)?;
-        unpack(&own, &self.indices.target_slots, self.block, &mut all)?;
-        let values = match op {
-            ReverseOp::Insert => gather(&all, &self.rev_first)?,
-            ReverseOp::Add | ReverseOp::Min | ReverseOp::Max => {
-                let reduce = match op {
-                    ReverseOp::Add => ReduceOp::Sum,
-                    ReverseOp::Min => ReduceOp::Min,
-                    _ => ReduceOp::Max,
-                };
-                segmented_reduce(&gather(&all, &self.rev_order)?, &self.rev_segments, reduce)?
+        let mut b = self.take_buffers::<T>(&client)?;
+        let result = (|| {
+            let Buffers {
+                owned,
+                ghost,
+                host_owned,
+                own,
+                all,
+                ..
+            } = &mut b;
+            // Without targets nobody ghosts this rank's indices: it only sends.
+            let targets = self.indices.targets.len() > 0;
+            let combine = targets && op != ReverseOp::Insert;
+            // The CPU runtime's workers spin on queued kernels whose predecessors are still
+            // running, which stalls for whole time slices when ranks share the cores (C24):
+            // there each kernel is waited for, and nothing is queued during the exchange.
+            let cpu = DeviceClass::for_client(&client) == DeviceClass::Cpu;
+            let step = || if cpu { sync(&client) } else { Ok(()) };
+            let pack_own = |own: &mut DeviceBuffer<T>, all: &mut DeviceBuffer<T>| -> Result<()> {
+                pack(x, &self.indices.targets, self.block, own)?;
+                step()?;
+                unpack(own, &self.rev_own, 1, all)?;
+                step()
+            };
+            self.exchange_blocks(
+                x,
+                &self.indices.recv_idx,
+                &e.reverse,
+                &e.recv_counts,
+                &e.send_counts,
+                ghost,
+                host_owned,
+                // On GPUs the targets' own values are packed during the exchange: `x` is
+                // read-only until the final unpack.
+                || {
+                    if combine && !cpu {
+                        pack_own(own, all)?;
+                    }
+                    Ok(())
+                },
+            )?;
+            if !targets {
+                return Ok(());
             }
-        };
-        scatter(&values, &self.rev_targets, x)
+            if combine && cpu {
+                pack_own(own, all)?;
+            }
+            owned.write_host(host_owned)?;
+            step()?;
+            let values = match op {
+                ReverseOp::Insert => gather(owned, &self.rev_first)?,
+                ReverseOp::Add | ReverseOp::Min | ReverseOp::Max => {
+                    let reduce = match op {
+                        ReverseOp::Add => ReduceOp::Sum,
+                        ReverseOp::Min => ReduceOp::Min,
+                        _ => ReduceOp::Max,
+                    };
+                    unpack(owned, &self.rev_received, 1, all)?;
+                    step()?;
+                    segmented_reduce(all, &self.rev_segments, reduce)?
+                }
+            };
+            step()?;
+            // The targets are distinct: `unpack` writes each target block once.
+            unpack(&values, &self.indices.targets, self.block, x)
+        })();
+        self.put_buffers(b);
+        result
     }
 
     /// The transport this scatterer exchanges through.
@@ -270,9 +387,12 @@ impl Scatterer {
         Ok(())
     }
 
-    /// Packs the blocks `idx` of `x`, sends `send_counts` blocks to each destination of `nb` and
-    /// receives `recv_counts` blocks from each source, in receive order. `None` when the map
-    /// has no exchange (a map made by `IndexMap::new`).
+    /// Packs the blocks `idx` of `x` into `send`, copies them to the host, runs `meanwhile`
+    /// (device work queued behind the copy, which runs during the exchange), sends
+    /// `send_counts` blocks to each destination of `nb` and receives `recv_counts` blocks from
+    /// each source into `recv`, in receive order. The map has an exchange (`nb.comm()` is
+    /// `Some`), and `send` and `recv` hold `idx.len()` and the received blocks.
+    #[allow(clippy::too_many_arguments)]
     fn exchange_blocks<T: CubeElement>(
         &self,
         x: &DeviceBuffer<T>,
@@ -280,18 +400,14 @@ impl Scatterer {
         nb: &Neighbourhood,
         send_counts: &[usize],
         recv_counts: &[usize],
-    ) -> Result<Option<Vec<T>>> {
-        let Some(comm) = nb.comm() else {
-            return Ok(None);
-        };
-        let client = x.client();
-        let packed_len = idx
-            .len()
-            .checked_mul(self.block)
-            .ok_or(GridError::TooLarge)?;
-        let mut packed = DeviceBuffer::<T>::uninit(client, packed_len)?;
-        pack(x, idx, self.block, &mut packed)?;
-        let send = packed.to_host()?;
+        send: &mut DeviceBuffer<T>,
+        recv: &mut [T],
+        meanwhile: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        let comm = nb.comm().expect("the map has an exchange");
+        pack(x, idx, self.block, send)?;
+        let host = send.to_host()?;
+        meanwhile()?;
         // Counts in u32 words.
         let per_block = self
             .block
@@ -303,21 +419,14 @@ impl Scatterer {
                 .map(|&c| c.checked_mul(per_block).ok_or(GridError::TooLarge))
                 .collect()
         };
-        let total = recv_counts
-            .iter()
-            .try_fold(0_usize, |s, &c| s.checked_add(c))
-            .and_then(|n| n.checked_mul(self.block))
-            .ok_or(GridError::TooLarge)?;
-        let mut recv = vec![<T as bytemuck::Zeroable>::zeroed(); total];
         comm.neighbour_all_to_all_v_bytes(
             nb,
-            bytemuck::cast_slice(&send),
+            bytemuck::cast_slice(&host),
             &words(send_counts)?,
-            bytemuck::cast_slice_mut(&mut recv),
+            bytemuck::cast_slice_mut(recv),
             &words(recv_counts)?,
             DType::U32,
-        )?;
-        Ok(Some(recv))
+        )
     }
 }
 
@@ -347,12 +456,13 @@ impl ScatterNumeric for f64 {}
 impl ScatterNumeric for i32 {}
 impl ScatterNumeric for u32 {}
 
-/// How a [`Scatterer`] moves data between ranks. M6 always chooses `HostStaged`; M10 adds
-/// `GpuAware` (ADR-0026).
+/// How a [`Scatterer`] moves data between ranks. `HostStaged` is the only transport;
+/// `GpuAware` is reserved (ADR-0026, ADR-0059).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
     /// Pack on the device, exchange on the host, unpack on the device.
     HostStaged,
-    /// Device pointers handed to a CUDA-aware MPI (M10).
+    /// Reserved (ADR-0059): device pointers handed to a CUDA-aware MPI. No scatterer chooses
+    /// it.
     GpuAware,
 }

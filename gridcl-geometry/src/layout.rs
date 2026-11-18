@@ -13,7 +13,7 @@ use crate::field::chunk_pairs;
 use crate::layout_loops::{factor_loops_kernel, loops_layout};
 use crate::shared::{self, factor_loops_shared_kernel, factor_sumfact_shared_kernel};
 use crate::strategy::{self, Strategy, StrategyFamily};
-use crate::sumfact::tensor::{factor_sumfact_kernel, sumfact_layout};
+use crate::sumfact::tensor::{factor_sumfact_kernel, sumfact_factor_live, sumfact_layout};
 use crate::{CoordinateElement, DeviceGrid, FieldShape, PointSet, QuadField};
 
 /// The comptime layout of a factor kernel.
@@ -418,6 +418,35 @@ fn factor_kernel<F: Float, N: Size>(
     }
 }
 
+/// The vectors the factor kernel of strategy `s` keeps live, for the register budget of its
+/// plan: T = `l.tdim`, G = `l.gdim`, n = p + 1 nodes per direction.
+///
+/// - `direct` and `loops`: J and K (or the normals), T·G each, and a node's coordinate and
+///   weight: 2·T·G + 2;
+/// - `sumfact`, and `shared` with the tensor table (`sumfact`): its contraction's partial
+///   sums besides ([`sumfact_factor_live`]);
+/// - `shared` with the full tabulation: `loops`';
+/// - `cooperative`: `loops`' and the deepest tree of one unit per group over the summed
+///   components ([`cooperative::tree_live`]).
+pub(crate) fn factor_live(
+    s: Strategy,
+    l: &GeomLayout,
+    f: Factor,
+    cell: CellType,
+    degree: u32,
+    sumfact: bool,
+) -> usize {
+    let loops = 2 * l.tdim * l.gdim + 2;
+    let tensor = || sumfact_factor_live(cell, degree as usize + 1, l.tdim, l.gdim);
+    match s {
+        Strategy::Direct | Strategy::Loops => loops,
+        Strategy::SumFactorised => tensor(),
+        Strategy::Shared if sumfact => tensor(),
+        Strategy::Shared => loops,
+        Strategy::Cooperative => loops + cooperative::tree_live(summed_components(l, f)),
+    }
+}
+
 /// u32 of `x`, or `TooLarge`.
 fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
@@ -477,7 +506,7 @@ where
         Strategy::Shared => sumfact,
         _ => false,
     })?;
-    let live = 2 * layout.tdim * layout.gdim + 2;
+    let live = factor_live(s, &layout, f, cell, gb.element.degree, sumfact);
     let flags = &g.cell_blocks()[b].flags;
     // The last cell whose flags the Normals kernel reads: num_cells − 1, since Topology::new
     // checks flags.len() = num_cells; the min with flags.len() keeps the reads inside `flags`

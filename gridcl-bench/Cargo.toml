@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 default = ["cpu"]
 # Runtime features, as in gridcl-testing.
@@ -17,8 +20,11 @@ vulkan = ["cubecl/vulkan", "gridcl-testing/vulkan"]
 metal = ["cubecl/metal", "gridcl-testing/metal"]
 metal-native = ["cubecl/metal-native", "gridcl-testing/metal-native"]
 wgpu = ["cubecl/wgpu", "gridcl-testing/wgpu"]
+# `halo_exchange` on MPI's world communicator (M10 T6); without it the binary runs on one rank.
+mpi = ["gridcl/mpi", "gridcl-testing/mpi", "dep:mpi"]
 
 [dependencies]
+bytemuck.workspace = true
 cubecl.workspace = true
 gridcl = { path = "../gridcl" }
 gridcl-device = { path = "../gridcl-device", features = ["testing"] }
@@ -29,6 +35,7 @@ gridcl-refcell = { path = "../gridcl-refcell" }
 gridcl-testing = { path = "../gridcl-testing", default-features = false }
 # The hidden bench hooks of TopologyKeys and PermutationInfo (ADR-0015, item 4).
 gridcl-topology = { path = "../gridcl-topology", features = ["bench"] }
+mpi = { workspace = true, optional = true }
 serde_json.workspace = true
 toml.workspace = true
 

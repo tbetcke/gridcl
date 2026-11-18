@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 autotests = false
 
+[lints]
+workspace = true
+
 [dependencies]
 gridcl-dims = { path = "../gridcl-dims" }
 

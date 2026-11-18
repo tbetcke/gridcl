@@ -88,11 +88,17 @@ impl Strategy {
 /// the pseudo-inverse; `PullBack` covers the device basis evaluator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StrategyFamily {
+    /// The E-vector of a geometry block.
     EVector,
+    /// Physical points.
     Points,
+    /// J, det J and the pseudo-inverse.
     Jacobian,
+    /// Cell normals of codimension-1 meshes (intervals, triangles and quadrilaterals).
     Normals,
+    /// Facet normals.
     FacetNormals,
+    /// The pull-back, with the device basis evaluator.
     PullBack,
 }
 
@@ -160,13 +166,8 @@ const CELLS: [CellType; 7] = [
     CellType::Pyramid,
 ];
 
-/// The device classes of the policy, by their table names.
-const CLASSES: [(DeviceClass, &str); 4] = [
-    (DeviceClass::CpuSimd128, "CpuSimd128"),
-    (DeviceClass::CpuSimd256, "CpuSimd256"),
-    (DeviceClass::CpuSimd512, "CpuSimd512"),
-    (DeviceClass::Gpu, "Gpu"),
-];
+/// The device classes of the policy, by their table names (ADR-0058).
+const CLASSES: [(DeviceClass, &str); 2] = [(DeviceClass::Cpu, "Cpu"), (DeviceClass::Gpu, "Gpu")];
 
 /// The scalar sizes of the policy in bytes.
 const SCALAR_SIZES: [usize; 2] = [4, 8];
@@ -631,6 +632,10 @@ mod tests {
                 "unknown family",
             ),
             (base.replace("[Gpu.", "[Tpu."), "unknown device class [Tpu]"),
+            (
+                base.replace("[Cpu.", "[CpuSimd128."),
+                "unknown device class [CpuSimd128]",
+            ),
         ] {
             let e = DegreePolicy::parse(&text).unwrap_err();
             assert!(e.contains(want), "{want}: {e}");

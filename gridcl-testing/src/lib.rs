@@ -2,8 +2,9 @@
 //! tolerance helpers and the Python oracles.
 //!
 //! This crate is not published. Its features forward CubeCL's runtime features; besides it,
-//! only gridcl-bench and gridcl-device (`gpu-aware-cuda`) enable them (docs/design.md,
-//! "Cargo features", "Dependency rules").
+//! only gridcl-bench and gridcl-examples enable them. gridcl-device's `gpu-aware-cuda` is an
+//! empty, reserved feature (docs/design.md, "Cargo features", "Dependency rules"; ADR-0059,
+//! ADR-0060).
 
 mod comm;
 pub mod comm_checks;
@@ -54,15 +55,40 @@ pub const TEST_DEVICE_VAR: &str = "GRIDCL_TEST_DEVICE";
 /// assert!(properties.hardware.max_bindings >= 6);
 /// ```
 pub fn test_client() -> Client {
+    client_of(|backend| backend.device())
+}
+
+/// The client of the device `open` gives for the backend `GRIDCL_TEST_DEVICE` names, or the
+/// panic of [`test_client`].
+fn client_of(open: impl FnOnce(TestBackend) -> Result<Device, DeviceUnavailable>) -> Client {
     let value = std::env::var(TEST_DEVICE_VAR).ok();
     let backend = match TestBackend::parse(value.as_deref()) {
         Ok(backend) => backend,
         Err(message) => panic!("{message}"),
     };
-    match backend.device() {
+    match open(backend) {
         Ok(device) => device.client(),
         Err(error) => panic!("{}", backend.unavailable(error)),
     }
+}
+
+/// The client of GPU `index` of the backend `GRIDCL_TEST_DEVICE` names, for a rank that opens
+/// the GPU of [`gridcl::local_gpu_index`] (ADR-0060 item 1): `Device::cuda(index)` and
+/// `Device::rocm(index)` on CUDA and HIP; the other backends ignore `index` and open the device
+/// of [`test_client`].
+///
+/// # Panics
+///
+/// As [`test_client`], and if the machine has no GPU `index`.
+///
+/// # Example
+///
+/// ```
+/// let client = gridcl_testing::test_client_at(0);
+/// assert!(client.properties().hardware.max_bindings >= 6);
+/// ```
+pub fn test_client_at(index: usize) -> Client {
+    client_of(|backend| backend.device_at(index))
 }
 
 /// The client of the CPU runtime, whatever `GRIDCL_TEST_DEVICE` says: the f64 side of f32-vs-f64
@@ -180,6 +206,15 @@ impl TestBackend {
             TestBackend::Metal => Device::metal_msl(WgpuDeviceKind::DefaultDevice),
             TestBackend::MetalNative => Device::metal(MetalDevice::DefaultDevice),
             TestBackend::Wgpu => Device::wgpu(WgpuDeviceKind::DefaultDevice),
+        }
+    }
+
+    /// GPU `index` of CUDA and HIP; the first device of the other backends.
+    fn device_at(self, index: usize) -> Result<Device, DeviceUnavailable> {
+        match self {
+            TestBackend::Cuda => Device::cuda(index),
+            TestBackend::Hip => Device::rocm(index),
+            _ => self.device(),
         }
     }
 

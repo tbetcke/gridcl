@@ -46,7 +46,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -74,8 +74,10 @@ use gridcl_testing::reference::{
 
 use super::Machine;
 use super::mesh::nearest_side;
-use crate::protocol::{calls_per_run, is_cpu, median, profile, sync};
-use crate::record::{DegreeRecord, Scalar};
+use crate::candidates::degree_candidates;
+use crate::decide_degree::{COMPILE_BOUND_S, policy_family};
+use crate::protocol::{calls_per_run, degree_rule_sizes, is_cpu, median, profile, sync};
+use crate::record::{DegreeRecord, LegacyClass, Scalar};
 
 /// The protocol's sizes, in quadrature points (rule 12).
 pub const DEGREE_SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
@@ -104,18 +106,28 @@ pub const CELLS: [CellType; 7] = [
 /// The bench families of the degree sweep, in the order of `record::DEGREE_FAMILIES`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DegreeFamily {
+    /// The E-vector of a geometry block.
     EVector,
+    /// Physical points.
     Points,
+    /// The Jacobian J.
     Jacobian,
+    /// det J.
     DetJ,
+    /// The pseudo-inverse of J.
     Pinv,
+    /// Cell normals of codimension-1 meshes.
     Normals,
+    /// Facet normals.
     FacetNormals,
+    /// The pull-back.
     PullBack,
+    /// The device basis evaluator of the pull-back.
     BasisEval,
 }
 
 impl DegreeFamily {
+    /// Every family, in the order of `record::DEGREE_FAMILIES`.
     pub const ALL: [DegreeFamily; 9] = [
         DegreeFamily::EVector,
         DegreeFamily::Points,
@@ -233,27 +245,47 @@ pub struct DegreeOptions {
     pub target: String,
     /// The job or run the records belong to (rule 11's paired runs share it).
     pub run_id: String,
+    /// The bench families to run.
     pub families: Vec<DegreeFamily>,
+    /// The cell types to run.
     pub cells: Vec<CellType>,
+    /// The degrees of the coordinate element to run.
     pub degrees: Vec<u32>,
+    /// The node families of the coordinate element to run.
     pub node_families: Vec<NodeFamily>,
+    /// The scalar types to run.
     pub scalars: Vec<Scalar>,
     /// Quadrature points, ascending.
     pub sizes: Vec<usize>,
-    /// Strategy names: [`STRATEGIES`](crate::record::STRATEGIES) or `policy`.
+    /// With `candidates`: each family at its entry's rule sizes ([`degree_rule_sizes`],
+    /// ADR-0063) instead of `sizes`; a (cell, degree, scalar) runs the union of its families'
+    /// sizes.
+    pub entry_sizes: bool,
+    /// Strategy names: [`STRATEGIES`](crate::record::STRATEGIES) or `policy`. Ignored with
+    /// `candidates`.
     pub strategies: Vec<String>,
+    /// The candidate protocol (ADR-0057 item 3, ADR-0060 items 2 and 3): each (family, cell,
+    /// degree, scalar) runs the strategies of [`degree_candidates`] for the device's class and
+    /// the family's policy family, and also `loops` once that policy family's `direct` is
+    /// skipped, fails, or takes over 30 s to compile and load at this (cell, degree, node family,
+    /// scalar), where `loops` becomes the baseline (ADR-0056).
+    pub candidates: bool,
     /// (family, strategy) pairs not run and not recorded: on CUDA, `direct`'s pull-back where
     /// its first use takes longer than a process's time limit (T2, T3; C18).
     pub skip: Vec<(DegreeFamily, String)>,
+    /// A `--launch-only` run: one call per configuration, no timing (rule 7).
     pub launch_only: bool,
     /// The vector sizes of a launch-only run.
     pub launch_vector_sizes: LaunchVectorSizes,
+    /// Timed runs per configuration.
     pub runs: usize,
     /// Rule 11's paired timing: the strategies of a configuration each get their warm-up,
     /// check and calibration, then their timed runs alternate (run 1 of every strategy, then
     /// run 2, ...), so that they sample the same state of the machine. Without it each
     /// strategy's runs follow its calibration directly.
     pub interleave: bool,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); every record
+    /// carries it.
     pub fallback_reason: Option<String>,
     /// Records of an earlier run of the sweep (`degree_sweep --resume`): their configurations
     /// are not run again, and their outcomes carry over to larger sizes as measured ones do.
@@ -346,7 +378,8 @@ pub fn degree_sweep(
                         continue;
                     }
                     let mut history = History::new();
-                    for &nominal in &options.sizes {
+                    let mut backup = HashSet::new();
+                    for nominal in point_sizes(options, cell, degree, scalar) {
                         let point = Point {
                             cell,
                             degree,
@@ -362,6 +395,7 @@ pub fn degree_sweep(
                             hosts: &mut hosts,
                             meshes: HashMap::new(),
                             history: &mut history,
+                            backup: &mut backup,
                         };
                         let new = match scalar {
                             Scalar::F32 => sweep.run::<f32>(on_record),
@@ -375,6 +409,23 @@ pub fn degree_sweep(
         }
     }
     Ok(records)
+}
+
+/// The sizes of a (cell, degree, scalar): `options.sizes`, or with `entry_sizes` the union of
+/// its families' rule sizes, ascending.
+fn point_sizes(options: &DegreeOptions, cell: CellType, degree: u32, scalar: Scalar) -> Vec<usize> {
+    if !options.entry_sizes {
+        return options.sizes.clone();
+    }
+    let cell = format!("{cell:?}");
+    let mut sizes: Vec<usize> = options
+        .families
+        .iter()
+        .flat_map(|f| degree_rule_sizes(f.name(), &cell, scalar.bytes(), degree))
+        .collect();
+    sizes.sort_unstable();
+    sizes.dedup();
+    sizes
 }
 
 /// One (cell, degree, node family, scalar, size) of the sweep.
@@ -407,14 +458,109 @@ struct PointSweep<'a> {
     /// Device meshes of this point (`MeshData`), by (lifted, side).
     meshes: HashMap<(bool, usize), Rc<dyn Any>>,
     history: &'a mut History,
+    /// With `candidates`: the policy families whose `direct` was skipped, failed or took over
+    /// 30 s at first use at this (cell, degree, node family, scalar), so `loops` runs too.
+    backup: &'a mut HashSet<&'static str>,
 }
 
 impl PointSweep<'_> {
     fn run<F: Real>(&mut self, on_record: &mut dyn FnMut(&DegreeRecord)) -> Vec<DegreeRecord> {
         let p = self.point;
+        let cell = format!("{:?}", p.cell);
+        let families: Vec<DegreeFamily> = (self.options.families.iter().copied())
+            .filter(|f| f.applies_to(p.cell))
+            .filter(|f| {
+                !self.options.entry_sizes
+                    || degree_rule_sizes(f.name(), &cell, p.scalar.bytes(), p.degree)
+                        .contains(&p.nominal)
+            })
+            .collect();
+        let mut out = Vec::new();
+        let mut with_loops = HashSet::new();
+        for &family in &families {
+            let strategies = self.strategies(family);
+            let (records, loops) = self.run_family::<F>(family, strategies, on_record);
+            if loops {
+                with_loops.insert(family);
+            }
+            out.extend(records);
+        }
+        // A member measured before its policy family's `direct` failed gets `loops` now.
+        if self.options.candidates {
+            for &family in &families {
+                if self.backup.contains(policy_family(family.name()))
+                    && !with_loops.contains(&family)
+                {
+                    let loops = vec!["loops".to_owned()];
+                    out.extend(self.run_family::<F>(family, loops, on_record).0);
+                }
+            }
+        }
+        out
+    }
+
+    /// The strategies of `family` at this point: the options', or with `candidates` the
+    /// family's candidates, with `loops` where its policy family needs a backup baseline.
+    fn strategies(&mut self, family: DegreeFamily) -> Vec<String> {
+        if !self.options.candidates {
+            return self.options.strategies.clone();
+        }
+        let p = self.point;
+        let pf = policy_family(family.name());
+        let cell = format!("{:?}", p.cell);
+        let mut out: Vec<String> =
+            degree_candidates(self.machine.class, pf, &cell, p.scalar.bytes(), p.degree)
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+        if out.iter().any(|s| s == "direct")
+            && self.options.skip.contains(&(family, "direct".to_owned()))
+        {
+            self.backup.insert(pf);
+        }
+        if self.backup.contains(pf) && !out.iter().any(|s| s == "loops") {
+            out.push("loops".to_owned());
+        }
+        out
+    }
+
+    /// Notes a `direct` outcome that fails or takes over 30 s at first use (ADR-0056): its
+    /// policy family needs `loops` as the baseline. Returns whether `strategies` gained it.
+    fn needs_backup(
+        &mut self,
+        family: DegreeFamily,
+        strategy: &str,
+        status: &str,
+        compile_s: f64,
+        strategies: &mut Vec<String>,
+    ) -> bool {
+        if !self.options.candidates
+            || strategy != "direct"
+            || (status == "ok" && compile_s <= COMPILE_BOUND_S)
+        {
+            return false;
+        }
+        self.backup.insert(policy_family(family.name()));
+        if strategies.iter().any(|s| s == "loops") {
+            return false;
+        }
+        strategies.push("loops".to_owned());
+        true
+    }
+
+    /// The configurations of `family` at this point with `strategies`, in order; with
+    /// `candidates`, `loops` joins them as soon as `direct` needs a backup. Returns the records
+    /// and whether `loops` was among the strategies.
+    fn run_family<F: Real>(
+        &mut self,
+        family: DegreeFamily,
+        mut strategies: Vec<String>,
+        on_record: &mut dyn FnMut(&DegreeRecord),
+    ) -> (Vec<DegreeRecord>, bool) {
+        let p = self.point;
         let options = self.options;
         let mut out = Vec::new();
-        for &family in options.families.iter().filter(|f| f.applies_to(p.cell)) {
+        {
             let kind = family.kind();
             let bytes = p.scalar.bytes();
             let policy = VectorPolicy::for_client(self.client);
@@ -431,7 +577,11 @@ impl PointSweep<'_> {
                 let mut work: Option<Result<Work, String>> = None;
                 // With `interleave`: the measured configurations, timed after the loop.
                 let mut pending = Vec::new();
-                for strategy in &options.strategies {
+                let mut i = 0;
+                while i < strategies.len() {
+                    let strategy = strategies[i].clone();
+                    let strategy = &strategy;
+                    i += 1;
                     if options.skip.contains(&(family, strategy.clone())) {
                         continue;
                     }
@@ -443,8 +593,15 @@ impl PointSweep<'_> {
                             } else {
                                 r.calibration_s
                             };
-                            self.history
-                                .insert(key, (p.nominal, time, r.status.clone()));
+                            let (status, compile_s) = (r.status.clone(), r.compile_s);
+                            self.history.insert(key, (p.nominal, time, status.clone()));
+                            self.needs_backup(
+                                family,
+                                strategy,
+                                &status,
+                                compile_s,
+                                &mut strategies,
+                            );
                             continue;
                         }
                         let carried = self
@@ -471,6 +628,13 @@ impl PointSweep<'_> {
                             }
                         };
                         let shape = shape.unwrap_or_else(|| self.shape_estimate());
+                        self.needs_backup(
+                            family,
+                            strategy,
+                            &outcome.status,
+                            outcome.compile_s,
+                            &mut strategies,
+                        );
                         pending.push((strategy.clone(), v, ran, shape, outcome));
                         if !interleave {
                             let rec = pending.pop().expect("pushed");
@@ -482,11 +646,16 @@ impl PointSweep<'_> {
                     self.interleaved_runs(kind, w, &mut pending);
                 }
                 for rec in pending {
-                    out.push(self.finish(family, iterations, policy_v, rec, on_record));
+                    let r = self.finish(family, iterations, policy_v, rec, on_record);
+                    // The final first-use time of an interleaved run; a backup found here runs
+                    // in `run`'s second pass.
+                    let mut none = Vec::new();
+                    self.needs_backup(family, &r.strategy, &r.status, r.compile_s, &mut none);
+                    out.push(r);
                 }
             }
         }
-        out
+        (out, strategies.iter().any(|s| s == "loops"))
     }
 
     /// Records a measured (or carried) configuration: its history entry and its record.
@@ -666,6 +835,7 @@ impl PointSweep<'_> {
             backend: m.backend.clone(),
             device: m.device.clone(),
             device_class: m.class,
+            legacy_class: LegacyClass::of_new(m.class),
             target: self.options.target.clone(),
             run_id: self.options.run_id.clone(),
             family: family.name().to_owned(),
@@ -700,6 +870,7 @@ impl PointSweep<'_> {
             commit: m.commit.clone(),
             profile: profile().to_owned(),
             cores: m.cores.clone(),
+            load_width: Some(m.load_width),
             fallback_reason: self.options.fallback_reason.clone(),
             node_load: None,
         }
@@ -1618,6 +1789,7 @@ mod tests {
             node_families: vec![NodeFamily::Equispaced, NodeFamily::Gll],
             scalars: vec![Scalar::F32, Scalar::F64],
             sizes: vec![10_000],
+            entry_sizes: false,
             strategies: vec!["direct".to_owned()],
             skip: Vec::new(),
             launch_only,
@@ -1627,6 +1799,7 @@ mod tests {
             fallback_reason: None,
             done: Vec::new(),
             stopped_after: None,
+            candidates: false,
         }
     }
 
@@ -1886,6 +2059,52 @@ mod tests {
         o.strategies = vec!["direct".to_owned()];
         o.sizes = vec![20_000, 10_000];
         assert!(degree_sweep(&client, &machine, &o, &mut |_| ()).is_err());
+    }
+
+    /// `candidates`: each family runs its policy family's candidates; a skipped `direct` of
+    /// det J brings `loops` to J, det J and K, J's in the second pass (J runs first).
+    #[test]
+    fn candidate_mode_runs_the_candidates_and_a_backup_baseline() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        let families = [
+            DegreeFamily::Points,
+            DegreeFamily::Jacobian,
+            DegreeFamily::DetJ,
+            DegreeFamily::Pinv,
+        ];
+        let mut o = options(&families, &[CellType::Quadrilateral], false);
+        o.candidates = true;
+        o.strategies = vec!["cooperative".to_owned()];
+        o.degrees = vec![1];
+        o.node_families = vec![NodeFamily::Equispaced];
+        o.scalars = vec![Scalar::F32];
+        o.runs = 1;
+        o.skip = vec![(DegreeFamily::DetJ, "direct".to_owned())];
+        let records = degree_sweep(&client, &machine, &o, &mut |_| {}).unwrap();
+        let cands = |pf| degree_candidates(machine.class, pf, "Quadrilateral", 4, 1);
+        for family in families {
+            let got: std::collections::BTreeSet<&str> = records
+                .iter()
+                .filter(|r| r.family == family.name())
+                .map(|r| r.strategy.as_str())
+                .collect();
+            let mut want: std::collections::BTreeSet<&str> =
+                cands(policy_family(family.name())).into_iter().collect();
+            if family != DegreeFamily::Points {
+                want.insert("loops");
+            }
+            if family == DegreeFamily::DetJ {
+                want.remove("direct");
+            }
+            assert_eq!(got, want, "{family:?}");
+        }
+        assert!(records.iter().all(|r| r.status == "ok"), "{records:?}");
+        let count = |f: DegreeFamily| records.iter().filter(|r| r.family == f.name()).count();
+        assert_eq!(
+            count(DegreeFamily::Jacobian),
+            cands("Jacobian").len() + usize::from(!cands("Jacobian").contains(&"loops"))
+        );
     }
 
     #[test]

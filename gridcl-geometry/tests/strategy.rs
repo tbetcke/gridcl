@@ -1028,3 +1028,197 @@ fn units_against_one<F, TD, GD>(
     let (loops, _) = forced(mesh, Strategy::Loops, &f);
     compare(&format!("{what} against loops"), &one, &loops, false);
 }
+
+/// M10 bullet 5 (ADR-0058 item 2): `degree-policy.toml` holds exactly four sets: `[Cpu.<family>]`
+/// and `[Gpu.<family>]` for every policy family, each cell type with entries for 4- and 8-byte
+/// scalars and nothing else.
+#[test]
+fn degree_policy_has_four_sets() {
+    let text = include_str!("../degree-policy.toml");
+    let table: toml::Table = text.parse().expect("degree-policy.toml parses");
+    let sorted = |t: &toml::Table| {
+        let mut keys: Vec<String> = t.keys().cloned().collect();
+        keys.sort_unstable();
+        keys
+    };
+    assert_eq!(
+        sorted(&table),
+        ["Cpu", "Gpu"],
+        "degree-policy.toml: classes"
+    );
+    let mut families = vec![
+        "EVector",
+        "FacetNormals",
+        "Jacobian",
+        "Normals",
+        "Points",
+        "PullBack",
+    ];
+    families.sort_unstable();
+    for class in ["Cpu", "Gpu"] {
+        let section = table[class].as_table().expect("a class is a table");
+        assert_eq!(sorted(section), families, "[{class}]: families");
+        for family in &families {
+            let cells = section[*family].as_table().expect("a family is a table");
+            let mut want = if *family == "Normals" {
+                vec!["Interval", "Quadrilateral", "Triangle"]
+            } else {
+                vec![
+                    "Hexahedron",
+                    "Interval",
+                    "Prism",
+                    "Pyramid",
+                    "Quadrilateral",
+                    "Tetrahedron",
+                    "Triangle",
+                ]
+            };
+            want.sort_unstable();
+            assert_eq!(sorted(cells), want, "[{class}.{family}]: cell types");
+            for (cell, sizes) in cells {
+                let sizes = sizes.as_table().expect("a cell entry is a table");
+                assert_eq!(
+                    sorted(sizes),
+                    ["4", "8"],
+                    "[{class}.{family}] {cell}: sizes"
+                );
+            }
+        }
+    }
+}
+
+/// Factor launches plan with their strategy's own `live` (docs/plans/M10.md, T3): J at p = 2
+/// on quadrilaterals, tetrahedra, hexahedra and prisms under each forced strategy, with
+/// injected CPU-class properties of one scalar per register and 4 · (2·T·G + 2) registers, so
+/// that `direct` and `loops` keep four lanes and the larger counts of `sumfact`, `shared` (with
+/// the tensor table) and `cooperative` fewer. The counts are restated here: `direct` and
+/// `loops` 2·T·G + 2 (J, K, a coordinate and a weight); `sumfact` the partial sums of its
+/// contractions (2·G·n on quadrilaterals, 2·G·n² + 3·G·n on hexahedra, 3·G·n on prisms, n =
+/// p + 1), J's T running sums and `direct`'s count; `shared` that of the kernel it stages for;
+/// `cooperative` `loops`' and (log₂ 32 + 2) · T·G + 6 for its tree. Every recorded
+/// GeomFactors plan has the vector size of its strategy's count. Other classes state no
+/// register budget (GPUs), so the test runs on the CPU runtime only.
+#[test]
+fn factor_plans_use_each_strategys_live() {
+    each_precision(factor_live::<f32>, factor_live::<f64>);
+}
+
+fn factor_live<F: Real>(client: &cubecl::prelude::Client) {
+    use gridcl_device::DeviceClass;
+    if DeviceClass::for_client(client) != DeviceClass::Cpu {
+        eprintln!("factor_plans_use_each_strategys_live: not a CPU class; skipped");
+        return;
+    }
+    let mut narrowed = false;
+    let square = gridcl_testing::square_box(Cell2::Quadrilateral, 1, 2)
+        .build::<F, D2, D2>(client)
+        .unwrap();
+    narrowed |= factor_live_on(client, &square, gridcl::CellType::Quadrilateral);
+    for (cell, ty) in [
+        (Cell3::Tetrahedron, gridcl::CellType::Tetrahedron),
+        (Cell3::Hexahedron, gridcl::CellType::Hexahedron),
+        (Cell3::Prism, gridcl::CellType::Prism),
+    ] {
+        let mesh = gridcl_testing::cube_box(cell, 1, 2)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        narrowed |= factor_live_on(client, &mesh, ty);
+    }
+    assert!(narrowed, "no strategy planned fewer lanes than `direct`");
+}
+
+/// Checks the GeomFactors plans of J on `mesh` (p = 2) under each forced strategy; true if a
+/// strategy's plan has fewer lanes than `direct`'s.
+fn factor_live_on<F, TD, GD>(
+    client: &cubecl::prelude::Client,
+    mesh: &Mesh<F, TD, GD>,
+    cell: gridcl::CellType,
+) -> bool
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    use gridcl_device::testing::{record_plans, with_properties, with_quad_tile, with_vector_size};
+    use gridcl_device::{KernelKind, VectorPolicy, VectorSizeOverride};
+    let (td, gd, n) = (TD::N, GD::N, 3);
+    let size = size_of::<F>();
+    let direct = 2 * td * gd + 2;
+    let tensor = || {
+        let partials = match (cell, td) {
+            (gridcl::CellType::Prism, _) => 3 * gd * n,
+            (_, 2) => 2 * gd * n,
+            _ => 2 * gd * n * n + 3 * gd * n,
+        };
+        partials + td + direct
+    };
+    let tensor_cell = matches!(
+        cell,
+        gridcl::CellType::Quadrilateral | gridcl::CellType::Hexahedron | gridcl::CellType::Prism
+    );
+    let live = |s: Strategy| match s {
+        Strategy::Direct | Strategy::Loops => direct,
+        Strategy::SumFactorised => tensor(),
+        Strategy::Shared if tensor_cell => tensor(),
+        Strategy::Shared => direct,
+        Strategy::Cooperative => direct + 7 * td * gd + 6,
+    };
+    let registers = 4 * direct;
+    let mut props = (*gridcl_device::device_properties(client)).clone();
+    props.hardware.load_width = (8 * size) as u32;
+    props.hardware.vector_register_count = Some(registers as u32);
+    let (policy, max_vector) = with_properties(props.clone(), || {
+        (
+            VectorPolicy::for_client(client).vector_size(KernelKind::GeomFactors, size),
+            props.hardware.max_vector_size,
+        )
+    });
+    let tile = 16;
+    let lanes = |live: usize| {
+        let wanted = (registers / live).max(1);
+        let n = (1 << wanted.ilog2())
+            .min(policy)
+            .min(tile)
+            .min(max_vector)
+            .max(1);
+        1 << n.ilog2()
+    };
+    let rule = QuadRule::for_grid(mesh, 4).unwrap();
+    let mut narrowed = false;
+    for s in Strategy::ALL {
+        let ((_, ran), plans) = record_plans(|| {
+            with_properties(props.clone(), || {
+                with_vector_size(VectorSizeOverride::Policy, || {
+                    with_quad_tile(tile, || {
+                        forced(mesh, s, |m| {
+                            m.jacobians(&rule).unwrap();
+                            vec![]
+                        })
+                    })
+                })
+            })
+        });
+        let ran = ran
+            .iter()
+            .rev()
+            .find(|(f, _)| *f == StrategyFamily::Jacobian)
+            .map(|&(_, s)| s)
+            .expect("a Jacobian launch");
+        let want = lanes(live(ran));
+        let factors: Vec<_> = plans
+            .iter()
+            .filter(|(k, _)| *k == KernelKind::GeomFactors)
+            .collect();
+        assert!(!factors.is_empty(), "{cell:?} {s:?}: no GeomFactors plan");
+        for (_, plan) in factors {
+            assert_eq!(
+                plan.vector_size,
+                want,
+                "{cell:?} {s:?} (ran {ran:?}, live {}, {size} bytes)",
+                live(ran)
+            );
+        }
+        narrowed |= want < lanes(direct);
+    }
+    narrowed
+}

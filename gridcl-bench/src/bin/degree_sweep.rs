@@ -8,6 +8,9 @@
 //!     [--strategies direct,policy,...] [--skip family:strategy,...] [--launch-only] [--interleave]
 //!     [--vector-sizes both|scalar|policy]
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]
+//! degree_sweep --candidates [--target NAME] [--run-id ID] [--families LIST] [--cells LIST]
+//!     [--degrees LIST] [--types LIST] [--sizes LIST] [--skip LIST] [--interleave] [--runs R]
+//!     [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]
 //! degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...
 //! ```
 //!
@@ -19,6 +22,16 @@
 //!   so a run can be split by family; by default every family, cell type, degree 1–8
 //!   (pyramids to 3), node family where offered, f32 and f64, and 10^5, 10^6 and 10^7 points.
 //!   Names are the record names, in any case.
+//! - `--candidates`: the candidate protocol of M10 and of a CubeCL pin bump (ADR-0057 item 3,
+//!   ADR-0060 items 2 and 3): each (family, cell, degree, type) runs the strategies of
+//!   `candidates::degree_candidates` for the device's class and the family's policy family
+//!   (the baseline, the M9h choices of the class's old classes, the live policy's), and `loops`
+//!   too where that policy family's `direct` is skipped, fails or takes over 30 s at first use
+//!   (ADR-0056); at p = 1, 4 and 8 (pyramids 1), each entry's rule sizes (10^6 and 10^7
+//!   points; FacetNormals on intervals in f32 lower, ADR-0063) unless `--sizes` is given,
+//!   equispaced nodes and five timed runs unless given; interleaved on a CPU (ADR-0055).
+//!   `--degrees` names the degrees a re-measurement adds (ADR-0060 item 3). Committed files
+//!   are `m10-degree-*.json`.
 //! - `--strategies`: default `direct`; `policy` runs the degree policy, a strategy's name forces
 //!   it on every family (or its fallback `loops`, which the records name). They run in the
 //!   given order.
@@ -58,12 +71,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use gridcl::NodeFamily;
+use gridcl_bench::decide_generic::M10_DEGREES;
 use gridcl_bench::families::Machine;
 use gridcl_bench::families::degree::{
     CELLS, DEGREE_SIZES, DegreeFamily, DegreeOptions, LAUNCH_SIZE, LaunchVectorSizes, degree_sweep,
     node_family_named,
 };
-use gridcl_bench::protocol::RUNS;
+use gridcl_bench::protocol::{CANDIDATE_RUNS, CANDIDATE_SIZES, RUNS, is_cpu};
 use gridcl_bench::record::{
     DegreeRecord, NodeLoad, STRATEGIES, Scalar, annotate_commit, annotate_node_load, job_commit,
     read_records, write_records,
@@ -74,6 +88,9 @@ use serde_json::Value;
 const USAGE: &str = "usage: degree_sweep [--target NAME] [--run-id ID] [--families LIST] \
     [--cells LIST] [--degrees LIST] [--node-families LIST] [--types LIST] [--sizes LIST] \
     [--strategies LIST] [--skip LIST] [--launch-only] [--interleave] [--vector-sizes both|scalar|policy] [--runs R] \
+    [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]\n       \
+    degree_sweep --candidates [--target NAME] [--run-id ID] [--families LIST] [--cells LIST] \
+    [--degrees LIST] [--types LIST] [--sizes LIST] [--skip LIST] [--interleave] [--runs R] \
     [--fallback-reason TEXT] [--out FILE] [--resume] [--stopped-after S]\n       \
     degree_sweep annotate [--node-load RESULTS_DIR] [--commit-from RESULTS_DIR] FILE...";
 
@@ -136,6 +153,10 @@ struct Args {
     out: Option<PathBuf>,
     resume: bool,
     stopped_after: Option<f64>,
+    /// The candidate protocol (`--candidates`).
+    candidates: bool,
+    /// `--candidates` without `--sizes`: each family at its entry's rule sizes (ADR-0063).
+    entry_sizes: bool,
 }
 
 /// The first non-empty value of the environment variables `vars`.
@@ -170,12 +191,20 @@ impl Args {
             out: None,
             resume: false,
             stopped_after: None,
+            candidates: false,
+            entry_sizes: false,
         };
+        let mut given = Vec::new();
         while let Some(flag) = args.next() {
-            if matches!(flag.as_str(), "--launch-only" | "--resume" | "--interleave") {
+            given.push(flag.clone());
+            if matches!(
+                flag.as_str(),
+                "--launch-only" | "--resume" | "--interleave" | "--candidates"
+            ) {
                 match flag.as_str() {
                     "--resume" => parsed.resume = true,
                     "--interleave" => parsed.interleave = true,
+                    "--candidates" => parsed.candidates = true,
                     _ => parsed.launch_only = true,
                 }
                 continue;
@@ -255,6 +284,30 @@ impl Args {
         if parsed.resume && parsed.out.is_none() {
             return Err("--resume and --stopped-after need --out".into());
         }
+        if parsed.candidates {
+            let has = |f: &str| given.iter().any(|g| g == f);
+            for flag in [
+                "--strategies",
+                "--node-families",
+                "--launch-only",
+                "--vector-sizes",
+            ] {
+                if has(flag) {
+                    return Err(format!("{flag} does not apply to --candidates").into());
+                }
+            }
+            if !has("--degrees") {
+                parsed.degrees = M10_DEGREES.to_vec();
+            }
+            if !has("--runs") {
+                parsed.runs = CANDIDATE_RUNS;
+            }
+            if parsed.sizes.is_none() {
+                parsed.sizes = Some(CANDIDATE_SIZES.to_vec());
+                parsed.entry_sizes = true;
+            }
+            parsed.node_families = Some(vec![NodeFamily::Equispaced]);
+        }
         Ok(parsed)
     }
 
@@ -314,8 +367,12 @@ fn run(args: Args) -> Result<(), Failure> {
         machine.kernel_cache
     );
     let options = DegreeOptions {
+        // The candidate protocol times a CPU's strategies interleaved (ADR-0055).
+        interleave: args.interleave || (args.candidates && is_cpu(machine.class)),
+        candidates: args.candidates,
         node_families: args.node_families(),
         sizes: args.sizes(),
+        entry_sizes: args.entry_sizes,
         target: args.target,
         run_id: args.run_id,
         families: args.families,
@@ -327,7 +384,6 @@ fn run(args: Args) -> Result<(), Failure> {
         launch_only: args.launch_only,
         launch_vector_sizes: args.launch_vector_sizes.unwrap_or_default(),
         runs: args.runs,
-        interleave: args.interleave,
         fallback_reason: args.fallback_reason,
         done,
         stopped_after: args.stopped_after,
@@ -518,6 +574,47 @@ mod tests {
             .unwrap();
         assert!(stopped.resume);
         assert_eq!(stopped.stopped_after, Some(600.0));
+    }
+
+    /// `--candidates`: p = 1, 4 and 8, 10^6 and 10^7 points, equispaced nodes, five runs; the
+    /// filters and `--runs` still apply; the strategies come from the candidates.
+    #[test]
+    fn candidates_take_the_candidate_protocol() {
+        let parsed = args(&["--candidates"]).ok().unwrap();
+        assert!(parsed.candidates);
+        assert!(
+            parsed.entry_sizes,
+            "each entry at its rule sizes (ADR-0063)"
+        );
+        assert_eq!(parsed.degrees, M10_DEGREES);
+        assert_eq!(parsed.sizes(), CANDIDATE_SIZES);
+        assert_eq!(parsed.runs, CANDIDATE_RUNS);
+        assert_eq!(parsed.node_families(), [NodeFamily::Equispaced]);
+        let parsed = args(&[
+            "--degrees",
+            "2,3",
+            "--candidates",
+            "--runs",
+            "3",
+            "--sizes",
+            "1000000",
+            "--cells",
+            "prism",
+        ])
+        .ok()
+        .unwrap();
+        assert_eq!(parsed.degrees, [2, 3]);
+        assert_eq!((parsed.runs, parsed.sizes()), (3, vec![1_000_000]));
+        assert!(!parsed.entry_sizes, "--sizes applies to every family");
+        assert_eq!(parsed.cells, [CellType::Prism]);
+        for list in [
+            &["--candidates", "--strategies", "direct"][..],
+            &["--candidates", "--node-families", "gll"],
+            &["--launch-only", "--candidates"],
+            &["--candidates", "--launch-only", "--vector-sizes", "scalar"],
+        ] {
+            assert!(matches!(args(list), Err(Failure::Usage(_))), "{list:?}");
+        }
     }
 
     #[test]

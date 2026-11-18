@@ -1,6 +1,7 @@
 //! The decision rule of the degree sweep (ADR-0042, item 12; ADR-0050 to ADR-0052): per policy
-//! family, cell type, device class, scalar size and degree, the strategy written to
-//! `gridcl-geometry/degree-policy.toml`.
+//! family, cell type, M9h device class ([`LegacyClass`]), scalar size and degree, the strategy
+//! of the pre-M10 degree policy, frozen in `gridcl-bench/history/degree-policy-pre-m10.toml`
+//! (ADR-0058, ADR-0060 item 2). The rule is unchanged; it reads the M9h records only.
 //!
 //! - A policy family's time is the sum of its bench families' times per point: J + det J + K
 //!   for `Jacobian`, the pull-back at 9 Newton iterations for `PullBack`, the family itself
@@ -30,9 +31,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use gridcl_device::DeviceClass;
-
-use crate::record::{CLASSES, DegreeRecord, HighOrderData, STRATEGIES, Scalar};
+use crate::record::{DegreeRecord, HighOrderData, LegacyClass, STRATEGIES, Scalar};
 
 /// A strategy is admitted if its class ratio to the baseline is at most this at every rule size
 /// (at least 10% faster).
@@ -68,15 +67,15 @@ pub const CELLS: [&str; 7] = [
 pub const SCALARS: [(Scalar, usize); 2] = [(Scalar::F32, 4), (Scalar::F64, 8)];
 
 /// The measured device classes; CpuSimd256 copies CpuSimd512.
-pub const MEASURED_CLASSES: [DeviceClass; 3] = [
-    DeviceClass::CpuSimd128,
-    DeviceClass::CpuSimd512,
-    DeviceClass::Gpu,
+pub const MEASURED_CLASSES: [LegacyClass; 3] = [
+    LegacyClass::CpuSimd128,
+    LegacyClass::CpuSimd512,
+    LegacyClass::Gpu,
 ];
 
 /// The rule sizes of a class, in quadrature points (rule 12, ADR-0052).
-pub fn rule_sizes(class: DeviceClass) -> &'static [usize] {
-    if class == DeviceClass::Gpu {
+pub fn rule_sizes(class: LegacyClass) -> &'static [usize] {
+    if class == LegacyClass::Gpu {
         &[1_000_000, 10_000_000]
     } else {
         &[1_000_000]
@@ -84,8 +83,8 @@ pub fn rule_sizes(class: DeviceClass) -> &'static [usize] {
 }
 
 /// The strategies a class chooses among (ADR-0052).
-pub fn candidates(class: DeviceClass) -> &'static [&'static str] {
-    if class == DeviceClass::Gpu {
+pub fn candidates(class: LegacyClass) -> &'static [&'static str] {
+    if class == LegacyClass::Gpu {
         &STRATEGIES
     } else {
         &["direct", "loops", "sumfact"]
@@ -146,7 +145,7 @@ pub fn policy_family(family: &str) -> &str {
 /// The (target, backend, class) of the degree sweep's devices: the Mac mini's CPU and Metal,
 /// Locust's GPU and one Kathleen socket, or a Myriad D node where Kathleen has no CPU record
 /// (ADR-0016); not Locust's Grace CPU (ADR-0051).
-pub fn sweep_devices(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, DeviceClass)> {
+pub fn sweep_devices(records: &[DegreeRecord]) -> Vec<(&'static str, &'static str, LegacyClass)> {
     let avx512 = if records
         .iter()
         .any(|r| r.target == "kathleen" && r.backend == "cpu")
@@ -156,10 +155,10 @@ pub fn sweep_devices(records: &[DegreeRecord]) -> Vec<(&'static str, &'static st
         "myriad-cpu"
     };
     vec![
-        ("macmini", "cpu", DeviceClass::CpuSimd128),
-        ("macmini", "metal", DeviceClass::Gpu),
-        ("locust", "cuda", DeviceClass::Gpu),
-        (avx512, "cpu", DeviceClass::CpuSimd512),
+        ("macmini", "cpu", LegacyClass::CpuSimd128),
+        ("macmini", "metal", LegacyClass::Gpu),
+        ("locust", "cuda", LegacyClass::Gpu),
+        (avx512, "cpu", LegacyClass::CpuSimd512),
     ]
 }
 
@@ -175,7 +174,7 @@ pub fn scalars_of(backend: &str) -> &'static [Scalar] {
 /// The devices of `class` that measure `scalar`, as (target, backend).
 pub fn class_devices(
     records: &[DegreeRecord],
-    class: DeviceClass,
+    class: LegacyClass,
     scalar: Scalar,
 ) -> Vec<(&'static str, &'static str)> {
     sweep_devices(records)
@@ -429,8 +428,11 @@ pub enum Fit {
 /// The rule's outcome at one degree of one policy entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeChoice {
+    /// The measured degree.
     pub degree: u32,
+    /// The strategy chosen.
     pub strategy: &'static str,
+    /// How the rule reached the choice.
     pub fit: Fit,
     /// The baseline: `direct`, or `loops` where `direct` is not selectable.
     pub base: &'static str,
@@ -463,9 +465,13 @@ impl DegreeChoice {
 /// measured degrees and its degree ranges.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyEntry {
-    pub class: DeviceClass,
+    /// The device class.
+    pub class: LegacyClass,
+    /// The policy family, a key of `degree-policy.toml`.
     pub family: &'static str,
+    /// The cell type name, as `Hexahedron`.
     pub cell: &'static str,
+    /// The scalar type, which gives the scalar size of the entry.
     pub scalar: Scalar,
     /// The choice at each measured degree; empty for CpuSimd256 (a copy) and where the class
     /// measured nothing in this scalar type.
@@ -500,19 +506,20 @@ type Ranges = Vec<(u32, &'static str)>;
 /// The whole degree policy.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeDecision {
+    /// Every entry of the policy.
     pub entries: Vec<PolicyEntry>,
 }
 
 /// The order of the policy's classes.
-pub const POLICY_CLASSES: [DeviceClass; 4] = CLASSES;
+pub const POLICY_CLASSES: [LegacyClass; 4] = LegacyClass::ALL;
 
 /// The decision for `data`.
 pub fn decide_degree(data: &HighOrderData) -> DegreeDecision {
     let times = Times::new(data);
     let mut entries = Vec::new();
     for class in POLICY_CLASSES {
-        let measured = if class == DeviceClass::CpuSimd256 {
-            DeviceClass::CpuSimd512
+        let measured = if class == LegacyClass::CpuSimd256 {
+            LegacyClass::CpuSimd512
         } else {
             class
         };
@@ -520,7 +527,7 @@ pub fn decide_degree(data: &HighOrderData) -> DegreeDecision {
             for &cell in cells_of(family) {
                 for (scalar, _) in SCALARS {
                     let devices = class_devices(&data.degree, measured, scalar);
-                    let choices: Vec<DegreeChoice> = if class == DeviceClass::CpuSimd256
+                    let choices: Vec<DegreeChoice> = if class == LegacyClass::CpuSimd256
                         || devices.is_empty()
                     {
                         Vec::new()
@@ -547,11 +554,11 @@ pub fn decide_degree(data: &HighOrderData) -> DegreeDecision {
     // CpuSimd256 takes CpuSimd512's ranges.
     let copies: HashMap<(&str, &str, Scalar), Ranges> = entries
         .iter()
-        .filter(|e| e.class == DeviceClass::CpuSimd512)
+        .filter(|e| e.class == LegacyClass::CpuSimd512)
         .map(|e| ((e.family, e.cell, e.scalar), e.ranges.clone()))
         .collect();
     for e in &mut entries {
-        if e.class == DeviceClass::CpuSimd256 {
+        if e.class == LegacyClass::CpuSimd256 {
             e.ranges = copies[&(e.family, e.cell, e.scalar)].clone();
         }
     }
@@ -578,7 +585,7 @@ fn ranges(choices: &[DegreeChoice]) -> Vec<(u32, &'static str)> {
 /// The rule at one degree.
 fn choose(
     times: &Times,
-    class: DeviceClass,
+    class: LegacyClass,
     devices: &[(&str, &str)],
     family: &'static str,
     cell: &str,
@@ -742,7 +749,7 @@ impl DegreeDecision {
     /// The entry of (class, policy family, cell, scalar).
     pub fn entry(
         &self,
-        class: DeviceClass,
+        class: LegacyClass,
         family: &str,
         cell: &str,
         scalar: Scalar,
@@ -806,16 +813,23 @@ pub fn tensor_bound(what: &str, d: i32) -> f64 {
 /// p = 8, the geometric mean over the class's devices.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TensorRatio {
-    pub class: DeviceClass,
+    /// The device class.
+    pub class: LegacyClass,
+    /// The scalar type.
     pub scalar: Scalar,
+    /// `Quadrilateral` or `Hexahedron`.
     pub cell: &'static str,
+    /// The bench family, one of [`DEGREE_FAMILIES`](crate::record::DEGREE_FAMILIES).
     pub family: &'static str,
     /// `factor`, or the pull-back's `step` or `set-up` (rule 1).
     pub part: &'static str,
+    /// The strategy the policy selects at p = 8.
     pub strategy: &'static str,
+    /// The rule size, in quadrature points.
     pub size: usize,
     /// `None` where a device lacks a record.
     pub ratio: Option<f64>,
+    /// The bound on `ratio` ([`tensor_bound`]).
     pub bound: f64,
     /// The speedup at p = 8 over M9's kernels: T3's `direct` time over the strategy's, the
     /// geometric mean over the devices; `None` where a device has no baseline record (ADR-0053).
@@ -915,11 +929,11 @@ pub fn tensor_ratios(data: &HighOrderData, decision: &DegreeDecision) -> Vec<Ten
 /// Locust's Grace CPU (CpuSimd128, ADR-0051).
 pub fn paired_devices(
     records: &[DegreeRecord],
-    class: DeviceClass,
+    class: LegacyClass,
     scalar: Scalar,
 ) -> Vec<(&'static str, &'static str)> {
     let mut out = class_devices(records, class, scalar);
-    if class == DeviceClass::CpuSimd128 {
+    if class == LegacyClass::CpuSimd128 {
         out.push(("locust", "cpu"));
     }
     out
@@ -949,17 +963,21 @@ pub fn paired_ratio(a: &DegreeRecord, b: &DegreeRecord) -> f64 {
 /// quarters of the run pairs).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PairedCheck {
-    pub class: DeviceClass,
+    /// The device class.
+    pub class: LegacyClass,
+    /// The scalar type.
     pub scalar: Scalar,
     /// (target, backend, run id) of each device with a paired run.
     pub runs: Vec<(String, String, String)>,
-    /// Configurations compared, left out because `direct` is not selectable for the class, and
-    /// without records on every device.
+    /// Configurations compared.
     pub compared: usize,
+    /// Configurations left out because `direct` is not selectable for the class.
     pub excluded: usize,
+    /// Configurations left out because they lack records on some device.
     pub missing: usize,
-    /// The largest median and lower-quartile class ratios, with their configurations.
+    /// The largest median class ratio, with its configuration.
     pub worst_median: Option<(f64, String)>,
+    /// The largest lower-quartile class ratio, with its configuration.
     pub worst_lower: Option<(f64, String)>,
     /// The configurations whose lower-quartile class ratio exceeds [`PAIRED_BOUND`].
     pub failures: Vec<String>,

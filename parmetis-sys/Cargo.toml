@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # Bindings and linking; without it the crate is empty, so the workspace build needs neither MPI
 # nor ParMETIS (ADR-0029, item 4).

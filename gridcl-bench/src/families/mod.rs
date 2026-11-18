@@ -15,12 +15,13 @@ pub mod mesh;
 use std::collections::BTreeMap;
 
 use cubecl::prelude::Client;
-use gridcl_device::{DeviceClass, KernelKind, check_precision};
+use gridcl_device::{CpuUnits, DeviceClass, KernelKind, check_precision};
 
+use crate::candidates::{VectorConfig, candidate_kinds, vector_candidates};
 use crate::protocol::{
     self, Config, Measured, Workload, bandwidth_ratio, is_cpu, measure, with_config,
 };
-use crate::record::{Cores, CubeDimMode, Scalar, SweepRecord};
+use crate::record::{Cores, CubeDimMode, LegacyClass, Scalar, SweepRecord};
 
 /// The protocol's problem sizes.
 pub const SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
@@ -69,31 +70,47 @@ pub fn workload(
 pub struct SweepOptions {
     /// Machine: `m3max`, or a target of scripts/hpc/remote-test.sh.
     pub target: String,
+    /// Kernel families to measure.
     pub families: Vec<KernelKind>,
     /// Scalar types to keep; `None` measures every type of each family.
     pub scalars: Option<Vec<Scalar>>,
+    /// Problem sizes.
     pub sizes: Vec<usize>,
     /// Vector sizes to keep; `None` measures every size the device offers.
     pub vector_sizes: Option<Vec<usize>>,
     /// CPU block targets in bytes (CPU devices only).
     pub blocks: Vec<usize>,
+    /// The ways of choosing the CPU `cube_dim` to measure.
     pub cube_dims: Vec<CubeDimMode>,
+    /// Timed runs per configuration.
     pub runs: usize,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); every record
+    /// carries it.
     pub fallback_reason: Option<String>,
 }
 
 /// What every record of a run shares.
 #[derive(Clone, Debug)]
 pub struct Machine {
+    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it.
     pub backend: String,
+    /// Device name as the client reports it.
     pub device: String,
+    /// Device class of the client.
     pub class: DeviceClass,
+    /// The commit the benchmark ran from.
     pub commit: String,
+    /// Core counts of the machine.
     pub cores: Cores,
+    /// State of CubeCL's persistent kernel cache: `on` or `off`.
     pub kernel_cache: String,
+    /// `hardware.load_width` of the client in bits (ADR-0058 item 1, ADR-0060 item 2).
+    pub load_width: u32,
 }
 
 impl Machine {
+    /// The shared fields of a run on `client`: its backend, device and class, the commit, the
+    /// core counts and the kernel-cache state.
     pub fn new(client: &Client) -> Machine {
         Machine {
             backend: protocol::backend(),
@@ -102,6 +119,7 @@ impl Machine {
             commit: protocol::commit(),
             cores: protocol::cores(),
             kernel_cache: protocol::kernel_cache().to_owned(),
+            load_width: client.properties().hardware.load_width,
         }
     }
 }
@@ -219,7 +237,7 @@ pub fn sweep(
                                 .map_err(|e| format!("{what}: {e}"))?;
                             let record = sweep_record(
                                 machine,
-                                options,
+                                (&options.target, &options.fallback_reason),
                                 (kind, scalar, n),
                                 work.as_ref(),
                                 &config,
@@ -230,6 +248,137 @@ pub fn sweep(
                             records.push(record);
                         }
                     }
+                }
+            }
+        }
+    }
+    Ok(records)
+}
+
+/// What the candidate sweep runs (ADR-0057 item 3, ADR-0060 item 2).
+#[derive(Clone, Debug)]
+pub struct CandidateOptions {
+    /// Machine: `macmini`, or a target of scripts/hpc/remote-test.sh.
+    pub target: String,
+    /// Kinds to measure, of [`candidate_kinds`].
+    pub families: Vec<KernelKind>,
+    /// Scalar types to keep; `None` measures every type of each kind.
+    pub scalars: Option<Vec<Scalar>>,
+    /// Problem sizes; the protocol's are [`protocol::CANDIDATE_SIZES`].
+    pub sizes: Vec<usize>,
+    /// Timed runs per configuration.
+    pub runs: usize,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); every record
+    /// carries it.
+    pub fallback_reason: Option<String>,
+}
+
+/// The device's widest vector size for `kind` in `scalar`: its widest IO size for the element
+/// size the kind plans with (u32 words for Pack), at most `VECTOR_PAD`.
+pub fn widest_vector_size(client: &Client, kind: KernelKind, scalar: Scalar) -> usize {
+    let bytes = if kind == KernelKind::Pack {
+        size_of::<u32>()
+    } else {
+        scalar.bytes()
+    };
+    client
+        .properties()
+        .io_optimized_vector_sizes(bytes)
+        .next()
+        .unwrap_or(1)
+        .min(gridcl_device::VECTOR_PAD)
+}
+
+/// The protocol configurations of `candidates` on `machine`: a performance-core candidate on a
+/// device without a performance-core count runs on all threads, which give its time
+/// (ADR-0017); each configuration once, in the order of `candidates`.
+pub fn candidate_configs(machine: &Machine, candidates: &[VectorConfig]) -> Vec<Config> {
+    let mut out: Vec<Config> = Vec::new();
+    for c in candidates {
+        let performance =
+            c.units == Some(CpuUnits::Performance) && machine.cores.performance.is_some();
+        let config = Config {
+            vector_size: c.vector_size,
+            block_bytes: c.block_bytes,
+            tile: c.tile,
+            cube_dim: if performance {
+                CubeDimMode::PerformanceCores
+            } else {
+                CubeDimMode::Plan
+            },
+        };
+        if !out.contains(&config) {
+            out.push(config);
+        }
+    }
+    out
+}
+
+/// Runs the candidate protocol (ADR-0057 item 3): for every kind, scalar type and size of
+/// `options`, the candidates of `candidates::vector_candidates` for the machine's class, and
+/// passes each record to `on_record` as soon as it is measured. Inputs, the bandwidth
+/// reference and the check are those of [`sweep`]; Scalar runs on CPUs only.
+///
+/// # Errors
+///
+/// The first failed measurement, naming its configuration.
+pub fn candidate_sweep(
+    client: &Client,
+    machine: &Machine,
+    options: &CandidateOptions,
+    on_record: &mut dyn FnMut(&SweepRecord),
+) -> Result<Vec<SweepRecord>, String> {
+    let class = machine.class;
+    let has_f64 = check_precision::<f64>(client).is_ok();
+    let mut copy_reference: BTreeMap<usize, (usize, f64)> = BTreeMap::new();
+    let mut records = Vec::new();
+    for (kind, scalars) in candidate_kinds() {
+        if !options.families.contains(&kind) || (kind == KernelKind::Scalar && !is_cpu(class)) {
+            continue;
+        }
+        for &scalar in scalars {
+            if options
+                .scalars
+                .as_ref()
+                .is_some_and(|keep| !keep.contains(&scalar))
+            {
+                continue;
+            }
+            if scalar == Scalar::F64 && !has_f64 {
+                eprintln!("vector_sweep: {kind:?} f64 skipped: the device has no f64");
+                continue;
+            }
+            let widest = widest_vector_size(client, kind, scalar);
+            let configs =
+                candidate_configs(machine, &vector_candidates(class, kind, scalar, widest));
+            for &n in &options.sizes {
+                let mut work = workload(client, kind, scalar, n)?;
+                let reference = match copy_reference.get(&n) {
+                    Some(&r) => r,
+                    None => {
+                        let r = measure_copy_reference(client, n, options.runs)?;
+                        copy_reference.insert(n, r);
+                        r
+                    }
+                };
+                for config in &configs {
+                    let what = format!("{kind:?} {} n = {n} {config:?}", scalar.name());
+                    let measured = with_config(kind, config, machine.cores.performance, || {
+                        measure(client, kind, options.runs, work.as_mut())
+                    })
+                    .and_then(|m| m)
+                    .map_err(|e| format!("{what}: {e}"))?;
+                    let record = sweep_record(
+                        machine,
+                        (&options.target, &options.fallback_reason),
+                        (kind, scalar, n),
+                        work.as_ref(),
+                        config,
+                        &measured,
+                        reference,
+                    );
+                    on_record(&record);
+                    records.push(record);
                 }
             }
         }
@@ -248,7 +397,7 @@ fn measure_copy_reference(client: &Client, n: usize, runs: usize) -> Result<(usi
 
 fn sweep_record(
     machine: &Machine,
-    options: &SweepOptions,
+    (target, fallback_reason): (&str, &Option<String>),
     (family, scalar, nominal_n): (KernelKind, Scalar, usize),
     work: &dyn Workload,
     config: &Config,
@@ -260,7 +409,8 @@ fn sweep_record(
         backend: machine.backend.clone(),
         device: machine.device.clone(),
         device_class: machine.class,
-        target: options.target.clone(),
+        legacy_class: LegacyClass::of_new(machine.class),
+        target: target.to_owned(),
         family,
         scalar,
         nominal_n,
@@ -283,7 +433,8 @@ fn sweep_record(
         commit: machine.commit.clone(),
         profile: protocol::profile().to_owned(),
         cores: machine.cores.clone(),
-        fallback_reason: options.fallback_reason.clone(),
+        load_width: Some(machine.load_width),
+        fallback_reason: fallback_reason.clone(),
         node_load: None,
     }
 }
@@ -354,6 +505,63 @@ mod tests {
             assert!(r.bandwidth_ratio.is_none_or(|b| b > 0.0), "{r:?}");
             assert_eq!(r.block_bytes.is_some(), is_cpu(machine.class));
         }
+    }
+
+    /// The candidate protocol at 2000 items, two runs, every kind: one record per kind, type and
+    /// protocol configuration of its candidates, each measuring its configuration; Pack and
+    /// PullBack pass their checks; Scalar runs on CPUs only.
+    #[test]
+    fn candidate_smoke_sweep_covers_every_kind() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        assert_eq!(machine.load_width, client.properties().hardware.load_width);
+        let options = CandidateOptions {
+            target: "test".to_owned(),
+            families: candidate_kinds().into_iter().map(|(k, _)| k).collect(),
+            scalars: None,
+            sizes: vec![2000],
+            runs: 2,
+            fallback_reason: None,
+        };
+        let records = candidate_sweep(&client, &machine, &options, &mut |_| ()).unwrap();
+        let has_f64 = check_precision::<f64>(&client).is_ok();
+        for (kind, scalars) in candidate_kinds() {
+            for &scalar in scalars {
+                let of: Vec<&SweepRecord> = records
+                    .iter()
+                    .filter(|r| r.family == kind && r.scalar == scalar)
+                    .collect();
+                if (scalar == Scalar::F64 && !has_f64)
+                    || (kind == KernelKind::Scalar && !is_cpu(machine.class))
+                {
+                    assert!(of.is_empty(), "{kind:?} {}", scalar.name());
+                    continue;
+                }
+                let widest = widest_vector_size(&client, kind, scalar);
+                let configs = candidate_configs(
+                    &machine,
+                    &vector_candidates(machine.class, kind, scalar, widest),
+                );
+                assert_eq!(of.len(), configs.len(), "{kind:?} {}", scalar.name());
+                for (r, c) in of.iter().zip(&configs) {
+                    assert_eq!(
+                        (r.vector_size, r.tile, r.block_bytes, r.cube_dim),
+                        (c.vector_size, c.tile, c.block_bytes, c.cube_dim),
+                        "{kind:?} {}",
+                        scalar.name()
+                    );
+                    assert_eq!((r.nominal_n, r.times_s.len()), (2000, 2));
+                    assert_eq!(r.load_width, Some(machine.load_width));
+                    assert_eq!(r.device_class, machine.class);
+                    assert!(r.vector_size_ran <= r.vector_size, "{r:?}");
+                }
+            }
+        }
+        let pull_back = records
+            .iter()
+            .find(|r| r.family == KernelKind::PullBack)
+            .unwrap();
+        assert!(pull_back.n >= 1000, "points as items: {}", pull_back.n);
     }
 
     /// The mesh families at about 10^3 cells, two runs, one block: the records count the cells

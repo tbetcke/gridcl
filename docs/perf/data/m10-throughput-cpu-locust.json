@@ -1,0 +1,594 @@
+[
+  {
+    "backend": "cpu",
+    "calibration_s": 0.282958197,
+    "calls_per_run": 1,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.286034709,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 11210754.845839355,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.286034709,
+      0.291633745,
+      0.287399171,
+      0.284974443,
+      0.282812275
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.653546665,
+    "calls_per_run": 1,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.657565524,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 9261890.682699477,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.662771692,
+      0.65618919,
+      0.668150084,
+      0.651019471,
+      0.657565524
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.000600454,
+    "calls_per_run": 34,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.00030600982352941176,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 3443340438.7056394,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0004574184411764706,
+      0.0003057360294117647,
+      0.0003054564117647059,
+      0.00030600982352941176,
+      0.0003076409411764706
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.000630791,
+    "calls_per_run": 32,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0003309735,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 3021389930.0095024,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.00047962303125,
+      0.00036543190625,
+      0.0003309735,
+      0.0003288045,
+      0.00032992053125
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.004970293,
+    "calls_per_run": 5,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0048502274,
+    "mesh": "P4 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 205815092.29855904,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0048559682,
+      0.0048502274,
+      0.0048519684,
+      0.0048462463999999995,
+      0.0048454909999999995
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.00434027,
+    "calls_per_run": 5,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0035705914,
+    "mesh": "P4 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 280065649.6287982,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.0036373761999999995,
+      0.0035770940000000003,
+      0.0035705914,
+      0.0035613432,
+      0.0035593466
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.171556506,
+    "calls_per_run": 1,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.172063294,
+    "mesh": "P8 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 5490909.641657796,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.172063294,
+      0.133475686,
+      0.172581859,
+      0.133853578,
+      0.172448514
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.039949032,
+    "calls_per_run": 1,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.05176714,
+    "mesh": "P8 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 18743531.128047638,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "locust",
+    "times_s": [
+      0.059095666,
+      0.050988124,
+      0.058107239,
+      0.05176714,
+      0.038633946
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.290021568,
+    "calls_per_run": 1,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.286377178,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 11197348.274728792,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.266220612,
+      0.287435908,
+      0.286377178,
+      0.277223191,
+      0.289297369
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.664972898,
+    "calls_per_run": 1,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.662287238,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 9195858.91220208,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.665087716,
+      0.655504191,
+      0.662287238,
+      0.662358503,
+      0.653408777
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.001501232,
+    "calls_per_run": 14,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0013399524285714285,
+    "mesh": "P1 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 786368215.4174557,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.0014198687142857145,
+      0.0011493676428571428,
+      0.0013399524285714285,
+      0.0011696921428571427,
+      0.0013567527142857143
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.002894303,
+    "calls_per_run": 7,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.001385353857142857,
+    "mesh": "P1 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 721837236.6338172,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.0021777327142857143,
+      0.0013411111428571429,
+      0.0011203502857142858,
+      0.001385353857142857,
+      0.001499632
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.006226849,
+    "calls_per_run": 4,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.00597014325,
+    "mesh": "P4 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 167207043.14758277,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.0059831355,
+      0.00598374325,
+      0.00597003925,
+      0.00596400725,
+      0.00597014325
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.004921524,
+    "calls_per_run": 5,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.005552046,
+    "mesh": "P4 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 180113781.4780353,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.0049309322,
+      0.0055614988,
+      0.005552078199999999,
+      0.005552046,
+      0.005530593
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.160535525,
+    "calls_per_run": 1,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.160405027,
+    "mesh": "P8 tetrahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 5889989.968955275,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.160308065,
+      0.160405027,
+      0.160392067,
+      0.160502468,
+      0.161306604
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.060909221,
+    "calls_per_run": 1,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": null,
+      "levels": [],
+      "performance": null,
+      "threads": 72
+    },
+    "device": "Neoverse-V2",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.043733167,
+    "mesh": "P8 hexahedron box",
+    "node_load": {
+      "after": "idle",
+      "before": "idle"
+    },
+    "per_s": 22186799.323268767,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "locust",
+    "times_s": [
+      0.043726191,
+      0.043733167,
+      0.043546381,
+      0.043834608,
+      0.045767045
+    ],
+    "vector_size_override": "policy"
+  }
+]

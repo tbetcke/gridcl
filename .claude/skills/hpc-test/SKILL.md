@@ -27,11 +27,11 @@ tests cannot run until E0 is merged, and stop.
   lives under `~/local_disk`, never in its network home.
 - **`myriad-v100`** or **`myriad-a100`** only:
     - as the fallback when `a4000` is unavailable too, or a benchmark cannot get an idle node;
-    - multi-GPU and GPU-aware MPI tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has
-      one GPU);
+    - multi-GPU tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU; the
+      GPU-aware transport is deferred, ADR-0059);
     - a Locust failure or result that looks architecture-dependent, to compare (sm_70, sm_80);
     - a change to CUDA-version- or architecture-specific code (CUDA paths of gridcl-device,
-      the GPU-aware transport);
+      and, once it is built, the GPU-aware transport);
     - the user asked for it.
 
   State the reason in one line when you choose `myriad-v100` or `myriad-a100`.
@@ -58,7 +58,7 @@ If the user named a target, use it.
   On `myriad-cpu` (and `kathleen`) the job sets `GRIDCL_TEST_DEVICE=cpu`; add no CUDA feature.
 - `myriad-cpu`: always `--cores 36`. The CPU runtime's threads follow the job's slots, so a
   smaller request runs the CPU runtime on fewer threads (and shares the node with other jobs).
-- `--gpus 2` for multi-GPU or GPU-aware MPI tests on V100 (`--gpus 4` on A100); `--ranks N`
+- `--gpus 2` for multi-GPU tests on V100 (`--gpus 4` on A100); `--ranks N`
   for MPI runs; `--time 01:00:00` unless the test needs longer.
 - Benchmarks (gridcl-bench, from M3s) on Myriad: `--cores 36` so the node's CPU is not shared,
   and a longer `--time`; never draw SIMD conclusions from a job with fewer slots (the prologue's

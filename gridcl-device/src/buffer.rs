@@ -246,6 +246,13 @@ impl<T: CubeElement> DeviceBuffer<T> {
     /// allocation, which the CPU runtime requires. The host-staged halo exchange uploads its
     /// receive buffer with it.
     ///
+    /// `data` is copied once, into one allocation of the padded length. On CUDA and HIP that
+    /// copy is moved into pinned host memory (`Client::staging`) before the write, which on
+    /// CUDA uploads 2.4 MB about six times faster than leaving the staging to `Client::write`
+    /// (C23). The CPU runtime and the wgpu runtimes (Metal, Vulkan) have no pinned staging, and
+    /// the call is skipped there: it would only block the caller until the device's queue
+    /// reaches it.
+    ///
     /// # Errors
     ///
     /// `LengthMismatch` if `data.len()` is not [`len`](DeviceBuffer::len).
@@ -271,10 +278,16 @@ impl<T: CubeElement> DeviceBuffer<T> {
         if data.is_empty() {
             return Ok(());
         }
-        let mut host = T::as_bytes(data).to_vec();
-        host.resize(self.padded * size_of::<T>(), 0);
-        self.client
-            .write(&self.handle, cubecl::bytes::Bytes::from_bytes_vec(host));
+        let bytes = T::as_bytes(data);
+        let padded = self.padded * size_of::<T>();
+        let mut host = Vec::with_capacity(padded);
+        host.extend_from_slice(bytes);
+        host.resize(padded, 0);
+        let mut host = cubecl::bytes::Bytes::from_bytes_vec(host);
+        if stages_in_pinned_memory(&self.client) {
+            self.client.staging(core::iter::once(&mut host), false);
+        }
+        self.client.write(&self.handle, host);
         Ok(())
     }
 
@@ -376,6 +389,13 @@ pub fn pad_len(len: usize) -> Result<usize> {
         .ok_or(GridError::TooLarge)
 }
 
+/// Whether `Client::staging` moves host data into pinned memory on `client`'s runtime: CUDA
+/// and HIP. The CPU runtime and the wgpu runtimes return `UnsupportedIoOperation` after a
+/// blocking submit (C23).
+fn stages_in_pinned_memory(client: &Client) -> bool {
+    matches!(client.name(), "cuda" | "hip")
+}
+
 /// Bytes for `len` elements, or an error if the device cannot hold them in one allocation.
 fn check_allocation<T: CubeElement>(client: &Client, len: usize) -> Result<usize> {
     check_bytes::<T>(len, testing::properties(client).memory.max_page_size)
@@ -427,7 +447,9 @@ fn decode<T: CubeElement>(bytes: &[u8], len: usize) -> Result<Vec<T>> {
 /// assert_eq!(triangles.data.len() / triangles.stride as usize, 2);
 /// ```
 pub struct DeviceStrided<T: CubeElement> {
+    /// The rows, one after another.
     pub data: DeviceBuffer<T>,
+    /// The number of entries in each row.
     pub stride: u32,
 }
 
@@ -446,7 +468,9 @@ pub struct DeviceStrided<T: CubeElement> {
 /// assert_eq!(csr.offsets.len() - 1, 2);
 /// ```
 pub struct DeviceCsr {
+    /// Row `i` holds `indices[offsets[i]..offsets[i + 1]]`; one more entry than rows.
     pub offsets: DeviceBuffer<u32>,
+    /// The entries of all rows, one row after another.
     pub indices: DeviceBuffer<u32>,
 }
 
@@ -502,6 +526,39 @@ mod tests {
                 found: 16
             })
         ));
+    }
+
+    /// `write_host` writes the padded allocation: the padding reads back as zeros, also where
+    /// the memory held other values before (a released buffer of the same size).
+    #[test]
+    fn write_host_zeroes_the_padding() {
+        let client = gridcl_testing::test_client();
+        for len in [1, 5, VECTOR_PAD, VECTOR_PAD + 3] {
+            let padded = pad_len(len).unwrap();
+            drop(DeviceBuffer::from_host(&client, &vec![u32::MAX; padded]).unwrap());
+            let mut b = DeviceBuffer::<u32>::uninit(&client, len).unwrap();
+            let data: Vec<u32> = (1..=len as u32).collect();
+            b.write_host(&data).unwrap();
+            b.write_host(&data).unwrap();
+            let bytes = client.read_one(b.handle().clone()).unwrap();
+            let words = decode::<u32>(&bytes, padded).unwrap();
+            assert_eq!(&words[..len], &data[..], "len {len}");
+            assert!(words[len..].iter().all(|&w| w == 0), "len {len}: {words:?}");
+        }
+    }
+
+    /// `write_host` stages through pinned memory exactly on the runtimes that have it (C23):
+    /// CUDA and HIP, not the CPU runtime, Metal or Vulkan.
+    #[test]
+    fn write_host_stages_only_where_staging_pins() {
+        let client = gridcl_testing::test_client();
+        let device = std::env::var(gridcl_testing::TEST_DEVICE_VAR).unwrap_or_default();
+        assert_eq!(
+            stages_in_pinned_memory(&client),
+            matches!(device.as_str(), "cuda" | "hip"),
+            "GRIDCL_TEST_DEVICE={device:?}, runtime {}",
+            client.name()
+        );
     }
 
     #[test]

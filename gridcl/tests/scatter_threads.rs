@@ -248,6 +248,47 @@ fn two_runs_are_bitwise_equal() {
     }
 }
 
+/// One scatterer reused across calls and scalar types (its buffers are kept per type,
+/// ADR-0059): repeated forward and reverse calls on the same input give the bitwise result of
+/// a fresh scatterer, with f64 calls (where supported) and `Insert` in between.
+#[test]
+fn repeated_calls_on_one_scatterer_are_bitwise_equal() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            let client = gridcl_testing::test_client();
+            let l = Layout::new(&comm, 23, 300);
+            let x0: Vec<f32> = (0..l.map.num_local() * 3)
+                .map(|i| 0.1 + (i as f32).sqrt() * 1e-3 * (comm.rank() + 1) as f32)
+                .collect();
+            let y0: Vec<f64> = x0.iter().map(|&v| f64::from(v) * 1.5).collect();
+            let f64_ok = gridcl_testing::supports::<f64>(&client);
+            let bits = |v: Vec<f32>| v.into_iter().map(f32::to_bits).collect::<Vec<_>>();
+            let run = |s: &gridcl::Scatterer| {
+                let mut x = DeviceBuffer::from_host(&client, &x0).unwrap();
+                s.reverse(&mut x, ReverseOp::Add).unwrap();
+                s.forward(&mut x).unwrap();
+                s.reverse(&mut x, ReverseOp::Max).unwrap();
+                bits(x.to_host().unwrap())
+            };
+            let other = |s: &gridcl::Scatterer| {
+                if f64_ok {
+                    let mut y = DeviceBuffer::from_host(&client, &y0).unwrap();
+                    s.reverse(&mut y, ReverseOp::Add).unwrap();
+                    s.forward(&mut y).unwrap();
+                }
+                let mut x = DeviceBuffer::from_host(&client, &x0).unwrap();
+                s.reverse(&mut x, ReverseOp::Insert).unwrap();
+            };
+            let want = run(&l.map.scatterer(&client, 3).unwrap());
+            let s = l.map.scatterer(&client, 3).unwrap();
+            for _ in 0..3 {
+                assert_eq!(run(&s), want, "rank {} of {n}", comm.rank());
+                other(&s);
+            }
+        });
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 

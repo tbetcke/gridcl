@@ -51,6 +51,11 @@ jobs:
       # `cargo test --workspace` in two jobs: gridcl's suite and gridcl-geometry's integration
       # tests (8 min, M9's orient tests) run in cpu-gridcl.
       - run: cargo test --workspace --exclude gridcl --exclude gridcl-geometry
+      # The serial examples (ADR-0060 item 6) in the debug build; halo_exchange runs in the mpi
+      # jobs.
+      - run: scripts/run-examples.sh --serial
+        env:
+          GRIDCL_EXAMPLES_PROFILE: debug
       - run: cargo test -p gridcl-geometry --lib
       - run: cargo test -p gridcl-geometry --doc
       # Partition-quality tests with vendored METIS, the design's CI default (M7 T3): only what
@@ -60,9 +65,9 @@ jobs:
           cargo test -p gridcl-partition --features metis
           cargo test -p gridcl --features metis --test integration partition_threads::
           cargo test -p gridcl --features metis --doc -- partitioner
-      - run: cargo doc --workspace --no-deps
-        env:
-          RUSTDOCFLAGS: -Dwarnings
+      # Rustdoc without warnings and every public item documented (ADR-0060 item 7); the
+      # partitioner and I/O features in ptscotch.yml.
+      - run: scripts/check-docs.sh default
       - run: scripts/check-workspace-deps.sh
       # Negative check: the script must still find MPI (exit 3) when a feature pulls it in.
       - run: |
@@ -152,6 +157,13 @@ jobs:
         run: cargo clippy -p gridcl-mpi-tests --features mpi --all-targets -- -D warnings
       - if: matrix.part == 'tests'
         run: scripts/mpi-test.sh 1 2 3 4
+      # The halo_exchange example under mpirun -n 2 (ADR-0060 item 6).
+      - if: matrix.part == 'tests'
+        run: cargo clippy -p gridcl-examples --features mpi --all-targets -- -D warnings
+      - if: matrix.part == 'tests'
+        run: scripts/run-examples.sh --mpi
+        env:
+          GRIDCL_EXAMPLES_PROFILE: debug
       # Feature hdf5 with Ubuntu's HDF5 1.10.10 (ADR-0035, rules 8-9): the gather path
       # (gridcl-io, ThreadComm) and the MPI-IO path (vtkhdf_parallel), read back by VTK.
       - name: HDF5_DIR for the parallel HDF5 of this MPI

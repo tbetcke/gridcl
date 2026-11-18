@@ -13,8 +13,11 @@ use serde_json::{Map, Value, json};
 /// Scalar types of the benchmarks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Scalar {
+    /// 32-bit floating point.
     F32,
+    /// 64-bit floating point.
     F64,
+    /// 32-bit unsigned integer.
     U32,
 }
 
@@ -42,7 +45,9 @@ impl Scalar {
 /// order puts all hardware threads first, which the decision rule prefers on ties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CubeDimMode {
+    /// The plan's `cube_dim`: one unit per hardware thread.
     Plan,
+    /// One unit per performance core.
     PerformanceCores,
 }
 
@@ -52,17 +57,24 @@ pub enum CubeDimMode {
 /// `levels`, and their counts came from `hw.perflevel0` and `hw.perflevel1`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cores {
+    /// Performance cores; `None` where the OS reports no performance levels.
     pub performance: Option<u32>,
+    /// Efficiency cores; `None` where the OS reports no performance levels.
     pub efficiency: Option<u32>,
+    /// Hardware threads.
     pub threads: u32,
+    /// The performance levels, fastest first; empty where the OS reports none.
     pub levels: Vec<PerfLevel>,
 }
 
 /// One performance level: `hw.perflevel<i>.{name,physicalcpu,logicalcpu}` on macOS.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PerfLevel {
+    /// The name of the level (`hw.perflevel<i>.name`).
     pub name: String,
+    /// Physical cores of the level.
     pub physical: u32,
+    /// Logical CPUs of the level.
     pub logical: u32,
 }
 
@@ -70,7 +82,9 @@ pub struct PerfLevel {
 /// `idle`, `busy: <reasons>` or `not recorded`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeLoad {
+    /// The snapshot before the run.
     pub before: String,
+    /// The snapshot after the run.
     pub after: String,
 }
 
@@ -81,11 +95,18 @@ pub struct SweepRecord {
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,
+    /// Device class the record was measured on (ADR-0058).
     pub device_class: DeviceClass,
+    /// The pre-M10 class the record was filed under: the class an M3s or M9h record names
+    /// (ADR-0060 item 2), or `Gpu` for any Gpu record; `None` for a Cpu record written from M10
+    /// on. Only the M3s and M9h history reads it.
+    pub legacy_class: Option<LegacyClass>,
     /// Machine: `m3max`, or a target of scripts/hpc/remote-test.sh (`locust`, `kathleen`,
     /// `myriad-cpu`, `myriad-v100`, `myriad-a100`).
     pub target: String,
+    /// The kernel family measured.
     pub family: KernelKind,
+    /// The scalar type.
     pub scalar: Scalar,
     /// Problem size of the protocol: 10^5, 10^6 or 10^7.
     pub nominal_n: usize,
@@ -99,11 +120,13 @@ pub struct SweepRecord {
     pub tile: Option<usize>,
     /// CPU block target in bytes (CPU classes only).
     pub block_bytes: Option<usize>,
+    /// How the CPU `cube_dim` was chosen.
     pub cube_dim: CubeDimMode,
     /// Units per cube of the family's plans.
     pub units: u32,
     /// Every timed run, as seconds per call.
     pub times_s: Vec<f64>,
+    /// Median of `times_s`, in seconds per call.
     pub median_s: f64,
     /// Calls per timed run (ADR-0018).
     pub calls_per_run: usize,
@@ -116,10 +139,15 @@ pub struct SweepRecord {
     /// Effective bandwidth relative to `copy` at the same size on the same device, for the
     /// families with a byte count.
     pub bandwidth_ratio: Option<f64>,
+    /// The commit the benchmark ran from ([`commit`](crate::protocol::commit)).
     pub commit: String,
     /// `release` or `debug`.
     pub profile: String,
+    /// Core counts of the machine.
     pub cores: Cores,
+    /// `hardware.load_width` of the client in bits (M10 records; ADR-0058 item 1, ADR-0060
+    /// item 2); `None` in earlier records.
+    pub load_width: Option<u32>,
     /// Why a Myriad GPU ran in place of Locust (ADR-0014), or a Myriad D node in place of
     /// Kathleen (ADR-0016); empty elsewhere.
     pub fallback_reason: Option<String>,
@@ -139,14 +167,25 @@ pub enum Measure {
 /// One end-to-end throughput measurement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThroughputRecord {
+    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
+    /// Device name as the client reports it.
     pub device: String,
+    /// Device class the record was measured on (ADR-0058).
     pub device_class: DeviceClass,
+    /// The pre-M10 class the record was filed under: the class an M3s or M9h record names
+    /// (ADR-0060 item 2), or `Gpu` for any Gpu record; `None` for a Cpu record written from M10
+    /// on. Only the M3s and M9h history reads it.
+    pub legacy_class: Option<LegacyClass>,
+    /// Machine: the local Mac or a target of scripts/hpc/remote-test.sh.
     pub target: String,
+    /// What the record measures.
     pub measure: Measure,
     /// The mesh, for example `P1 tetrahedron box`.
     pub mesh: String,
+    /// Cells of the mesh.
     pub cells: usize,
+    /// The scalar type.
     pub scalar: Scalar,
     /// `policy` or `scalar`.
     pub vector_size_override: String,
@@ -154,6 +193,7 @@ pub struct ThroughputRecord {
     pub items: usize,
     /// Every timed run, as seconds per call.
     pub times_s: Vec<f64>,
+    /// Median of `times_s`, in seconds per call.
     pub median_s: f64,
     /// Calls per timed run (ADR-0018).
     pub calls_per_run: usize,
@@ -161,18 +201,27 @@ pub struct ThroughputRecord {
     pub calibration_s: f64,
     /// `items / median_s`.
     pub per_s: f64,
+    /// The commit the benchmark ran from ([`commit`](crate::protocol::commit)).
     pub commit: String,
+    /// `release` or `debug`.
     pub profile: String,
+    /// Core counts of the machine.
     pub cores: Cores,
+    /// `hardware.load_width` of the client in bits (M10 records; ADR-0058 item 1, ADR-0060
+    /// item 2); `None` in earlier records.
+    pub load_width: Option<u32>,
     /// Why a Myriad D node ran in place of Kathleen (ADR-0016); empty elsewhere.
     pub fallback_reason: Option<String>,
+    /// Locust's node-load snapshots.
     pub node_load: Option<NodeLoad>,
 }
 
 /// Every M3s record of a directory.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PerfData {
+    /// The `m3s-sweep-*.json` records.
     pub sweeps: Vec<SweepRecord>,
+    /// The `m3s-throughput-*.json` records.
     pub throughput: Vec<ThroughputRecord>,
 }
 
@@ -339,13 +388,69 @@ pub const KINDS: [KernelKind; 13] = [
     KernelKind::Scalar,
 ];
 
-/// Every device class, in the order of `vector-policy.toml`.
-pub const CLASSES: [DeviceClass; 4] = [
-    DeviceClass::CpuSimd128,
-    DeviceClass::CpuSimd256,
-    DeviceClass::CpuSimd512,
-    DeviceClass::Gpu,
-];
+/// Every device class, in the order of `vector-policy.toml` (ADR-0058).
+pub const CLASSES: [DeviceClass; 2] = [DeviceClass::Cpu, DeviceClass::Gpu];
+
+/// The device classes of M3s and M9h, by SIMD width, before ADR-0058 collapsed them to
+/// `{Cpu, Gpu}`. Only the history uses them: the M3s and M9h records, their unchanged decision
+/// rules ([`decide`](crate::decide::decide),
+/// [`decide_degree`](crate::decide_degree::decide_degree)), their report sections and
+/// `gridcl-bench/history/{vector,degree}-policy-pre-m10.toml` (ADR-0060 item 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LegacyClass {
+    /// A CPU of `load_width` 128 bits or less.
+    CpuSimd128,
+    /// A CPU of `load_width` 256 bits; it copied CpuSimd512's tables.
+    CpuSimd256,
+    /// A CPU of `load_width` 512 bits.
+    CpuSimd512,
+    /// Every other device.
+    Gpu,
+}
+
+impl LegacyClass {
+    /// Every legacy class, in the order of the pre-M10 policy files.
+    pub const ALL: [LegacyClass; 4] = [
+        LegacyClass::CpuSimd128,
+        LegacyClass::CpuSimd256,
+        LegacyClass::CpuSimd512,
+        LegacyClass::Gpu,
+    ];
+
+    /// The legacy class named `name` (its pre-M10 policy key), ignoring case.
+    pub fn named(name: &str) -> Option<LegacyClass> {
+        LegacyClass::ALL
+            .into_iter()
+            .find(|c| format!("{c:?}").eq_ignore_ascii_case(name))
+    }
+
+    /// The class of ADR-0058 that the legacy class falls in.
+    pub fn class(self) -> DeviceClass {
+        match self {
+            LegacyClass::Gpu => DeviceClass::Gpu,
+            _ => DeviceClass::Cpu,
+        }
+    }
+
+    /// Whether the class is a CPU class, where blocks and units apply.
+    pub fn is_cpu(self) -> bool {
+        self != LegacyClass::Gpu
+    }
+
+    /// The legacy class of a record written from M10 on: `Gpu` for a Gpu, none for a Cpu,
+    /// which no longer has a class by SIMD width.
+    pub fn of_new(class: DeviceClass) -> Option<LegacyClass> {
+        (class == DeviceClass::Gpu).then_some(LegacyClass::Gpu)
+    }
+}
+
+/// The `device_class` of a record: its legacy class's name where it has one, else its class's.
+fn class_json(class: DeviceClass, legacy: Option<LegacyClass>) -> String {
+    match legacy {
+        Some(legacy) => format!("{legacy:?}"),
+        None => format!("{class:?}"),
+    }
+}
 
 /// The kind named `name` (its policy key, `Fill`, `ScanTile`, ...), ignoring case.
 pub fn kind_named(name: &str) -> Option<KernelKind> {
@@ -354,7 +459,7 @@ pub fn kind_named(name: &str) -> Option<KernelKind> {
         .find(|k| format!("{k:?}").eq_ignore_ascii_case(name))
 }
 
-/// The class named `name` (its policy key), ignoring case.
+/// The class named `name` (its policy key, `Cpu` or `Gpu`), ignoring case.
 pub fn class_named(name: &str) -> Option<DeviceClass> {
     CLASSES
         .into_iter()
@@ -486,11 +591,12 @@ impl NodeLoad {
 }
 
 impl SweepRecord {
+    /// The record as a JSON object, in the field order of the files.
     pub fn to_json(&self) -> Value {
         json!({
             "backend": self.backend,
             "device": self.device,
-            "device_class": format!("{:?}", self.device_class),
+            "device_class": class_json(self.device_class, self.legacy_class),
             "target": self.target,
             "family": format!("{:?}", self.family),
             "scalar": self.scalar.name(),
@@ -512,17 +618,24 @@ impl SweepRecord {
             "commit": self.commit,
             "profile": self.profile,
             "cores": self.cores.to_json(),
+            "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
         })
     }
 
+    /// The record of a JSON object.
+    ///
+    /// # Errors
+    ///
+    /// A message, for a value that is not an object and for a missing or malformed field.
     pub fn from_json(v: &Value) -> Result<SweepRecord, String> {
         let o = Fields::new(v, "sweep record")?;
         Ok(SweepRecord {
             backend: o.string("backend")?,
             device: o.string("device")?,
-            device_class: o.class("device_class")?,
+            device_class: o.class("device_class")?.0,
+            legacy_class: o.class("device_class")?.1,
             target: o.string("target")?,
             family: o.kind("family")?,
             scalar: o.scalar("scalar")?,
@@ -544,6 +657,7 @@ impl SweepRecord {
             commit: o.string("commit")?,
             profile: o.string("profile")?,
             cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
         })
@@ -551,11 +665,12 @@ impl SweepRecord {
 }
 
 impl ThroughputRecord {
+    /// The record as a JSON object, in the field order of the files.
     pub fn to_json(&self) -> Value {
         json!({
             "backend": self.backend,
             "device": self.device,
-            "device_class": format!("{:?}", self.device_class),
+            "device_class": class_json(self.device_class, self.legacy_class),
             "target": self.target,
             "measure": self.measure.name(),
             "mesh": self.mesh,
@@ -571,17 +686,24 @@ impl ThroughputRecord {
             "commit": self.commit,
             "profile": self.profile,
             "cores": self.cores.to_json(),
+            "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
         })
     }
 
+    /// The record of a JSON object.
+    ///
+    /// # Errors
+    ///
+    /// A message, for a value that is not an object and for a missing or malformed field.
     pub fn from_json(v: &Value) -> Result<ThroughputRecord, String> {
         let o = Fields::new(v, "throughput record")?;
         Ok(ThroughputRecord {
             backend: o.string("backend")?,
             device: o.string("device")?,
-            device_class: o.class("device_class")?,
+            device_class: o.class("device_class")?.0,
+            legacy_class: o.class("device_class")?.1,
             target: o.string("target")?,
             measure: o.parsed("measure", Measure::named)?,
             mesh: o.string("mesh")?,
@@ -597,6 +719,7 @@ impl ThroughputRecord {
             commit: o.string("commit")?,
             profile: o.string("profile")?,
             cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
         })
@@ -685,8 +808,13 @@ impl<'a> Fields<'a> {
         parse(&name).ok_or_else(|| format!("field {key}: unknown value '{name}'"))
     }
 
-    fn class(&self, key: &str) -> Result<DeviceClass, String> {
-        self.parsed(key, class_named)
+    /// A record's class and legacy class: a legacy name (M3s and M9h records, or `Gpu`), or
+    /// `Cpu`.
+    fn class(&self, key: &str) -> Result<(DeviceClass, Option<LegacyClass>), String> {
+        self.parsed(key, |name| match LegacyClass::named(name) {
+            Some(legacy) => Some((legacy.class(), Some(legacy))),
+            None => class_named(name).map(|c| (c, None)),
+        })
     }
 
     fn kind(&self, key: &str) -> Result<KernelKind, String> {
@@ -716,21 +844,33 @@ fn as_u32(v: &Value) -> Option<u32> {
 /// [`STRATEGIES`] or `policy`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeRecord {
+    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
+    /// Device name as the client reports it.
     pub device: String,
+    /// Device class the record was measured on (ADR-0058).
     pub device_class: DeviceClass,
+    /// The pre-M10 class the record was filed under: the class an M3s or M9h record names
+    /// (ADR-0060 item 2), or `Gpu` for any Gpu record; `None` for a Cpu record written from M10
+    /// on. Only the M3s and M9h history reads it.
+    pub legacy_class: Option<LegacyClass>,
     /// The machine: `macmini` (the local Mac, ADR-0034) or a target of
     /// scripts/hpc/remote-test.sh.
     pub target: String,
     /// The job (or local run) that wrote the record: the paired policy-against-`direct` runs of
     /// rule 11 share it.
     pub run_id: String,
+    /// The bench family, one of [`DEGREE_FAMILIES`].
     pub family: String,
+    /// The cell type name, as `Hexahedron`.
     pub cell: String,
     /// gdim of the mesh: tdim, or tdim + 1 for `Normals`.
     pub gdim: usize,
+    /// The degree of the coordinate element.
     pub degree: u32,
+    /// `equispaced` or `gll`.
     pub node_family: String,
+    /// The scalar type.
     pub scalar: Scalar,
     /// The requested strategy, or `policy`.
     pub strategy: String,
@@ -738,7 +878,9 @@ pub struct DegreeRecord {
     pub strategy_ran: String,
     /// Quadrature points of the protocol: 10^5, 10^6 or 10^7 (Gauss degree 2p).
     pub nominal_points: usize,
+    /// Cells of the mesh.
     pub cells: usize,
+    /// Quadrature points per cell.
     pub points_per_cell: usize,
     /// Newton iterations of a `PullBack` record (1 or 9; rule 1); `None` elsewhere.
     pub iterations: Option<u32>,
@@ -753,6 +895,7 @@ pub struct DegreeRecord {
     pub tile: usize,
     /// CPU block target in bytes (CPU classes only).
     pub block_bytes: Option<usize>,
+    /// Units that cooperate on one group in the family's plans, the largest if they differ.
     pub units_per_group: u32,
     /// `ok`, `too slow` (over 600 s per timed run on a CPU), `too slow to compile` (over 300 s)
     /// or `failed: <message>`; the two `too slow` statuses end in `(process stopped after S s)`
@@ -767,21 +910,33 @@ pub struct DegreeRecord {
     /// error per quantity (ADR-0042, item 2), the largest over the family's quantities, and the
     /// tolerance it was held to; `None` where no check ran.
     pub check_error: Option<f64>,
+    /// The tolerance `check_error` was held to.
     pub check_tolerance: Option<f64>,
     /// Every timed run, as seconds per call (empty for launch-only and failed records).
     pub times_s: Vec<f64>,
+    /// Median of `times_s`, in seconds per call.
     pub median_s: f64,
+    /// Calls per timed run (ADR-0018).
     pub calls_per_run: usize,
+    /// The untimed calibration call that fixed `calls_per_run`, in seconds.
     pub calibration_s: f64,
     /// First-use compile and load time: the warm-up of a call that launches exactly one new
     /// kernel, minus the median (rule 6).
     pub compile_s: f64,
     /// `disabled` where `CUDA_CACHE_DISABLE=1` was set (CUDA), else the cache state.
     pub kernel_cache: String,
+    /// The commit the benchmark ran from ([`commit`](crate::protocol::commit)).
     pub commit: String,
+    /// `release` or `debug`.
     pub profile: String,
+    /// Core counts of the machine.
     pub cores: Cores,
+    /// `hardware.load_width` of the client in bits (M10 records; ADR-0058 item 1, ADR-0060
+    /// item 2); `None` in earlier records.
+    pub load_width: Option<u32>,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); empty elsewhere.
     pub fallback_reason: Option<String>,
+    /// Locust's node-load snapshots.
     pub node_load: Option<NodeLoad>,
 }
 
@@ -796,16 +951,27 @@ impl DegreeRecord {
 /// (rule 6), joined to the degree records by kernel name.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CudaResources {
+    /// Machine: the local Mac or a target of scripts/hpc/remote-test.sh.
     pub target: String,
+    /// The CUDA kernel name.
     pub kernel: String,
+    /// The bench family, one of [`DEGREE_FAMILIES`].
     pub family: String,
+    /// The cell type name, as `Hexahedron`.
     pub cell: String,
+    /// The degree of the coordinate element.
     pub degree: u32,
+    /// The scalar type.
     pub scalar: Scalar,
+    /// The strategy of the kernel.
     pub strategy: String,
+    /// The vector size of the kernel.
     pub vector_size: usize,
+    /// Registers per thread.
     pub registers: u32,
+    /// Spill stores per thread, in bytes.
     pub spill_bytes: u64,
+    /// Local memory per thread, in bytes.
     pub local_bytes: u64,
     /// Derived from the register count.
     pub max_threads_per_block: u32,
@@ -882,11 +1048,12 @@ pub fn load_high_order_dir(dir: &Path) -> Result<HighOrderData, String> {
 }
 
 impl DegreeRecord {
+    /// The record as a JSON object, in the field order of the files.
     pub fn to_json(&self) -> Value {
         json!({
             "backend": self.backend,
             "device": self.device,
-            "device_class": format!("{:?}", self.device_class),
+            "device_class": class_json(self.device_class, self.legacy_class),
             "target": self.target,
             "run_id": self.run_id,
             "family": self.family,
@@ -921,17 +1088,24 @@ impl DegreeRecord {
             "commit": self.commit,
             "profile": self.profile,
             "cores": self.cores.to_json(),
+            "load_width": self.load_width,
             "fallback_reason": self.fallback_reason,
             "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
         })
     }
 
+    /// The record of a JSON object.
+    ///
+    /// # Errors
+    ///
+    /// A message, for a value that is not an object and for a missing or malformed field.
     pub fn from_json(v: &Value) -> Result<DegreeRecord, String> {
         let o = Fields::new(v, "degree record")?;
         Ok(DegreeRecord {
             backend: o.string("backend")?,
             device: o.string("device")?,
-            device_class: o.class("device_class")?,
+            device_class: o.class("device_class")?.0,
+            legacy_class: o.class("device_class")?.1,
             target: o.string("target")?,
             run_id: o.string("run_id")?,
             family: o.parsed("family", |f| {
@@ -972,6 +1146,7 @@ impl DegreeRecord {
             commit: o.string("commit")?,
             profile: o.string("profile")?,
             cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
             fallback_reason: o.opt_string("fallback_reason")?,
             node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
         })
@@ -979,6 +1154,7 @@ impl DegreeRecord {
 }
 
 impl CudaResources {
+    /// The record as a JSON object, in the field order of the files.
     pub fn to_json(&self) -> Value {
         json!({
             "target": self.target,
@@ -997,6 +1173,11 @@ impl CudaResources {
         })
     }
 
+    /// The record of a JSON object.
+    ///
+    /// # Errors
+    ///
+    /// A message, for a value that is not an object and for a missing or malformed field.
     pub fn from_json(v: &Value) -> Result<CudaResources, String> {
         let o = Fields::new(v, "CUDA resources record")?;
         let u64_of = |key: &str| o.typed(key, "an unsigned integer", Value::as_u64);
@@ -1038,6 +1219,186 @@ fn strategy_named(name: &str) -> Option<String> {
     (STRATEGIES.contains(&name) || name == "policy").then(|| name.to_owned())
 }
 
+// ---------------------------------------------------------------------------------------------
+// M10 (docs/plans/M10.md; ADR-0057 to ADR-0060).
+
+/// The parts of the host-staged halo exchange that `halo_exchange` times (ADR-0059): the pack
+/// kernel, the device-to-host copy, the host neighbourhood all-to-all-v, the host-to-device copy,
+/// the unpack kernel, and the whole `Scatterer::forward` and `Scatterer::reverse` (`Add`).
+pub const HALO_PARTS: [&str; 7] = ["pack", "d2h", "mpi", "h2d", "unpack", "forward", "reverse"];
+
+/// One timed part of the host-staged halo exchange (`halo_exchange`, M10 T6; ADR-0059).
+///
+/// Each rank owns `owned_nodes` nodes of `block` values and ghosts `halo_nodes` nodes of another
+/// rank. Each timed run is followed by a device sync, and its time is the largest over the
+/// ranks; `times_s` holds the timed runs after `warmups` untimed ones.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HaloRecord {
+    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
+    pub backend: String,
+    /// Device name as the client reports it.
+    pub device: String,
+    /// Device class the record was measured on (ADR-0058).
+    pub device_class: DeviceClass,
+    /// Machine: the local Mac or a target of scripts/hpc/remote-test.sh.
+    pub target: String,
+    /// The scalar type of the values.
+    pub scalar: Scalar,
+    /// MPI ranks of the run.
+    pub ranks: usize,
+    /// Nodes each rank owns.
+    pub owned_nodes: usize,
+    /// Nodes each rank ghosts from another rank.
+    pub halo_nodes: usize,
+    /// Values per node.
+    pub block: usize,
+    /// One of [`HALO_PARTS`].
+    pub part: String,
+    /// Untimed runs before the timed ones.
+    pub warmups: usize,
+    /// Every timed run, in seconds.
+    pub times_s: Vec<f64>,
+    /// Median of `times_s`, in seconds.
+    pub median_s: f64,
+    /// The commit the benchmark ran from ([`commit`](crate::protocol::commit)).
+    pub commit: String,
+    /// `release` or `debug`.
+    pub profile: String,
+    /// Core counts of the machine.
+    pub cores: Cores,
+    /// `hardware.load_width` of the client in bits.
+    pub load_width: Option<u32>,
+    /// Why a fallback target ran in place of the usual one (ADR-0014, ADR-0016); empty elsewhere.
+    pub fallback_reason: Option<String>,
+    /// Locust's node-load snapshots.
+    pub node_load: Option<NodeLoad>,
+}
+
+impl HaloRecord {
+    /// The record as a JSON object, in the field order of the files.
+    pub fn to_json(&self) -> Value {
+        json!({
+            "backend": self.backend,
+            "device": self.device,
+            "device_class": format!("{:?}", self.device_class),
+            "target": self.target,
+            "scalar": self.scalar.name(),
+            "ranks": self.ranks,
+            "owned_nodes": self.owned_nodes,
+            "halo_nodes": self.halo_nodes,
+            "block": self.block,
+            "part": self.part,
+            "warmups": self.warmups,
+            "times_s": self.times_s,
+            "median_s": self.median_s,
+            "commit": self.commit,
+            "profile": self.profile,
+            "cores": self.cores.to_json(),
+            "load_width": self.load_width,
+            "fallback_reason": self.fallback_reason,
+            "node_load": self.node_load.as_ref().map(NodeLoad::to_json),
+        })
+    }
+
+    /// The record of a JSON object.
+    ///
+    /// # Errors
+    ///
+    /// A message, for a value that is not an object and for a missing or malformed field.
+    pub fn from_json(v: &Value) -> Result<HaloRecord, String> {
+        let o = Fields::new(v, "halo record")?;
+        Ok(HaloRecord {
+            backend: o.string("backend")?,
+            device: o.string("device")?,
+            device_class: o.parsed("device_class", class_named)?,
+            target: o.string("target")?,
+            scalar: o.scalar("scalar")?,
+            ranks: o.usize("ranks")?,
+            owned_nodes: o.usize("owned_nodes")?,
+            halo_nodes: o.usize("halo_nodes")?,
+            block: o.usize("block")?,
+            part: o.parsed("part", |p| HALO_PARTS.contains(&p).then(|| p.to_owned()))?,
+            warmups: o.usize("warmups")?,
+            times_s: o.times("times_s")?,
+            median_s: o.f64("median_s")?,
+            commit: o.string("commit")?,
+            profile: o.string("profile")?,
+            cores: Cores::from_json(o.get("cores")?)?,
+            load_width: o.opt_u32("load_width")?,
+            fallback_reason: o.opt_string("fallback_reason")?,
+            node_load: o.opt("node_load").map(NodeLoad::from_json).transpose()?,
+        })
+    }
+}
+
+/// Every M10 record of a directory.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct M10Data {
+    /// `m10-vector-*.json`: the vector candidates (ADR-0060 item 2).
+    pub vector: Vec<SweepRecord>,
+    /// `m10-degree-*.json`: the degree check at p = 1, 4 and 8 and its re-measurements
+    /// (ADR-0060 item 3), at each entry's rule sizes
+    /// ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063).
+    pub degree: Vec<DegreeRecord>,
+    /// `m10-throughput-*.json`.
+    pub throughput: Vec<ThroughputRecord>,
+    /// `m10-halo-*.json`.
+    pub halo: Vec<HaloRecord>,
+}
+
+/// The records of every `m10-*.json` file in `dir`; degree records only at their entry's rule
+/// sizes ([`degree_rule_sizes`](crate::protocol::degree_rule_sizes), ADR-0063).
+///
+/// # Errors
+///
+/// A message naming the file, for unreadable files, malformed records and `m10-` files of
+/// another kind.
+pub fn load_m10_dir(dir: &Path) -> Result<M10Data, String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with("m10-") && name.ends_with(".json"))
+        .collect();
+    names.sort();
+    let mut data = M10Data::default();
+    for name in names {
+        let path = dir.join(&name);
+        if name.starts_with("m10-vector-") {
+            data.vector
+                .extend(read_records(&path, SweepRecord::from_json)?);
+        } else if name.starts_with("m10-degree-") {
+            // Records outside their entry's rule sizes (ADR-0063: T9's FacetNormals records on
+            // intervals in f32 at sizes f32 cannot resolve) stay in the files as history.
+            data.degree.extend(
+                read_records(&path, DegreeRecord::from_json)?
+                    .into_iter()
+                    .filter(|r| {
+                        crate::protocol::degree_rule_sizes(
+                            &r.family,
+                            &r.cell,
+                            r.scalar.bytes(),
+                            r.degree,
+                        )
+                        .contains(&r.nominal_points)
+                    }),
+            );
+        } else if name.starts_with("m10-throughput-") {
+            data.throughput
+                .extend(read_records(&path, ThroughputRecord::from_json)?);
+        } else if name.starts_with("m10-halo-") {
+            data.halo
+                .extend(read_records(&path, HaloRecord::from_json)?);
+        } else {
+            return Err(format!(
+                "{}: not an m10-vector-, m10-degree-, m10-throughput- or m10-halo- file",
+                path.display()
+            ));
+        }
+    }
+    Ok(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1066,7 +1427,8 @@ mod tests {
         SweepRecord {
             backend: "cpu".to_owned(),
             device: "Apple M3 Max".to_owned(),
-            device_class: DeviceClass::CpuSimd128,
+            device_class: DeviceClass::Cpu,
+            legacy_class: Some(LegacyClass::CpuSimd128),
             target: "m3max".to_owned(),
             family: KernelKind::ScanTile,
             scalar: Scalar::U32,
@@ -1088,6 +1450,7 @@ mod tests {
             commit: "abc".to_owned(),
             profile: "release".to_owned(),
             cores: cores(),
+            load_width: None,
             fallback_reason: None,
             node_load: Some(NodeLoad {
                 before: "idle".to_owned(),
@@ -1100,7 +1463,8 @@ mod tests {
         ThroughputRecord {
             backend: "cpu".to_owned(),
             device: "Xeon".to_owned(),
-            device_class: DeviceClass::CpuSimd512,
+            device_class: DeviceClass::Cpu,
+            legacy_class: Some(LegacyClass::CpuSimd512),
             target: "myriad-cpu".to_owned(),
             measure: Measure::FactorsPerSecond,
             mesh: "P2 tetrahedron box".to_owned(),
@@ -1116,6 +1480,7 @@ mod tests {
             commit: "abc".to_owned(),
             profile: "release".to_owned(),
             cores: cores(),
+            load_width: None,
             fallback_reason: Some("Kathleen drained".to_owned()),
             node_load: None,
         }
@@ -1136,6 +1501,30 @@ mod tests {
         assert_eq!(SweepRecord::from_json(&r.to_json()).unwrap(), r);
         let t = throughput();
         assert_eq!(ThroughputRecord::from_json(&t.to_json()).unwrap(), t);
+        // An M10 Cpu record has no legacy class, and a Gpu one is Gpu under both (ADR-0058).
+        for class in CLASSES {
+            let r = SweepRecord {
+                device_class: class,
+                legacy_class: LegacyClass::of_new(class),
+                ..sweep()
+            };
+            assert_eq!(r.to_json()["device_class"], format!("{class:?}"));
+            assert_eq!(SweepRecord::from_json(&r.to_json()).unwrap(), r);
+        }
+    }
+
+    #[test]
+    fn legacy_classes_map_to_cpu_and_gpu() {
+        for legacy in LegacyClass::ALL {
+            assert_eq!(LegacyClass::named(&format!("{legacy:?}")), Some(legacy));
+            assert_eq!(legacy.is_cpu(), legacy.class() == DeviceClass::Cpu);
+        }
+        assert_eq!(LegacyClass::named("Cpu"), None);
+        assert_eq!(class_named("cpu"), Some(DeviceClass::Cpu));
+        assert_eq!(class_named("CpuSimd128"), None);
+        let mut v = sweep().to_json();
+        v["device_class"] = json!("Simd");
+        assert!(SweepRecord::from_json(&v).is_err());
     }
 
     /// Records written before ADR-0034 have no `levels`; they still load, with none.
@@ -1218,6 +1607,7 @@ mod tests {
             backend: "cuda".to_owned(),
             device: "NVIDIA H100".to_owned(),
             device_class: DeviceClass::Gpu,
+            legacy_class: Some(LegacyClass::Gpu),
             target: "locust".to_owned(),
             run_id: "1234".to_owned(),
             family: "PullBack".to_owned(),
@@ -1252,6 +1642,7 @@ mod tests {
             commit: "abc".to_owned(),
             profile: "release".to_owned(),
             cores: cores(),
+            load_width: None,
             fallback_reason: None,
             node_load: Some(NodeLoad {
                 before: "idle".to_owned(),
@@ -1400,6 +1791,98 @@ mod tests {
         assert!(
             error.contains("m9h-degree-bad.json: record 0: no field"),
             "{error}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn halo() -> HaloRecord {
+        HaloRecord {
+            backend: "cuda".to_owned(),
+            device: "H100".to_owned(),
+            device_class: DeviceClass::Gpu,
+            target: "locust".to_owned(),
+            scalar: Scalar::F64,
+            ranks: 2,
+            owned_nodes: 1_000_000,
+            halo_nodes: 10_000,
+            block: 3,
+            part: "reverse".to_owned(),
+            warmups: 5,
+            times_s: vec![2e-4, 1e-4, 3e-4],
+            median_s: 2e-4,
+            commit: "abc".to_owned(),
+            profile: "release".to_owned(),
+            cores: cores(),
+            load_width: Some(128),
+            fallback_reason: None,
+            node_load: None,
+        }
+    }
+
+    /// The M10 loader reads the four kinds of `m10-` file, M10 records keep `Cpu` and
+    /// `load_width`, and another `m10-` file is an error.
+    #[test]
+    fn load_m10_dir_reads_every_m10_kind() {
+        let dir = std::env::temp_dir().join(format!("gridcl-bench-m10-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let vector = SweepRecord {
+            device_class: DeviceClass::Cpu,
+            legacy_class: None,
+            load_width: Some(128),
+            ..sweep()
+        };
+        let degree = DegreeRecord {
+            load_width: Some(512),
+            ..degree()
+        };
+        let throughput = ThroughputRecord {
+            device_class: DeviceClass::Cpu,
+            legacy_class: None,
+            load_width: Some(256),
+            ..throughput()
+        };
+        assert_eq!(vector.to_json()["device_class"], "Cpu");
+        assert_eq!(HaloRecord::from_json(&halo().to_json()).unwrap(), halo());
+        write_records(
+            &dir.join("m10-vector-cpu-macmini.json"),
+            &[vector.to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m10-degree-cpu-macmini.json"),
+            &[degree.to_json()],
+        )
+        .unwrap();
+        write_records(
+            &dir.join("m10-throughput-cpu-macmini.json"),
+            &[throughput.to_json()],
+        )
+        .unwrap();
+        write_records(&dir.join("m10-halo-cuda-locust.json"), &[halo().to_json()]).unwrap();
+        // Records of other milestones are not read.
+        write_records(&dir.join("m3s-sweep-cpu-x.json"), &[sweep().to_json()]).unwrap();
+        let data = load_m10_dir(&dir).unwrap();
+        assert_eq!(data.vector, vec![vector]);
+        assert_eq!(data.degree, vec![degree]);
+        assert_eq!(data.throughput, vec![throughput]);
+        assert_eq!(data.halo, vec![halo()]);
+        std::fs::write(dir.join("m10-other.json"), "[]").unwrap();
+        let error = load_m10_dir(&dir).unwrap_err();
+        assert!(
+            error.contains("m10-other.json: not an m10-vector-"),
+            "{error}"
+        );
+        std::fs::remove_file(dir.join("m10-other.json")).unwrap();
+        let bad = HaloRecord {
+            part: "pack".to_owned(),
+            ..halo()
+        };
+        let mut json = bad.to_json();
+        json["part"] = serde_json::json!("shuffle");
+        assert!(
+            HaloRecord::from_json(&json)
+                .unwrap_err()
+                .contains("unknown value 'shuffle'")
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

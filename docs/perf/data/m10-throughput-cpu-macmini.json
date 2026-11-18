@@ -1,0 +1,802 @@
+[
+  {
+    "backend": "cpu",
+    "calibration_s": 0.181730833,
+    "calls_per_run": 1,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.177174667,
+    "mesh": "P1 tetrahedron box",
+    "node_load": null,
+    "per_s": 18098891.079050258,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.177613708,
+      0.177174667,
+      0.183370792,
+      0.168119416,
+      0.174823709
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.465887,
+    "calls_per_run": 1,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.448486042,
+    "mesh": "P1 hexahedron box",
+    "node_load": null,
+    "per_s": 13579686.83449016,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.448486042,
+      0.447404209,
+      0.464890375,
+      0.462357583,
+      0.439691583
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.001469083,
+    "calls_per_run": 14,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.002659970357142857,
+    "mesh": "P1 tetrahedron box",
+    "node_load": null,
+    "per_s": 396130730.24310017,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.0027089077142857143,
+      0.002659970357142857,
+      0.002399660857142857,
+      0.002908380928571429,
+      0.0022847796428571428
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.00207025,
+    "calls_per_run": 10,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0032078500000000004,
+    "mesh": "P1 hexahedron box",
+    "node_load": null,
+    "per_s": 311735274.40497524,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.0032836665,
+      0.0032078500000000004,
+      0.0031619583,
+      0.0032566291999999997,
+      0.0019040376000000001
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.00846,
+    "calls_per_run": 3,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.011780916666666667,
+    "mesh": "P4 tetrahedron box",
+    "node_load": null,
+    "per_s": 84734492.92995027,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.0062973610000000005,
+      0.0061758329999999995,
+      0.012895833333333334,
+      0.011780916666666667,
+      0.014633833333333334
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.011192584,
+    "calls_per_run": 2,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.009588979,
+    "mesh": "P4 hexahedron box",
+    "node_load": null,
+    "per_s": 104286389.61457732,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.009851146,
+      0.0062218125,
+      0.0128444585,
+      0.0050989375,
+      0.009588979
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.124090583,
+    "calls_per_run": 1,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.122301333,
+    "mesh": "P8 tetrahedron box",
+    "node_load": null,
+    "per_s": 7725050.715514278,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.135387542,
+      0.122301333,
+      0.116972375,
+      0.125212583,
+      0.116545
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.027196084,
+    "calls_per_run": 1,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.037158542,
+    "mesh": "P8 hexahedron box",
+    "node_load": null,
+    "per_s": 26112407.74732227,
+    "profile": "release",
+    "scalar": "f32",
+    "target": "macmini",
+    "times_s": [
+      0.037158542,
+      0.038277292,
+      0.0335,
+      0.026427708,
+      0.037482833
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.175865458,
+    "calls_per_run": 1,
+    "cells": 998250,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 3206665,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.179373625,
+    "mesh": "P1 tetrahedron box",
+    "node_load": null,
+    "per_s": 17877015.085133057,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.175933292,
+      0.185162958,
+      0.180229958,
+      0.179373625,
+      0.173333125
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.45223825,
+    "calls_per_run": 1,
+    "cells": 1000000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 6090300,
+    "load_width": 128,
+    "measure": "entities_per_s",
+    "median_s": 0.452447375,
+    "mesh": "P1 hexahedron box",
+    "node_load": null,
+    "per_s": 13460791.987134416,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.484870125,
+      0.452447375,
+      0.454474417,
+      0.447988083,
+      0.447180542
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.003058625,
+    "calls_per_run": 7,
+    "cells": 131712,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1053696,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0061939884285714284,
+    "mesh": "P1 tetrahedron box",
+    "node_load": null,
+    "per_s": 170115913.54280633,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.0061939884285714284,
+      0.007070220142857143,
+      0.004970833571428571,
+      0.004672202285714286,
+      0.006700642857142857
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.013213167,
+    "calls_per_run": 2,
+    "cells": 125000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.007054875,
+    "mesh": "P1 hexahedron box",
+    "node_load": null,
+    "per_s": 141745955.81069827,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.003800875,
+      0.0133590625,
+      0.007054875,
+      0.0087321045,
+      0.006774062
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.018181084,
+    "calls_per_run": 2,
+    "cells": 7986,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 998250,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0122399375,
+    "mesh": "P4 tetrahedron box",
+    "node_load": null,
+    "per_s": 81556788.99504185,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.0122399375,
+      0.016088125,
+      0.010186333,
+      0.014524313,
+      0.010633583
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.017534958,
+    "calls_per_run": 2,
+    "cells": 8000,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 1000000,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.0121116455,
+    "mesh": "P4 hexahedron box",
+    "node_load": null,
+    "per_s": 82565164.246262,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.0109466665,
+      0.0154731875,
+      0.011441375,
+      0.0157322085,
+      0.0121116455
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.151146625,
+    "calls_per_run": 1,
+    "cells": 1296,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 944784,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.185066834,
+    "mesh": "P8 tetrahedron box",
+    "node_load": null,
+    "per_s": 5105096.248634155,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.220145708,
+      0.185066834,
+      0.183872416,
+      0.17032175,
+      0.197478375
+    ],
+    "vector_size_override": "policy"
+  },
+  {
+    "backend": "cpu",
+    "calibration_s": 0.050303125,
+    "calls_per_run": 1,
+    "cells": 1331,
+    "commit": "ff43a31c163722d466a67769f6f5b5ee560abc08",
+    "cores": {
+      "efficiency": 6,
+      "levels": [
+        {
+          "logical": 2,
+          "name": "Super",
+          "physical": 2
+        },
+        {
+          "logical": 4,
+          "name": "Performance",
+          "physical": 4
+        },
+        {
+          "logical": 6,
+          "name": "Efficiency",
+          "physical": 6
+        }
+      ],
+      "performance": 6,
+      "threads": 12
+    },
+    "device": "Apple M6",
+    "device_class": "Cpu",
+    "fallback_reason": null,
+    "items": 970299,
+    "load_width": 128,
+    "measure": "factors_per_s",
+    "median_s": 0.057378959,
+    "mesh": "P8 hexahedron box",
+    "node_load": null,
+    "per_s": 16910362.559906323,
+    "profile": "release",
+    "scalar": "f64",
+    "target": "macmini",
+    "times_s": [
+      0.065629708,
+      0.059653167,
+      0.057378959,
+      0.056581875,
+      0.049775167
+    ],
+    "vector_size_override": "policy"
+  }
+]

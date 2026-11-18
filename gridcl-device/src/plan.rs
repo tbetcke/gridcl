@@ -39,7 +39,9 @@ const MAX_KERNEL_BUFFERS: u32 = 6;
 /// ```
 #[derive(Clone, Debug)]
 pub struct LaunchPlan {
+    /// Cubes in the launch.
     pub cube_count: CubeCount,
+    /// Units per cube.
     pub cube_dim: CubeDim,
     /// Lanes per vector; 1 is a scalar launch.
     pub vector_size: usize,
@@ -621,7 +623,7 @@ mod tests {
 
     #[test]
     fn cpu_blocks_are_whole_lines_of_the_policy_block() {
-        let policy = VectorPolicy::for_class(DeviceClass::CpuSimd128);
+        let policy = VectorPolicy::for_class(DeviceClass::Cpu);
         let blocks = KernelKind::ALL
             .into_iter()
             .flat_map(|kind| [4, 8].map(|bytes| policy.cpu_block_bytes(kind, bytes).unwrap()));
@@ -793,7 +795,7 @@ mod tests {
     #[test]
     fn cpu_units_override_takes_precedence_over_the_policy() {
         let props = cpu16();
-        let policy = VectorPolicy::for_class(DeviceClass::CpuSimd128);
+        let policy = VectorPolicy::for_class(DeviceClass::Cpu);
         testing::with_performance_cores(Some(12), || {
             for kind in KernelKind::ALL {
                 for bytes in [4usize, 8] {
