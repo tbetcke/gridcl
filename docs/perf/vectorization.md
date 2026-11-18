@@ -597,3 +597,205 @@ Per entry of the four sets and platform of its class: the platform's best config
 | Scalar | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu |
 
 <!-- END GENERATED M10 -->
+
+## M10c: the Cpu set from interleaved grid runs (ADR-0065)
+
+M10's `[Cpu]` set came from candidates timed one after the other, and 13 of its 52 entries fell
+back. On the Grace CPU a candidate's time depended on when it ran, and the candidate sets missed
+configurations that suit all three CPUs (ADR-0065, Problem). M10c re-derives `[Cpu]` from records
+timed in interleaved rounds over a grid, and applies M10c's fallback to all four sets. M10's
+section above stays as M10's rule wrote it; M10's policy is kept in
+`gridcl-bench/history/vector-policy-m10.toml`.
+
+- **Grid (ADR-0065 item 2):** every `[Cpu]` entry with a type (13 four-byte, 8 eight-byte) at
+  vector sizes 1, 4, 8 and 16, CPU blocks of 4, 16 and 64 KiB, and both unit settings where the
+  device reports performance cores (the Mac mini), else all hardware threads; GeomFactors at tile
+  4 up to size 4 and tile 16 above; Scalar at size 1. That is 24 configurations per entry on the
+  Mac mini and 12 elsewhere (Scalar 6 and 3).
+- **Protocol (ADR-0065 item 1):** `vector_sweep --grid` warms up, checks and calibrates every
+  (member type, size, configuration) of an entry (at least 20 ms per batched run, ADR-0018). It
+  then times five rounds, each with one batched run of every slot in an order shuffled from the
+  process's seed. Each platform ran two processes one after the other, seeds 1 and 2
+  (`scripts/bench/cpu-vector-grid.sh`). A configuration's time is the geometric mean of the two
+  processes' medians.
+- **Platforms and conditions (M10c T5):** the Mac mini's CPU runtime, on mains power with other
+  applications closed. Its idle 1-minute load average is 6–8 (Microsoft Defender's daemons), and
+  each process started below 9. GeomFactors at 10^7 was left out on the Mac (its working set does
+  not fit 24 GB; M10c T4), so GeomFactors votes at 10^6 only there. Locust's Grace CPU, idle before
+  and after; the first job's processes disagreed by up to 7.8× on whole entries, so it was
+  repeated and only the repeat is committed. One socket of a whole Kathleen node (20 threads,
+  `numactl --physcpubind=0-19 --membind=0`, ADR-0020). Details are in docs/plans/M10c.md
+  (Deviations log, T4 and T5).
+- **Rule (ADR-0058 item 4 with ADR-0065 items 3 and 4):** as M10's, with two changes. If no
+  admitted configuration meets the bound r ≤ 1.25, the bound and the choice apply to all
+  configurations. Only if none meets it is the admitted one with the smallest worst case taken,
+  marked with its worst case and cause. A member without a time at a size (GeomFactors f32 and
+  f64 at 10^7 on the Mac) is left out of that size's admission mean, r and the bound. `[Gpu]`
+  entries are still decided from M10's records, but under the new fallback: Reduce 8B and Pack 8B
+  move from n = 1 to n = 4.
+
+### Observations
+
+- **Two fallbacks instead of 13.** Only PermutationInfo 4B (worst r 1.25 on Grace) and
+  GeomFactors 4B (worst r 1.31 on Kathleen) miss the bound. Both are conflicts between the
+  platforms' bests. On GeomFactors 4B the Mac and Grace prefer n = 4 at tile 4 and Kathleen n = 16
+  at tile 16. With its 10^7 cell missing, the Mac votes at 10^6 only.
+- **ScanTile 4B.** Under M10 it fell back to n = 1 with r = 2.28 on the Mac. Under M10c it takes
+  n = 8 on the performance cores, worst r 1.07, at 1.46× / 1.35× over the baseline. Two things
+  changed. M10's Mac candidates had n = 8 only on all threads, where the scan runs 4.4–5.6× slower
+  than on the performance cores; the grid adds n = 8 on the performance cores. And Grace's n = 16
+  at 10^6, 4.8× slower than n = 1 in M10's sequential run, is within 1.2× of it in the
+  interleaved rounds.
+- **The units on macOS.** On the Mac mini (2 Super, 4 Performance and 6 Efficiency cores; 12
+  threads) the kernels with `sync_cube` run much faster on the performance cores than on all
+  threads, at their best configuration of each setting. These are Reduce (3.7–10×), ScanTile
+  (2.1–4.5×) and SortDigits (1.25–1.9×). The CPU runtime cannot pin threads on macOS
+  (docs/cubecl-upstream.md, C25), so a cube's units also land on the efficiency cores, and each
+  barrier waits for the slowest of them. Kernels without barriers that do more work per item
+  prefer all threads: PullBack by 1.3–1.5×, GeomFactors by 1.3–1.4× (10^6) and Pack by 1.4× at
+  10^7. The policy follows this split. Fill 4B, Reduce, ScanTile, PermutationInfo 4B and Gather 8B
+  take the performance cores, and SortDigits, TopologyKeys and Scalar 4B keep their baseline's.
+  The setting has no effect on Grace and Kathleen, which report no performance levels.
+- **Noise between processes.** The median ratio of the two processes' medians is 1.02 on the
+  Mac, 1.03 on Kathleen and 1.06 on Grace; the 90th percentiles are 1.13, 1.21 and 1.40. Grace's
+  largest ratios are systematic between its two processes, not scattered: PullBack f64 at n = 8
+  (3.5–9.1×) and GeomFactors f64 at 10^6 (about 3×). The other platforms show nothing like them.
+  The geometric mean of the two processes weighs both runs equally. Neither PullBack 8B nor
+  GeomFactors 8B falls back.
+
+<!-- BEGIN GENERATED M10c; do not edit -->
+
+Written by `policy_report` with the generic rule and M10c's fallback (ADR-0058 item 4, ADR-0065): `[Cpu]` entries from the `m10c-vector-cpu-*.json` grid records (a configuration's time the geometric mean of the two processes' medians), `[Gpu]` entries from the `m10-vector-*.json` records.
+
+Records:
+
+- kathleen cpu: Intel(R) Xeon(R) Gold 6248 CPU @ 2.50GHz (commit c1747d9; seeds 1 and 2, 1080 records)
+- locust cpu: Neoverse-V2 (commit c1747d9; seeds 1 and 2, 1080 records)
+- locust cuda: NVIDIA GH200 480GB (commit a01b959)
+- macmini cpu: Apple M6 (commit c1747d9; seeds 1 and 2, 2064 records)
+- macmini metal: Apple M6 (commit a01b959)
+
+### Noise between processes
+
+Per Cpu platform, over every launch both processes timed (member type, size and configuration): the ratio of the larger to the smaller of the two medians; its median, 90th percentile (nearest rank) and maximum.
+
+| target backend | launches | median | p90 | max |
+| --- | ---: | ---: | ---: | ---: |
+| kathleen cpu | 540 | 1.029 | 1.208 | 2.140 |
+| locust cpu | 540 | 1.062 | 1.399 | 9.070 |
+| macmini cpu | 1032 | 1.018 | 1.129 | 2.556 |
+
+### Choices
+
+Per entry of the four sets and platform of its class: the platform's best configuration (smallest geometric mean of r over its types and sizes), the generic choice, the platform's r for that choice (largest over its types and the sizes 10^6 and 10^7 it measured), the reason, and for a fallback its cause. Admission at 1.1× over the baseline, bound r ≤ 1.25, simplest within 1.03×; if no admitted configuration meets the bound, the bound and the choice apply to all configurations (3 entries). 2 of 52 entries need the fallback (smallest worst case); 12 take the default (no data, or not used).
+
+| kind | class | bytes | target backend | best | choice | r | reason | cause |
+| --- | --- | ---: | --- | --- | --- | ---: | --- | --- |
+| Fill | Cpu | 4 | macmini cpu | n = 16, 64 KiB, performance | n = 8, 64 KiB, performance | 1.13 | 1.81x / 3.78x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.043; worst r 1.13) | – |
+| Fill | Cpu | 4 | locust cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, performance | 1.06 | 1.81x / 3.78x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.043; worst r 1.13) | – |
+| Fill | Cpu | 4 | kathleen cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, performance | 1.09 | 1.81x / 3.78x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.043; worst r 1.13) | – |
+| Fill | Cpu | 8 | macmini cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, all | 1.13 | 1.25x / 1.83x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.029; worst r 1.13) | – |
+| Fill | Cpu | 8 | locust cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, all | 1.05 | 1.25x / 1.83x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.029; worst r 1.13) | – |
+| Fill | Cpu | 8 | kathleen cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, all | 1.00 | 1.25x / 1.83x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.029; worst r 1.13) | – |
+| Copy | Cpu | 4 | macmini cpu | n = 16, 64 KiB, all | n = 16, 64 KiB, all | 1.11 | 1.72x / 1.98x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.018; worst r 1.11) | – |
+| Copy | Cpu | 4 | locust cpu | n = 16, 64 KiB, all | n = 16, 64 KiB, all | 1.00 | 1.72x / 1.98x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.018; worst r 1.11) | – |
+| Copy | Cpu | 4 | kathleen cpu | n = 16, 64 KiB, all | n = 16, 64 KiB, all | 1.00 | 1.72x / 1.98x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.018; worst r 1.11) | – |
+| Copy | Cpu | 8 | – | – | n = 1, 16 KiB, all | – | not used: no 8-byte type on Cpu | – |
+| Reduce | Cpu | 4 | macmini cpu | n = 16, 64 KiB, performance | n = 8, 64 KiB, performance | 1.18 | 1.47x / 1.54x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.049; worst r 1.24) | – |
+| Reduce | Cpu | 4 | locust cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, performance | 1.24 | 1.47x / 1.54x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.049; worst r 1.24) | – |
+| Reduce | Cpu | 4 | kathleen cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, performance | 1.07 | 1.47x / 1.54x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.049; worst r 1.24) | – |
+| Reduce | Cpu | 8 | macmini cpu | n = 8, 64 KiB, performance | n = 8, 64 KiB, performance | 1.01 | 1.39x / 1.37x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.01) | – |
+| Reduce | Cpu | 8 | locust cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, performance | 1.00 | 1.39x / 1.37x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.01) | – |
+| Reduce | Cpu | 8 | kathleen cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, performance | 1.01 | 1.39x / 1.37x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.003; worst r 1.01) | – |
+| ScanTile | Cpu | 4 | macmini cpu | n = 16, 64 KiB, performance | n = 8, 64 KiB, performance | 1.07 | 1.46x / 1.35x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.037; worst r 1.07) | – |
+| ScanTile | Cpu | 4 | locust cpu | n = 4, 64 KiB, all | n = 8, 64 KiB, performance | 1.05 | 1.46x / 1.35x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.037; worst r 1.07) | – |
+| ScanTile | Cpu | 4 | kathleen cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, performance | 1.07 | 1.46x / 1.35x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.037; worst r 1.07) | – |
+| ScanTile | Cpu | 8 | – | – | n = 1, 16 KiB, all | – | not used: no 8-byte type on Cpu | – |
+| SortDigits | Cpu | 4 | macmini cpu | n = 16, 64 KiB, performance | n = 1, 64 KiB, performance | 1.02 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| SortDigits | Cpu | 4 | locust cpu | n = 16, 64 KiB, all | n = 1, 64 KiB, performance | 1.10 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| SortDigits | Cpu | 4 | kathleen cpu | n = 8, 64 KiB, all | n = 1, 64 KiB, performance | 1.01 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| SortDigits | Cpu | 8 | – | – | n = 1, 16 KiB, all | – | not used: no 8-byte type on Cpu | – |
+| Gather | Cpu | 4 | macmini cpu | n = 16, 64 KiB, all | n = 8, 16 KiB, all | 1.12 | 1.11x / 1.14x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.065; worst r 1.23) | – |
+| Gather | Cpu | 4 | locust cpu | n = 16, 4 KiB, all | n = 8, 16 KiB, all | 1.23 | 1.11x / 1.14x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.065; worst r 1.23) | – |
+| Gather | Cpu | 4 | kathleen cpu | n = 8, 64 KiB, all | n = 8, 16 KiB, all | 1.14 | 1.11x / 1.14x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.065; worst r 1.23) | – |
+| Gather | Cpu | 8 | macmini cpu | n = 8, 64 KiB, performance | n = 4, 16 KiB, performance | 1.15 | 1.28x / 1.10x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.073; worst r 1.15) | – |
+| Gather | Cpu | 8 | locust cpu | n = 16, 16 KiB, all | n = 4, 16 KiB, performance | 1.07 | 1.28x / 1.10x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.073; worst r 1.15) | – |
+| Gather | Cpu | 8 | kathleen cpu | n = 8, 16 KiB, all | n = 4, 16 KiB, performance | 1.13 | 1.28x / 1.10x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.073; worst r 1.15) | – |
+| Pack | Cpu | 4 | macmini cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, all | 1.07 | 1.15x / 1.25x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.071; worst r 1.14) | – |
+| Pack | Cpu | 4 | locust cpu | n = 16, 64 KiB, all | n = 8, 64 KiB, all | 1.14 | 1.15x / 1.25x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.071; worst r 1.14) | – |
+| Pack | Cpu | 4 | kathleen cpu | n = 16, 16 KiB, all | n = 8, 64 KiB, all | 1.14 | 1.15x / 1.25x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.071; worst r 1.14) | – |
+| Pack | Cpu | 8 | macmini cpu | n = 8, 64 KiB, all | n = 16, 64 KiB, all | 1.05 | 1.11x / 1.37x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.038; worst r 1.11) | – |
+| Pack | Cpu | 8 | locust cpu | n = 16, 64 KiB, all | n = 16, 64 KiB, all | 1.00 | 1.11x / 1.37x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.038; worst r 1.11) | – |
+| Pack | Cpu | 8 | kathleen cpu | n = 16, 4 KiB, all | n = 16, 64 KiB, all | 1.11 | 1.11x / 1.37x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.038; worst r 1.11) | – |
+| TopologyKeys | Cpu | 4 | macmini cpu | n = 1, 64 KiB, performance | n = 1, 64 KiB, performance | 1.18 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| TopologyKeys | Cpu | 4 | locust cpu | n = 1, 16 KiB, all | n = 1, 64 KiB, performance | 1.10 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| TopologyKeys | Cpu | 4 | kathleen cpu | n = 1, 64 KiB, all | n = 1, 64 KiB, performance | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| TopologyKeys | Cpu | 8 | – | – | n = 1, 16 KiB, all | – | not used: no 8-byte type on Cpu | – |
+| PermutationInfo | Cpu | 4 | macmini cpu | n = 4, 64 KiB, performance | n = 16, 16 KiB, performance | 1.06 | worst case r = 1.25: no admitted candidate within 1.25 on every platform and size; the smallest worst case | largest r 1.25 on locust cpu (its best: n = 4, 64 KiB, all); the platforms' bests conflict (macmini cpu best n = 4, 64 KiB, performance; locust cpu best n = 4, 64 KiB, all; kathleen cpu best n = 16, 16 KiB, all), and no candidate is within 1.25 on all of them |
+| PermutationInfo | Cpu | 4 | locust cpu | n = 4, 64 KiB, all | n = 16, 16 KiB, performance | 1.25 | worst case r = 1.25: no admitted candidate within 1.25 on every platform and size; the smallest worst case | largest r 1.25 on locust cpu (its best: n = 4, 64 KiB, all); the platforms' bests conflict (macmini cpu best n = 4, 64 KiB, performance; locust cpu best n = 4, 64 KiB, all; kathleen cpu best n = 16, 16 KiB, all), and no candidate is within 1.25 on all of them |
+| PermutationInfo | Cpu | 4 | kathleen cpu | n = 16, 16 KiB, all | n = 16, 16 KiB, performance | 1.00 | worst case r = 1.25: no admitted candidate within 1.25 on every platform and size; the smallest worst case | largest r 1.25 on locust cpu (its best: n = 4, 64 KiB, all); the platforms' bests conflict (macmini cpu best n = 4, 64 KiB, performance; locust cpu best n = 4, 64 KiB, all; kathleen cpu best n = 16, 16 KiB, all), and no candidate is within 1.25 on all of them |
+| PermutationInfo | Cpu | 8 | – | – | n = 1, 16 KiB, all | – | not used: no 8-byte type on Cpu | – |
+| EVector | Cpu | 4 | macmini cpu | n = 8, 64 KiB, all | n = 16, 64 KiB, all | 1.04 | 1.17x / 1.16x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.033; worst r 1.10) | – |
+| EVector | Cpu | 4 | locust cpu | n = 16, 64 KiB, all | n = 16, 64 KiB, all | 1.00 | 1.17x / 1.16x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.033; worst r 1.10) | – |
+| EVector | Cpu | 4 | kathleen cpu | n = 4, 64 KiB, all | n = 16, 64 KiB, all | 1.10 | 1.17x / 1.16x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.033; worst r 1.10) | – |
+| EVector | Cpu | 8 | macmini cpu | n = 4, 64 KiB, all | n = 8, 64 KiB, all | 1.02 | 1.28x / 1.55x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.009; worst r 1.02) | – |
+| EVector | Cpu | 8 | locust cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, all | 1.01 | 1.28x / 1.55x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.009; worst r 1.02) | – |
+| EVector | Cpu | 8 | kathleen cpu | n = 8, 64 KiB, all | n = 8, 64 KiB, all | 1.00 | 1.28x / 1.55x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.009; worst r 1.02) | – |
+| GeomFactors | Cpu | 4 | macmini cpu | n = 4, tile 4, 16 KiB, all | n = 4, tile 4, 16 KiB, all | 1.00 | worst case r = 1.31: no admitted candidate within 1.25 on every platform and size; the smallest worst case | largest r 1.31 on kathleen cpu (its best: n = 16, tile 16, 16 KiB, all); the platforms' bests conflict (macmini cpu best n = 4, tile 4, 16 KiB, all; locust cpu best n = 4, tile 4, 64 KiB, all; kathleen cpu best n = 16, tile 16, 16 KiB, all), and no candidate is within 1.25 on all of them |
+| GeomFactors | Cpu | 4 | locust cpu | n = 4, tile 4, 64 KiB, all | n = 4, tile 4, 16 KiB, all | 1.05 | worst case r = 1.31: no admitted candidate within 1.25 on every platform and size; the smallest worst case | largest r 1.31 on kathleen cpu (its best: n = 16, tile 16, 16 KiB, all); the platforms' bests conflict (macmini cpu best n = 4, tile 4, 16 KiB, all; locust cpu best n = 4, tile 4, 64 KiB, all; kathleen cpu best n = 16, tile 16, 16 KiB, all), and no candidate is within 1.25 on all of them |
+| GeomFactors | Cpu | 4 | kathleen cpu | n = 16, tile 16, 16 KiB, all | n = 4, tile 4, 16 KiB, all | 1.31 | worst case r = 1.31: no admitted candidate within 1.25 on every platform and size; the smallest worst case | largest r 1.31 on kathleen cpu (its best: n = 16, tile 16, 16 KiB, all); the platforms' bests conflict (macmini cpu best n = 4, tile 4, 16 KiB, all; locust cpu best n = 4, tile 4, 64 KiB, all; kathleen cpu best n = 16, tile 16, 16 KiB, all), and no candidate is within 1.25 on all of them |
+| GeomFactors | Cpu | 8 | macmini cpu | n = 4, tile 4, 64 KiB, all | n = 4, tile 4, 4 KiB, all | 1.04 | 1.63x / 1.70x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.051; worst r 1.09) | – |
+| GeomFactors | Cpu | 8 | locust cpu | n = 4, tile 4, 4 KiB, all | n = 4, tile 4, 4 KiB, all | 1.05 | 1.63x / 1.70x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.051; worst r 1.09) | – |
+| GeomFactors | Cpu | 8 | kathleen cpu | n = 16, tile 16, 64 KiB, all | n = 4, tile 4, 4 KiB, all | 1.09 | 1.63x / 1.70x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.051; worst r 1.09) | – |
+| PullBack | Cpu | 4 | macmini cpu | n = 8, 4 KiB, all | n = 4, 4 KiB, all | 1.02 | 7.10x / 3.83x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.030; worst r 1.14) | – |
+| PullBack | Cpu | 4 | locust cpu | n = 4, 4 KiB, all | n = 4, 4 KiB, all | 1.01 | 7.10x / 3.83x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.030; worst r 1.14) | – |
+| PullBack | Cpu | 4 | kathleen cpu | n = 4, 4 KiB, all | n = 4, 4 KiB, all | 1.14 | 7.10x / 3.83x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.030; worst r 1.14) | – |
+| PullBack | Cpu | 8 | macmini cpu | n = 8, 4 KiB, all | n = 16, 4 KiB, all | 1.05 | 3.75x / 2.51x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.099; worst r 1.17) | – |
+| PullBack | Cpu | 8 | locust cpu | n = 4, 4 KiB, all | n = 16, 4 KiB, all | 1.17 | 3.75x / 2.51x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.099; worst r 1.17) | – |
+| PullBack | Cpu | 8 | kathleen cpu | n = 8, 16 KiB, all | n = 16, 4 KiB, all | 1.15 | 3.75x / 2.51x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.099; worst r 1.17) | – |
+| Scalar | Cpu | 4 | macmini cpu | n = 1, 64 KiB, performance | n = 1, 64 KiB, performance | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Scalar | Cpu | 4 | locust cpu | n = 1, 64 KiB, all | n = 1, 64 KiB, performance | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Scalar | Cpu | 4 | kathleen cpu | n = 1, 64 KiB, all | n = 1, 64 KiB, performance | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Scalar | Cpu | 8 | macmini cpu | n = 1, 64 KiB, all | n = 1, 4 KiB, all | 1.03 | no admitted candidate within 1.25, so the bound and the choice apply to all candidates (ADR-0065): 1.03x / 1.14x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.044; worst r 1.19) | – |
+| Scalar | Cpu | 8 | locust cpu | n = 1, 16 KiB, all | n = 1, 4 KiB, all | 1.19 | no admitted candidate within 1.25, so the bound and the choice apply to all candidates (ADR-0065): 1.03x / 1.14x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.044; worst r 1.19) | – |
+| Scalar | Cpu | 8 | kathleen cpu | n = 1, 4 KiB, all | n = 1, 4 KiB, all | 1.04 | no admitted candidate within 1.25, so the bound and the choice apply to all candidates (ADR-0065): 1.03x / 1.14x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.044; worst r 1.19) | – |
+| Fill | Gpu | 4 | macmini metal | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Fill | Gpu | 4 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Fill | Gpu | 8 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Copy | Gpu | 4 | macmini metal | n = 4 | n = 1 | 1.01 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Copy | Gpu | 4 | locust cuda | n = 4 | n = 1 | 1.24 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Copy | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu | – |
+| Reduce | Gpu | 4 | macmini metal | n = 16 | n = 16 | 1.00 | 1.11x / 2.11x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.005; worst r 1.04) | – |
+| Reduce | Gpu | 4 | locust cuda | n = 16 | n = 16 | 1.04 | 1.11x / 2.11x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.005; worst r 1.04) | – |
+| Reduce | Gpu | 8 | locust cuda | n = 4 | n = 4 | 1.06 | no admitted candidate within 1.25, so the bound and the choice apply to all candidates (ADR-0065): 0.94x / 1.35x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.032; worst r 1.06) | – |
+| ScanTile | Gpu | 4 | macmini metal | n = 8 | n = 8 | 1.00 | 1.58x / 1.77x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) | – |
+| ScanTile | Gpu | 4 | locust cuda | n = 8 | n = 8 | 1.00 | 1.58x / 1.77x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) | – |
+| ScanTile | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu | – |
+| SortDigits | Gpu | 4 | macmini metal | n = 4 | n = 4 | 1.00 | 1.47x / 1.41x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) | – |
+| SortDigits | Gpu | 4 | locust cuda | n = 4 | n = 4 | 1.00 | 1.47x / 1.41x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) | – |
+| SortDigits | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu | – |
+| Gather | Gpu | 4 | macmini metal | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Gather | Gpu | 4 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Gather | Gpu | 8 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Pack | Gpu | 4 | macmini metal | n = 4 | n = 1 | 1.05 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Pack | Gpu | 4 | locust cuda | n = 4 | n = 1 | 1.22 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Pack | Gpu | 8 | locust cuda | n = 4 | n = 4 | 1.00 | no admitted candidate within 1.25, so the bound and the choice apply to all candidates (ADR-0065): 1.07x / 1.30x over the baseline at 10^6 / 10^7 (geometric mean over the platforms); the simplest within 3% of the smallest geometric mean of r (1.000; worst r 1.00) | – |
+| TopologyKeys | Gpu | 4 | macmini metal | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| TopologyKeys | Gpu | 4 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| TopologyKeys | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu | – |
+| PermutationInfo | Gpu | 4 | macmini metal | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| PermutationInfo | Gpu | 4 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| PermutationInfo | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu | – |
+| EVector | Gpu | 4 | macmini metal | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| EVector | Gpu | 4 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| EVector | Gpu | 8 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| GeomFactors | Gpu | 4 | macmini metal | n = 1, tile 16 | n = 1, tile 16 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| GeomFactors | Gpu | 4 | locust cuda | n = 1, tile 16 | n = 1, tile 16 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| GeomFactors | Gpu | 8 | locust cuda | n = 1, tile 16 | n = 1, tile 16 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| PullBack | Gpu | 4 | macmini metal | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| PullBack | Gpu | 4 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| PullBack | Gpu | 8 | locust cuda | n = 1 | n = 1 | 1.00 | the baseline: no candidate at least 10% faster by the geometric mean over the platforms at 10^6 and 10^7 | – |
+| Scalar | Gpu | 4 | – | – | n = 1 | – | not used: no 4-byte type on Gpu | – |
+| Scalar | Gpu | 8 | – | – | n = 1 | – | not used: no 8-byte type on Gpu | – |
+
+<!-- END GENERATED M10c -->

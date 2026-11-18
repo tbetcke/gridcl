@@ -1,8 +1,9 @@
 //! Applies the degree sweep's decision rules to the records: M9h's rule (docs/plans/M9h.md,
 //! T11b; ADR-0042, item 12) to the M9h records, for the frozen M9h policy and the M9h tables of
 //! `docs/perf/high-order.md`; and the generic rule (ADR-0058 item 4, ADR-0060 item 3) to M10's
-//! records at p = 1, 4 and 8 with M9h's in between, for `gridcl-geometry/degree-policy.toml`
-//! and the M10 tables.
+//! records at p = 1, 4 and 8 with M9h's in between: with M10c's fallback (ADR-0065) for
+//! `gridcl-geometry/degree-policy.toml` and the M10c tables, and by M10's rule for the M10
+//! tables (history; M10's policy is frozen in `gridcl-bench/history/degree-policy-m10.toml`).
 //!
 //! ```text
 //! cargo run -p gridcl-bench --bin high_order_report -- [--data DIR] [--policy FILE]
@@ -12,16 +13,17 @@
 //! - `--data`: the `m9h-*.json` and `m10-degree-*.json` records, default `docs/perf/data/`;
 //! - `--policy`: default `gridcl-bench/history/degree-policy-pre-m10.toml`, the M9h policy
 //!   frozen before M10 (ADR-0060 item 2);
-//! - `--degree-policy`: default `gridcl-geometry/degree-policy.toml`, M10's generic sets;
+//! - `--degree-policy`: default `gridcl-geometry/degree-policy.toml`, the generic sets;
 //! - `--report`: default `docs/perf/high-order.md`. Only the parts between the
 //!   `BEGIN GENERATED` and `END GENERATED` markers (M9h; appended to a file without them, and a
-//!   missing file is created with a title) and between the M10 markers (which must exist)
-//!   change.
+//!   missing file is created with a title) and between the M10 and M10c markers (which must
+//!   exist) change.
 //! - `--check`: writes nothing, and fails if any file differs from what it would write.
 //!
 //! Entries M9h's rule leaves unresolved (neither `direct` nor `loops` ran on every device of a
 //! class) are listed on stderr, and the binary fails after writing. The generic rule's
-//! fallbacks, defaults and re-measurements are listed on stderr; they do not fail the run.
+//! fallbacks, defaults and re-measurements under M10c's rule are listed on stderr; they do not
+//! fail the run.
 //!
 //! Default paths are relative to the workspace root.
 
@@ -31,7 +33,10 @@ use std::process::ExitCode;
 use gridcl_bench::decide_degree::decide_degree;
 use gridcl_bench::decide_generic::{self, DegreeSource, GenericFit};
 use gridcl_bench::record::{load_high_order_dir, load_m10_dir};
-use gridcl_bench::report::{render_high_order, render_m10_high_order, splice, splice_m10};
+use gridcl_bench::report::{
+    render_high_order, render_m10_high_order, render_m10c_high_order, splice, splice_m10,
+    splice_m10c,
+};
 
 const USAGE: &str = "usage: high_order_report [--data DIR] [--policy FILE] \
     [--degree-policy FILE] [--report FILE] [--check]";
@@ -99,9 +104,12 @@ fn run(args: &Args) -> Result<(), String> {
     let report = splice(&old_report, &render_high_order(&data, &decision))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
     let m10 = load_m10_dir(&args.data)?;
-    let generic = decide_generic::decide_degree(&data, &m10, decide_generic::GenericRule::M10);
+    let history = decide_generic::decide_degree(&data, &m10, decide_generic::GenericRule::M10);
+    let report = splice_m10(&report, &render_m10_high_order(&m10, &history))
+        .map_err(|e| format!("{}: {e}", args.report.display()))?;
+    let generic = decide_generic::decide_degree(&data, &m10, decide_generic::GenericRule::M10c);
     let degree_policy = generic.to_toml();
-    let report = splice_m10(&report, &render_m10_high_order(&m10, &generic))
+    let report = splice_m10c(&report, &render_m10c_high_order(&m10, &generic, &history))
         .map_err(|e| format!("{}: {e}", args.report.display()))?;
 
     let mut stale = Vec::new();
@@ -150,12 +158,12 @@ fn run(args: &Args) -> Result<(), String> {
         let at = format!("{:?} {} {} {}", e.class, e.family, e.cell, e.scalar.name());
         for k in e.picks.iter().filter(|k| k.source == DegreeSource::M10) {
             match &k.fit {
-                GenericFit::Fallback { worst, .. } => eprintln!(
-                    "high_order_report: M10 fallback {at} p={}: {} (worst r {worst:.2})",
+                GenericFit::Fallback { worst, cause } => eprintln!(
+                    "high_order_report: M10c fallback {at} p={}: {} (worst r {worst:.2}; {cause})",
                     k.degree, k.strategy
                 ),
                 GenericFit::Default => eprintln!(
-                    "high_order_report: M10 default {at} p={}: {}",
+                    "high_order_report: M10c default {at} p={}: {}",
                     k.degree, k.reason
                 ),
                 GenericFit::Bound => {}
@@ -163,7 +171,7 @@ fn run(args: &Args) -> Result<(), String> {
         }
         if !e.remeasure.is_empty() {
             eprintln!(
-                "high_order_report: M10 re-measure {at} at p = {:?}",
+                "high_order_report: M10c re-measure {at} at p = {:?}",
                 e.remeasure
             );
         }

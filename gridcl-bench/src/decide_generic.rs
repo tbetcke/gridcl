@@ -319,6 +319,8 @@ pub struct VectorEntry {
 /// The generic vector policy: `[Cpu]` and `[Gpu]`, each for 4- and 8-byte scalars.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VectorDecision {
+    /// The rule that made the decision.
+    pub rule: GenericRule,
     /// Every (class, kind, element size), Cpu first, in [`KINDS`] order.
     pub entries: Vec<VectorEntry>,
 }
@@ -345,7 +347,10 @@ impl VectorDecision {
 
     /// The text of `gridcl-device/vector-policy.toml`.
     pub fn to_toml(&self) -> String {
-        let mut out = String::from(VECTOR_TOML_HEADER);
+        let mut out = String::from(match self.rule {
+            GenericRule::M10 => VECTOR_TOML_HEADER,
+            GenericRule::M10c => VECTOR_TOML_HEADER_M10C,
+        });
         let row = |value: &dyn Fn(usize) -> String| {
             let entries: Vec<String> = ELEM_BYTES
                 .iter()
@@ -404,6 +409,21 @@ const VECTOR_TOML_HEADER: &str = "\
 # Written by `cargo run -p gridcl-bench --bin policy_report` from the M10 candidate records in
 # docs/perf/data/ with the generic decision rule of docs/perf/vectorization.md (ADR-0058 item 4);
 # do not edit by hand.
+";
+
+/// The header under [`GenericRule::M10c`] (ADR-0065).
+const VECTOR_TOML_HEADER_M10C: &str = "\
+# Vector policy of gridcl-device (docs/design.md, \"Launch plans and the vector policy\"; ADR-0015,
+# ADR-0058, ADR-0065).
+#
+# Two device classes, Cpu and Gpu, each with one generic set per scalar size in bytes (4 and 8;
+# ADR-0058): the QuadField tile width by scalar size; the vector size per kernel family and
+# scalar size; on Cpu, the CPU block per kernel family and scalar size of the widest stream, in
+# units of 4 KiB, and the CPU units (all hardware threads or the performance cores; ADR-0017).
+# Written by `cargo run -p gridcl-bench --bin policy_report` with the generic decision rule of
+# docs/perf/vectorization.md and M10c's fallback (ADR-0058 item 4, ADR-0065): Cpu from M10c's
+# grid records of two processes (m10c-vector-cpu-*.json), Gpu from M10's candidate records
+# (m10-vector-*.json), in docs/perf/data/; do not edit by hand.
 ";
 
 /// The configuration of an entry without data: the baseline on all hardware threads.
@@ -564,7 +584,7 @@ pub fn decide_vector(data: &M10Data, rule: GenericRule) -> VectorDecision {
             }
         }
     }
-    VectorDecision { entries }
+    VectorDecision { rule, entries }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -963,6 +983,8 @@ impl DegreeEntry {
 /// The generic degree policy: `[Cpu.<family>]` and `[Gpu.<family>]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeDecision {
+    /// The rule that made the decision.
+    pub rule: GenericRule,
     /// Every (class, family, cell, scalar), Cpu first, in the order of `degree-policy.toml`.
     pub entries: Vec<DegreeEntry>,
 }
@@ -983,7 +1005,10 @@ impl DegreeDecision {
 
     /// The text of `gridcl-geometry/degree-policy.toml`.
     pub fn to_toml(&self) -> String {
-        let mut out = String::from(DEGREE_TOML_HEADER);
+        let mut out = String::from(match self.rule {
+            GenericRule::M10 => DEGREE_TOML_HEADER,
+            GenericRule::M10c => DEGREE_TOML_HEADER_M10C,
+        });
         for class in [DeviceClass::Cpu, DeviceClass::Gpu] {
             for family in POLICY_FAMILIES {
                 out.push_str(&format!("\n[{class:?}.{family}]\n"));
@@ -1023,6 +1048,22 @@ const DEGREE_TOML_HEADER: &str = "\
 # `cargo run -p gridcl-bench --bin high_order_report` from M10's records at p = 1, 4 and 8 and
 # M9h's in between (docs/perf/data/) with the generic decision rule of docs/perf/high-order.md
 # (ADR-0058 item 4, ADR-0060 item 3); do not edit by hand.
+";
+
+/// The header under [`GenericRule::M10c`] (ADR-0065).
+const DEGREE_TOML_HEADER_M10C: &str = "\
+# Degree policy of gridcl-geometry (docs/design.md, \"Geometric factors\"; ADR-0042, item 3;
+# ADR-0058, ADR-0065).
+#
+# Per device class (Cpu or Gpu; ADR-0058) and kernel family, per cell type and scalar size in
+# bytes: the strategy of each degree range, as [first degree, strategy] pairs with ascending
+# first degrees, starting at 1; the last range is open-ended. Families: EVector, Points,
+# Jacobian (J, det J and the pseudo-inverse), Normals (codimension 1: intervals, triangles and
+# quadrilaterals), FacetNormals and PullBack (with the device basis evaluator). Strategies:
+# direct, loops, sumfact, shared, cooperative. Written by
+# `cargo run -p gridcl-bench --bin high_order_report` from M10's records at p = 1, 4 and 8 and
+# M9h's in between (docs/perf/data/) with the generic decision rule of docs/perf/high-order.md
+# and M10c's fallback (ADR-0058 item 4, ADR-0060 item 3, ADR-0065); do not edit by hand.
 ";
 
 /// `data` without its records whose check error is not finite (ADR-0060 item 3).
@@ -1114,7 +1155,7 @@ pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data, rule: GenericRule) -> D
             }
         }
     }
-    DegreeDecision { entries }
+    DegreeDecision { rule, entries }
 }
 
 /// What one entry's decision reads.
