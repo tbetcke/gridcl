@@ -899,6 +899,465 @@ pub fn render_high_order(data: &HighOrderData, decision: &DegreeDecision) -> Str
     out
 }
 
+// ---------------------------------------------------------------------------------------------
+// docs/perf/high-order.md, M10 (ADR-0058, ADR-0060 items 3–5, ADR-0063).
+
+/// The bound of ADR-0042 item 1 on the p = 8 / p = 4 ratio of the factors and the pull-back's
+/// set-up.
+pub const TENSOR_BOUND: f64 = 3.0;
+
+/// The time per point of a bench family's M10 record (target, backend, family, cell, degree,
+/// scalar, size, iterations) with `strategy`: the last interleaved `ok` record, else the last
+/// `ok` one.
+#[allow(clippy::too_many_arguments)]
+fn m10_record_time(
+    records: &[DegreeRecord],
+    (target, backend): (&str, &str),
+    family: &str,
+    cell: &str,
+    degree: u32,
+    scalar: Scalar,
+    size: usize,
+    iterations: Option<u32>,
+    strategy: &str,
+) -> Option<f64> {
+    let ok: Vec<&DegreeRecord> = records
+        .iter()
+        .filter(|r| {
+            r.target == target
+                && r.backend == backend
+                && r.family == family
+                && r.cell == cell
+                && r.gdim == crate::decide_degree::gdim_of(family, cell)
+                && r.degree == degree
+                && r.scalar == scalar
+                && r.nominal_points == size
+                && r.iterations == iterations
+                && r.node_family == "equispaced"
+                && !r.launch_only
+                && r.status == "ok"
+                && r.strategy == strategy
+        })
+        .collect();
+    ok.iter()
+        .rev()
+        .find(|r| r.interleaved)
+        .or(ok.last())
+        .map(|r| r.time_per_point())
+}
+
+/// The cause of a p = 8 / p = 4 ratio over its bound, from the strategies and M9h's evidence
+/// (docs/perf/high-order.md, "Decision rule (T11b)", bullet 3; ADR-0060 item 5).
+fn tensor_cause(part: &str, d: i32, s4: &str, s8: &str) -> String {
+    let mut cause = match s8 {
+        "sumfact" | "shared" | "cooperative" => format!(
+            "`{s8}` keeps (p + 1)^2 · q intermediates per lane, which spill at p = 8 (M9h's \
+             evidence)"
+        ),
+        _ if part == "set-up" => format!(
+            "`{s8}` sets up the pull-back with C′, (p + 1)^{d} work per point: (9/5)^{d} = {:.2} \
+             from p = 4 to 8",
+            (9.0f64 / 5.0).powi(d)
+        ),
+        _ => format!(
+            "`{s8}` does (p + 1)^{d} work per point: (9/5)^{d} = {:.2} from p = 4 to 8",
+            (9.0f64 / 5.0).powi(d)
+        ),
+    };
+    if s4 != s8 {
+        let _ = write!(cause, "; the choice changes from `{s4}` to `{s8}`");
+    }
+    cause
+}
+
+/// M10's section of `docs/perf/high-order.md` (ADR-0058 item 6, ADR-0060 items 3–5): the
+/// records, the generic choice at p = 1, 4 and 8 per entry and platform with its r, first-use
+/// time and reason (`| class | family | cell | bytes | p | target backend | best | choice | r |
+/// first use s | reason |`, the reason naming the worst case where no strategy meets the
+/// bound), the degree ranges, each platform's ratio of the policy to `direct` at p ≤ 4, the
+/// p = 8 / p = 4 ratios on tensor cells against ADR-0042 item 1 with the cause of each miss
+/// (`| target backend | scalar | cell | family | part | s4 / s8 | 10^k | ratio | bound | cause |`)
+/// and M10's check against M9h at the first rule size with the degrees it sends to
+/// re-measurement.
+pub fn render_m10_high_order(
+    data: &crate::record::M10Data,
+    decision: &crate::decide_generic::DegreeDecision,
+) -> String {
+    use crate::decide_generic::{
+        BOUND, DegreeSource, GenericFit, MOVE, backend_scalars, m10_platforms,
+    };
+    let records = &data.degree;
+    let mut out = String::from(
+        "Written by `high_order_report` from the `m10-degree-*.json` records at p = 1, 4 and 8 \
+         and M9h's records in between, with the generic rule (ADR-0058 item 4, ADR-0060 item \
+         3). FacetNormals on intervals in f32 is measured at the sizes of ADR-0063.\n\n\
+         Records:\n\n",
+    );
+    let mut platforms: BTreeMap<(String, String), (BTreeSet<String>, BTreeSet<String>)> =
+        BTreeMap::new();
+    for r in records {
+        let p = platforms
+            .entry((r.target.clone(), r.backend.clone()))
+            .or_default();
+        p.0.insert(r.device.clone());
+        p.1.insert(r.commit.chars().take(7).collect());
+    }
+    for ((target, backend), (devices, commits)) in &platforms {
+        let devices: Vec<&str> = devices.iter().map(String::as_str).collect();
+        let commits: Vec<&str> = commits.iter().map(String::as_str).collect();
+        let _ = writeln!(
+            out,
+            "- {target} {backend}: {} (commit {})",
+            devices.join(", "),
+            commits.join(", ")
+        );
+    }
+
+    // The choices at the M10 degrees.
+    let picks: Vec<_> = decision
+        .entries
+        .iter()
+        .flat_map(|e| {
+            e.picks
+                .iter()
+                .filter(|k| k.source == DegreeSource::M10)
+                .map(move |k| (e, k))
+        })
+        .collect();
+    let fallbacks = picks
+        .iter()
+        .filter(|(_, k)| matches!(k.fit, GenericFit::Fallback { .. }))
+        .count();
+    let defaults = picks
+        .iter()
+        .filter(|(_, k)| k.fit == GenericFit::Default)
+        .count();
+    let _ = writeln!(
+        out,
+        "\n### Choices at p = 1, 4 and 8\n\nPer entry, measured degree and platform of its \
+         class: the platform's best selectable strategy (smallest geometric mean of r over the \
+         rule sizes), the generic choice, the platform's r for it (largest over the sizes), the \
+         largest first-use compile and load time of the choice's records there, and the reason. \
+         Admission at 10% over the baseline by the geometric mean over the platforms at each \
+         size, bound r ≤ {BOUND}, simplest within 3%. {} of {} choices need the fallback \
+         (smallest worst case); {defaults} take the default `loops` (neither `direct` nor \
+         `loops` selectable).\n",
+        fallbacks,
+        picks.len()
+    );
+    out.push_str(
+        "| class | family | cell | bytes | p | target backend | best | choice | r | first use s | \
+         reason |\n\
+         | --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | ---: | --- |\n",
+    );
+    for (e, k) in &picks {
+        let head = format!(
+            "| {:?} | {} | {} | {} | {} |",
+            e.class,
+            e.family,
+            e.cell,
+            e.scalar.bytes(),
+            k.degree
+        );
+        if k.platforms.is_empty() {
+            let _ = writeln!(
+                out,
+                "{head} – | – | {} | – | – | {} |",
+                k.strategy, k.reason
+            );
+            continue;
+        }
+        let members = crate::decide_degree::members(e.family);
+        for p in &k.platforms {
+            let first_use = records
+                .iter()
+                .filter(|r| {
+                    r.target == p.platform.target
+                        && r.backend == p.platform.backend
+                        && r.cell == e.cell
+                        && r.degree == k.degree
+                        && r.scalar == e.scalar
+                        && r.strategy == k.strategy
+                        && members.iter().any(|&(f, _)| f == r.family)
+                })
+                .map(|r| r.compile_s)
+                .fold(None, |m: Option<f64>, c| Some(m.map_or(c, |m| m.max(c))));
+            let first_use = first_use.map_or("–".to_owned(), |c| format!("{c:.2}"));
+            let _ = writeln!(
+                out,
+                "{head} {} {} | {} | {} | {:.2} | {first_use} | {} |",
+                p.platform.target, p.platform.backend, p.best, k.strategy, p.r, k.reason
+            );
+        }
+    }
+
+    // The ranges.
+    out.push_str(
+        "\n### Degree ranges\n\nThe ranges of `gridcl-geometry/degree-policy.toml`; the source \
+         of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h \
+         elsewhere.\n\n\
+         | class | family | cell | bytes | ranges | M9h degrees |\n\
+         | --- | --- | --- | ---: | --- | --- |\n",
+    );
+    for e in &decision.entries {
+        let ranges: Vec<String> = e
+            .spans()
+            .iter()
+            .map(|&(first, last, s)| match last {
+                Some(l) if l == first => format!("{first} {s}"),
+                Some(l) => format!("{first}–{l} {s}"),
+                None => format!("{first}– {s}"),
+            })
+            .collect();
+        let m9h: Vec<String> = e
+            .picks
+            .iter()
+            .filter(|k| k.source == DegreeSource::M9h)
+            .map(|k| k.degree.to_string())
+            .collect();
+        let _ = writeln!(
+            out,
+            "| {:?} | {} | {} | {} | {} | {} |",
+            e.class,
+            e.family,
+            e.cell,
+            e.scalar.bytes(),
+            ranges.join(", "),
+            if m9h.is_empty() {
+                "–".to_owned()
+            } else {
+                m9h.join(", ")
+            }
+        );
+    }
+
+    // ADR-0060 item 4: the policy against `direct` at p ≤ 4.
+    let present = |t: &str, b: &str| records.iter().any(|r| r.target == t && r.backend == b);
+    let m10 = m10_platforms(present);
+    out.push_str(
+        "\n### The policy against `direct` at p ≤ 4\n\nPer platform and scalar type, over the \
+         entries at p = 1 and 4 whose platform timed `direct` at every rule size: the time of \
+         the generic choice over `direct`'s (the family's members summed; the pull-back at nine \
+         iterations), the geometric mean over entries and sizes, and the largest (ADR-0060 \
+         item 4). Bound by nothing but the generic rule.\n\n\
+         | target backend | type | compared | geometric mean | largest | at |\n\
+         | --- | --- | ---: | ---: | ---: | --- |\n",
+    );
+    for p in &m10 {
+        for scalar in backend_scalars(p.backend, &[Scalar::F32, Scalar::F64]) {
+            let mut ratios: Vec<(f64, String)> = Vec::new();
+            for (e, k) in &picks {
+                if e.class != p.class || e.scalar != scalar || k.degree > 4 {
+                    continue;
+                }
+                let members = crate::decide_degree::members(e.family);
+                let family_time = |s: &str, n: usize| -> Option<f64> {
+                    members
+                        .iter()
+                        .map(|&(f, it)| {
+                            m10_record_time(
+                                records,
+                                (p.target, p.backend),
+                                f,
+                                e.cell,
+                                k.degree,
+                                scalar,
+                                n,
+                                it,
+                                s,
+                            )
+                        })
+                        .sum()
+                };
+                for &n in &k.sizes {
+                    if let (Some(c), Some(d)) =
+                        (family_time(k.strategy, n), family_time("direct", n))
+                    {
+                        ratios.push((
+                            c / d,
+                            format!("{} {} p={} 10^{}", e.family, e.cell, k.degree, n.ilog10()),
+                        ));
+                    }
+                }
+            }
+            if ratios.is_empty() {
+                continue;
+            }
+            let geomean =
+                (ratios.iter().map(|(r, _)| r.ln()).sum::<f64>() / ratios.len() as f64).exp();
+            let (worst, at) = ratios
+                .iter()
+                .max_by(|a, b| a.0.total_cmp(&b.0))
+                .expect("non-empty");
+            let _ = writeln!(
+                out,
+                "| {} {} | {} | {} | {geomean:.3} | {worst:.3} | {at} |",
+                p.target,
+                p.backend,
+                scalar.name(),
+                ratios.len()
+            );
+        }
+    }
+
+    // ADR-0042 item 1, ADR-0060 item 5: p = 8 over p = 4 on tensor cells.
+    let _ = writeln!(
+        out,
+        "\n### p = 8 over p = 4 on tensor cells\n\nPer platform, scalar type, cell, bench \
+         family and rule size: the time per point at p = 8 over p = 4 under the generic policy \
+         (each degree's own choice), against ADR-0042 item 1's bounds: {TENSOR_BOUND:.0} for \
+         the factors and the pull-back's set-up, 1.1 · (9/5)^d for a Newton step; step = \
+         (t(9) − t(1)) / 8, set-up = t(1) − step. Bullet 2 is met by reporting (ADR-0060 item \
+         5): each miss names its cause, from the strategies and M9h's evidence.\n"
+    );
+    out.push_str(
+        "| target backend | scalar | cell | family | part | s4 / s8 | points | ratio | bound | \
+         cause |\n\
+         | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |\n",
+    );
+    let mut misses = 0;
+    let mut rows = 0;
+    for p in &m10 {
+        for scalar in backend_scalars(p.backend, &[Scalar::F32, Scalar::F64]) {
+            for (cell, d) in [("Quadrilateral", 2), ("Hexahedron", 3)] {
+                let mut families = vec!["Points", "Jacobian", "DetJ", "Pinv", "FacetNormals"];
+                if cell == "Quadrilateral" {
+                    families.push("Normals");
+                }
+                families.push("PullBack");
+                for family in families {
+                    let pf = policy_family(family);
+                    let Some(e) = decision.entry(p.class, pf, cell, scalar) else {
+                        continue;
+                    };
+                    let (s4, s8) = (e.strategy(4), e.strategy(8));
+                    for size in crate::protocol::CANDIDATE_SIZES {
+                        let t = |degree: u32, iterations| {
+                            let s = if degree == 4 { s4 } else { s8 };
+                            m10_record_time(
+                                records,
+                                (p.target, p.backend),
+                                family,
+                                cell,
+                                degree,
+                                scalar,
+                                size,
+                                iterations,
+                                s,
+                            )
+                        };
+                        let mut parts: Vec<(&str, Option<f64>, f64)> = Vec::new();
+                        if family == "PullBack" {
+                            let step = |q| Some((t(q, Some(9))? - t(q, Some(1))?) / 8.0);
+                            let setup = |q| Some(t(q, Some(1))? - step(q)?);
+                            parts.push((
+                                "step",
+                                step(8).zip(step(4)).map(|(a, b)| a / b),
+                                1.1 * (9.0f64 / 5.0).powi(d),
+                            ));
+                            parts.push((
+                                "set-up",
+                                setup(8).zip(setup(4)).map(|(a, b)| a / b),
+                                TENSOR_BOUND,
+                            ));
+                        } else {
+                            parts.push((
+                                "factor",
+                                t(8, None).zip(t(4, None)).map(|(a, b)| a / b),
+                                TENSOR_BOUND,
+                            ));
+                        }
+                        for (part, ratio, bound) in parts {
+                            let Some(ratio) = ratio else { continue };
+                            rows += 1;
+                            let cause = if ratio > bound {
+                                misses += 1;
+                                tensor_cause(part, d, s4, s8)
+                            } else {
+                                "–".to_owned()
+                            };
+                            let _ = writeln!(
+                                out,
+                                "| {} {} | {} | {cell} | {family} | {part} | {s4} / {s8} | \
+                                 10^{} | {ratio:.2} | {bound:.2} | {cause} |",
+                                p.target,
+                                p.backend,
+                                scalar.name(),
+                                size.ilog10()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let _ = writeln!(out, "\n{misses} of {rows} ratios exceed their bound.");
+
+    // ADR-0060 item 3: M10's check against M9h.
+    let moved: Vec<_> = decision
+        .entries
+        .iter()
+        .flat_map(|e| e.moves.iter().filter(|m| m.moved()).map(move |m| (e, m)))
+        .collect();
+    let compared: usize = decision.entries.iter().map(|e| e.moves.len()).sum();
+    let _ = writeln!(
+        out,
+        "\n### M10 against M9h\n\nPer entry at p = 1, 4 and 8, platform and strategy both \
+         timed at the entry's first rule size (10^6 points): M10's time over M9h's. {} of \
+         {compared} comparisons move by more than {:.0}%; a range whose check moves, or falls \
+         back, is re-measured with candidates at the unmeasured degrees next to each of its \
+         boundaries (ADR-0060 item 3).\n",
+        moved.len(),
+        MOVE * 100.0
+    );
+    if !moved.is_empty() {
+        out.push_str(
+            "| class | family | cell | bytes | p | target backend | strategy | M10 / M9h |\n\
+             | --- | --- | --- | ---: | ---: | --- | --- | ---: |\n",
+        );
+        for (e, m) in &moved {
+            let _ = writeln!(
+                out,
+                "| {:?} | {} | {} | {} | {} | {} {} | {} | {:.2} |",
+                e.class,
+                e.family,
+                e.cell,
+                e.scalar.bytes(),
+                m.degree,
+                m.platform.target,
+                m.platform.backend,
+                m.strategy,
+                m.ratio
+            );
+        }
+    }
+    let remeasure: Vec<String> = decision
+        .entries
+        .iter()
+        .filter(|e| !e.remeasure.is_empty())
+        .map(|e| {
+            let p: Vec<String> = e.remeasure.iter().map(u32::to_string).collect();
+            format!(
+                "{:?} {} {} {}: p = {}",
+                e.class,
+                e.family,
+                e.cell,
+                e.scalar.name(),
+                p.join(", ")
+            )
+        })
+        .collect();
+    if remeasure.is_empty() {
+        out.push_str("\nNo range needs re-measurement.\n");
+    } else {
+        let _ = writeln!(out, "\nRe-measurement needed:\n");
+        for line in remeasure {
+            let _ = writeln!(out, "- {line}");
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

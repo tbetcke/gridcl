@@ -642,7 +642,8 @@ pub fn degree_strategies(class: DeviceClass) -> &'static [&'static str] {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DegreeSource {
     /// M10's records: p = 1, 4 and 8, and the degrees re-measured next to a range's boundaries;
-    /// every M10 platform of the class, at 10^6 and 10^7 points.
+    /// every M10 platform of the class, at the entry's rule sizes (10^6 and 10^7 points;
+    /// ADR-0063's for FacetNormals on intervals in f32).
     M10,
     /// M9h's per-degree records, at their own rule sizes (10^6 points on Cpu; 10^6 and 10^7 on
     /// Gpu), on the platforms that measured them (no Grace).
