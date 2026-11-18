@@ -1,6 +1,6 @@
 # ADR-0064: Design text after M10 T5, and the strategies of M10's p = 8 / p = 4 ratio
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-18
 - **Raised in:** M10 review (design-reviewer, Major 1; acceptance-coverage check of bullet 2)
 - **Design sections affected:**
@@ -109,4 +109,6 @@ Neither definition changes whether bullet 2 is met. ADR-0060 item 5 meets it by 
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-18, as proposed (item 1: option 2; item 2: option 2, each degree's own choice, no runs).
+
+Applied in `adr: 0064 apply`: docs/design.md (Listing S2c, the paragraph after it, "Transports", the crate table's gridcl-bench row, Roadmap M10 bullet 2), closing notes in ADR-0042 and ADR-0060, the doc comment of `tensor_cost_ratio_within_bound_or_reported`, and issue #25.
