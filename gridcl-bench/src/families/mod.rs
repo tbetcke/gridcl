@@ -17,9 +17,9 @@ use std::collections::BTreeMap;
 use cubecl::prelude::Client;
 use gridcl_device::{CpuUnits, DeviceClass, KernelKind, check_precision};
 
-use crate::candidates::{VectorConfig, candidate_kinds, vector_candidates};
+use crate::candidates::{VectorConfig, candidate_kinds, cpu_grid, grid_omitted, vector_candidates};
 use crate::protocol::{
-    self, Config, Measured, Workload, bandwidth_ratio, is_cpu, measure, with_config,
+    self, Config, Measured, Workload, bandwidth_ratio, is_cpu, measure, timed_run, with_config,
 };
 use crate::record::{Cores, CubeDimMode, LegacyClass, Scalar, SweepRecord};
 
@@ -386,6 +386,230 @@ pub fn candidate_sweep(
     Ok(records)
 }
 
+/// What the M10c grid sweep runs (ADR-0065 items 1, 2 and 4).
+#[derive(Clone, Debug)]
+pub struct GridOptions {
+    /// Machine: `macmini`, `locust`, `kathleen` (or `myriad-cpu` as Kathleen's fallback).
+    pub target: String,
+    /// Kinds to measure, of [`candidate_kinds`].
+    pub families: Vec<KernelKind>,
+    /// Scalar types to keep; `None` measures every type of each kind.
+    pub scalars: Option<Vec<Scalar>>,
+    /// Problem sizes; the protocol's are [`protocol::CANDIDATE_SIZES`].
+    pub sizes: Vec<usize>,
+    /// Interleaved rounds, one timed run of every slot each.
+    pub rounds: usize,
+    /// The process's seed, from which each entry's round orders are shuffled.
+    pub seed: u64,
+    /// Why a fallback target ran in place of the usual one (ADR-0016); every record carries it.
+    pub fallback_reason: Option<String>,
+}
+
+/// The `[Cpu]` vector entries of the grid, in the order of `vector-policy.toml`: each candidate
+/// kind with an element size and its member scalars of that size (13 four-byte and 8 eight-byte
+/// entries). The index of an entry in this list seeds its shuffle.
+pub fn grid_entries() -> Vec<(KernelKind, usize, Vec<Scalar>)> {
+    let mut out = Vec::new();
+    for (kind, scalars) in candidate_kinds() {
+        for bytes in [4, 8] {
+            let members: Vec<Scalar> = scalars
+                .iter()
+                .copied()
+                .filter(|s| s.bytes() == bytes)
+                .collect();
+            if !members.is_empty() {
+                out.push((kind, bytes, members));
+            }
+        }
+    }
+    out
+}
+
+/// splitmix64 (Steele, Lea and Flood 2014): the generator of the grid's shuffles.
+#[derive(Clone, Debug)]
+pub struct SplitMix64(u64);
+
+impl SplitMix64 {
+    /// The generator of entry `entry` in the process of `seed`.
+    pub fn for_entry(seed: u64, entry: usize) -> SplitMix64 {
+        SplitMix64(seed.wrapping_mul(1_000_003).wrapping_add(entry as u64))
+    }
+
+    /// The next 64 random bits.
+    pub fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
+
+    /// Shuffles `v` in place (Fisher-Yates).
+    pub fn shuffle<T>(&mut self, v: &mut [T]) {
+        for i in (1..v.len()).rev() {
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
+            v.swap(i, j);
+        }
+    }
+}
+
+/// The orders of `rounds` rounds over `slots` slots of entry `entry` in the process of `seed`:
+/// round k times the slots in the order `orders[k]`, a permutation of `0..slots`.
+pub fn round_orders(seed: u64, entry: usize, slots: usize, rounds: usize) -> Vec<Vec<usize>> {
+    let mut rng = SplitMix64::for_entry(seed, entry);
+    (0..rounds)
+        .map(|_| {
+            let mut order: Vec<usize> = (0..slots).collect();
+            rng.shuffle(&mut order);
+            order
+        })
+        .collect()
+}
+
+/// One slot of an entry: a (member scalar, size, configuration) with its calibration.
+struct Slot {
+    scalar: Scalar,
+    size: usize,
+    work: usize,
+    config: Config,
+    measured: Measured,
+    positions: Vec<usize>,
+}
+
+/// Runs the M10c grid (ADR-0065 items 1, 2 and 4) on a CPU device and passes each record to
+/// `on_record` once its entry is measured.
+///
+/// Per `[Cpu]` vector entry of [`grid_entries`] (kind and element size): every member scalar,
+/// size and configuration of [`cpu_grid`] (a performance-core configuration on a device without
+/// a performance-core count runs on all threads and counts for both, ADR-0017; the cases of
+/// [`crate::candidates::GRID_OMITTED`] for the target left out) is one slot. Each slot is
+/// warmed up, checked and calibrated (the protocol's [`measure`] with zero runs); then come
+/// `rounds` rounds, each one batched run of every slot in an order shuffled from the seed and
+/// the entry's index ([`round_orders`]). A record's `positions` give its slot's place in each
+/// round. The inputs of every member and size of an entry stay alive until its rounds end. The
+/// bandwidth reference is a u32 copy of each size, measured once per process as in [`sweep`].
+///
+/// # Errors
+///
+/// A GPU device, or the first failed measurement, naming its configuration.
+pub fn grid_sweep(
+    client: &Client,
+    machine: &Machine,
+    options: &GridOptions,
+    on_record: &mut dyn FnMut(&SweepRecord),
+) -> Result<Vec<SweepRecord>, String> {
+    if !is_cpu(machine.class) {
+        return Err(format!(
+            "the grid is for `[Cpu]` entries; {} is a {:?} device",
+            machine.device, machine.class
+        ));
+    }
+    let has_f64 = check_precision::<f64>(client).is_ok();
+    let mut copy_reference: BTreeMap<usize, (usize, f64)> = BTreeMap::new();
+    let mut records = Vec::new();
+    for (entry, (kind, bytes, members)) in grid_entries().into_iter().enumerate() {
+        if !options.families.contains(&kind) {
+            continue;
+        }
+        let members: Vec<Scalar> = members
+            .into_iter()
+            .filter(|s| options.scalars.as_ref().is_none_or(|keep| keep.contains(s)))
+            .filter(|&s| {
+                let keep = s != Scalar::F64 || has_f64;
+                if !keep {
+                    eprintln!("vector_sweep: {kind:?} f64 skipped: the device has no f64");
+                }
+                keep
+            })
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        let mut works: Vec<Box<dyn Workload>> = Vec::new();
+        let mut slots: Vec<Slot> = Vec::new();
+        for &scalar in &members {
+            let configs = candidate_configs(machine, &cpu_grid(kind, scalar));
+            for &size in &options.sizes {
+                if grid_omitted(&options.target, kind, scalar, size) {
+                    eprintln!(
+                        "vector_sweep: {kind:?} {} at {size} left out on {} (GRID_OMITTED)",
+                        scalar.name(),
+                        options.target
+                    );
+                    continue;
+                }
+                if let std::collections::btree_map::Entry::Vacant(e) = copy_reference.entry(size) {
+                    e.insert(measure_copy_reference(
+                        client,
+                        size,
+                        protocol::CANDIDATE_RUNS,
+                    )?);
+                }
+                let mut work = workload(client, kind, scalar, size)?;
+                for config in &configs {
+                    let what = format!("{kind:?} {} n = {size} {config:?}", scalar.name());
+                    let measured = with_config(kind, config, machine.cores.performance, || {
+                        measure(client, kind, 0, work.as_mut())
+                    })
+                    .and_then(|m| m)
+                    .map_err(|e| format!("{what}: {e}"))?;
+                    slots.push(Slot {
+                        scalar,
+                        size,
+                        work: works.len(),
+                        config: *config,
+                        measured,
+                        positions: Vec::with_capacity(options.rounds),
+                    });
+                }
+                works.push(work);
+            }
+        }
+        for order in round_orders(options.seed, entry, slots.len(), options.rounds) {
+            for (position, &i) in order.iter().enumerate() {
+                let slot = &mut slots[i];
+                let work = works[slot.work].as_mut();
+                let calls = slot.measured.calls_per_run;
+                let time = with_config(kind, &slot.config, machine.cores.performance, || {
+                    timed_run(client, work, calls)
+                })
+                .and_then(|t| t)
+                .map_err(|e| {
+                    format!(
+                        "{kind:?} {} n = {} {:?}: {e}",
+                        slot.scalar.name(),
+                        slot.size,
+                        slot.config
+                    )
+                })?;
+                slot.measured.times_s.push(time);
+                slot.positions.push(position);
+            }
+        }
+        eprintln!(
+            "vector_sweep: {kind:?} {bytes}-byte: {} slots, {} rounds",
+            slots.len(),
+            options.rounds
+        );
+        for slot in slots {
+            let mut record = sweep_record(
+                machine,
+                (&options.target, &options.fallback_reason),
+                (kind, slot.scalar, slot.size),
+                works[slot.work].as_ref(),
+                &slot.config,
+                &slot.measured,
+                copy_reference[&slot.size],
+            );
+            record.seed = Some(options.seed);
+            record.positions = Some(slot.positions);
+            on_record(&record);
+            records.push(record);
+        }
+    }
+    Ok(records)
+}
+
 /// Bytes and median of a u32 copy of `n` items under the policy.
 fn measure_copy_reference(client: &Client, n: usize, runs: usize) -> Result<(usize, f64), String> {
     let mut copy = workload(client, KernelKind::Copy, Scalar::U32, n)?;
@@ -564,6 +788,109 @@ mod tests {
             .find(|r| r.family == KernelKind::PullBack)
             .unwrap();
         assert!(pull_back.n >= 1000, "points as items: {}", pull_back.n);
+    }
+
+    /// The grid's shuffles are deterministic per seed and entry, and each round is one
+    /// permutation of the slots.
+    #[test]
+    fn round_orders_are_seeded_permutations() {
+        let a = round_orders(1, 3, 48, 5);
+        assert_eq!(a, round_orders(1, 3, 48, 5));
+        assert_ne!(a, round_orders(2, 3, 48, 5));
+        assert_ne!(a, round_orders(1, 4, 48, 5));
+        assert_eq!(a.len(), 5);
+        for order in &a {
+            let mut sorted = order.clone();
+            sorted.sort_unstable();
+            assert_eq!(sorted, (0..48).collect::<Vec<_>>());
+        }
+        assert_ne!(a[0], a[1], "rounds differ");
+        assert!(round_orders(1, 0, 0, 2).iter().all(Vec::is_empty));
+    }
+
+    /// 13 four-byte and 8 eight-byte entries, each with its member scalars of that size.
+    #[test]
+    fn grid_entries_are_the_typed_cpu_entries() {
+        let e = grid_entries();
+        assert_eq!(e.iter().filter(|(_, b, _)| *b == 4).count(), 13);
+        assert_eq!(e.iter().filter(|(_, b, _)| *b == 8).count(), 8);
+        for (kind, bytes, members) in &e {
+            assert!(!members.is_empty());
+            assert!(members.iter().all(|s| s.bytes() == *bytes), "{kind:?}");
+        }
+        assert!(e.contains(&(KernelKind::Fill, 4, vec![Scalar::F32, Scalar::U32])));
+        assert!(e.contains(&(KernelKind::Scalar, 8, vec![Scalar::F64])));
+    }
+
+    /// The grid at 10^3 items, two rounds, three kinds (one with two members, GeomFactors and
+    /// Scalar): every slot gives a record with the process's seed and its place in each round,
+    /// each round is a permutation of the entry's slots, and both unit settings run where the
+    /// device reports performance cores.
+    #[test]
+    fn grid_smoke_sweep_interleaves() {
+        let client = gridcl_testing::test_client();
+        let machine = Machine::new(&client);
+        let options = GridOptions {
+            target: "test".to_owned(),
+            families: vec![
+                KernelKind::Fill,
+                KernelKind::GeomFactors,
+                KernelKind::Scalar,
+            ],
+            scalars: Some(vec![Scalar::F32, Scalar::U32]),
+            sizes: vec![1000],
+            rounds: 2,
+            seed: 7,
+            fallback_reason: None,
+        };
+        if !is_cpu(machine.class) {
+            assert!(grid_sweep(&client, &machine, &options, &mut |_| ()).is_err());
+            return;
+        }
+        let mut seen = 0;
+        let records = grid_sweep(&client, &machine, &options, &mut |_| seen += 1).unwrap();
+        assert_eq!(seen, records.len());
+        let performance = machine.cores.performance.is_some();
+        let per = |n: usize| if performance { n } else { n / 2 };
+        for (kind, members, configs) in [
+            (KernelKind::Fill, 2, 24),
+            (KernelKind::GeomFactors, 1, 24),
+            (KernelKind::Scalar, 1, 6),
+        ] {
+            let of: Vec<&SweepRecord> = records.iter().filter(|r| r.family == kind).collect();
+            assert_eq!(of.len(), members * per(configs), "{kind:?}");
+            for round in 0..2 {
+                let mut at: Vec<usize> = of
+                    .iter()
+                    .map(|r| r.positions.as_ref().unwrap()[round])
+                    .collect();
+                at.sort_unstable();
+                assert_eq!(
+                    at,
+                    (0..of.len()).collect::<Vec<_>>(),
+                    "{kind:?} round {round}"
+                );
+            }
+            let modes: std::collections::BTreeSet<_> =
+                of.iter().map(|r| format!("{:?}", r.cube_dim)).collect();
+            assert_eq!(
+                modes.len(),
+                if performance { 2 } else { 1 },
+                "{kind:?}: {modes:?}"
+            );
+        }
+        for r in &records {
+            assert_eq!(r.seed, Some(7));
+            assert_eq!(r.times_s.len(), 2, "{r:?}");
+            assert_eq!(r.positions.as_ref().map(Vec::len), Some(2), "{r:?}");
+            assert_eq!(r.nominal_n, 1000);
+            assert!(r.vector_size_ran <= r.vector_size, "{r:?}");
+            assert!(
+                r.median_s > 0.0 && r.units > 0 && r.calls_per_run > 0,
+                "{r:?}"
+            );
+            assert!(r.block_bytes.is_some(), "{r:?}");
+        }
     }
 
     /// The mesh families at about 10^3 cells, two runs, one block: the records count the cells

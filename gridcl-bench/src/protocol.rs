@@ -348,11 +348,7 @@ pub fn measure(
     let calls = calls_per_run(calibration);
     let mut times_s = Vec::with_capacity(runs);
     for _ in 0..runs {
-        let mut run = Duration::ZERO;
-        for _ in 0..calls {
-            run += timed_call(client, work)?;
-        }
-        times_s.push(run.as_secs_f64() / calls as f64);
+        times_s.push(timed_run(client, work, calls)?);
     }
     Ok(Measured {
         vector_size_ran,
@@ -362,6 +358,20 @@ pub fn measure(
         calls_per_run: calls,
         times_s,
     })
+}
+
+/// One timed run of `calls` calls of `work` (each after an untimed `prepare` and sync), as time
+/// per call in seconds (ADR-0018).
+///
+/// # Errors
+///
+/// The error of any call.
+pub fn timed_run(client: &Client, work: &mut dyn Workload, calls: usize) -> Result<f64, String> {
+    let mut run = Duration::ZERO;
+    for _ in 0..calls {
+        run += timed_call(client, work)?;
+    }
+    Ok(run.as_secs_f64() / calls.max(1) as f64)
 }
 
 /// One `run` after an untimed `prepare` and sync: the time of the `run` and its sync.

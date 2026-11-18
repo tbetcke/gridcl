@@ -276,8 +276,34 @@ pub const GRID_OMITTED: &[(&str, KernelKind, Scalar, usize)] =
 /// ADR-0017). GeomFactors uses tile 4 up to size 4 and tile 16 above; Scalar has blocks and units
 /// only. 24 configurations (Scalar 6).
 pub fn cpu_grid(kind: KernelKind, scalar: Scalar) -> Vec<VectorConfig> {
-    let _ = (kind, scalar);
-    todo!("M10c grid (T3)")
+    // The grid is the same for every member scalar of an entry.
+    let _ = scalar;
+    let sizes: &[usize] = if kind == KernelKind::Scalar {
+        &[1]
+    } else {
+        &GRID_VECTOR_SIZES
+    };
+    let mut out = Vec::with_capacity(sizes.len() * GRID_BLOCKS.len() * 2);
+    for &vector_size in sizes {
+        let tile =
+            (kind == KernelKind::GeomFactors).then_some(if vector_size <= 4 { 4 } else { 16 });
+        for block in GRID_BLOCKS {
+            for units in [CpuUnits::All, CpuUnits::Performance] {
+                out.push(VectorConfig {
+                    vector_size,
+                    tile,
+                    block_bytes: Some(block),
+                    units: Some(units),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Whether the M10c grid leaves out `kind` in `scalar` at `size` on `target` ([`GRID_OMITTED`]).
+pub fn grid_omitted(target: &str, kind: KernelKind, scalar: Scalar, size: usize) -> bool {
+    GRID_OMITTED.contains(&(target, kind, scalar, size))
 }
 
 /// The frozen pre-M10 degree policy (ADR-0060 item 2).
@@ -625,6 +651,57 @@ mod tests {
         assert!(table_strategy(bad, "Cpu", "Points", "Hexahedron", 4, 1).is_err());
         let late = "[Cpu.Points]\nHexahedron = { 4 = [[2, \"loops\"]] }\n";
         assert!(table_strategy(late, "Cpu", "Points", "Hexahedron", 4, 1).is_err());
+    }
+
+    /// The M10c grid: 24 configurations (Scalar 6), each once, in the simplicity order; the
+    /// GeomFactors tile follows the size; every `[Cpu]` baseline lies in the grid.
+    #[test]
+    fn cpu_grid_counts_tiles_and_baselines() {
+        for (kind, scalars) in candidate_kinds() {
+            for &scalar in scalars {
+                let g = cpu_grid(kind, scalar);
+                let what = format!("{kind:?} {}", scalar.name());
+                let want = if kind == KernelKind::Scalar { 6 } else { 24 };
+                assert_eq!(g.len(), want, "{what}");
+                let keys: Vec<ConfigKey> = g.iter().map(VectorConfig::key).collect();
+                let mut sorted = keys.clone();
+                sorted.sort_unstable();
+                sorted.dedup();
+                assert_eq!(keys, sorted, "{what}: simplicity order, each once");
+                for c in &g {
+                    assert!(GRID_VECTOR_SIZES.contains(&c.vector_size), "{what}: {c:?}");
+                    assert!(
+                        GRID_BLOCKS.contains(&c.block_bytes.unwrap()),
+                        "{what}: {c:?}"
+                    );
+                    assert!(c.units.is_some(), "{what}: {c:?}");
+                    let tile = match kind {
+                        KernelKind::GeomFactors if c.vector_size <= 4 => Some(4),
+                        KernelKind::GeomFactors => Some(16),
+                        _ => None,
+                    };
+                    assert_eq!(c.tile, tile, "{what}: {c:?}");
+                    if kind == KernelKind::Scalar {
+                        assert_eq!(c.vector_size, 1, "{what}: {c:?}");
+                    }
+                }
+                let baseline = vector_baseline(DeviceClass::Cpu, kind, scalar.bytes());
+                assert!(
+                    g.contains(&baseline),
+                    "{what}: baseline {baseline:?} not in the grid"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grid_omitted_by_target() {
+        let gf = KernelKind::GeomFactors;
+        assert!(grid_omitted("macmini", gf, Scalar::F64, 10_000_000));
+        assert!(!grid_omitted("macmini", gf, Scalar::F64, 1_000_000));
+        assert!(!grid_omitted("macmini", gf, Scalar::F32, 10_000_000));
+        assert!(!grid_omitted("locust", gf, Scalar::F64, 10_000_000));
+        assert!(!grid_omitted("kathleen", gf, Scalar::F64, 10_000_000));
     }
 
     /// Pack and PullBack: the baseline, the Gather or GeomFactors choices of the old classes
