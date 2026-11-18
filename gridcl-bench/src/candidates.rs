@@ -265,10 +265,13 @@ pub const GRID_VECTOR_SIZES: [usize; 4] = [1, 4, 8, 16];
 pub const GRID_BLOCKS: [usize; 3] = [4 << 10, 16 << 10, 64 << 10];
 
 /// The cases the M10c grid leaves out, as (target, kind, scalar, size): those that do not fit a
-/// platform's memory (ADR-0065 item 4; further cases from the M10c smoke run are named in the
-/// plan's Deviations log).
-pub const GRID_OMITTED: &[(&str, KernelKind, Scalar, usize)] =
-    &[("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000)];
+/// platform's memory (ADR-0065 item 4). GeomFactors f32 at 10^7 on the Mac mini comes from the
+/// M10c smoke run (18.1 GB resident, 1.6 GB of swap growth; docs/plans/M10c.md, Deviations log,
+/// T4).
+pub const GRID_OMITTED: &[(&str, KernelKind, Scalar, usize)] = &[
+    ("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000),
+    ("macmini", KernelKind::GeomFactors, Scalar::F32, 10_000_000),
+];
 
 /// The M10c grid of the `[Cpu]` vector entry of `kind` in `scalar` (ADR-0065 item 2), in the
 /// simplicity order: vector sizes 1, 4, 8 and 16, blocks of 4, 16 and 64 KiB, and both unit
@@ -699,7 +702,14 @@ mod tests {
         let gf = KernelKind::GeomFactors;
         assert!(grid_omitted("macmini", gf, Scalar::F64, 10_000_000));
         assert!(!grid_omitted("macmini", gf, Scalar::F64, 1_000_000));
-        assert!(!grid_omitted("macmini", gf, Scalar::F32, 10_000_000));
+        assert!(grid_omitted("macmini", gf, Scalar::F32, 10_000_000));
+        assert!(!grid_omitted("macmini", gf, Scalar::F32, 1_000_000));
+        assert!(!grid_omitted(
+            "macmini",
+            KernelKind::EVector,
+            Scalar::F64,
+            10_000_000
+        ));
         assert!(!grid_omitted("locust", gf, Scalar::F64, 10_000_000));
         assert!(!grid_omitted("kathleen", gf, Scalar::F64, 10_000_000));
     }
