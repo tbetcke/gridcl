@@ -383,6 +383,61 @@ pub fn render_m10c_high_order(
         }
     }
 
+    // The fallbacks among the picks from M9h's records (ADR-0065 item 3: every entry that
+    // misses the bound is marked, at every degree of the policy).
+    let m9h_picks: Vec<_> = decision
+        .entries
+        .iter()
+        .flat_map(|e| {
+            e.picks
+                .iter()
+                .filter(|k| k.source == DegreeSource::M9h)
+                .map(move |k| (e, k))
+        })
+        .collect();
+    let m9h_fallbacks: Vec<_> = m9h_picks
+        .iter()
+        .filter(|(_, k)| matches!(k.fit, GenericFit::Fallback { .. }))
+        .collect();
+    let _ = writeln!(
+        out,
+        "\n### Fallbacks at M9h's degrees\n\nThe degrees between the M10 degrees take their \
+         choice from M9h's records, on M9h's platforms of the class at M9h's rule sizes, under \
+         the same rule. {} of {} such choices need the fallback; per platform as above (first \
+         use from M9h's records is not listed).\n",
+        m9h_fallbacks.len(),
+        m9h_picks.len()
+    );
+    if !m9h_fallbacks.is_empty() {
+        out.push_str(
+            "| class | family | cell | bytes | p | target backend | best | choice | r | first use \
+             s | reason | cause |\n\
+             | --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- |\n",
+        );
+    }
+    for (e, k) in m9h_fallbacks {
+        let GenericFit::Fallback { cause, .. } = &k.fit else {
+            unreachable!("filtered to fallbacks");
+        };
+        for p in &k.platforms {
+            let _ = writeln!(
+                out,
+                "| {:?} | {} | {} | {} | {} | {} {} | {} | {} | {:.2} | – | {} | {cause} |",
+                e.class,
+                e.family,
+                e.cell,
+                e.scalar.bytes(),
+                k.degree,
+                p.platform.target,
+                p.platform.backend,
+                p.best,
+                k.strategy,
+                p.r,
+                k.reason
+            );
+        }
+    }
+
     // The ranges.
     out.push_str(
         "\n### Degree ranges\n\nThe ranges of `gridcl-geometry/degree-policy.toml`; the source \

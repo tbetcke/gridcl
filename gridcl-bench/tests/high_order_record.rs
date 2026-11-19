@@ -1550,10 +1550,14 @@ fn m10c_high_order_section() -> String {
 /// Bullet 5 (ADR-0058, ADR-0060 item 3) and M10c bullet 2 (ADR-0065 item 3): `degree-policy.toml`
 /// holds `[Cpu.<family>]` and `[Gpu.<family>]` only, is what `decide_generic` writes under the
 /// M10c rule from M10's records at p = 1, 4 and 8 and M9h's in between, its ranges are maximal
-/// runs starting at p = 1 whose last is not `direct`, and at p = 1, 4 and 8 every entry follows
-/// the rule, recomputed here from the M10 records: a family's time as in M9h (J + det J + K; the
-/// pull-back at nine iterations; records that ran the strategy itself); a strategy that failed
-/// or took over 30 s to compile on a platform of the class is not selectable (ADR-0056);
+/// runs starting at p = 1 whose last is not `direct`, and at every degree p = 1–8 (pyramids
+/// 1–3) every entry follows the rule, recomputed here: from the M10 records where a platform of
+/// the class has a record of a member at that degree (p = 1, 4, 8 and the re-measured degrees),
+/// on those platforms at 10^6 and 10^7 points; elsewhere from M9h's records with a finite check
+/// error, on M9h's platforms of the class at its rule sizes from 10^5 points (the CPU rule at the
+/// first); a family's time as in M9h (J + det J + K; the pull-back at nine iterations; records
+/// that ran the strategy itself); a strategy that failed or took over 30 s to compile on a
+/// platform of the class is not selectable (ADR-0056);
 /// admission at 10% over the baseline by the geometric mean over the platforms at each size; the
 /// bound r ≤ 1.25 on every platform and size; the smallest geometric mean of r, the simplest
 /// within 3%; if no admitted strategy meets the bound, the bound and the choice over all
@@ -1601,110 +1605,112 @@ fn degree_policy_follows_the_generic_rule() {
             "{at}: the open-ended last range must compile at p = 9–10 (loops or better)"
         );
     }
-    let geomean = |v: &[f64]| (v.iter().map(|x| x.ln()).sum::<f64>() / v.len() as f64).exp();
+    // M9h's records without a non-finite check error (ADR-0060 item 3), and its strategy sweeps.
+    let finite = |v: &[DegreeRecord]| -> Vec<DegreeRecord> {
+        v.iter()
+            .filter(|r| r.check_error.is_none_or(f64::is_finite))
+            .cloned()
+            .collect()
+    };
+    let m9h = HighOrderData {
+        degree: finite(&m9h.degree),
+        launch: finite(&m9h.launch),
+        ..HighOrderData::default()
+    };
+    let m9h_records = sweep_records(&m9h);
+    let mut sources = BTreeMap::new();
     for class in ["Cpu", "Gpu"] {
         for (scalar, bytes) in SCALARS {
-            let devices = m10_devices(records, class, scalar);
-            if devices.is_empty() {
+            if m10_devices(records, class, scalar).is_empty() {
                 continue;
             }
+            // M9h's platforms of the class: the Mac mini's CPU and one Kathleen socket for Cpu,
+            // Metal and Locust's GPU for Gpu.
+            let m9h_devices: Vec<(&str, &str)> = sweep_targets(&m9h_records)
+                .into_iter()
+                .filter(|&(_, b, old)| {
+                    old.gpu() == (class == "Gpu") && scalars_of(b).contains(&scalar)
+                })
+                .map(|(t, b, _)| (t, b))
+                .collect();
             for family in POLICY_FAMILIES {
                 let members = policy_members(family);
                 for &cell in cells_of(family) {
-                    for degree in m10_degrees(cell) {
+                    for degree in 1..=max_degree(cell) {
                         let at = format!("{class} {family} {cell} p={degree} {}", scalar.name());
-                        let sizes = m10_sizes(family, cell, scalar, degree);
-                        let t = |d: (&str, &str), size, s: &str| {
-                            m10_time(records, d, &members, cell, degree, scalar, size, s)
+                        // The M10 records decide where a platform of the class has a record of a
+                        // member at this degree (p = 1, 4, 8 and the re-measured degrees), on
+                        // those platforms at 10^6 and 10^7 points; M9h's records elsewhere, on
+                        // M9h's platforms at its rule sizes from 10^5 points (the CPU rule at
+                        // the first, ADR-0052).
+                        let on_m10: Vec<(&str, &str)> = m10_devices(records, class, scalar)
+                            .into_iter()
+                            .filter(|&(t, b)| {
+                                records.iter().any(|r| {
+                                    r.target == t
+                                        && r.backend == b
+                                        && r.cell == cell
+                                        && r.degree == degree
+                                        && r.scalar == scalar
+                                        && members.iter().any(|&(f, _)| f == r.family)
+                                })
+                            })
+                            .collect();
+                        let from_m10 = !on_m10.is_empty();
+                        let (devices, sizes) = if from_m10 {
+                            (on_m10, m10_sizes(family, cell, scalar, degree).to_vec())
+                        } else {
+                            let s: Vec<usize> = m10_sizes(family, cell, scalar, degree)
+                                .into_iter()
+                                .filter(|&n| n >= 100_000)
+                                .collect();
+                            let s = if class == "Gpu" { s } else { s[..1].to_vec() };
+                            (m9h_devices.clone(), s)
+                        };
+                        *sources.entry(from_m10).or_insert(0) += 1;
+                        let t = |d: (&str, &str), size: usize, s: &str| -> Option<f64> {
+                            let from = if from_m10 { records } else { &m9h_records[..] };
+                            m10_time(from, d, &members, cell, degree, scalar, size, s)
                         };
                         let first_use = |s: &str| {
-                            records.iter().all(|r| {
-                                !(devices.contains(&(r.target.as_str(), r.backend.as_str()))
-                                    && r.strategy == s
-                                    && r.cell == cell
-                                    && r.degree == degree
-                                    && r.scalar == scalar
-                                    && members.iter().any(|&(f, _)| f == r.family))
-                                    || (r.status == "ok" && r.compile_s <= 30.0)
-                            })
-                        };
-                        let selectable = |s: &str| {
-                            first_use(s)
-                                && devices
-                                    .iter()
-                                    .all(|&d| sizes.iter().all(|&n| t(d, n, s).is_some()))
+                            if from_m10 {
+                                records.iter().all(|r| {
+                                    !(devices.contains(&(r.target.as_str(), r.backend.as_str()))
+                                        && r.strategy == s
+                                        && r.cell == cell
+                                        && r.degree == degree
+                                        && r.scalar == scalar
+                                        && members.iter().any(|&(f, _)| f == r.family))
+                                        || (r.status == "ok" && r.compile_s <= 30.0)
+                                })
+                            } else {
+                                first_use_ok(&m9h, &devices, &members, cell, degree, scalar, s)
+                            }
                         };
                         let cand: Vec<&str> = candidates(device_class(class))
                             .iter()
                             .copied()
-                            .filter(|&s| selectable(s))
-                            .collect();
-                        let base = if cand.contains(&"direct") {
-                            "direct"
-                        } else {
-                            assert!(
-                                cand.contains(&"loops"),
-                                "{at}: neither direct nor loops ran"
-                            );
-                            "loops"
-                        };
-                        // r(s, d, n), in the order of `devices` × `sizes`.
-                        let r = |s: &str| -> Vec<f64> {
-                            let mut out = Vec::new();
-                            for &d in &devices {
-                                for &n in &sizes {
-                                    let fastest = cand
-                                        .iter()
-                                        .map(|&c| t(d, n, c).unwrap())
-                                        .fold(f64::INFINITY, f64::min);
-                                    out.push(t(d, n, s).unwrap() / fastest);
-                                }
-                            }
-                            out
-                        };
-                        let admitted: Vec<&str> = cand
-                            .iter()
-                            .copied()
                             .filter(|&s| {
-                                s == base
-                                    || sizes.iter().all(|&n| {
-                                        let v: Vec<f64> = devices
-                                            .iter()
-                                            .map(|&d| t(d, n, s).unwrap() / t(d, n, base).unwrap())
-                                            .collect();
-                                        geomean(&v) <= 1.0 / 1.10 * (1.0 + 1e-12)
-                                    })
+                                first_use(s)
+                                    && devices
+                                        .iter()
+                                        .all(|&d| sizes.iter().all(|&n| t(d, n, s).is_some()))
                             })
                             .collect();
-                        let worst = |s: &str| r(s).into_iter().fold(0.0, f64::max);
-                        let within = |s: &&str| worst(s) <= 1.25 * (1.0 + 1e-12);
-                        let mut kept: Vec<&str> = admitted.iter().copied().filter(within).collect();
-                        if kept.is_empty() {
-                            kept = cand.iter().copied().filter(within).collect();
-                        }
-                        let rank = |s: &str| STRATEGIES.iter().position(|&x| x == s).unwrap();
-                        let (want, fallback) = if kept.is_empty() {
-                            let s = admitted
-                                .iter()
-                                .copied()
-                                .min_by(|&a, &b| {
-                                    worst(a).total_cmp(&worst(b)).then(rank(a).cmp(&rank(b)))
-                                })
-                                .expect("the baseline is admitted");
-                            (s, true)
-                        } else {
-                            let g = |s: &str| geomean(&r(s));
-                            let best = kept.iter().map(|&s| g(s)).fold(f64::INFINITY, f64::min);
-                            let s = kept
-                                .iter()
-                                .copied()
-                                .filter(|&s| g(s) <= 1.03 * best * (1.0 + 1e-12))
-                                .min_by_key(|&s| rank(s))
-                                .unwrap();
-                            (s, false)
-                        };
+                        let time =
+                            |m: usize, k: usize, s: &str| t(devices[m], sizes[k], s).unwrap();
                         let got = policy.strategy_of(class, family, cell, bytes, degree);
-                        assert_eq!(got, want, "{at}: policy {got}, generic rule {want}");
+                        let Some((want, fallback)) =
+                            generic_pick(&cand, devices.len(), sizes.len(), time)
+                        else {
+                            assert_eq!(got, "loops", "{at}: neither direct nor loops selectable");
+                            continue;
+                        };
+                        let source = if from_m10 { "M10" } else { "M9h" };
+                        assert_eq!(
+                            got, want,
+                            "{at} ({source}): policy {got}, generic rule {want}"
+                        );
                         if fallback {
                             let (b, p) = (bytes.to_string(), degree.to_string());
                             let marked = rows.iter().any(|row| {
@@ -1715,8 +1721,8 @@ fn degree_policy_follows_the_generic_rule() {
                             });
                             assert!(
                                 marked,
-                                "{at}: no strategy meets the bound, and M10c's section of \
-                                 high-order.md does not mark the entry with its worst case and \
+                                "{at} ({source}): no strategy meets the bound, and M10c's section \
+                                 of high-order.md does not mark the entry with its worst case and \
                                  cause"
                             );
                         }
@@ -1725,6 +1731,76 @@ fn degree_policy_follows_the_generic_rule() {
             }
         }
     }
+    assert!(
+        sources.contains_key(&true) && sources.contains_key(&false),
+        "picks from both M10's and M9h's records: {sources:?}"
+    );
+}
+
+/// The generic rule (ADR-0058 item 4, ADR-0065 item 3) over the selectable strategies `cand`, in
+/// the order of [`STRATEGIES`], with `t(m, k, s)` the time of `s` on platform `m` at size `k`:
+/// the baseline `direct`, or `loops` where `direct` is not selectable (`None` with neither);
+/// admission at 10% over the baseline by the geometric mean over the platforms at each size; the
+/// bound r ≤ 1.25 on every platform and size; the smallest geometric mean of r, the simplest
+/// within 3%; if no admitted strategy meets the bound, the bound and the choice over all
+/// selectable strategies; only if none meets it, the admitted one with the smallest worst case
+/// (`true`: a fallback).
+fn generic_pick(
+    cand: &[&'static str],
+    platforms: usize,
+    sizes: usize,
+    t: impl Fn(usize, usize, &str) -> f64,
+) -> Option<(&'static str, bool)> {
+    let base = ["direct", "loops"].into_iter().find(|b| cand.contains(b))?;
+    // r(s), in the order of platforms × sizes.
+    let r = |s: &str| -> Vec<f64> {
+        let mut out = Vec::new();
+        for m in 0..platforms {
+            for k in 0..sizes {
+                let fastest = cand
+                    .iter()
+                    .map(|&c| t(m, k, c))
+                    .fold(f64::INFINITY, f64::min);
+                out.push(t(m, k, s) / fastest);
+            }
+        }
+        out
+    };
+    let admitted: Vec<&str> = cand
+        .iter()
+        .copied()
+        .filter(|&s| {
+            s == base
+                || (0..sizes).all(|k| {
+                    let v: Vec<f64> = (0..platforms).map(|m| t(m, k, s) / t(m, k, base)).collect();
+                    geomean(&v) <= 1.0 / 1.10 * (1.0 + 1e-12)
+                })
+        })
+        .collect();
+    let worst = |s: &str| r(s).into_iter().fold(0.0, f64::max);
+    let within = |s: &&str| worst(s) <= 1.25 * (1.0 + 1e-12);
+    let mut kept: Vec<&str> = admitted.iter().copied().filter(within).collect();
+    if kept.is_empty() {
+        kept = cand.iter().copied().filter(within).collect();
+    }
+    let rank = |s: &str| STRATEGIES.iter().position(|&x| x == s).unwrap();
+    if kept.is_empty() {
+        let s = admitted
+            .iter()
+            .copied()
+            .min_by(|&a, &b| worst(a).total_cmp(&worst(b)).then(rank(a).cmp(&rank(b))))
+            .expect("the baseline is admitted");
+        return Some((s, true));
+    }
+    let g = |s: &str| geomean(&r(s));
+    let best = kept.iter().map(|&s| g(s)).fold(f64::INFINITY, f64::min);
+    let s = kept
+        .iter()
+        .copied()
+        .filter(|&s| g(s) <= 1.03 * best * (1.0 + 1e-12))
+        .min_by_key(|&s| rank(s))
+        .unwrap();
+    Some((s, false))
 }
 
 /// Bullet 2 (ADR-0042 item 1 as amended by ADR-0064, ADR-0060 item 5): on quadrilaterals and
