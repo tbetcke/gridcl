@@ -1542,9 +1542,14 @@ fn m10c_grid_covers_every_cpu_entry_and_platform() {
         !grid.is_empty(),
         "no M10c grid records (m10c-vector-cpu-*.json) under docs/perf/data/"
     );
-    assert!(
-        GRID_OMITTED.contains(&("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000)),
-        "GeomFactors f64 at 10^7 is left out on the Mac mini (ADR-0065 item 4)"
+    assert_eq!(
+        GRID_OMITTED,
+        &[
+            ("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000),
+            ("macmini", KernelKind::GeomFactors, Scalar::F32, 10_000_000),
+        ],
+        "the cases left out of the grid: GeomFactors f64 at 10^7 on the Mac mini (ADR-0065 item \
+         4) and GeomFactors f32 there, which does not fit either (M10c T4); no others"
     );
     for r in grid {
         let what = format!(
