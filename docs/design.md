@@ -1,15 +1,15 @@
-# gridcl — Design B: typed dimensions, runtime cells (revised design)
+# tetraloma — Design B: typed dimensions, runtime cells (revised design)
 
 As of 17 October 2026. Markdown export of the revised design document; this file is `docs/design.md`, the design reference for implementation.
 
 ## Summary
 
-gridcl is a GPU-resident mesh library in Rust built on CubeCL 0.11. It serves as the foundation for strongly typed FEM and BEM crates. It encodes the topological and geometric dimensions in the type system as `Mesh<F, TD, GD, C>`, and keeps cell types and geometry degree as runtime values stored per block. Methods that make sense only for some embeddings (normals, inverse Jacobians, boundaries) exist only where their trait bounds hold, so misuse is a compile error. CubeCL comptime parameters then recover full kernel specialisation from the runtime values.
+tetraloma is a GPU-resident mesh library in Rust built on CubeCL 0.11. It serves as the foundation for strongly typed FEM and BEM crates. It encodes the topological and geometric dimensions in the type system as `Mesh<F, TD, GD, C>`, and keeps cell types and geometry degree as runtime values stored per block. Methods that make sense only for some embeddings (normals, inverse Jacobians, boundaries) exist only where their trait bounds hold, so misuse is a compile error. CubeCL comptime parameters then recover full kernel specialisation from the runtime values.
 
 - **Scope:** 1D–3D meshes with D_TOP ≤ D_GEO ≤ 3, all standard cells including hybrid meshes, arbitrary geometry degree (device kernels verified and optimised for p ≤ 8; pyramids p ≤ 3; ADR-0041), and device residency on CUDA, HIP, Vulkan, Metal and the CubeCL CPU runtime. It also covers MPI distribution with partitioning, Gmsh MSH 4.1 import and export, and VTK export.
 - **Audience:** library architects and the implementation agent (Claude Code). Convert this document to `docs/design.md`.
-- **Status:** revised design, 17 October 2026. It supersedes the draft "gridcl Design B — Typed dimensions, runtime cells" of October 2026 and incorporates the consolidated design review of the same date. The last section maps every review finding to the place where it is fixed. Revision 2 of the same date adds the development environment: the development and test targets and milestone E0. Revision 3 adds SIMD vectorization of kernels through CubeCL vectors, with a benchmark milestone (M3s) that decides where vectors are used.
-- **Name:** gridcl is a placeholder.
+- **Status:** revised design, 17 October 2026. It supersedes the draft "tetraloma Design B — Typed dimensions, runtime cells" of October 2026 and incorporates the consolidated design review of the same date. The last section maps every review finding to the place where it is fixed. Revision 2 of the same date adds the development environment: the development and test targets and milestone E0. Revision 3 adds SIMD vectorization of kernels through CubeCL vectors, with a benchmark milestone (M3s) that decides where vectors are used.
+- **Name:** tetraloma, the project's permanent name, which replaced the placeholder of the earlier milestones in E1 (ADR-0066).
 
 **Main changes from the draft:**
 
@@ -45,7 +45,7 @@ The requirements are unchanged from the draft, apart from the development target
 1. Design B: compile-time (D_TOP, D_GEO), runtime cell types and degrees. Designs A and C appear only for comparison.
 2. CubeCL is pinned to `=0.11.0`.
 3. Reference-cell conventions follow ndelement main at commit f8cbffe (codeberg.org/nd-project/nd, mirrored at github.com/bempp/nd). Those conventions are the DefElement conventions. ndelement 0.4.0 on crates.io still uses the older Basix simplex order.
-4. gridcl-refcell holds gridcl's own tables. ndelement is used only in the unpublished gridcl-conformance crate.
+4. tetraloma-refcell holds tetraloma's own tables. ndelement is used only in the unpublished tetraloma-conformance crate.
 5. Edge and face vertex lists are stored in canonical orientation as well as per-cell orientation bits, a deliberate difference from DOLFINx.
 6. High-order pyramids go to VTK only as linear or subdivided cells.
 7. Canonical orientation is keyed on origin vertex ids (decided in review, Q1).
@@ -66,7 +66,7 @@ The requirements are unchanged from the draft, apart from the development target
 | Q1: which vertex ids define canonical orientation? | Origin vertex ids: Gmsh node tags, builder ids, or ids inherited from a parent mesh | Reference cells and conventions; topology construction; A.6 |
 | Q2: are wgpu and Metal real targets? | Yes | Device model and backends; testing; workspace and CI |
 | Q3: CI default partitioner | Built-in block partitioner, plus vendored METIS on rank 0 | Partitioning; workspace and CI |
-| Q4: prism and pyramid node layouts | Defined by gridcl from the DefElement paper's conventions (Scroggs et al., [arXiv:2506.20188](https://arxiv.org/html/2506.20188)) | Reference cells and conventions; A.5 |
+| Q4: prism and pyramid node layouts | Defined by tetraloma from the DefElement paper's conventions (Scroggs et al., [arXiv:2506.20188](https://arxiv.org/html/2506.20188)) | Reference cells and conventions; A.5 |
 | Q5: orientation scope | Manifold surfaces only. Non-manifold surfaces and interior-interface submeshes are not supported. | Geometry; tags, regions and submeshes |
 
 ## Design rationale
@@ -100,7 +100,7 @@ Design B types the six valid (D_TOP, D_GEO) pairs and leaves everything else to 
 
 Design B therefore takes the data model of DOLFINx and the device-memory discipline of MFEM. It adds the compile-time (dim, spacedim) pair of deal.II (`Triangulation<dim, spacedim>`) and Dune (dim, dimworld). From ndmesh it takes the idea of a small trait vocabulary that downstream crates program against.
 
-ndelement at f8cbffe has no Lagrange elements on prisms or pyramids. For those cells gridcl defines the layout itself, from the same DefElement conventions.
+ndelement at f8cbffe has no Lagrange elements on prisms or pyramids. For those cells tetraloma defines the layout itself, from the same DefElement conventions.
 
 ## Architecture
 
@@ -114,7 +114,7 @@ There are only six valid pairs. The type system also restricts which cell types 
 
 ### Dimension markers
 
-**Listing B1 — type-level dimensions (gridcl-dims, no dependencies)**
+**Listing B1 — type-level dimensions (tetraloma-dims, no dependencies)**
 
 ```rust
 use core::{fmt::Debug, hash::Hash};
@@ -172,7 +172,7 @@ Marker types are used instead of `const N: usize` generics, because stable Rust 
 
 ### Cell families per topological dimension
 
-**Listing B2 — admissible cells are part of the type (gridcl-dims)**
+**Listing B2 — admissible cells are part of the type (tetraloma-dims)**
 
 ```rust
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -196,14 +196,14 @@ impl TopoDim for D3 { type Cell = Cell3; }
 // From<CellN> for CellType and TryFrom<CellType> for CellN are generated by one macro.
 ```
 
-`D0` is not a `TopoDim`: point meshes do not exist, so `boundary()` is unavailable on curve meshes. `CellType` lives in gridcl-dims, so gridcl-dims stays dependency-free and gridcl-refcell builds on it.
+`D0` is not a `TopoDim`: point meshes do not exist, so `boundary()` is unavailable on curve meshes. `CellType` lives in tetraloma-dims, so tetraloma-dims stays dependency-free and tetraloma-refcell builds on it.
 
 ### Mesh type
 
-**Listing B3 — generic over scalar, dimensions and communicator, not over the backend (gridcl)**
+**Listing B3 — generic over scalar, dimensions and communicator, not over the backend (tetraloma)**
 
 ```rust
-/// Scalar of mesh geometry (gridcl-device, re-exported by gridcl). Host arithmetic uses widen/narrow (or f64 directly), never method
+/// Scalar of mesh geometry (tetraloma-device, re-exported by tetraloma). Host arithmetic uses widen/narrow (or f64 directly), never method
 /// calls on Self: CubeCL's Float and num_traits::Float share method names (sqrt, abs, min, ...),
 /// and CubeCL's versions are device-only stubs that panic on the host.
 pub trait Real: cubecl::prelude::Float + cubecl::prelude::CubeElement {
@@ -235,12 +235,12 @@ pub struct CellBlock<TD: TopoDim> {
     pub origin_ids: DeviceBuffer<u32>,  // interleaved (hi ^ 0x8000_0000, lo) origin id of each cell
     pub flags: DeviceBuffer<u32>,       // bit 0: manifold orientation flipped (codimension 1)
 }
-impl<TD: TopoDim> CellBlock<TD> {      // CellBlock lives in gridcl-topology (ADR-0012)
+impl<TD: TopoDim> CellBlock<TD> {      // CellBlock lives in tetraloma-topology (ADR-0012)
     pub fn new(cell: TD::Cell, index_map: IndexMap, vertices: DeviceStrided<u32>,
                origin_ids: DeviceBuffer<u32>, flags: DeviceBuffer<u32>) -> Self;
 }
 
-// CoordinateElement and GeometryBlock live in gridcl-geometry, re-exported by gridcl (ADR-0012).
+// CoordinateElement and GeometryBlock live in tetraloma-geometry, re-exported by tetraloma (ADR-0012).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CoordinateElement<TD: TopoDim> { pub cell: TD::Cell, pub degree: u32, pub family: NodeFamily }
 
@@ -250,11 +250,11 @@ pub struct GeometryBlock<TD: TopoDim> {
 }
 ```
 
-The communicator parameter defaults to `Serial`, so tests and single-GPU users never see MPI types. `Serial` implements `Comm` with no-op collectives, and its IndexMaps have no ghosts. `Mesh` is deliberately not `Send` (its index maps hold the communicator, ADR-0026): gridcl runs one host thread per rank (see "Streams and threading").
+The communicator parameter defaults to `Serial`, so tests and single-GPU users never see MPI types. `Serial` implements `Comm` with no-op collectives, and its IndexMaps have no ghosts. `Mesh` is deliberately not `Send` (its index maps hold the communicator, ADR-0026): tetraloma runs one host thread per rank (see "Streams and threading").
 
 ### Methods that exist only where they make sense
 
-**Listing B4 — capability by trait bound (gridcl)**
+**Listing B4 — capability by trait bound (tetraloma)**
 
 ```rust
 impl<F, TD, GD, C> Mesh<F, TD, GD, C>
@@ -323,7 +323,7 @@ impl<F: Real, C: Comm> Mesh<F, D3, D3, C> {
 }
 ```
 
-**Listing B4b — quadrature rules and fields (gridcl-geometry)**
+**Listing B4b — quadrature rules and fields (tetraloma-geometry)**
 
 ```rust
 /// One point set per cell type of a dimension, so one rule serves mixed-cell meshes.
@@ -426,7 +426,7 @@ impl<F: Real> EVector<F> {
 
 The launcher is the only place where type-level dimensions become comptime kernel constants. A mismatch between the host result type (e.g. `JacShape<D2, D3>`) and the kernel layout is therefore impossible by construction. The backend never appears in a type: the launch takes the runtime-erased `&Client`.
 
-**Listing B5 — typed launcher and kernel (gridcl-geometry)**
+**Listing B5 — typed launcher and kernel (tetraloma-geometry)**
 
 ```rust
 /// Comptime parameters need Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static.
@@ -440,7 +440,7 @@ impl GeomLayout {
     pub fn new<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(e: &CoordinateElement<TD>, points: usize, tile: usize) -> Self {
         let cell: CellType = e.cell.into();
         GeomLayout { tdim: TD::N, gdim: GD::N,
-                     nodes_per_cell: gridcl_refcell::num_lagrange_nodes(cell, e.degree),
+                     nodes_per_cell: tetraloma_refcell::num_lagrange_nodes(cell, e.degree),
                      num_points: points, tile }
     }
 }
@@ -526,7 +526,7 @@ where F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, G: DeviceGrid<F = F, TD = 
 
 ### Runtime erasure for I/O
 
-**Listing B6 — the erased layer (gridcl)**
+**Listing B6 — the erased layer (tetraloma)**
 
 ```rust
 pub enum AnyMesh<F: Real, C: Comm = Serial> {
@@ -574,7 +574,7 @@ impl<F: Real, C: Comm> TryFrom<AnyMesh<F, C>> for SurfaceMesh<F, C> {
 
 ### Trait vocabulary for downstream crates
 
-**Listing B7 — what FEM and BEM crates program against (gridcl-geometry, re-exported by gridcl; ADR-0012)**
+**Listing B7 — what FEM and BEM crates program against (tetraloma-geometry, re-exported by tetraloma; ADR-0012)**
 
 ```rust
 /// Implemented by Mesh and by submeshes; later by extruded or structured grids.
@@ -608,7 +608,7 @@ pub trait DeviceGrid {
 
 This mirrors the mesh traits of ndmesh but returns device views instead of per-entity host iterators. Function spaces, assemblers and BEM operators are generic over `G: DeviceGrid`, so they work unchanged on submeshes and future grid kinds. Accessors create no topology: entities and connectivity are built only by the `&mut self` methods `create_entities` and `create_connectivity`. Derived geometry data (E-vectors) is built on first use and cached (ADR-0012).
 
-`DeviceGrid` lives in gridcl-geometry, because `QuadRule::for_grid` and the block functions of Listing B5 (gridcl-geometry) are generic over it; gridcl re-exports it. `create_entities(d)` accepts 0 ≤ d < tdim, and dimension 0 gives one `Point` block of the vertices. `create_connectivity` supports (tdim, d), which is downward and filled by entity creation, and (d, tdim), which is upward, for 0 ≤ d < tdim; d → 0 is `EntityBlock::vertices` and tdim → 0 is `CellBlock::vertices` (ADR-0012).
+`DeviceGrid` lives in tetraloma-geometry, because `QuadRule::for_grid` and the block functions of Listing B5 (tetraloma-geometry) are generic over it; tetraloma re-exports it. `create_entities(d)` accepts 0 ≤ d < tdim, and dimension 0 gives one `Point` block of the vertices. `create_connectivity` supports (tdim, d), which is downward and filled by entity creation, and (d, tdim), which is upward, for 0 ≤ d < tdim; d → 0 is `EntityBlock::vertices` and tdim → 0 is `CellBlock::vertices` (ADR-0012).
 
 ## API walkthrough
 
@@ -620,7 +620,7 @@ The file decides the dimensions at run time, the program fixes them once, and th
 
 ```rust
 use cubecl::{Device, device::WgpuDeviceKind};
-use gridcl::prelude::*;
+use tetraloma::prelude::*;
 
 let universe = mpi::initialize().expect("MPI already initialised"); // one host thread per rank
 let comm = Mpi::world(&universe);
@@ -736,11 +736,11 @@ VtkWriter::vtu("out/scalp").lagrange(true).write(&scalp)?;          // generic o
 VtkWriter::vtu("out/scalp2").write_any(AnyMeshRef::Surface(&scalp))?; // erased path, no clone
 ```
 
-`VtkWriter` (gridcl) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. On more than one rank, `vtu` gathers the owned cells to rank 0, and `pvtu` and `vtkhdf` (feature `hdf5`) write one piece per rank with a `vtkGhostType` cell array; `.origin_ids(true)` adds the cell array `OriginId`. Writes are collective (ADR-0024, ADR-0035).
+`VtkWriter` (tetraloma) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. On more than one rank, `vtu` gathers the owned cells to rank 0, and `pvtu` and `vtkhdf` (feature `hdf5`) write one piece per rank with a `vtkGhostType` cell array; `.origin_ids(true)` adds the cell array `OriginId`. Writes are collective (ADR-0024, ADR-0035).
 
 ## Reference cells and conventions
 
-gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 of Scroggs et al., [arXiv:2506.20188](https://arxiv.org/html/2506.20188), published 2026). ndelement main at f8cbffe implements them. gridcl-refcell holds its own copy of every table and depends only on gridcl-dims, so the tables are usable on the host, inside `comptime!` blocks and in tests. Agreement with ndelement is checked by the separate gridcl-conformance crate (A.10).
+tetraloma uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 of Scroggs et al., [arXiv:2506.20188](https://arxiv.org/html/2506.20188), published 2026). ndelement main at f8cbffe implements them. tetraloma-refcell holds its own copy of every table and depends only on tetraloma-dims, so the tables are usable on the host, inside `comptime!` blocks and in tests. Agreement with ndelement is checked by the separate tetraloma-conformance crate (A.10).
 
 | Cell | D_TOP | V | E | F | Facets | Lagrange nodes N(p) | Gmsh P1/P2 | VTK linear/Lagrange |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -761,9 +761,9 @@ gridcl uses the DefElement conventions (Conventions 1–2 and Definitions 8–9 
 - **Permutation info (A.6).** For each cell, the relation between the cell-local and canonical orientation of every edge and face is packed into one u32 with ndelement's layout: one bit per edge first, then three bits per face. The value equals `ndelement::orientation::compute_orientation` applied to the cell's vertex origin ids. It is computed per cell, independently of entity creation, and is identical on every rank count.
 - **Lagrange node layout (A.5).** Blocks are ordered vertices, edges, faces, interior. Inside an entity, nodes follow that entity's own vertex list.
     - Intervals, triangles, quadrilaterals, tetrahedra and hexahedra use exactly ndelement's layout, so the FEM/BEM layer can apply ndelement's DOF transformations without a second convention.
-    - ndelement has no Lagrange element on prisms or pyramids. gridcl defines those layouts in A.5, using the DefElement conventions and the same in-entity rule; Basix's equispaced lattices for these cells coincide with it.
+    - ndelement has no Lagrange element on prisms or pyramids. tetraloma defines those layouts in A.5, using the DefElement conventions and the same in-entity rule; Basix's equispaced lattices for these cells coincide with it.
     - The pyramid uses DefElement's Lagrange pyramid space (Definition 9), a rational space of dimension (p+1)(p+2)(2p+3)/6. A FEM layer that needs prism or pyramid elements must supply them itself.
-- **Node families.** Equispaced points on every cell are required for Gmsh and VTK interoperability. Gauss–Lobatto–Legendre (GLL) points are offered on intervals, quadrilaterals and hexahedra only, matching ndelement. Requesting GLL on any other cell returns `GridError::UnsupportedNodeFamily`. Conversion between families is an interpolation applied on the device; writers always convert to equispaced. Both writers call `gridcl_geometry::equispaced_nodes`; a node shared by several cells takes its value from its first cell in flat order, so the result is deterministic (ADR-0024).
+- **Node families.** Equispaced points on every cell are required for Gmsh and VTK interoperability. Gauss–Lobatto–Legendre (GLL) points are offered on intervals, quadrilaterals and hexahedra only, matching ndelement. Requesting GLL on any other cell returns `GridError::UnsupportedNodeFamily`. Conversion between families is an interpolation applied on the device; writers always convert to equispaced. Both writers call `tetraloma_geometry::equispaced_nodes`; a node shared by several cells takes its value from its first cell in flat order, so the result is deterministic (ADR-0024).
 - **DOF transformations.** The base transformations of Scroggs, Dokken, Richardson and Wells (ACM TOMS 48(2), 2022, doi 10.1145/3524456) depend only on the sub-entity type. They are therefore identical in the DefElement and Basix numberings; only the block of the cell transformation that each one lands in moves.
 
 ## Device model and backends
@@ -772,7 +772,7 @@ Every large array is a typed wrapper around a CubeCL `Handle`, and host access i
 
 ### Device containers
 
-**Listing S1 — device containers (gridcl-device)**
+**Listing S1 — device containers (tetraloma-device)**
 
 ```rust
 use core::marker::PhantomData;
@@ -871,11 +871,11 @@ pub fn check_precision<F: Real>(client: &Client) -> Result<()> {
 }
 ```
 
-`GridError` and the alias `Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them; gridcl-parallel and gridcl re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). M7 adds `PartitionerFailed { name: &'static str, code: i32 }` and `NeedsMpiCommunicator(&'static str)` (ADR-0029). M9 adds `NonManifold`, `InteriorFacet`, `NeedsReferencePoint` and `NonOrientable`, unit variants agreed across ranks (ADR-0039). Cell types and node families are named by `&'static str`, because gridcl-device depends on neither gridcl-dims nor gridcl-refcell. `ConnKey` (Listing T1) lives in gridcl-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
+`GridError` and the alias `Result<T, E = GridError>` live in tetraloma-device, the lowest crate that returns them; tetraloma-parallel and tetraloma re-export both (ADR-0009). `GridError` is `#[non_exhaustive]` and implements `Display`, `std::error::Error` and `From<ServerError>`. Its M2 variants are `TooLarge`, `AllocationTooLarge { bytes: usize, max: u64 }`, `UnsupportedPrecision { scalar: &'static str, device: &'static str }`, `LengthMismatch { expected: usize, found: usize }` and `Server(ServerError)`; later milestones add their variants when they first use them. M3 adds `UnsupportedNodeFamily { cell, family }`, `UnsupportedDegree { cell, degree: u32 }`, `WrongCellDim { found, expected_tdim: usize }`, `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }`, `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)`, `UnsupportedConnectivity(ConnKey)`, `DuplicateOriginId(i64)`, `IndexOutOfRange { index: usize, len: usize }`, `NodeRoleMismatch(usize)`, `DuplicateCellBlock(&'static str)`, `CellNotInRule(&'static str)` and `NotYetImplemented(&'static str)`. M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022). M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026). M7 adds `PartitionerFailed { name: &'static str, code: i32 }` and `NeedsMpiCommunicator(&'static str)` (ADR-0029). M9 adds `NonManifold`, `InteriorFacet`, `NeedsReferencePoint` and `NonOrientable`, unit variants agreed across ranks (ADR-0039). Cell types and node families are named by `&'static str`, because tetraloma-device depends on neither tetraloma-dims nor tetraloma-refcell. `ConnKey` (Listing T1) lives in tetraloma-device for this reason. `pad_len`, `debug_assert_bindings` and `device_properties(&Client) -> Arc<DeviceProperties>` are public: kernel launchers in every crate read device limits through `device_properties`, which honours `testing::with_properties` (ADR-0012). `Mesh` is not `Clone` either; `Mesh::try_clone` copies every array with `deep_clone`.
 
 ### Supported backends
 
-The backend is chosen at run time through `cubecl::Device`, and no gridcl type carries a runtime parameter. The table lists what CubeCL 0.11 registers for each backend.
+The backend is chosen at run time through `cubecl::Device`, and no tetraloma type carries a runtime parameter. The table lists what CubeCL 0.11 registers for each backend.
 
 | Backend | cubecl feature | Device | f64 | u64 arithmetic | Float atomic add | GPU-aware MPI | Tested on |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -891,7 +891,7 @@ The supported Metal path is wgpu with MSL. The native Metal runtime is optional 
 
 ### CUDA toolkit and driver
 
-CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; feature `cuda`, the default), choosing the PTX ISA version from the node's driver, and the driver JIT-compiles that PTX when it loads the module. The alternative backend `cuda-cpp` compiles CUDA C++ with NVRTC from the toolkit; gridcl uses it only for diagnosis (env-check) (ADR-0001). Two rules follow:
+CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; feature `cuda`, the default), choosing the PTX ISA version from the node's driver, and the driver JIT-compiles that PTX when it loads the module. The alternative backend `cuda-cpp` compiles CUDA C++ with NVRTC from the toolkit; tetraloma uses it only for diagnosis (env-check) (ADR-0001). Two rules follow:
 
 - **No CUDA 13 on V100.** CUDA 13 dropped Volta (sm_70), cudarc takes the CUDA version from the toolkit at build time, and the V100 nodes' driver supports CUDA 12.4, so V100 jobs use a CUDA 12.x toolkit. A100 (sm_80) and GH200 (sm_90, compiled as `sm_90a`) may use CUDA 12 or 13.
 - **Toolkit no newer than the driver (`cuda-cpp` only).** On the NVRTC path the driver must understand the PTX the toolkit emits, so the toolkit must not be newer than the CUDA version the node's driver reports in `nvidia-smi`. Otherwise module loading fails with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
@@ -926,7 +926,7 @@ CubeCL 0.11 compiles each kernel to PTX with its own LLVM (NVPTX backend; featur
 
 ### Device primitives
 
-gridcl-device provides the following primitives (check CubeK first for reusable pieces):
+tetraloma-device provides the following primitives (check CubeK first for reusable pieces):
 
 - inclusive and exclusive scan, built as reduce-then-scan;
 - stable LSD radix sort over keys of one to four u32 words with 8-bit digits and a u32 payload;
@@ -947,13 +947,13 @@ They follow eight rules:
 - no plane operations: values are combined within a cube through shared memory and `sync_cube`, so every primitive is correct with plane size 1 and on the CPU runtime, which has no plane operations;
 - no primitive reads from the device, except that run-length and unique-by-key read their count once (a blocking 4-byte read) and return exactly sized buffers, and that debug builds of gather and scatter read back one value to check their indices (ADR-0009).
 
-**Listing S1b — primitives (gridcl-device)**
+**Listing S1b — primitives (tetraloma-device)**
 
 ```rust
 /// The scalars of the typed primitives (sealed): f32, f64, i32, u32.
 pub trait DeviceScalar: CubeElement + Numeric + sealed::Sealed {}
 
-/// Sum, min or max. Re-exported by gridcl-parallel, so `gridcl_parallel::ReduceOp` stays valid.
+/// Sum, min or max. Re-exported by tetraloma-parallel, so `tetraloma_parallel::ReduceOp` stays valid.
 #[derive(Clone, Copy, Debug)] pub enum ReduceOp { Sum, Min, Max }
 
 /// Writes `v` over the padded length.
@@ -1015,15 +1015,15 @@ pub struct Unique { pub keys: SortKeys, pub first: DeviceBuffer<u32>, pub group:
 pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<Unique>;
 ```
 
-The primitives are re-exported at the root of gridcl-device, together with `Client` and `CubeElement` for gridcl-parallel, which has no cubecl dependency (ADR-0026). `pack` and `unpack` plan as `KernelKind::Pack`, are generic over the vector size (lanes over output elements for pack, over input elements for unpack), and require `size_of::<T>()` to be a multiple of 4, as `copy` does. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
+The primitives are re-exported at the root of tetraloma-device, together with `Client` and `CubeElement` for tetraloma-parallel, which has no cubecl dependency (ADR-0026). `pack` and `unpack` plan as `KernelKind::Pack`, are generic over the vector size (lanes over output elements for pack, over input elements for unpack), and require `size_of::<T>()` to be a multiple of 4, as `copy` does. An empty input never launches a kernel over that input. Outputs whose size does not depend on it are still written: by the fill kernel (for example reduce, exclusive scan, the offsets of run-length, histogram, gather from an empty source), or by a kernel over another, non-empty input that binds the empty buffer but reads nothing from it (segmented reduce with empty values) (ADR-0011).
 
 ### Streams and threading
 
-A CubeCL `Client` uses a thread-local stream by default, so launches from different host threads land on different streams. gridcl's model is one host thread per MPI rank: every launch and transfer for a mesh comes from the thread that created it. `Mesh<…, Mpi>` is not `Send` (the communicator is held in an `Rc`), which enforces this. MPI is initialised with `Threading::Single`. Tests run on separate threads but never share a mesh between threads.
+A CubeCL `Client` uses a thread-local stream by default, so launches from different host threads land on different streams. tetraloma's model is one host thread per MPI rank: every launch and transfer for a mesh comes from the thread that created it. `Mesh<…, Mpi>` is not `Send` (the communicator is held in an `Rc`), which enforces this. MPI is initialised with `Threading::Single`. Tests run on separate threads but never share a mesh between threads.
 
 ## Vectorization and CPU execution
 
-CubeCL expresses SIMD in the kernel language, so gridcl writes a vectorized kernel once and each backend lowers it: the CPU runtime to the host's SIMD instructions, GPU backends to wide loads and stores. gridcl writes no host-side SIMD code. Which kernels use vectors, and how wide, is decided by the benchmarks of milestone M3s; until then every kernel runs at vector size 1.
+CubeCL expresses SIMD in the kernel language, so tetraloma writes a vectorized kernel once and each backend lowers it: the CPU runtime to the host's SIMD instructions, GPU backends to wide loads and stores. tetraloma writes no host-side SIMD code. Which kernels use vectors, and how wide, is decided by the benchmarks of milestone M3s; until then every kernel runs at vector size 1.
 
 ### CubeCL's vector model
 
@@ -1049,11 +1049,11 @@ On every CPU the runtime sizes IO for 512 bits, because wider vectors amortise e
 - LLVM compiles each kernel for the host CPU at O3. CubeCL 0.11 fuses a multiply and the add that consumes it into one fused multiply-add (`llvm.fmuladd`) on every target, the CPU included (ADR-0013). The fusion depends only on the kernel source, so each vector lane computes exactly what the same kernel computes at vector size 1.
 - Shared memory is sized to the L1 data cache.
 
-Two consequences shape gridcl's kernels. First, with the GPU mapping of one item per unit, neighbouring items go to different threads: threads write to shared cache lines (128 bytes on Apple CPUs) and none streams through memory. Every kernel therefore takes its work distribution from a launch plan that gives each CPU thread contiguous blocks. Second, auto-vectorization is not relied on, because the cube loop strides through memory by cube_dim items; vectors are requested explicitly with `Vector<F, N>`.
+Two consequences shape tetraloma's kernels. First, with the GPU mapping of one item per unit, neighbouring items go to different threads: threads write to shared cache lines (128 bytes on Apple CPUs) and none streams through memory. Every kernel therefore takes its work distribution from a launch plan that gives each CPU thread contiguous blocks. Second, auto-vectorization is not relied on, because the cube loop strides through memory by cube_dim items; vectors are requested explicitly with `Vector<F, N>`.
 
 ### Launch plans and the vector policy
 
-**Listing S2 — launch plans and the vector policy (gridcl-device)**
+**Listing S2 — launch plans and the vector policy (tetraloma-device)**
 
 ```rust
 /// Kernel families with an entry in the vector policy.
@@ -1075,7 +1075,7 @@ impl DeviceClass {
     pub fn for_client(client: &Client) -> DeviceClass;
 }
 
-/// Value of GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and of testing::with_vector_size.
+/// Value of TETRALOMA_VECTOR_SIZE (scalar | policy | widest | <n>) and of testing::with_vector_size.
 /// Widest is the first of io_optimized_vector_sizes(elem_bytes). Fixed(n) and Widest skip the
 /// register budget but stay clamped by max_vector and the device's max_vector_size (ADR-0011);
 /// Policy applies the full rule below.
@@ -1083,8 +1083,8 @@ impl DeviceClass {
 pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }
 
 /// Vector sizes, QuadField tiles and CPU block sizes chosen from benchmarks
-/// (docs/perf/vectorization.md), compiled in from gridcl-device/vector-policy.toml.
-/// GRIDCL_VECTOR_SIZE (scalar | policy | widest | <n>) and GRIDCL_QUAD_TILE override it for
+/// (docs/perf/vectorization.md), compiled in from tetraloma-device/vector-policy.toml.
+/// TETRALOMA_VECTOR_SIZE (scalar | policy | widest | <n>) and TETRALOMA_QUAD_TILE override it for
 /// tests and benchmarks.
 pub struct VectorPolicy { /* per (KernelKind, DeviceClass, element size) */ }
 impl VectorPolicy {
@@ -1138,14 +1138,14 @@ impl LaunchPlan {
         -> Result<Self>;
 }
 
-/// Test hooks, only with gridcl-device's Cargo feature `testing` (off by default, not stable
-/// API; gridcl-testing turns it on). Overrides are scoped and thread-local, because gridcl runs
+/// Test hooks, only with tetraloma-device's Cargo feature `testing` (off by default, not stable
+/// API; tetraloma-testing turns it on). Overrides are scoped and thread-local, because tetraloma runs
 /// one host thread per mesh. Precedence: the scoped per-kind override, then the scoped override,
-/// then the environment variable, then vector-policy.toml. An invalid GRIDCL_VECTOR_SIZE or
-/// GRIDCL_QUAD_TILE panics.
+/// then the environment variable, then vector-policy.toml. An invalid TETRALOMA_VECTOR_SIZE or
+/// TETRALOMA_QUAD_TILE panics.
 #[cfg(feature = "testing")]
 pub mod testing {
-    /// Replaces the properties gridcl-device reads (limits, device class, vector sizes) for
+    /// Replaces the properties tetraloma-device reads (limits, device class, vector sizes) for
     /// buffers and plans made inside `f`; tests clone client.properties() and modify it.
     pub fn with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R;
     pub fn with_vector_size<R>(v: VectorSizeOverride, f: impl FnOnce() -> R) -> R;
@@ -1166,7 +1166,7 @@ pub mod testing {
 ```
 
 - **Vector size:** the largest power of two not above the policy's size, `max_vector`, the device's `hardware.max_vector_size` (ADR-0011), and the widest of `vector_sizes_in_registers(elem_bytes, live)`.
-- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from gridcl-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device reads, so injected limits apply (ADR-0010).
+- **GPUs:** `cube_dim` is 256, or `max_units_per_cube` if that is smaller; `items_per_unit` is 1; the cube count comes from tetraloma-device's spread over `max_cube_count` (x first, then y, then z), computed from the properties tetraloma-device reads, so injected limits apply (ADR-0010).
 - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`, ADR-0011), or the performance-core count (macOS: every `hw.perflevel` except the last, ADR-0034) where `VectorPolicy::cpu_units` says `Performance` and the device reports a smaller count; one unit per thread (ADR-0017). The vectors are split into blocks of `items_per_unit` consecutive vectors, `VectorPolicy::cpu_block_bytes` of the widest stream (16 KiB until M3s), rounded to a whole number of 128-byte lines, so block boundaries fall on cache-line boundaries. The block size is chosen per kind and element size by the M3s benchmarks (ADR-0015).
 - **One kernel source:** kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit` vectors, checking `v < num_vectors` (Listing B5). Every plan is checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`.
 - **Groups:** `per_group` plans cubes of cooperating units; reductions inside a group are pairwise trees over a fixed leaf count, so results do not depend on the group size or the plane size; `sync_cube` is called only in uniform control flow (ADR-0042).
@@ -1180,7 +1180,7 @@ pub mod testing {
 
 ### Where vectors apply
 
-Vectors pay off where a kernel does the same arithmetic for many independent items stored contiguously. They do not help indirect gathers and scatters, atomics or data-dependent control flow. Within those limits gridcl uses the candidate list below; M3s measures each family, and the policy keeps vector size 1 wherever no gain is shown.
+Vectors pay off where a kernel does the same arithmetic for many independent items stored contiguously. They do not help indirect gathers and scatters, atomics or data-dependent control flow. Within those limits tetraloma uses the candidate list below; M3s measures each family, and the policy keeps vector size 1 wherever no gain is shown.
 
 | Kernel family (`KernelKind`) | Lanes over | Layout prerequisite | Expectation |
 | --- | --- | --- | --- |
@@ -1205,7 +1205,7 @@ Histograms, connectivity inversion, segmented reductions over irregular segments
 
 ### Benchmarks
 
-gridcl-bench, an unpublished workspace crate, measures where vectors help.
+tetraloma-bench, an unpublished workspace crate, measures where vectors help.
 
 - **What it runs:** every candidate family at every vector size the device offers, at QuadField tile widths 1, 4 and 16 for geometry kernels, and on CPUs at block sizes of 4, 16 and 64 KiB. Sizes are 10^5, 10^6 and 10^7 items, in f32, f64 and u32 as the family requires. That is the M3s protocol. From M10, and after a CubeCL pin bump, the study runs the candidate protocol instead (ADR-0057). Each policy entry measures only:
     - its baseline: vector size 1 at the entry's previous tile, block and units; for strategies, `direct`, or `loops` where `direct` is not selectable;
@@ -1224,16 +1224,16 @@ gridcl-bench, an unpublished workspace crate, measures where vectors help.
     - Fallback: if no admitted configuration meets the bound, the bound and the choice apply to all candidates; if none meets it, take the admitted configuration with the smallest worst-case r, and the report marks it. This replaces the backstops of ADR-0018 and ADR-0021. Where a platform leaves out a size, admission and r use the platforms present (ADR-0065).
 
   A strategy that fails, or takes over 30 s to compile and load on any platform of the class, is not selectable (ADR-0056). For every entry, the reports list each platform's best configuration, the generic choice, each platform's r for that choice, and the reason.
-- **Record:** the choices — vector sizes, QuadField tiles per element size, CPU block sizes per kind and element size in units of 4 KiB, and CPU units per kind and element size — go to `gridcl-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run with the candidate protocol in M10 for every kernel family, and after any CubeCL pin bump (ADR-0057); the `[Cpu]` vector set is re-derived in M10c (ADR-0065). From M10, `vector-policy.toml` holds `[Cpu]` and `[Gpu]` with 4- and 8-byte entries, and nothing else (ADR-0058).
-- **Degree sweep (M9h):** the degree-dependent families (EVector, the geometric factors, the pull-back and the device basis evaluator) are measured at p = 1–8 for each strategy of "Geometric factors" (`direct` not on hexahedra, prisms and tetrahedra at p ≥ 5, where T3's drift baseline gives its cost; ADR-0050), with the protocol and conditions above, except that vector size, tile and CPU block come from `vector-policy.toml`. Sizes are 10^5, 10^6 and 10^7 quadrature points (Gauss degree 2p); a CPU run over 600 s or a compile over 300 s is recorded as too slow. Each record carries the time per cell and per point and the first-use compile and load time (one new kernel per warm-up, `CUDA_CACHE_DISABLE=1`); on CUDA, registers, spill and local memory per thread come from `ncu` or `ptxas -v` of the driver's CUDA version, and failing driver calls are named by `compute-sanitizer`, without FFI. A strategy is adopted over the baseline (`direct`, or `loops` where `direct` is not selectable) only if it is at least 10% faster at 10^6 and 10^7 points; on the CPU classes the sweep times `direct`, `loops` and the sum-factorised strategy only, at 10^5 and 10^6 points with medians of five runs, and the rule uses 10^6 points (ADR-0052); among those within 3% of the fastest the simplest wins (direct < loops < sum-factorised < shared < cooperative); classes with several devices use the geometric mean; degree ranges are maximal runs of equal choices. A strategy that fails, or takes over 30 s to compile and load on a device swept for a class, is not selectable for that class (ADR-0056); bullet 2's bound is Locust's. The choices go to `gridcl-geometry/degree-policy.toml`, and the costs, choices and reasons to `docs/perf/high-order.md`, with the raw JSON under `docs/perf/data/` (ADR-0042); `docs/perf/high-order.md` reports the p = 8 / p = 4 ratios of ADR-0042 item 1 and the speedup over M9 at p = 8 (ADR-0053); rule 11's paired runs interleave the policy's and `direct`'s timed runs on CPUs, and at p ≤ 4 the CPU classes' strategies are timed interleaved (ADR-0055). In M10, and after a CubeCL pin bump, the degree-dependent families are measured at p = 1, 4 and 8 only, with the candidate protocol (ADR-0057). FacetNormals on intervals in f32 is measured at 10^5 and 10^6 points at p = 4–6 and at 10^4 and 10^5 points at p = 7–8, where 10^6 or 10^7 equispaced points exceed f32's resolution (ADR-0063). `degree-policy.toml` then holds `[Cpu.<family>]` and `[Gpu.<family>]` only, chosen by the generic rule. The choices at the degrees in between come from M9h's per-degree records, and Grace votes at p = 1, 4 and 8. A family and cell type whose check misses the bound, or whose time at 10^6 points moves by more than 10% from M9h's record, is re-measured with candidates only at the inner degrees next to each boundary of its range (ADR-0058, ADR-0060).
+- **Record:** the choices — vector sizes, QuadField tiles per element size, CPU block sizes per kind and element size in units of 4 KiB, and CPU units per kind and element size — go to `tetraloma-device/vector-policy.toml`; the measured speedups, choices and reasons go to `docs/perf/vectorization.md`, with the raw JSON under `docs/perf/data/`. The study is re-run with the candidate protocol in M10 for every kernel family, and after any CubeCL pin bump (ADR-0057); the `[Cpu]` vector set is re-derived in M10c (ADR-0065). From M10, `vector-policy.toml` holds `[Cpu]` and `[Gpu]` with 4- and 8-byte entries, and nothing else (ADR-0058).
+- **Degree sweep (M9h):** the degree-dependent families (EVector, the geometric factors, the pull-back and the device basis evaluator) are measured at p = 1–8 for each strategy of "Geometric factors" (`direct` not on hexahedra, prisms and tetrahedra at p ≥ 5, where T3's drift baseline gives its cost; ADR-0050), with the protocol and conditions above, except that vector size, tile and CPU block come from `vector-policy.toml`. Sizes are 10^5, 10^6 and 10^7 quadrature points (Gauss degree 2p); a CPU run over 600 s or a compile over 300 s is recorded as too slow. Each record carries the time per cell and per point and the first-use compile and load time (one new kernel per warm-up, `CUDA_CACHE_DISABLE=1`); on CUDA, registers, spill and local memory per thread come from `ncu` or `ptxas -v` of the driver's CUDA version, and failing driver calls are named by `compute-sanitizer`, without FFI. A strategy is adopted over the baseline (`direct`, or `loops` where `direct` is not selectable) only if it is at least 10% faster at 10^6 and 10^7 points; on the CPU classes the sweep times `direct`, `loops` and the sum-factorised strategy only, at 10^5 and 10^6 points with medians of five runs, and the rule uses 10^6 points (ADR-0052); among those within 3% of the fastest the simplest wins (direct < loops < sum-factorised < shared < cooperative); classes with several devices use the geometric mean; degree ranges are maximal runs of equal choices. A strategy that fails, or takes over 30 s to compile and load on a device swept for a class, is not selectable for that class (ADR-0056); bullet 2's bound is Locust's. The choices go to `tetraloma-geometry/degree-policy.toml`, and the costs, choices and reasons to `docs/perf/high-order.md`, with the raw JSON under `docs/perf/data/` (ADR-0042); `docs/perf/high-order.md` reports the p = 8 / p = 4 ratios of ADR-0042 item 1 and the speedup over M9 at p = 8 (ADR-0053); rule 11's paired runs interleave the policy's and `direct`'s timed runs on CPUs, and at p ≤ 4 the CPU classes' strategies are timed interleaved (ADR-0055). In M10, and after a CubeCL pin bump, the degree-dependent families are measured at p = 1, 4 and 8 only, with the candidate protocol (ADR-0057). FacetNormals on intervals in f32 is measured at 10^5 and 10^6 points at p = 4–6 and at 10^4 and 10^5 points at p = 7–8, where 10^6 or 10^7 equispaced points exceed f32's resolution (ADR-0063). `degree-policy.toml` then holds `[Cpu.<family>]` and `[Gpu.<family>]` only, chosen by the generic rule. The choices at the degrees in between come from M9h's per-degree records, and Grace votes at p = 1, 4 and 8. A family and cell type whose check misses the bound, or whose time at 10^6 points moves by more than 10% from M9h's record, is re-measured with candidates only at the inner degrees next to each boundary of its range (ADR-0058, ADR-0060).
 
 ## Topology construction on the device
 
-Cells and their vertices come from the input. Edges and faces are created on demand by `create_entities(dim)`, as in DOLFINx, with one sort per entity type across all cell blocks. The algorithm uses only the primitives of gridcl-device, and its result does not depend on the number of ranks.
+Cells and their vertices come from the input. Edges and faces are created on demand by `create_entities(dim)`, as in DOLFINx, with one sort per entity type across all cell blocks. The algorithm uses only the primitives of tetraloma-device, and its result does not depend on the number of ranks.
 
 ### Entity creation
 
-1. **Emission plan (host).** For entity dimension d and each entity type T (e.g. triangle faces), list the cell blocks whose cells have sub-entities of type T, with the count k_b per cell from the gridcl-refcell tables. With n̂_b the block's cell count n_b rounded up to `VECTOR_PAD`, prefix sums of k_b · n̂_b give block b the emission range [e_b, e_b + n̂_b · k_b); sub-entity i of cell c has emission index e = e_b + i · n̂_b + c, so the lanes of a vector are aligned consecutive cells. The padded total must stay below 2^32 (ADR-0012).
+1. **Emission plan (host).** For entity dimension d and each entity type T (e.g. triangle faces), list the cell blocks whose cells have sub-entities of type T, with the count k_b per cell from the tetraloma-refcell tables. With n̂_b the block's cell count n_b rounded up to `VECTOR_PAD`, prefix sums of k_b · n̂_b give block b the emission range [e_b, e_b + n̂_b · k_b); sub-entity i of cell c has emission index e = e_b + i · n̂_b + c, so the lanes of a vector are aligned consecutive cells. The padded total must stay below 2^32 (ADR-0012).
 2. **Emit keys (device).** There is one launch per cell block, with the cell type and sub-entity table as comptime constants. One unit per (cell, local sub-entity i of type T) writes at its emission index e:
     - the key is the sub-entity's local vertex ids, sorted ascending by a sorting network of at most four values (two u32 words for edges, three for triangles, four for quadrilaterals);
     - the payload is e;
@@ -1248,7 +1248,7 @@ Cells and their vertices come from the input. Edges and faces are created on dem
 
 Entities of one dimension are grouped into homogeneous entity blocks by type; a prism mesh, for example, has a triangle face block and a quadrilateral face block. Each entity block has its own IndexMap with [owned | ghost] numbering, so device arrays always have a fixed stride. Connectivity arrays use a per-dimension flat index (block offset + block-local index). The type of the sub-entity at local position i follows from the reference tables, so no per-entry type tag is stored.
 
-**Listing T1 — topology types (gridcl-topology)**
+**Listing T1 — topology types (tetraloma-topology)**
 
 ```rust
 pub struct EntityBlock {
@@ -1259,7 +1259,7 @@ pub struct EntityBlock {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ConnKey { pub from: u8, pub to: u8 }        // defined in gridcl-device, re-exported (ADR-0012)
+pub struct ConnKey { pub from: u8, pub to: u8 }        // defined in tetraloma-device, re-exported (ADR-0012)
 
 pub enum Connectivity {
     /// One strided array per cell block (cell -> edges, cell -> faces, ...), flat indices.
@@ -1278,9 +1278,9 @@ A vertex is *shared* if it appears on more than one rank, whether in owned or gh
 - **Candidates.** An entity whose vertices are all shared is a sharing candidate. Its key (the sorted origin ids of its vertices) is sent to every rank in the intersection of its vertices' sharer sets. Each receiving rank replies whether it holds the entity, and whether it holds it in an owned cell.
 - **Entity owner.** Chosen among the ranks that hold the entity in an owned cell, as the one at position hash(key) mod (number of candidates). There is always at least one such rank, because the owner of any cell containing the entity holds all its vertices. Every other holder keeps the entity as a ghost.
 - **Global numbers** flow from owner to ghost holders (forward direction).
-- **Hash** (ADR-0026). `gridcl_parallel::owner_hash(key: &[i64]) -> u64` starts at h = 0x6772_6964_636C_0006 and sets h = mix(h ^ (w as u64)) for each word w, where mix is SplitMix64's finaliser (z += 0x9E37_79B9_7F4A_7C15; z = (z ^ (z >> 30)) · 0xBF58_476D_1CE4_E5B9; z = (z ^ (z >> 27)) · 0x94D0_49BB_1331_11EB; z ^ (z >> 31), wrapping). The vertex and node owner is the candidate at position `owner_hash(&[origin id]) mod n`, the entity owner the one at `owner_hash(sorted origin ids) mod n`, and the rendezvous rank of any key `owner_hash(key) mod P`.
+- **Hash** (ADR-0026). `tetraloma_parallel::owner_hash(key: &[i64]) -> u64` starts at h = 0x6772_6964_636C_0006 and sets h = mix(h ^ (w as u64)) for each word w, where mix is SplitMix64's finaliser (z += 0x9E37_79B9_7F4A_7C15; z = (z ^ (z >> 30)) · 0xBF58_476D_1CE4_E5B9; z = (z ^ (z >> 27)) · 0x94D0_49BB_1331_11EB; z ^ (z >> 31), wrapping). The vertex and node owner is the candidate at position `owner_hash(&[origin id]) mod n`, the entity owner the one at `owner_hash(sorted origin ids) mod n`, and the rendezvous rank of any key `owner_hash(key) mod P`.
 - **Local order.** Owned vertices and nodes are numbered in order of first touching cell; ghost vertices, nodes and entities are ordered by (owner rank, global index) (ADR-0026).
-- **Sharer sets in the topology.** `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (gridcl-topology) is a host CSR over local vertices: row v lists every rank holding vertex v, this one included, in ascending order, and `owned_cell` says whether that rank holds v in an owned cell. `Topology::set_vertex_sharers(&mut self, s: VertexSharers) -> Result<()>` checks lengths, row order and the own rank (`LengthMismatch`, `IndexOutOfRange`; ADR-0039), stores it, uploads one shared flag per vertex and derives the sharing neighbourhood (every rank sharing a vertex with this one). Without sharers, as in every serial mesh, every vertex is unshared (ADR-0026).
+- **Sharer sets in the topology.** `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (tetraloma-topology) is a host CSR over local vertices: row v lists every rank holding vertex v, this one included, in ascending order, and `owned_cell` says whether that rank holds v in an owned cell. `Topology::set_vertex_sharers(&mut self, s: VertexSharers) -> Result<()>` checks lengths, row order and the own rank (`LengthMismatch`, `IndexOutOfRange`; ADR-0039), stores it, uploads one shared flag per vertex and derives the sharing neighbourhood (every rank sharing a vertex with this one). Without sharers, as in every serial mesh, every vertex is unshared (ADR-0026).
 
 All exchanges use the neighbourhood communicator and touch only process-boundary entities, so the volume is small and the exchange runs on the host. Keys are origin ids, so ownership does not depend on local numbering. For a given input and partition the owners are deterministic.
 
@@ -1300,7 +1300,7 @@ Geometry is a vector-valued Lagrange field of arbitrary degree, evaluated by dev
 
 ### Tabulation and quadrature
 
-- **Tabulation** happens on the host in gridcl-refcell, in f64. It uses an orthonormal basis (Legendre, Dubiner, or orthonormal rationomials for pyramids) and the generalised Vandermonde matrix. The matrix is solved with gridcl-refcell's own dense LU with partial pivoting, so the crate needs no linear-algebra dependency.
+- **Tabulation** happens on the host in tetraloma-refcell, in f64. It uses an orthonormal basis (Legendre, Dubiner, or orthonormal rationomials for pyramids) and the generalised Vandermonde matrix. The matrix is solved with tetraloma-refcell's own dense LU with partial pivoting, so the crate needs no linear-algebra dependency.
     - Equispaced points are well conditioned up to about p = 10; above that, GLL points (tensor cells) are recommended.
     - Values and reference derivatives are uploaded once per (element, point set) and narrowed to `F`.
     - The pull-back evaluates the same orthonormal bases on the device by recurrence, with `LagrangeElement::coefficients` uploaded once per geometry block; pyramid ζ is clamped to at most 1 − 2^−10 (ADR-0039).
@@ -1319,9 +1319,9 @@ Factors are computed on the device, following MFEM's GeometricFactors. Caching b
 - **Normals** in codimension 1, with s = −1 if the cell's orientation flag is set and +1 otherwise:
     - D2 in D3: n = s (J0 × J1) / |J0 × J1|;
     - D1 in D2: n = s (J0_y, −J0_x) / |J0|, which points outward for counter-clockwise closed curves.
-- **Facet normals** of codimension-0 cells, at facet quadrature points: n = K^T n_ref / |K^T n_ref|, using the reference facet normals from gridcl-refcell. The points are facet-major, so a cell has Σ_f n_f points (`FacetPointSet`, Listing B4b; ADR-0012).
+- **Facet normals** of codimension-0 cells, at facet quadrature points: n = K^T n_ref / |K^T n_ref|, using the reference facet normals from tetraloma-refcell. The points are facet-major, so a cell has Σ_f n_f points (`FacetPointSet`, Listing B4b; ADR-0012).
 
-Each factor family runs one of the strategies direct (M9's fully unrolled kernels), loops (runtime loops over nodes), sum-factorised (quadrilaterals, hexahedra and prisms on tensor rules), shared (tabulations or coefficients in shared memory) or cooperative (a group of units per cell, planned by `LaunchPlan::per_group`). gridcl-geometry's degree policy (`degree-policy.toml`, crate-private) chooses one per family, cell type, degree range, device class (Cpu or Gpu; ADR-0058) and scalar size from the measurements in `docs/perf/high-order.md`; its last range is open-ended and resolves to a strategy known to compile at p = 9–10. `GRIDCL_GEOM_STRATEGY` (`policy | direct | loops | sumfact | shared | cooperative`, or `<family>=<strategy>,…`) and the hidden `gridcl_geometry::testing::with_strategy` override it for tests and benchmarks; a strategy that does not apply falls back to loops (ADR-0042).
+Each factor family runs one of the strategies direct (M9's fully unrolled kernels), loops (runtime loops over nodes), sum-factorised (quadrilaterals, hexahedra and prisms on tensor rules), shared (tabulations or coefficients in shared memory) or cooperative (a group of units per cell, planned by `LaunchPlan::per_group`). tetraloma-geometry's degree policy (`degree-policy.toml`, crate-private) chooses one per family, cell type, degree range, device class (Cpu or Gpu; ADR-0058) and scalar size from the measurements in `docs/perf/high-order.md`; its last range is open-ended and resolves to a strategy known to compile at p = 9–10. `TETRALOMA_GEOM_STRATEGY` (`policy | direct | loops | sumfact | shared | cooperative`, or `<family>=<strategy>,…`) and the hidden `tetraloma_geometry::testing::with_strategy` override it for tests and benchmarks; a strategy that does not apply falls back to loops (ADR-0042).
 
 ### Manifold orientation
 
@@ -1356,7 +1356,7 @@ Cells are partitioned without overlap, and each rank also holds a configurable g
 
 ### Communicators, IndexMap and Scatterer
 
-**Listing S2c — communicators, ownership and halo exchange (gridcl-parallel)**
+**Listing S2c — communicators, ownership and halo exchange (tetraloma-parallel)**
 
 ```rust
 /// Object-safe communicator interface used by IndexMap, Scatterer and partitioners.
@@ -1404,7 +1404,7 @@ pub trait CommExt {
 impl<C: CommDyn + ?Sized> CommExt for C { /* through the byte-level methods of CommDyn */ }
 
 #[derive(Clone, Copy, Debug)] pub enum DType { I32, I64, U32, U64, F32, F64 }
-pub use gridcl_device::ReduceOp;                              // Sum, Min, Max (Listing S1b)
+pub use tetraloma_device::ReduceOp;                              // Sum, Min, Max (Listing S1b)
 pub trait CommScalar: bytemuck::Pod { const DTYPE: DType; }   // i32, i64, u32, u64, f32, f64
 
 #[derive(Clone, Copy, Debug, Default)] pub struct Serial;      // no-op collectives
@@ -1435,7 +1435,7 @@ pub fn owner_hash(key: &[i64]) -> u64;
 
 /// Index of this rank's GPU on its node: the rank within the node (MPI_Comm_split_type with
 /// MPI_COMM_TYPE_SHARED where comm.raw() is Some, otherwise comm.rank()). Collective. Re-exported
-/// in gridcl::prelude (ADR-0060).
+/// in tetraloma::prelude (ADR-0060).
 pub fn local_gpu_index(comm: &dyn CommDyn) -> usize;
 
 pub struct IndexMap {
@@ -1501,7 +1501,7 @@ pub trait ScatterNumeric: DeviceScalar {}                      // f32, f64, i32,
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Transport { HostStaged, GpuAware }
 ```
 
-`ScatterNumeric` is implemented for f32, f64, i32 and u32. `reverse` checks device support for T (`UnsupportedPrecision`); `forward` moves u32 words and works for every `ScatterNumeric` type on every device (ADR-0028). `IndexMap::send_lists` and `recv_lists` are hidden, read-only test accessors and not part of the stable API (ADR-0028). The reverse segments are built once, when the scatterer is created, so every reverse exchange is a placement by `unpack` followed by a segmented reduce in a fixed order (`Insert`: a gather by `rev_first`; ADR-0064). `Scatterer` exchanges through the communicator its `Neighbourhood` holds, and every device step is a gridcl-device primitive: `forward` is `pack`, `to_host`, the neighbourhood exchange, `write_host` and `unpack`; `reverse` packs and exchanges the ghost values, uploads only the received values, places the targets' own values and the received values in the reduce's order by `unpack` (each segment the owner's value, then its contributions by neighbour rank and ghost position), reduces over `rev_segments` and unpacks the result to the targets; on the Cpu class each step waits for the previous one (ADR-0026, ADR-0059, ADR-0061).
+`ScatterNumeric` is implemented for f32, f64, i32 and u32. `reverse` checks device support for T (`UnsupportedPrecision`); `forward` moves u32 words and works for every `ScatterNumeric` type on every device (ADR-0028). `IndexMap::send_lists` and `recv_lists` are hidden, read-only test accessors and not part of the stable API (ADR-0028). The reverse segments are built once, when the scatterer is created, so every reverse exchange is a placement by `unpack` followed by a segmented reduce in a fixed order (`Insert`: a gather by `rev_first`; ADR-0064). `Scatterer` exchanges through the communicator its `Neighbourhood` holds, and every device step is a tetraloma-device primitive: `forward` is `pack`, `to_host`, the neighbourhood exchange, `write_host` and `unpack`; `reverse` packs and exchanges the ghost values, uploads only the received values, places the targets' own values and the received values in the reduce's order by `unpack` (each segment the owner's value, then its contributions by neighbour rank and ghost position), reduces over `rev_segments` and unpacks the result to the targets; on the Cpu class each step waits for the previous one (ADR-0026, ADR-0059, ADR-0061).
 
 ### Transports
 
@@ -1509,7 +1509,7 @@ pub trait ScatterNumeric: DeviceScalar {}                      // f32, f64, i32,
 - **GpuAware** (CUDA, feature `gpu-aware-cuda`; HIP later as `gpu-aware-hip`): deferred (ADR-0059); the design below is kept for a later milestone, and no scatterer chooses it. Device pointers are handed to a CUDA-aware MPI, using `Client::get_resource` as in Listing S2b. Keep CubeCL's CUDA allocator at its default, `CudaAllocator::Sync`; the stream-ordered `Async` pool may not work with CUDA IPC in MPI libraries.
 - **CubeCL collectives:** `Client::all_reduce` and `Client::to_client` (both take `&mut self`) move data between GPUs of one process when `has_device_transport()` is true. They are not used in the one-GPU-per-rank model.
 
-**Listing S2b — GPU-aware path (gridcl-device, feature `gpu-aware-cuda`; deferred, ADR-0059)**
+**Listing S2b — GPU-aware path (tetraloma-device, feature `gpu-aware-cuda`; deferred, ADR-0059)**
 
 ```rust
 // cubecl re-exports the Runtime trait only under cubecl::__private, so depend on
@@ -1538,7 +1538,7 @@ pub fn device_ptr(client: &Client, h: &Handle) -> Result<PinnedDevicePtr<impl Se
 ### MPI bindings
 
 - `mpi` (rsmpi) 0.8.2 provides initialisation, communicators and the basic collectives.
-- rsmpi has no distributed-graph communicators or neighbourhood collectives. gridcl-parallel therefore wraps `MPI_Dist_graph_create_adjacent` and `MPI_Neighbor_alltoallv` from `mpi::ffi` in safe functions, each with a SAFETY comment.
+- rsmpi has no distributed-graph communicators or neighbourhood collectives. tetraloma-parallel therefore wraps `MPI_Dist_graph_create_adjacent` and `MPI_Neighbor_alltoallv` from `mpi::ffi` in safe functions, each with a SAFETY comment.
 - Counts above `i32::MAX` return `GridError::MessageTooLarge`.
 - `Mpi` wraps the communicator in an `Rc`. Under Open MPI, `MPI_Comm` is a pointer, so the communicator is not `Send` anyway; with `Rc` the behaviour is the same under every MPI implementation. CI tests both MPICH and Open MPI.
 
@@ -1563,7 +1563,7 @@ Locality ordering happens before any numbering, so global numbers are assigned o
 
 Every supported backend partitions the distributed dual graph, so the `Partitioner` trait takes a graph only. PT-Scotch is the production default. The CI default is the built-in block partitioner for pipeline tests, plus vendored METIS on rank 0 for partition-quality tests.
 
-**Listing S3 — partitioner interface (gridcl-partition)**
+**Listing S3 — partitioner interface (tetraloma-partition)**
 
 ```rust
 pub struct DistGraph {
@@ -1592,7 +1592,7 @@ impl Partitioner for Block { /* ... */ }
 impl PtScotch { pub fn seed(self, seed: u32) -> Self; }   // likewise ParMetis, Metis, Scotch; default 0
 impl Partitioner for PtScotch { /* ... */ }              // name(): "ptscotch", "parmetis", "metis", "scotch"
 
-// gridcl: the graph `build_on` gives the partitioner (stages 1–2), a hidden test accessor:
+// tetraloma: the graph `build_on` gives the partitioner (stages 1–2), a hidden test accessor:
 // #[doc(hidden)] pub fn MeshBuilder::dual_graph_on<C: Comm>(self, comm: C) -> Result<DistGraph>;
 ```
 
@@ -1611,11 +1611,11 @@ impl Partitioner for PtScotch { /* ... */ }              // name(): "ptscotch", 
 
 ## Import and export
 
-gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKHDF writer. Node orderings are generated from each format's documented rules and checked against fixtures.
+tetraloma has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKHDF writer. Node orderings are generated from each format's documented rules and checked against fixtures.
 
 ### Gmsh MSH 4.1
 
-- **Own reader and writer.** The mshio crate parses only Entities, Nodes and Elements, reads only MSH 4.1 and cannot write. It is a test oracle, not the implementation. gridcl-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `gridcl::gmsh` builds and downloads meshes (ADR-0022). mshio 0.4.2 gives the 18-node prism 28 nodes, so it cannot read files that contain one (ADR-0023).
+- **Own reader and writer.** The mshio crate parses only Entities, Nodes and Elements, reads only MSH 4.1 and cannot write. It is a test oracle, not the implementation. tetraloma-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `tetraloma::gmsh` builds and downloads meshes (ADR-0022). mshio 0.4.2 gives the 18-node prism 28 nodes, so it cannot read files that contain one (ADR-0023).
 - **Sections:** $MeshFormat, $PhysicalNames, $Entities, $Nodes and $Elements, optionally $PartitionedEntities and $Periodic. $Periodic is stored but applied only in a later milestone, outside this roadmap. Both ASCII and binary are supported, in either byte order (binary marker), and the data-size field gives the width of `size_t`.
 - **Element types** come from a generated table (A.7): complete Lagrange elements at the listed orders, including pyramids 118–124. Serendipity types 16–19 are upgraded to complete Lagrange on read, by evaluating the serendipity map at the missing nodes (8 → 9, 20 → 27, 15 → 18, 13 → 14). Other incomplete types are rejected.
 - **Mesh content.** D_TOP is the highest element dimension in the file, and elements of that dimension form the mesh. Lower-dimensional elements become MeshTags:
@@ -1637,7 +1637,7 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
     - element tags are the cell origin ids, and tag elements are numbered after the largest cell id; if any node or element tag would be below 1, all tags of that kind are shifted by one constant so that the smallest is 1;
     - one node block, in the first D_TOP entity; `$Entities` is rebuilt from the elementary tags, one entity per (elementary tag, set of physical tags), with a bounding box from its nodes, point coordinates for dimension 0, and empty boundary lists; a mesh without tags gets one entity with tag 1;
     - three coordinates per node; binary is always little-endian with an 8-byte `size_t`.
-- **Serendipity nodes** (ADR-0022). `gridcl_refcell::serendipity_upgrade` gives the weights of the missing complete-P2 nodes from Gmsh's serendipity map. An added face-centre node is created once per face, keyed by the face's sorted corner node tags; it reuses the node of a complete-P2 neighbour where there is one, and otherwise takes a fresh tag above the file's largest node tag, in order of first use.
+- **Serendipity nodes** (ADR-0022). `tetraloma_refcell::serendipity_upgrade` gives the weights of the missing complete-P2 nodes from Gmsh's serendipity map. An added face-centre node is created once per face, keyed by the face's sorted corner node tags; it reuses the node of a complete-P2 neighbour where there is one, and otherwise takes a fresh tag above the file's largest node tag, in order of first use.
 - **Parallel read.** Binary files are read in byte-range chunks per rank. Block headers are scanned first, since records within a block have a fixed size and offsets are therefore computable. ASCII files are read on rank 0 and scattered. Files with serendipity elements are also read on rank 0. Errors keep their serial form (`UnmatchedTagElement` names the Gmsh element tag). Elementary tags travel with their cells and entities like physical tags (ADR-0035).
 - **Parallel write:** gather to rank 0, or one partitioned file per rank with $PartitionedEntities. `GmshWriter::partitioned(true)` writes `<stem>_<rank+1>.msh`; non-vertex node tags and tag-element tags are numbered globally, so that every file and the gathered file agree, and one rank gives the serial numbering (ADR-0035).
 - **Precision.** Reading into an f32 mesh narrows coordinates and logs one warning per file (`log::warn!`).
@@ -1645,14 +1645,14 @@ gridcl has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a VTKH
 ### VTK
 
 - **VTU** (XML with `version="2.2"`, appended raw or base64 binary, optional zlib). Cells are written as linear cells (1, 3, 5, 9, 10, 12, 13, 14) or, for p ≥ 2, Lagrange cells (68–73).
-    - The version matters: VTK renumbers higher-order hexahedra in files with a version below 2.1 (`vtkUpdateCellsV8toV9`), and gridcl writes the VTK 9 ordering.
+    - The version matters: VTK renumbers higher-order hexahedra in files with a version below 2.1 (`vtkUpdateCellsV8toV9`), and tetraloma writes the VTK 9 ordering.
     - Degree is inferred from the point count for isotropic cells.
-    - gridcl-io holds the file model (`VtuFile`), the cell-type table, the writer and `parse_vtu`; `gridcl::vtk::VtkWriter` downloads meshes. Points are all geometry nodes (Float64, or Float32 for f32 meshes), also for linear output. zlib through `flate2` (`rust_backend`) (ADR-0024).
+    - tetraloma-io holds the file model (`VtuFile`), the cell-type table, the writer and `parse_vtu`; `tetraloma::vtk::VtkWriter` downloads meshes. Points are all geometry nodes (Float64, or Float32 for f32 meshes), also for linear output. zlib through `flate2` (`rust_backend`) (ADR-0024).
 - **High-order pyramids** are written as vertices only (VTK type 14) with one warning per file (`log::warn!`). A subdivided output mesh is a possible later option (ADR-0024). VTK's type 74 (`VTK_LAGRANGE_PYRAMID`) is a placeholder, and DOLFINx's writer also refuses pyramids with more than five nodes.
 - **PVTU** for parallel runs: one piece per rank plus the parallel header. Ghost cells carry a `vtkGhostType` cell array (value 1 = duplicate cell) so that ParaView hides them. `vtkGhostType` is written with more than one rank; the header's `GhostLevel` is 1 if any rank has ghost cells (ADR-0035).
 - **VTKHDF** (feature `hdf5`) through hdf5-metno with its `mpio` feature for parallel HDF5: a single file with per-rank offsets, the same cell types and the same ghost array. `VtkWriter::vtkhdf`; one partition per rank with the PVTU piece's arrays; collective through `mpio` with an MPI communicator, otherwise gathered to rank 0; no compression (ADR-0035).
 - **VTU reading** (`parse_vtu`, file level; linear and Lagrange) has lower priority and is used for round-trip tests and the VTK-written fixtures; no mesh is built from a VTU (ADR-0024).
-- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays of the inline-base64 files (with and without zlib); it writes version 0.1 and applies no conversion. meshio 5.3.5 accepts only versions 0.1 and 1.0, so the oracle hands it a copy whose version attribute reads 1.0. Its appended-data decoder fails on VTK's own appended files under CPython ≥ 3.13, so appended files are checked through base64 twins (ADR-0025). Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024). VTKHDF files are compared with the PVTU through VTK's `vtkHDFReader` (ADR-0035).
+- **Test oracles:** VTK's own Python reader (pinned VTK ≥ 9.2) checks what ParaView will show. meshio checks the raw arrays of the inline-base64 files (with and without zlib); it writes version 0.1 and applies no conversion. meshio 5.3.5 accepts only versions 0.1 and 1.0, so the oracle hands it a copy whose version attribute reads 1.0. Its appended-data decoder fails on VTK's own appended files under CPython ≥ 3.13, so appended files are checked through base64 twins (ADR-0025). Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `TETRALOMA_SKIP_PYTHON=1` (ADR-0024). VTKHDF files are compared with the PVTU through VTK's `vtkHDFReader` (ADR-0035).
 
 ### High-order node orderings
 
@@ -1711,16 +1711,16 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
     - output files, after sorting by origin id;
     - from M9h, geometric factors and pull-back results per (cell origin id, point): bitwise on the CPU runtime, within the tolerances on GPUs; thread ranks at p = 1–8 (every ghost mode at p ≤ 2), MPI at p = 1, 4 and 8 (ADR-0042).
 - **Determinism.** Two runs on the same device and rank count produce bitwise identical device arrays.
-- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012). A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013), where the kernel sums in the reference's order; sum-factorised and cooperative kernels are compared within the tolerances (ADR-0054). At geometry degrees 3–8 the 10^6 + 3 case is replaced by 16k + 3 cells with a Gauss rule of degree 1, whose factor and pull-back calls run with `max_page_size` lowered (`testing::with_properties`, mesh built outside it) so that the E-vector spans at least three chunks and several cubes at every degree, and J wherever a limit of at least the largest per-block table the calls upload allows (not on hexahedra from p = 6; ADR-0042, ADR-0046).
+- **Vector-size invariance.** Every kernel that is generic over the vector size runs at size 1 and at every larger power of two up to 16 that the device offers, forced with `TETRALOMA_VECTOR_SIZE` or `testing::with_vector_size`, for lengths 0, 1, 15, 16, 17 and 10^6 + 3. Integer results and lane-independent float results are compared bitwise on the CPU runtime and within the tolerances on GPUs; float reductions are compared within the tolerances. Geometry fields are also compared across tile widths 1 and 16. Factor kernels plan with `max_vector` equal to the tile width, so at tile width 1 they run at size 1, and the sweep runs at tile width 16 (ADR-0012). A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013), where the kernel sums in the reference's order; sum-factorised and cooperative kernels are compared within the tolerances (ADR-0054). At geometry degrees 3–8 the 10^6 + 3 case is replaced by 16k + 3 cells with a Gauss rule of degree 1, whose factor and pull-back calls run with `max_page_size` lowered (`testing::with_properties`, mesh built outside it) so that the E-vector spans at least three chunks and several cubes at every degree, and J wherever a limit of at least the largest per-block table the calls upload allows (not on hexahedra from p = 6; ADR-0042, ADR-0046).
 - **I/O:**
     - read → write → read round trips;
     - a committed fixture corpus of Gmsh files written by a pinned Gmsh version, for every element type up to order 4 (pyramids up to order 3);
     - every VTU fixture read back by VTK's Python reader (the files the M5 tests write, and the committed VTK-written reference cells);
     - VTKHDF and PVTU output of the same mesh read back identically by VTK's Python reader.
-- **Conformance with ndelement:** gridcl-conformance (A.10).
+- **Conformance with ndelement:** tetraloma-conformance (A.10).
 - **Property tests** (proptest) cover node-ordering permutations, primitives and IndexMap scatter consistency. They use sizes up to 10^5 with 256 cases, plus fixed sizes of 10^6 and 10^7 for primitives.
 - **Compile-fail tests:** trybuild, as in Listing B10.
-- **Test meshes** come from gridcl-testing, with origin ids and any degree p:
+- **Test meshes** come from tetraloma-testing, with origin ids and any degree p:
     - structured boxes for every cell type: prisms by splitting hexahedra, pyramids by splitting each hexahedron into six around its centre, and a mixed tetrahedron/pyramid/hexahedron box;
     - high-order curved sphere surfaces (icosahedral refinement with nodes projected onto the sphere);
     - curved balls.
@@ -1740,12 +1740,12 @@ Claude Code runs on the local Apple-silicon Mac and tests there on every change;
 | A4000 workstation | one RTX A4000 16 GB (sm_86), x86-64, shared CPU | SSH to the node, no scheduler | first CUDA fallback and fourth architecture; no benchmarks, no MPI; software under `~/local_disk` (ADR-0037) |
 | Hosted CI | Linux x86-64 runners | automatic | CPU runtime, Vulkan, both MPI flavours, conformance |
 
-**When the fallbacks run.** Locust is the CUDA platform for every run: Claude runs the CUDA tests there after every task that changes kernels and at every milestone review, and runs the benchmarks there (ADR-0014). The A4000 workstation (`a4000`) is the first fallback: Claude runs there when Locust is unreachable or a run fails because another user occupies its GPU, and to compare when a Locust failure or result looks architecture-dependent (sm_86); the run report says why. It never runs CPU benchmarks (its CPU is shared), GPU timings only under the idle rule that applies to Locust, and no MPI tests (one GPU, no MPI). All software for gridcl on the workstation lives under `~/local_disk`, never in its network home (ADR-0037). Claude schedules Myriad V100 or A100 runs only:
+**When the fallbacks run.** Locust is the CUDA platform for every run: Claude runs the CUDA tests there after every task that changes kernels and at every milestone review, and runs the benchmarks there (ADR-0014). The A4000 workstation (`a4000`) is the first fallback: Claude runs there when Locust is unreachable or a run fails because another user occupies its GPU, and to compare when a Locust failure or result looks architecture-dependent (sm_86); the run report says why. It never runs CPU benchmarks (its CPU is shared), GPU timings only under the idle rule that applies to Locust, and no MPI tests (one GPU, no MPI). All software for tetraloma on the workstation lives under `~/local_disk`, never in its network home (ADR-0037). Claude schedules Myriad V100 or A100 runs only:
 
 - as the fallback, when the workstation is unavailable too or a benchmark cannot get an idle node; the run report says why;
 - for multi-GPU tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU);
 - to compare, when a Locust failure or result looks architecture-dependent (sm_70, sm_80);
-- when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of gridcl-device;
+- when a change touches CUDA-version- or architecture-specific code, such as the CUDA paths of tetraloma-device;
 - when the user asks.
 
 CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512, which Locust cannot provide, use one whole Kathleen node; benchmarks bind to one socket (ADR-0020). A Myriad D node (`-ac allow=D`, never a GPU node) runs them only as the fallback: when Kathleen is unreachable, a job is still queued after `--max-wait`, or the user asks; the run report says why (ADR-0016). MPI runs beyond the local Mac's 4 ranks use Kathleen, at most two nodes per job; from M6 on, every milestone review also runs the MPI tests on two Kathleen nodes.
@@ -1762,7 +1762,7 @@ targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | a4000 | kathleen
 1. **Configuration.** It reads `scripts/hpc/targets.env`, which is personal and git-ignored and is created from the committed `targets.example.env`. The file holds the SSH host aliases, the remote base directory, the module lines, `CUDA_PATH` and the scheduler kind (`sge`, `slurm` or `direct`).
 2. **Sync.** It copies the working tree to `<base>/<branch>/` with rsync, respecting `.gitignore`, and records the commit and a dirty flag.
 3. **Fetch.** It fetches crates on the login node, and the LLVM bundle when needed — on Myriad, whose RHEL 7 is too old for the prebuilt bundle, a Spack-built LLVM of the same version in the bundler's layout; Kathleen's RHEL 9 takes the prebuilt bundle — because Myriad's compute nodes have no internet access, and so that every job runs offline. Jobs run with `CARGO_NET_OFFLINE=true`.
-4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE, `sbatch --parsable` on Slurm, or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`. On direct targets the job also records a node-load snapshot immediately before and after the command: GPU utilisation and memory use, the GPU compute processes and their owners, the 1-minute load average (recorded only), and the CPU share of other users' processes over 5 s. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, and other users' processes use less than one core in total.
+4. **Submit.** It submits `scripts/hpc/jobs/<target>.sh`, with `qsub -terse` on SGE, `sbatch --parsable` on Slurm, or through `ssh` with `timeout` for direct targets. The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `TETRALOMA_TEST_DEVICE=cuda`. It writes the exit status and logs to `results/<job id>/`. On direct targets the job also records a node-load snapshot immediately before and after the command: GPU utilisation and memory use, the GPU compute processes and their owners, the 1-minute load average (recorded only), and the CPU share of other users' processes over 5 s. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, and other users' processes use less than one core in total.
 5. **Wait.** It polls the scheduler for up to `--max-wait` (default 3 hours, queue time included). On timeout it deletes the job and exits with status 124.
 6. **Report.** It copies the results to `target/hpc/<target>/<job id>/`, prints a summary of at most 40 lines with the first failure first (on direct targets including a `node load:` line, `idle` or `busy` with the reason, for both snapshots), and exits with the command's exit status.
 
@@ -1782,52 +1782,52 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 
 | Crate | Purpose | Depends on |
 | --- | --- | --- |
-| gridcl-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
-| gridcl-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | gridcl-dims; dev: serde_json |
-| gridcl-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, re-exports of `Client` and `CubeElement` (ADR-0026), (GPU-aware pointer access deferred, ADR-0059), test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; libc (macOS, ADR-0017); dev: proptest |
-| gridcl-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | gridcl-device; bytemuck; mpi (optional) |
-| gridcl-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: gridcl-testing |
-| gridcl-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: gridcl-testing |
-| gridcl-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional); build: scotch-sys-bindgen (bindgen 0.65.1, feature `scotch`; ADR-0039) |
-| gridcl-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno and ndarray (optional, with `hdf5`; `mpio` with feature `mpi`; ADR-0039); dev: mshio, serde_json, gridcl-testing |
-| gridcl | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
+| tetraloma-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
+| tetraloma-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | tetraloma-dims; dev: serde_json |
+| tetraloma-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, re-exports of `Client` and `CubeElement` (ADR-0026), (GPU-aware pointer access deferred, ADR-0059), test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; libc (macOS, ADR-0017); dev: proptest |
+| tetraloma-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | tetraloma-device; bytemuck; mpi (optional) |
+| tetraloma-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: tetraloma-testing |
+| tetraloma-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: tetraloma-testing |
+| tetraloma-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional); build: scotch-sys-bindgen (bindgen 0.65.1, feature `scotch`; ADR-0039) |
+| tetraloma-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno and ndarray (optional, with `hdf5`; `mpio` with feature `mpi`; ADR-0039); dev: mshio, serde_json, tetraloma-testing |
+| tetraloma | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
-| gridcl-testing (unpublished) | `test_client()` chosen by the `GRIDCL_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `test_client_at(index)` (ADR-0060), `ThreadComm` (an in-process multi-rank communicator; ADR-0026), the Python oracle helper and `gen-gmsh-box` (ADR-0035); forwards runtime features | gridcl; gridcl-device (feature `testing`); gridcl-dims; gridcl-refcell; cubecl with runtime features; serde_json; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
-| gridcl-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | gridcl, gridcl-testing; nix (unix; getrusage; ADR-0035) |
-| gridcl-examples (unpublished) | The examples of the API walkthrough, each over a tested `run(&Client)`; forwards runtime features (ADR-0060) | gridcl, gridcl-testing; cubecl with runtime features; mpi (optional) |
-| gridcl-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | gridcl, gridcl-device (feature `testing`), gridcl-geometry (features `bench`, `testing`), gridcl-dims, gridcl-refcell, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml, bytemuck; mpi (optional, feature `mpi`, for `halo_exchange`; ADR-0060); dev: proptest (ADR-0039) |
-| conformance/ (gridcl-conformance, outside the workspace) | Compares gridcl-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | gridcl-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
+| tetraloma-testing (unpublished) | `test_client()` chosen by the `TETRALOMA_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `test_client_at(index)` (ADR-0060), `ThreadComm` (an in-process multi-rank communicator; ADR-0026), the Python oracle helper and `gen-gmsh-box` (ADR-0035); forwards runtime features | tetraloma; tetraloma-device (feature `testing`); tetraloma-dims; tetraloma-refcell; cubecl with runtime features; serde_json; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
+| tetraloma-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | tetraloma, tetraloma-testing; nix (unix; getrusage; ADR-0035) |
+| tetraloma-examples (unpublished) | The examples of the API walkthrough, each over a tested `run(&Client)`; forwards runtime features (ADR-0060) | tetraloma, tetraloma-testing; cubecl with runtime features; mpi (optional) |
+| tetraloma-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | tetraloma, tetraloma-device (feature `testing`), tetraloma-geometry (features `bench`, `testing`), tetraloma-dims, tetraloma-refcell, tetraloma-topology (feature `bench`), tetraloma-testing; cubecl with runtime features; serde_json, toml, bytemuck; mpi (optional, feature `mpi`, for `halo_exchange`; ADR-0060); dev: proptest (ADR-0039) |
+| conformance/ (tetraloma-conformance, outside the workspace) | Compares tetraloma-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | tetraloma-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
 | tools/env-check (outside the workspace) | Probe of a development target: devices, properties, sample kernels in f32 and f64, MPI allreduce; JSON report. Built in E0. | cubecl with the target's runtime features; mpi (optional) |
 
 ### Dependency rules
 
-1. Every crate that defines or launches kernels may depend on `cubecl` without runtime features. This covers gridcl-device, gridcl-topology, gridcl-geometry and gridcl.
+1. Every crate that defines or launches kernels may depend on `cubecl` without runtime features. This covers tetraloma-device, tetraloma-topology, tetraloma-geometry and tetraloma.
 2. The launch API may be used anywhere: `Client`, `CubeCount`, `CubeDim`, `BufferArg`, `launch_unchecked`, `calculate_cube_count_elemwise` and `Client::properties`.
-3. Runtime types appear only in gridcl-device: runtime structs such as `CudaRuntime`, `get_resource`, and `cubecl-runtime`.
-4. Runtime features (`cpu`, `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`) are enabled only in gridcl-testing, examples, benchmarks and binaries. `gpu-aware-cuda` is reserved and enables nothing (ADR-0059).
+3. Runtime types appear only in tetraloma-device: runtime structs such as `CudaRuntime`, `get_resource`, and `cubecl-runtime`.
+4. Runtime features (`cpu`, `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`) are enabled only in tetraloma-testing, examples, benchmarks and binaries. `gpu-aware-cuda` is reserved and enables nothing (ADR-0059).
 5. No crate depends on MPI unless its `mpi` feature is on. `cargo test --workspace` without features needs neither MPI nor a GPU.
 6. ndelement appears only in conformance/. The workspace excludes conformance/ and tools/env-check/ (`exclude = ["conformance", "tools/env-check"]`).
 7. A workspace crate may expose a `#[doc(hidden)] pub` item to other workspace crates when no stable API serves the purpose (hidden hooks and test accessors). Such an item is documented as not part of the stable API, has a rustdoc example or a named test, is listed in its milestone plan, and is semver-exempt (ADR-0015, ADR-0028, ADR-0038).
 
 ### Cargo features
 
-- **Library features** (on gridcl, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda` (reserved; enables nothing, ADR-0059). `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that gridcl-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
-- **Runtime features** (on gridcl-testing, gridcl-examples and gridcl-bench): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
-- **Test-support feature** (on gridcl-device; not a library feature): `testing` enables `gridcl_device::testing` (Listing S2). gridcl-testing turns it on, so every workspace test has it. gridcl-geometry has a `testing` feature too, for the hidden `gridcl_geometry::testing` (strategy overrides; ADR-0042), also turned on by gridcl-testing.
-- **Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module (ADR-0015). gridcl-bench turns it on. gridcl-geometry's `bench` feature enables the hidden `gridcl_geometry::bench` (the basis-evaluator timing hook; the pull-back is timed through its public call at 1 and 9 iterations; ADR-0042), also turned on by gridcl-bench.
+- **Library features** (on tetraloma, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda` (reserved; enables nothing, ADR-0059). `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that tetraloma-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
+- **Runtime features** (on tetraloma-testing, tetraloma-examples and tetraloma-bench): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
+- **Test-support feature** (on tetraloma-device; not a library feature): `testing` enables `tetraloma_device::testing` (Listing S2). tetraloma-testing turns it on, so every workspace test has it. tetraloma-geometry has a `testing` feature too, for the hidden `tetraloma_geometry::testing` (strategy overrides; ADR-0042), also turned on by tetraloma-testing.
+- **Benchmark-support feature** (on tetraloma-topology; not a library feature): `bench` enables the hidden `tetraloma_topology::bench` module (ADR-0015). tetraloma-bench turns it on. tetraloma-geometry's `bench` feature enables the hidden `tetraloma_geometry::bench` (the basis-evaluator timing hook; the pull-back is timed through its public call at 1 and 9 iterations; ADR-0042), also turned on by tetraloma-bench.
 
 ### CI matrix
 
 | Job | Runner | Runs | Trigger |
 | --- | --- | --- | --- |
-| local | the local Mac (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `GRIDCL_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
+| local | the local Mac (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `TETRALOMA_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
 | cpu | hosted Linux | `cargo test --workspace` on the CPU runtime in f32 and f64; clippy; rustdoc | every push |
-| mpi-mpich, mpi-openmpi | hosted Linux | gridcl-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI) | every push |
-| vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `GRIDCL_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
-| ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to gridcl-partition; nightly |
+| mpi-mpich, mpi-openmpi | hosted Linux | tetraloma-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI) | every push |
+| vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `TETRALOMA_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
+| ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to tetraloma-partition; nightly |
 | conformance | hosted Linux with OpenBLAS, or the local Mac with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
-| cuda-v100 | Myriad E/F node through `scripts/hpc` | `GRIDCL_TEST_DEVICE=cuda`, f32 and f64 | multi-GPU; fallback |
+| cuda-v100 | Myriad E/F node through `scripts/hpc` | `TETRALOMA_TEST_DEVICE=cuda`, f32 and f64 | multi-GPU; fallback |
 | cuda-a100 | Myriad L node through `scripts/hpc` | as cuda-v100, with the newest toolkit the driver supports | when required |
 | gh200 | Locust through `scripts/hpc` | as cuda-v100, plus the CPU runtime on aarch64 Linux | after every task that changes kernels; every milestone review |
 
@@ -1835,7 +1835,7 @@ The hosted CI provider is not fixed. Without one, the local Mac covers the cpu, 
 
 ## Implementation roadmap
 
-Each milestone is one Claude Code work package. Every acceptance test is automated and runs on the targets of "Testing and validation", and later milestones depend only on the public interfaces of earlier ones. E0 sets up and checks the development environment before any library code exists. M1a (type layer) precedes M1b (reference cells), because gridcl-refcell builds on gridcl-dims. M3s measures where SIMD vectors pay off once the primitives and mesh kernels exist. M9h studies the degree-dependent kernels up to p = 8 before M10 benchmarks the final kernels (ADR-0041).
+Each milestone is one Claude Code work package. Every acceptance test is automated and runs on the targets of "Testing and validation", and later milestones depend only on the public interfaces of earlier ones. E0 sets up and checks the development environment before any library code exists. M1a (type layer) precedes M1b (reference cells), because tetraloma-refcell builds on tetraloma-dims. M3s measures where SIMD vectors pay off once the primitives and mesh kernels exist. M9h studies the degree-dependent kernels up to p = 8 before M10 benchmarks the final kernels (ADR-0041).
 
 | Milestone | Depends on |
 | --- | --- |
@@ -1855,6 +1855,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 | M9h High-order performance | M9 |
 | M10 Hardening | all |
 | M10c CPU vector policy | M10 |
+| E1 Rename to tetraloma | M10c |
 
 ### E0 Development environment
 
@@ -1893,7 +1894,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 ### M0 Workspace and CI
 
-**Scope:** the workspace of "Workspace layout" as skeleton crates; `rust-toolchain.toml` with Rust 1.99; `cubecl = "=0.11.0"` in `[workspace.dependencies]`; gridcl-testing with `test_client()`; the gridcl-mpi-tests skeleton; the hosted CI jobs cpu, mpi-mpich, mpi-openmpi and vulkan, plus skeletons for the conformance and ptscotch jobs. gridcl-testing selects the device from `GRIDCL_TEST_DEVICE` both locally and inside `scripts/hpc` jobs.
+**Scope:** the workspace of "Workspace layout" as skeleton crates; `rust-toolchain.toml` with Rust 1.99; `cubecl = "=0.11.0"` in `[workspace.dependencies]`; tetraloma-testing with `test_client()`; the tetraloma-mpi-tests skeleton; the hosted CI jobs cpu, mpi-mpich, mpi-openmpi and vulkan, plus skeletons for the conformance and ptscotch jobs. tetraloma-testing selects the device from `TETRALOMA_TEST_DEVICE` both locally and inside `scripts/hpc` jobs.
 
 **Acceptance:**
 
@@ -1902,7 +1903,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - the conformance job builds and links ndelement at f8cbffe and compares one table (triangle edges);
 - `cargo test --workspace` builds neither ndelement, BLAS nor MPI, checked with `cargo tree`.
 
-### M1a Type layer (gridcl-dims)
+### M1a Type layer (tetraloma-dims)
 
 **Scope:** Listings B1 and B2. This includes `CellType`, `Cell1`–`Cell3`, `TopoDim` and the `WrongCellDim` conversions, plus a test-only stub `Mesh` with Listing B4's impl bounds.
 
@@ -1919,7 +1920,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
     - `boundary().boundary()` on a volume mesh.
 - `CellType` ↔ `CellN` round trips for every cell; a wrong dimension returns `WrongCellDim`.
 
-### M1b Reference cells (gridcl-refcell, gridcl-conformance)
+### M1b Reference cells (tetraloma-refcell, tetraloma-conformance)
 
 **Scope:**
 
@@ -1927,7 +1928,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - Lagrange layouts for any p, including the prism and pyramid rules of A.5;
 - the DefElement pyramid space, with an orthonormal rationomial basis;
 - point families: equispaced on every cell, GLL on tensor cells;
-- quadrature, and tabulation with gridcl-refcell's own LU;
+- quadrature, and tabulation with tetraloma-refcell's own LU;
 - orientation bits (A.6) and the format permutation generators (A.9);
 - the conformance crate with fixture export (A.10).
 
@@ -1942,12 +1943,12 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - quadrature integrates monomials (rationomials on pyramids) up to its degree to 10^−13;
 - `cargo test --workspace` still builds neither ndelement nor BLAS.
 
-### M2 Device primitives and communication core (gridcl-device, gridcl-parallel)
+### M2 Device primitives and communication core (tetraloma-device, tetraloma-parallel)
 
 **Scope:**
 
 - `Real` and the `DeviceBuffer` family with limit checks and `VECTOR_PAD` padding, plus `check_precision`;
-- `LaunchPlan` and `VectorPolicy`, with vector size 1 and tile width 16 everywhere until M3s, and the `GRIDCL_VECTOR_SIZE` and `GRIDCL_QUAD_TILE` overrides;
+- `LaunchPlan` and `VectorPolicy`, with vector size 1 and tile width 16 everywhere until M3s, and the `TETRALOMA_VECTOR_SIZE` and `TETRALOMA_QUAD_TILE` overrides;
 - scan, radix sort (u32-word keys with u32 payload), unique-by-key, run-length, histogram, gather/scatter, segmented reduce, fill and copy. Fill, copy, reduce, the tile-local scan phase, the digit counting of the sort (SortDigits) and gather are generic over the vector size (ADR-0009);
 - `CommDyn`, `Comm`, `CommExt` and `Serial`, and `IndexMap` without ghosts.
 
@@ -1971,7 +1972,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - E-vectors of the geometry nodes, built on demand and cached per geometry block, and the tiled `QuadField`;
 - factor kernels (X, J, det J, K, facet normals, normals), generic over the vector size, and `measure`;
 - `AnyMesh`, `AnyMeshRef`, `with_mesh!` and `DeviceGrid` (change log, BLK-3); `boundary()` is declared and returns `NotYetImplemented` until M9 (ADR-0012);
-- the gridcl-testing mesh generators;
+- the tetraloma-testing mesh generators;
 - the real `Mesh` replaces the M1a stub in the compile-fail tests.
 
 **Acceptance:**
@@ -1989,7 +1990,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Scope:**
 
-- gridcl-bench, with the protocol of "Vectorization and CPU execution": vector sizes, tile widths, CPU block sizes, problem sizes, medians, compile times and JSON output;
+- tetraloma-bench, with the protocol of "Vectorization and CPU execution": vector sizes, tile widths, CPU block sizes, problem sizes, medians, compile times and JSON output;
 - benchmarks of every candidate family that exists after M3: Fill, Copy, Reduce, ScanTile, SortDigits, Gather, TopologyKeys, PermutationInfo, EVector and GeomFactors;
 - for TopologyKeys and PermutationInfo, the cell-fastest copy of the connectivity they need, built behind the policy and measured including the transpose;
 - the decision rule applied for every family, device class and scalar type; `vector-policy.toml` and `docs/perf/vectorization.md` written.
@@ -2022,7 +2023,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 **Acceptance:**
 
 - VTK's Python reader (pinned, ≥ 9.2) reads every fixture;
-- the integrated volume or area of affine P2 and P3 meshes (`vtkIntegrateAttributes`) equals gridcl's `measure` to 10^−10 (f64); on curved P2 and P3 meshes, VTK's `EvaluateLocation` at Gauss points equals `physical_points` to 10^−10 (f64) (ADR-0024);
+- the integrated volume or area of affine P2 and P3 meshes (`vtkIntegrateAttributes`) equals tetraloma's `measure` to 10^−10 (f64); on curved P2 and P3 meshes, VTK's `EvaluateLocation` at Gauss points equals `physical_points` to 10^−10 (f64) (ADR-0024);
 - meshio reads identical raw arrays from the inline-base64 files (with and without zlib), and every appended file parses to the same arrays as its base64 twin (ADR-0025);
 - a P2 pyramid mesh is written as linear cells with one warning.
 
@@ -2085,14 +2086,14 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 
 **Scope (ADR-0041):**
 
-- degree sweeps (p = 1–8) in gridcl-bench, with the protocol of "Vectorization and CPU execution", for every degree-dependent kernel family: EVector, GeomFactors (points, Jacobian, det J, pseudo-inverse, normals, facet normals), PullBack and the device basis evaluator; with, per kernel and device, the time per cell and per quadrature point, the first-use compile and load time, and on CUDA the registers and local memory per thread;
+- degree sweeps (p = 1–8) in tetraloma-bench, with the protocol of "Vectorization and CPU execution", for every degree-dependent kernel family: EVector, GeomFactors (points, Jacobian, det J, pseudo-inverse, normals, facet normals), PullBack and the device basis evaluator; with, per kernel and device, the time per cell and per quadrature point, the first-use compile and load time, and on CUDA the registers and local memory per thread;
 - strategies, each compared with M9's direct evaluation: runtime loops instead of full unrolling (bounding code size and JIT time); sum factorisation for quadrilaterals, hexahedra and prisms; tabulations or coefficients in shared memory; a workgroup cooperating on one cell only where these fall short, with fixed-order reductions that do not depend on the plane size;
-- a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `GRIDCL_VECTOR_SIZE` is for vector sizes);
+- a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `TETRALOMA_VECTOR_SIZE` is for vector sizes);
 - C18 closed: its cause isolated with the CUDA kernel attributes, and reported upstream if it is CubeCL's.
 
 **Acceptance** (read as in ADR-0042: bullet 1 item 2, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 2, 8 and 9, bullet 6 item 12, and ADR-0050 to ADR-0053 and ADR-0055):
 
-- every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (gridcl-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
+- every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (tetraloma-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
 - every kernel variant up to p = 8 compiles, loads and launches on each backend, and the first-use compile and load time of each is at most 30 s on Locust;
 - for quadrilaterals and hexahedra, the time per quadrature point of geometric factors and of a pull-back Newton step at p = 8 over that at p = 4 is measured and reported per device class against a target of 3 (direct evaluation: about 5.8 times), with the speedup over M9 at p = 8 (ADR-0053);
 - no policy family is more than 5% slower than in M9 at p ≤ 4 on any device class, in a paired comparison where M9's direct kernel is selectable (ADR-0055);
@@ -2123,29 +2124,38 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - `vector-policy.toml` and `degree-policy.toml` follow the generic decision rule, with the fallback of ADR-0065, on the committed records; every entry that misses the bound is marked with its worst case and the cause;
 - the standing matrix passes with the new sets.
 
+### E1 Rename to tetraloma
+
+**Scope (ADR-0066):** the project's permanent name, tetraloma, throughout: crate names and directories, Rust paths, environment variables (`TETRALOMA_*`), scripts, CI, documentation and the Claude Code configuration; the repository moves to github.com/tetracl/tetraloma. No type, function or behaviour changes.
+
+**Acceptance:**
+
+- `scripts/check-name.sh` passes, in CI: no old name in tracked paths or content outside the allowlist of ADR-0066, every workspace crate except the two `-sys` crates is named `tetraloma` or `tetraloma-*`, the workspace manifest names the repository, and only `TETRALOMA_*` variables are read;
+- the standing matrix passes unchanged.
+
 ## Risks and mitigations
 
 The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and the external partitioner and MPI bindings that must be written from scratch.
 
 | Risk | Mitigation |
 | --- | --- |
-| CubeCL API churn (alpha, breaking minor releases) | Pin `=0.11.0`. Keep runtime types in gridcl-device. Upgrade as a dedicated milestone, with the kernel test suite as safety net. |
+| CubeCL API churn (alpha, breaking minor releases) | Pin `=0.11.0`. Keep runtime types in tetraloma-device. Upgrade as a dedicated milestone, with the kernel test suite as safety net. |
 | Backend capability gaps: no f64 on Metal; f64 and u64 adapter-dependent on Vulkan and WGSL; no 64-bit or float min/max atomics on Metal | f32 is first-class; sort keys are u32 words; kernels use no 64-bit or float atomics; capabilities are checked at mesh creation; CI runs on Vulkan and Metal. |
 | Device limits: allocation size, buffers per kernel, workgroups per dimension, shared memory | Query `Client::properties`; chunk fields by cells; check per-rank array sizes at creation; use `LaunchPlan`; keep kernels to six buffers. |
 | High-degree kernels: register pressure, code size and driver JIT time (C18); (p + 1)^6 cost per cell of direct evaluation | M9h: degree sweeps, runtime loops, sum factorisation, a degree policy from benchmarks (ADR-0041). |
-| No device-wide sort or scan in CubeCL; no forward-progress guarantee on Vulkan and Metal | Implement reduce-then-scan and LSD radix sort in gridcl-device; check CubeK first; benchmark in M2, because topology creation depends on them. |
+| No device-wide sort or scan in CubeCL; no forward-progress guarantee on Vulkan and Metal | Implement reduce-then-scan and LSD radix sort in tetraloma-device; check CubeK first; benchmark in M2, because topology creation depends on them. |
 | f32 accuracy for curved high-order geometry | Tabulate in f64 on the host; store coordinates relative to the global origin; finish reductions in f64; test f32 against f64. |
 | GPU-aware MPI relies on `Client::get_resource` and on naming the server type through `cubecl-runtime`; CUDA allocator settings | Deferred (ADR-0059); host-staged exchange hardened in M10. |
 | MPI flavour differences: `MPI_Comm` is a pointer in Open MPI and an integer in MPICH | `Mpi` holds the communicator in an `Rc` and is not `Send` under either; `Comm` requires neither `Send` nor `Sync`; CI runs both MPICH and Open MPI. |
 | rsmpi lacks neighbourhood collectives; no Rust bindings exist for PT-Scotch's distributed API or for ParMETIS | Own wrappers over `mpi::ffi`; own ptscotch-sys and parmetis-sys with width probing; vendored METIS as the dependency-free fallback; dedicated CI image; check the ParMETIS licence. |
 | Rust 1.95 MSRV is declared only in CubeCL's workspace, not in its published manifests | Pin the toolchain (Rust 1.99) in `rust-toolchain.toml`; CI images with that toolchain. |
 | Pyramid geometry: Gmsh's high-order pyramid basis may differ from the DefElement space inside the cell | Use the DefElement Lagrange pyramid space; validate face traces against Gmsh fixtures; treat pyramids with p > 2 as experimental. |
-| ndelement's current numbering is unreleased; ndelement has no prism or pyramid elements | Pin commit f8cbffe in gridcl-conformance only. The nightly job and every pin bump re-check the conventions, and a failure forces an explicit decision. Prisms and pyramids are checked against DOLFINx's Gmsh maps and Gmsh fixtures. |
+| ndelement's current numbering is unreleased; ndelement has no prism or pyramid elements | Pin commit f8cbffe in tetraloma-conformance only. The nightly job and every pin bump re-check the conventions, and a failure forces an explicit decision. Prisms and pyramids are checked against DOLFINx's Gmsh maps and Gmsh fixtures. |
 | Node-ordering mistakes in I/O; VTK's legacy renumbering of higher-order hexahedra | Generated orderings with coordinate matching; Gmsh-written fixtures; VTU version 2.2; checks through VTK's own reader. |
 | Generic bounds spreading through downstream crates | `DeviceGrid` and the type aliases; minimal struct bounds; cell type and degree stay runtime. |
 | Unmaintained dependencies | hdf5-metno instead of hdf5; mshio as a test oracle only; coupe removed. |
 | CUDA 13 dropped sm_70, and the driver JIT-compiles CubeCL's PTX | V100 jobs use a CUDA 12.x toolkit; CubeCL's default LLVM path chooses the PTX version for the node's driver, and the NVRTC path (`cuda-cpp`) needs a toolkit no newer than the driver's CUDA version (ADR-0001); env-check records both on every target. |
-| CubeCL's LLVM NVPTX backend advertises fewer device features than NVRTC (MMA) | gridcl uses no tensor-core MMA; env-check runs both backends on every remote target (ADR-0001). |
+| CubeCL's LLVM NVPTX backend advertises fewer device features than NVRTC (MMA) | tetraloma uses no tensor-core MMA; env-check runs both backends on every remote target (ADR-0001). |
 | Remote targets: VPN or SSH-gateway access, queue waits, quota; Locust is an experimental system that may be unavailable | One runner script with SSH connection reuse; turnaround measured in E0; Locust (no queue) for all CUDA runs, reviews included, and the V100 as the fallback (ADR-0014); Locust runs never block a milestone. |
 | Compute nodes may have no internet access, and the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node; jobs run offline. The prebuilt bundle needs glibc ≥ 2.34; on Myriad the same LLVM version is built with Spack and linked with LLD. |
 | Spack-built LLVM relies on undocumented bundler internals (sentinel file, directory name, `llvm-config`) | Rebuild and re-run env-check on Myriad with every CubeCL upgrade; Apptainer image as the fallback (ADR-0004). |
@@ -2161,16 +2171,16 @@ Convert this document to `docs/design.md` in the repository, add the working agr
 **Listing H1 — CLAUDE.md**
 
 ```markdown
-# gridcl - working agreement
+# tetraloma - working agreement
 
-- Design reference: docs/design.md (gridcl Design B, revised design, October 2026).
+- Design reference: docs/design.md (tetraloma Design B, revised design, October 2026).
   Public types in "Architecture" and "API walkthrough" change only via an ADR in docs/adr/.
 - Toolchain: stable Rust 1.99, pinned in rust-toolchain.toml.
 - CubeCL: cubecl = "=0.11.0" in [workspace.dependencies].
   - Crates that define or launch kernels may depend on cubecl without runtime features.
-  - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
+  - Runtime types (runtime structs, get_resource, cubecl-runtime) only in tetraloma-device.
   - Never add a Runtime type parameter to a public type; use cubecl::prelude::Client.
-  - Runtime features only in gridcl-testing, examples, benches and binaries
+  - Runtime features only in tetraloma-testing, examples, benches and binaries
     (`gpu-aware-cuda` is reserved; ADR-0059).
 - Kernels:
   - launch shape (cube count, cube dim, vector size, items per unit) only from LaunchPlan;
@@ -2194,8 +2204,8 @@ Convert this document to `docs/design.md` in the repository, add the working agr
 - Host maths generic over F: Real uses widen()/narrow() or f64, never F's own methods.
 - Orientation always uses origin ids, never local or post-partition global ids.
 - Tests: cargo test --workspace must pass on the CPU runtime.
-  GPU runs: GRIDCL_TEST_DEVICE=vulkan | metal | cuda.
-- MPI tests: crate gridcl-mpi-tests ([[test]] targets, harness = false),
+  GPU runs: TETRALOMA_TEST_DEVICE=vulkan | metal | cuda.
+- MPI tests: crate tetraloma-mpi-tests ([[test]] targets, harness = false),
   run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI.
 - Run plans: only the runs that show the code works and the timings a decision needs
   (ADR-0057). The standing matrix stays (CPU runtime and Metal on every change, Locust after
@@ -2229,8 +2239,8 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   expansion coefficients, or of the coefficient factors and node permutation of a
   sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
   ADR-0042, ADR-0049).
-- FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
-  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
+- FFI declarations only in *-sys crates. FFI calls only in tetraloma-parallel (MPI),
+  tetraloma-device (GPU-aware; the macOS performance-core count, ADR-0017) and tetraloma-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
   and examples may call its declarations (ADR-0039). Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
@@ -2244,20 +2254,20 @@ The repository's `CLAUDE.md` extends this listing with workflow rules (plans, AD
 
 ```text
 Implement milestone M3 ("Serial mesh core") from docs/design.md.
-Scope: gridcl-topology, gridcl-geometry, the Mesh facade in gridcl, and the mesh
-generators in gridcl-testing. Use the types from the "Architecture" section exactly, and
+Scope: tetraloma-topology, tetraloma-geometry, the Mesh facade in tetraloma, and the mesh
+generators in tetraloma-testing. Use the types from the "Architecture" section exactly, and
 replace the M1a stub Mesh in the compile-fail tests.
 Start by writing the M3 acceptance tests so that they fail: entity counts and Euler
 characteristic, unit volume for p = 1..4 in f64 and f32, sphere-area convergence,
 f32-vs-f64 agreement, mixed-surface Jacobians, permutation info against the fixtures, and
 QuadField chunking. Then implement until they pass on the CPU runtime, and run them with
-GRIDCL_TEST_DEVICE=vulkan and GRIDCL_TEST_DEVICE=metal.
+TETRALOMA_TEST_DEVICE=vulkan and TETRALOMA_TEST_DEVICE=metal.
 If an API deviation is unavoidable, stop and draft an ADR.
 ```
 
 ## Appendix A — Reference cells and element tables
 
-gridcl follows the DefElement conventions as implemented by ndelement on the main branch of nd-project/nd (commit f8cbffe, 1 October 2026; GitHub mirror bempp/nd). Vertex coordinates, and the sub-entity numbering of quadrilaterals, hexahedra, prisms and pyramids, are identical in ndelement, Basix, Symfem and DefElement. For triangles and tetrahedra, ndelement, Symfem and DefElement number edges and faces in sorted (lexicographic) order, while Basix and DOLFINx use the reverse order; A.11 gives the conversion.
+tetraloma follows the DefElement conventions as implemented by ndelement on the main branch of nd-project/nd (commit f8cbffe, 1 October 2026; GitHub mirror bempp/nd). Vertex coordinates, and the sub-entity numbering of quadrilaterals, hexahedra, prisms and pyramids, are identical in ndelement, Basix, Symfem and DefElement. For triangles and tetrahedra, ndelement, Symfem and DefElement number edges and faces in sorted (lexicographic) order, while Basix and DOLFINx use the reverse order; A.11 gives the conversion.
 
 **Version pin.** The released ndelement 0.4.0 on crates.io (13 April 2026) still uses the Basix order for simplices. Pin the nd git commit, not the crates.io release, until a release contains the change. The pin lives only in the conformance crate (A.10).
 
@@ -2323,8 +2333,8 @@ The pyramid count equals the dimension of DefElement's Lagrange pyramid space (A
 - **Inside a quadrilateral face:** the same construction on the tensor grid, first face coordinate fastest.
 - **Tetrahedron interior:** v0 + (i0/p)(v1−v0) + (i1/p)(v2−v0) + (i2/p)(v3−v0), with all indices ≥ 1 and i0 + i1 + i2 ≤ p−1; i2 outermost, i0 innermost.
 - **Hexahedron interior:** the tensor grid along the axes v1−v0, v2−v0, v4−v0, first coordinate fastest.
-- **Prism interior** (gridcl rule, DefElement conventions): v0 + (i0/p)(v1−v0) + (i1/p)(v2−v0) + (i2/p)(v3−v0), with i0, i1 ≥ 1, i0 + i1 ≤ p−1 and 1 ≤ i2 ≤ p−1; i2 outermost, i0 innermost.
-- **Pyramid interior** (gridcl rule): points (i0/p, i1/p, i2/p) with 1 ≤ i2 ≤ p−2 and 1 ≤ i0, i1 ≤ p−1−i2; i2 outermost, i0 innermost.
+- **Prism interior** (tetraloma rule, DefElement conventions): v0 + (i0/p)(v1−v0) + (i1/p)(v2−v0) + (i2/p)(v3−v0), with i0, i1 ≥ 1, i0 + i1 ≤ p−1 and 1 ≤ i2 ≤ p−1; i2 outermost, i0 innermost.
+- **Pyramid interior** (tetraloma rule): points (i0/p, i1/p, i2/p) with 1 ≤ i2 ≤ p−2 and 1 ≤ i0, i1 ≤ p−1−i2; i2 outermost, i0 innermost.
 - **Pyramid space:** DefElement's Lagrange pyramid space (Definition 9 of the DefElement paper), spanned by x^a y^b z^c / (1−z)^min(a,b) with a + c ≤ p and b + c ≤ p. Tabulate it with an orthonormal rationomial basis.
 - **Agreement:** the interval, triangle, quadrilateral, tetrahedron and hexahedron layouts are exactly ndelement's at f8cbffe. The prism and pyramid rules coincide with Basix's equispaced lattices, so DOLFINx's Gmsh maps for those cells apply unchanged.
 - **Node families:** equispaced points on all cells. GLL points on intervals, quadrilaterals and hexahedra only, matching ndelement; GLL replaces the 1D equispaced points in the constructions above.
@@ -2337,8 +2347,8 @@ The pyramid count equals the dimension of DefElement's Lagrange pyramid space (A
     - then three bits per face in face order: the low two hold the rotation count, the third the reflection.
     - Cells of dimension 1 have no bits; cells of dimension 2 have edge bits only.
 - **Rotation count:** the cyclic position of the face's lowest vertex within the cell-local face cycle (triangles: list order; quadrilaterals: tensor order, cycle 0–1–3–2). **Reflection bit:** set when that vertex's successor on the cycle has a higher origin id than its predecessor.
-- **Unused bits:** at most 30 bits are needed (hexahedron), so bits 30 and 31 stay zero. ndelement returns an i32; gridcl stores the same bit pattern as u32.
-- **Deliberate difference from DOLFINx:** gridcl also stores edge and face vertex lists in the reference orientation, so device kernels can orient an entity without a lookup. DOLFINx keeps orientation only in the bits.
+- **Unused bits:** at most 30 bits are needed (hexahedron), so bits 30 and 31 stay zero. ndelement returns an i32; tetraloma stores the same bit pattern as u32.
+- **Deliberate difference from DOLFINx:** tetraloma also stores edge and face vertex lists in the reference orientation, so device kernels can orient an entity without a lookup. DOLFINx keeps orientation only in the bits.
 - **Storage slots:** an edge is stored as (lower, higher). A triangle face is stored in ascending order, because both other vertices neighbour the lowest one. A quadrilateral face follows its tensor order (boundary cycle 0–1–3–2): slot 0 holds the lowest vertex, slot 1 its lower neighbour, slot 2 its other neighbour and slot 3 the opposite vertex. The stored face is again a valid tensor-ordered quadrilateral.
 
 **Worked example — canonical storage and orientation bits** (numbers are origin ids)
@@ -2388,7 +2398,7 @@ Serendipity types are upgraded to complete Lagrange on read. All other incomplet
 
 ### A.8 VTK cell types
 
-| Cell | Linear | Fixed quadratic (nodes) | Lagrange | gridcl writer |
+| Cell | Linear | Fixed quadratic (nodes) | Lagrange | tetraloma writer |
 | --- | --- | --- | --- | --- |
 | Point | 1 | – | – | 1 |
 | Interval | 3 | 21 (3) | 68 | 3 for p = 1, else 68 |
@@ -2401,7 +2411,7 @@ Serendipity types are upgraded to complete Lagrange on read. All other incomplet
 
 VTK's enum defines 74 (`VTK_LAGRANGE_PYRAMID`) only as a placeholder, "Not Implemented yet", and DOLFINx's writer refuses pyramids with more than five nodes. High-order pyramids therefore go to Gmsh files at full degree and to VTK only as linear or subdivided cells. VTU files are written with `version="2.2"`, because VTK renumbers higher-order hexahedra in files below version 2.1.
 
-### A.9 Node maps between files and gridcl (p ≤ 2)
+### A.9 Node maps between files and tetraloma (p ≤ 2)
 
 Entry k is the internal (DefElement-order) node index of the file's k-th node: `internal[map[k]] = file[k]`. The quadrilateral, hexahedron, prism and pyramid rows are DOLFINx's published maps (`io/cells.cpp`), which coincide with the internal order for these cells. The triangle and tetrahedron rows are DOLFINx's maps composed with the index conversion of A.11.
 
@@ -2437,12 +2447,12 @@ Higher degrees are generated from each format's rules ("High-order node ordering
 - meshio `gmsh/common.py`; Gmsh `GmshDefines.h`; VTK `vtkCellType.h` and `vtkXMLUnstructuredGridReader.cxx`.
 - ndmesh's crate-level example (`ndmesh/src/lib.rs`) still lists second-order triangle points in the old (Basix) edge order. Test against ndelement's Lagrange element, not against that example.
 
-**Conformance setup.** gridcl writes its own definitions and follows the DefElement convention; ndelement is used only to check them, in a crate of its own.
+**Conformance setup.** tetraloma writes its own definitions and follows the DefElement convention; ndelement is used only to check them, in a crate of its own.
 
-- **gridcl-refcell** holds gridcl's constant tables, Lagrange generator and orientation-bit function. It depends only on gridcl-dims.
-- **gridcl-conformance** lives in `conformance/`, is excluded from the main workspace, has its own Cargo.lock and is never published. It depends on gridcl-refcell by path, on ndelement by git at the pinned commit, and on BLAS/LAPACK source crates, because ndelement's own BLAS/LAPACK crates are dev-dependencies only.
-- **Fixtures:** the conformance crate exports JSON fixtures to `gridcl-refcell/tests/fixtures/`, together with the pinned commits of ndelement, Basix, DOLFINx and Symfem. They are committed, so ordinary `cargo test --workspace` needs neither BLAS nor a git dependency.
-- **CI:** a separate job runs the conformance suite nightly and on every ndelement pin bump. A failure means the convention moved, and calls for an explicit decision: follow the change (update gridcl and re-export the fixtures) or keep the old pin.
+- **tetraloma-refcell** holds tetraloma's constant tables, Lagrange generator and orientation-bit function. It depends only on tetraloma-dims.
+- **tetraloma-conformance** lives in `conformance/`, is excluded from the main workspace, has its own Cargo.lock and is never published. It depends on tetraloma-refcell by path, on ndelement by git at the pinned commit, and on BLAS/LAPACK source crates, because ndelement's own BLAS/LAPACK crates are dev-dependencies only.
+- **Fixtures:** the conformance crate exports JSON fixtures to `tetraloma-refcell/tests/fixtures/`, together with the pinned commits of ndelement, Basix, DOLFINx and Symfem. They are committed, so ordinary `cargo test --workspace` needs neither BLAS nor a git dependency.
+- **CI:** a separate job runs the conformance suite nightly and on every ndelement pin bump. A failure means the convention moved, and calls for an explicit decision: follow the change (update tetraloma and re-export the fixtures) or keep the old pin.
 - **Scope of comparison:**
     - sub-entity tables and orientation bits for all eight cells;
     - Lagrange point sets for intervals, triangles, quadrilaterals, tetrahedra and hexahedra, since ndelement has no prism or pyramid element;
@@ -2453,15 +2463,15 @@ Higher degrees are generated from each format's rules ("High-order node ordering
 **Listing A.1 — conformance crate**
 
 ```text
-gridcl/                            main workspace
+tetraloma/                            main workspace
   Cargo.toml                       [workspace] members = [...], exclude = ["conformance"]
-  gridcl-refcell/
-    tests/fixtures/*.json          exported by gridcl-conformance, committed
+  tetraloma-refcell/
+    tests/fixtures/*.json          exported by tetraloma-conformance, committed
   ...
-  conformance/                     gridcl-conformance: own Cargo.lock, never published
+  conformance/                     tetraloma-conformance: own Cargo.lock, never published
     Cargo.toml
     src/lib.rs                     extern crate lines for BLAS/LAPACK
-    src/bin/export_fixtures.rs     writes gridcl-refcell/tests/fixtures/
+    src/bin/export_fixtures.rs     writes tetraloma-refcell/tests/fixtures/
     tests/tables.rs                sub-entity tables, all eight cells
     tests/orientation.rs           bits vs ndelement::orientation::compute_orientation
     tests/lagrange.rs              point sets node by node, five cells, p <= 4
@@ -2470,12 +2480,12 @@ gridcl/                            main workspace
 ```toml
 # conformance/Cargo.toml
 [package]
-name = "gridcl-conformance"
+name = "tetraloma-conformance"
 edition = "2024"
 publish = false
 
 [dependencies]
-gridcl-refcell = { path = "../gridcl-refcell" }
+tetraloma-refcell = { path = "../tetraloma-refcell" }
 serde_json = "1"
 
 [dependencies.ndelement]
@@ -2502,13 +2512,13 @@ extern crate openblas_src;
 
 ### A.11 Conversion to Basix and DOLFINx
 
-| Entities | gridcl / ndelement index i → Basix / DOLFINx index |
+| Entities | tetraloma / ndelement index i → Basix / DOLFINx index |
 | --- | --- |
 | Triangle edges | 2 − i |
 | Tetrahedron edges | 5 − i |
 | Tetrahedron faces | 3 − i |
 | All other cells and entities; all vertices | identity |
-| Symfem and DefElement | identical to gridcl (no conversion) |
+| Symfem and DefElement | identical to tetraloma (no conversion) |
 
 - **Node maps:** reorder the edge and face blocks of triangles and tetrahedra with the index conversion. The order within each block is unchanged, because each sub-entity keeps its vertex list and Basix places points inside an entity by the same rule as A.5.
 - **Orientation bits:** DOLFINx stores faces first, with the reflection in the low bit, and defines its rotation count relative to both the local and the global minimum. Recompute DOLFINx bits from the vertex ids with DOLFINx's rule, rather than translating bit fields.
@@ -2520,9 +2530,9 @@ All 44 findings of the consolidated design review are addressed. The table gives
 
 | Finding | Fix | Where |
 | --- | --- | --- |
-| BLK-1 | Kernel crates may use cubecl without runtime features; runtime types only in gridcl-device | Workspace layout; Listing H1 |
-| BLK-2 | `Comm`, `Serial` and `IndexMap` in gridcl-parallel with MPI optional, built in M2 | Workspace layout; M2 |
-| BLK-3 | `CellType` and `TopoDim` in gridcl-dims; M1a type layer with a stub `Mesh`; `AnyMesh` and `DeviceGrid` in M3 | Listing B2; M1a, M3 |
+| BLK-1 | Kernel crates may use cubecl without runtime features; runtime types only in tetraloma-device | Workspace layout; Listing H1 |
+| BLK-2 | `Comm`, `Serial` and `IndexMap` in tetraloma-parallel with MPI optional, built in M2 | Workspace layout; M2 |
+| BLK-3 | `CellType` and `TopoDim` in tetraloma-dims; M1a type layer with a stub `Mesh`; `AnyMesh` and `DeviceGrid` in M3 | Listing B2; M1a, M3 |
 | BLK-4 | Prism and pyramid layouts defined from DefElement; ndelement point-set comparison limited to five cells | Reference cells; A.5; A.10 |
 | MAJ-1 | Inclusive scan minus 1; one sort across blocks; emission-index payload; owned-first renumbering | Topology construction |
 | MAJ-2 | Owners chosen among owned-cell holders; candidates need all vertices shared; numbers flow forward | Topology construction |
@@ -2553,7 +2563,7 @@ All 44 findings of the consolidated design review are addressed. The table gives
 | MIN-6 | `GeomLayout` derives; u32 runtime scalars | Listing B5 |
 | MIN-7 | `num_owned`, `num_ghosts`, `num_local` | Listing S2 |
 | MIN-8 | Column-major layout comments; `read_node` documents its cost | Listings B4, B9 |
-| MIN-9 | gridcl-mpi-tests crate; explicit exceptions in CLAUDE.md | Workspace layout; Listing H1 |
+| MIN-9 | tetraloma-mpi-tests crate; explicit exceptions in CLAUDE.md | Workspace layout; Listing H1 |
 | MIN-10 | `CudaAllocator::Sync`; `&mut` collectives noted | Transports |
 | MIN-11 | MSRV declared only in CubeCL's workspace | Risks |
 | MIN-12 | About 24 monomorphisations; tabulation wording; own LU; prism quadrature | Design rationale; Geometry |
@@ -2568,12 +2578,12 @@ All 44 findings of the consolidated design review are addressed. The table gives
 **Other changes made while consolidating:**
 
 - The DOF-transformation reference is now Scroggs, Dokken, Richardson and Wells (ACM TOMS 2022). The draft's "arXiv:2607.08172" could not be verified.
-- Draft milestones M1 and M1b are now M1a (type layer) and M1b (reference cells), because gridcl-refcell builds on gridcl-dims.
-- `Real` is defined in gridcl-device and re-exported by gridcl.
+- Draft milestones M1 and M1b are now M1a (type layer) and M1b (reference cells), because tetraloma-refcell builds on tetraloma-dims.
+- `Real` is defined in tetraloma-device and re-exported by tetraloma.
 - GLL points are offered on tensor cells only, matching ndelement.
 - Coordinates are stored relative to a global origin; `measure` returns f64.
 - Edge submeshes of 3D meshes are supported.
-- The new gridcl-testing crate provides the test-device selection and the mesh generators.
+- The new tetraloma-testing crate provides the test-device selection and the mesh generators.
 
 **Revision 2 (17 October 2026): development environment.**
 
@@ -2588,4 +2598,4 @@ All 44 findings of the consolidated design review are addressed. The table gives
 - Requirement: CPU performance through SIMD where benchmarks show a gain; fixed decision 11 (SIMD only through CubeCL vectors).
 - New section "Vectorization and CPU execution": CubeCL's vector model, how the CPU runtime runs kernels, `LaunchPlan` and `VectorPolicy` (Listing S2), padding and tiles, the candidate list, determinism across vector sizes and the benchmark protocol.
 - `DeviceBuffer` padding and `vector_arg` (Listing S1); the tiled `QuadField` (Listing B4b); the vectorized Jacobian kernel (Listing B5).
-- New milestone M3s (SIMD vectorization and benchmarks) and the gridcl-bench crate; E-vectors move from M9 to M3; updated M2, M3, M6, M9 and M10, the testing section, the CI matrix, the working agreement and the risks.
+- New milestone M3s (SIMD vectorization and benchmarks) and the tetraloma-bench crate; E-vectors move from M9 to M3; updated M2, M3, M6, M9 and M10, the testing section, the CI matrix, the working agreement and the risks.
