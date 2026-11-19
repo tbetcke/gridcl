@@ -47,6 +47,8 @@ jobs:
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
+      # The project's name (ADR-0066, rule 5).
+      - run: scripts/check-name.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # `cargo test --workspace` in two jobs: gridcl's suite and gridcl-geometry's integration
       # tests (8 min, M9's orient tests) run in cpu-gridcl.
