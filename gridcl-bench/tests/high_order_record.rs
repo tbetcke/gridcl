@@ -1700,12 +1700,9 @@ fn degree_policy_follows_the_generic_rule() {
                         let time =
                             |m: usize, k: usize, s: &str| t(devices[m], sizes[k], s).unwrap();
                         let got = policy.strategy_of(class, family, cell, bytes, degree);
-                        let Some((want, fallback)) =
+                        let (want, fallback) =
                             generic_pick(&cand, devices.len(), sizes.len(), time)
-                        else {
-                            assert_eq!(got, "loops", "{at}: neither direct nor loops selectable");
-                            continue;
-                        };
+                                .unwrap_or_else(|| panic!("{at}: neither direct nor loops ran"));
                         let source = if from_m10 { "M10" } else { "M9h" };
                         assert_eq!(
                             got, want,
