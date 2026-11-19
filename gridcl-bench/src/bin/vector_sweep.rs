@@ -8,6 +8,8 @@
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE]
 //! vector_sweep --candidates [--target NAME] [--families LIST] [--types LIST] [--sizes LIST]
 //!     [--runs R] [--fallback-reason TEXT] [--out FILE]
+//! vector_sweep --grid --seed S [--target NAME] [--families LIST] [--types LIST] [--sizes LIST]
+//!     [--rounds R] [--fallback-reason TEXT] [--out FILE]
 //! vector_sweep annotate --node-load RESULTS_DIR FILE...
 //! ```
 //!
@@ -16,6 +18,13 @@
 //!   `candidates::vector_candidates` for the device's class, Pack and PullBack included, at
 //!   10^6 and 10^7 items with five timed runs by default. `--vector-sizes`, `--blocks` and
 //!   `--cube-dim` do not apply.
+//! - `--grid --seed S`: the M10c grid of the `[Cpu]` vector entries on the CPU runtime
+//!   (ADR-0065 items 1, 2 and 4; `families::grid_sweep`): per entry every member type, size
+//!   (10^6 and 10^7 by default) and configuration of `candidates::cpu_grid`, calibrated, then
+//!   timed in `--rounds` (default 5) interleaved rounds in an order shuffled from the seed; the
+//!   records carry the seed and their positions. One process per seed; the job script
+//!   `scripts/bench/cpu-vector-grid.sh` runs seeds 1 and 2. A GPU device is refused;
+//!   `--vector-sizes`, `--blocks`, `--cube-dim` and `--runs` are ignored.
 //!
 //! - `--target`: the machine, `m3max` or a target of scripts/hpc/remote-test.sh; default
 //!   `GRIDCL_HPC_TARGET` (set in runner jobs), else `local`.
@@ -40,7 +49,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use gridcl_bench::candidates::candidate_kinds;
-use gridcl_bench::families::{self, BLOCKS, CandidateOptions, Machine, SIZES, SweepOptions};
+use gridcl_bench::families::{
+    self, BLOCKS, CandidateOptions, GridOptions, Machine, SIZES, SweepOptions,
+};
 use gridcl_bench::protocol::{CANDIDATE_RUNS, CANDIDATE_SIZES, RUNS};
 use gridcl_bench::record::{CubeDimMode, NodeLoad, Scalar, kind_named, write_records};
 use gridcl_device::KernelKind;
@@ -51,6 +62,8 @@ const USAGE: &str = "usage: vector_sweep [--target NAME] [--families LIST] [--ty
     [--runs R] [--fallback-reason TEXT] [--out FILE]\n       \
     vector_sweep --candidates [--target NAME] [--families LIST] [--types LIST] [--sizes LIST] \
     [--runs R] [--fallback-reason TEXT] [--out FILE]\n       \
+    vector_sweep --grid --seed S [--target NAME] [--families LIST] [--types LIST] [--sizes LIST] \
+    [--rounds R] [--fallback-reason TEXT] [--out FILE]\n       \
     vector_sweep annotate --node-load RESULTS_DIR FILE...";
 
 fn main() -> ExitCode {
@@ -105,6 +118,8 @@ enum CubeDims {
 struct Args {
     /// The candidate protocol (`--candidates`).
     candidates: bool,
+    /// The M10c grid (`--grid`), with its process seed and rounds.
+    grid: Option<(u64, usize)>,
     target: String,
     families: Vec<KernelKind>,
     scalars: Option<Vec<Scalar>>,
@@ -121,6 +136,7 @@ impl Args {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, Failure> {
         let mut parsed = Args {
             candidates: false,
+            grid: None,
             target: std::env::var("GRIDCL_HPC_TARGET")
                 .ok()
                 .filter(|t| !t.is_empty())
@@ -136,10 +152,22 @@ impl Args {
             out: None,
         };
         let (mut families, mut sizes, mut runs, mut sweep_only) = (None, None, None, None);
+        let (mut grid, mut seed, mut rounds) = (false, None, None);
         while let Some(flag) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
             match flag.as_str() {
                 "--candidates" => parsed.candidates = true,
+                "--grid" => grid = true,
+                "--seed" => {
+                    seed = Some(
+                        value()?
+                            .parse::<u64>()
+                            .map_err(|_| "--seed needs a non-negative integer")?,
+                    )
+                }
+                "--rounds" => {
+                    rounds = Some(positive(&value()?).ok_or("--rounds needs a positive integer")?)
+                }
                 "--target" => parsed.target = value()?,
                 "--families" => families = Some(list(&flag, &value()?, kind_named)?),
                 "--types" => parsed.scalars = Some(list(&flag, &value()?, Scalar::named)?),
@@ -176,8 +204,28 @@ impl Args {
                 _ => return Err(format!("unknown option {flag}").into()),
             }
         }
+        if grid {
+            if parsed.candidates {
+                return Err("--grid and --candidates exclude each other".into());
+            }
+            let seed = seed.ok_or("--grid needs --seed S")?;
+            parsed.grid = Some((seed, rounds.unwrap_or(CANDIDATE_RUNS)));
+            for flag in sweep_only
+                .iter()
+                .chain(runs.map(|_| "--runs".to_owned()).iter())
+            {
+                eprintln!("vector_sweep: {flag} does not apply to --grid; ignored");
+            }
+        } else if let Some(flag) = [(seed.is_some(), "--seed"), (rounds.is_some(), "--rounds")]
+            .into_iter()
+            .find_map(|(given, flag)| given.then_some(flag))
+        {
+            return Err(format!("{flag} applies to --grid only").into());
+        }
         // The kinds each mode measures: the M3s families, or every candidate kind.
-        let measured: Vec<KernelKind> = if parsed.candidates {
+        let measured: Vec<KernelKind> = if parsed.grid.is_some() {
+            candidate_kinds().into_iter().map(|(k, _)| k).collect()
+        } else if parsed.candidates {
             if let Some(flag) = sweep_only {
                 return Err(format!("{flag} does not apply to --candidates").into());
             }
@@ -194,7 +242,7 @@ impl Args {
             }
             None => measured,
         };
-        let (default_sizes, default_runs) = if parsed.candidates {
+        let (default_sizes, default_runs) = if parsed.candidates || parsed.grid.is_some() {
             (CANDIDATE_SIZES.to_vec(), CANDIDATE_RUNS)
         } else {
             (SIZES.to_vec(), RUNS)
@@ -267,7 +315,18 @@ fn run(args: Args) -> Result<(), Failure> {
             write_error = write_records(path, &written).err();
         }
     };
-    let records = if args.candidates {
+    let records = if let Some((seed, rounds)) = args.grid {
+        let options = GridOptions {
+            target: args.target,
+            families: args.families,
+            scalars: args.scalars,
+            sizes: args.sizes,
+            rounds,
+            seed,
+            fallback_reason: args.fallback_reason,
+        };
+        families::grid_sweep(&client, &machine, &options, &mut on_record)
+    } else if args.candidates {
         let options = CandidateOptions {
             target: args.target,
             families: args.families,
@@ -389,6 +448,44 @@ mod tests {
             &["--candidates", "--blocks", "4"][..],
             &["--candidates", "--vector-sizes", "1"],
             &["--cube-dim", "plan", "--candidates"],
+        ] {
+            assert!(matches!(args(list), Err(Failure::Usage(_))), "{list:?}");
+        }
+    }
+
+    /// `--grid --seed S`: every candidate kind, 10^6 and 10^7, five rounds; a seed is required,
+    /// and `--seed` and `--rounds` belong to the grid.
+    #[test]
+    fn grid_takes_a_seed_and_rounds() {
+        let parsed = args(&["--grid", "--seed", "2"]).ok().unwrap();
+        assert_eq!(parsed.grid, Some((2, CANDIDATE_RUNS)));
+        assert_eq!(parsed.sizes, CANDIDATE_SIZES);
+        assert_eq!(parsed.families.len(), 13);
+        let parsed = args(&[
+            "--grid",
+            "--seed",
+            "1",
+            "--rounds",
+            "1",
+            "--sizes",
+            "1000",
+            "--families",
+            "scantile",
+            "--blocks",
+            "4",
+        ])
+        .ok()
+        .unwrap();
+        assert_eq!(parsed.grid, Some((1, 1)));
+        assert_eq!(parsed.sizes, [1000]);
+        assert_eq!(parsed.families, [KernelKind::ScanTile]);
+        for list in [
+            &["--grid"][..],
+            &["--grid", "--seed", "-1"],
+            &["--grid", "--seed", "1", "--rounds", "0"],
+            &["--grid", "--seed", "1", "--candidates"],
+            &["--seed", "1"],
+            &["--candidates", "--rounds", "3"],
         ] {
             assert!(matches!(args(list), Err(Failure::Usage(_))), "{list:?}");
         }

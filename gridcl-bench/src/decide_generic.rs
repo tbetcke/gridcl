@@ -16,7 +16,12 @@
 //!   members and sizes (simplicity: [`ConfigKey`] order for vector configurations; `direct` <
 //!   `loops` < `sumfact` < `shared` < `cooperative` for strategies);
 //! - **fallback:** if none is kept, the admitted candidate with the smallest worst-case r, which
-//!   the report marks with that worst case.
+//!   the report marks with that worst case ([`GenericRule::M10`]); from M10c, if none is kept the
+//!   bound and the choice first apply to all candidates, and only if none meets the bound the
+//!   admitted candidate with the smallest worst case is taken and marked with its worst case and
+//!   cause ([`GenericRule::M10c`], ADR-0065 item 3). Under M10c a member without a time at a
+//!   size (a case left out of a platform) is left out of that size's admission mean, r and the
+//!   bound (ADR-0065 item 4).
 //!
 //! The comparisons allow a relative 10^-12 for rounding, as the acceptance tests that recompute
 //! the rule do.
@@ -119,57 +124,97 @@ pub struct RuleOutcome<K> {
     pub choice: K,
     /// No candidate met the bound: the choice has the smallest worst case.
     pub fallback: bool,
+    /// No admitted candidate met the bound, and the bound and the choice applied to all
+    /// candidates (M10c; ADR-0065 item 3).
+    pub waived: bool,
     /// The baseline and the admitted candidates, in simplicity order.
     pub admitted: Vec<K>,
     /// The largest r of the choice over the members and sizes.
     pub worst: f64,
     /// The geometric mean of the choice's r over the members and sizes.
     pub geomean: f64,
-    /// r of every candidate, `[member][size]`.
-    pub r: BTreeMap<K, Vec<Vec<f64>>>,
+    /// r of every candidate, `[member][size]`; `None` where the member has no time at the size
+    /// (M10c).
+    pub r: BTreeMap<K, Vec<Vec<Option<f64>>>>,
 }
 
-/// The generic rule (ADR-0058 item 4) over `candidates` in simplicity order, the baseline among
-/// them, with `t(c, m, s)` the time of candidate c on member m at rule size s, for `members`
-/// members and `sizes` sizes; every candidate has a time on every member and size.
+/// The version of the generic rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GenericRule {
+    /// M10's rule (ADR-0058 item 4): the fallback takes the admitted candidate with the smallest
+    /// worst case; every candidate has a time on every member and size. M10's report sections
+    /// and frozen policies (`gridcl-bench/history/*-m10.toml`) stay as this rule wrote them.
+    M10,
+    /// M10c's rule (ADR-0065 items 3 and 4): if no admitted candidate meets the bound, the bound
+    /// and the choice apply to all candidates, and only if none meets it the admitted candidate
+    /// with the smallest worst case is taken; a member without a time at a size is left out of
+    /// that size's admission mean, r and the bound. `[Cpu]` vector entries read the grid
+    /// records of two processes (`M10Data::cpu_grid`).
+    M10c,
+}
+
+/// The generic rule (ADR-0058 item 4) by `rule` over `candidates` in simplicity order, the
+/// baseline among them, with `t(c, m, s)` the time of candidate c on member m at rule size s, for
+/// `members` members and `sizes` sizes.
+///
+/// Under [`GenericRule::M10`] every candidate has a time on every member and size. Under
+/// [`GenericRule::M10c`] a member may lack a size (a case left out of a platform, ADR-0065
+/// item 4): the cells (m, s) are those where the baseline has a time, every candidate has a time
+/// in each of them, and a member without a time at a size is left out of that size's admission
+/// mean, of r and of the bound. If no admitted candidate meets the bound, the bound and the
+/// choice apply to all candidates (`waived`); only if none meets it, the admitted candidate with
+/// the smallest worst case is taken (`fallback`).
 ///
 /// # Panics
 ///
-/// If `candidates` does not contain `baseline`, or there are no members or sizes.
-pub fn generic_rule<K: Copy + Ord>(
+/// If `candidates` does not contain `baseline`, there are no members or sizes, the baseline has
+/// no time at all, or a candidate lacks a time in a cell that the rule uses.
+pub fn generic_rule<K: Copy + Ord + std::fmt::Debug>(
+    rule: GenericRule,
     baseline: K,
     candidates: &[K],
     members: usize,
     sizes: usize,
-    t: impl Fn(K, usize, usize) -> f64,
+    t: impl Fn(K, usize, usize) -> Option<f64>,
 ) -> RuleOutcome<K> {
     assert!(
         candidates.contains(&baseline),
         "the baseline is a candidate"
     );
     assert!(members > 0 && sizes > 0, "the rule needs members and sizes");
-    let fastest: Vec<Vec<f64>> = (0..members)
-        .map(|m| {
-            (0..sizes)
-                .map(|s| {
-                    candidates
-                        .iter()
-                        .map(|&c| t(c, m, s))
-                        .fold(f64::INFINITY, f64::min)
-                })
-                .collect()
-        })
+    let cell = |m: usize, s: usize| match rule {
+        GenericRule::M10 => true,
+        GenericRule::M10c => t(baseline, m, s).is_some(),
+    };
+    let cells: Vec<(usize, usize)> = (0..members)
+        .flat_map(|m| (0..sizes).map(move |s| (m, s)))
+        .filter(|&(m, s)| cell(m, s))
         .collect();
-    let r: BTreeMap<K, Vec<Vec<f64>>> = candidates
+    assert!(!cells.is_empty(), "the baseline has no time");
+    let time = |c: K, m: usize, s: usize| -> f64 {
+        t(c, m, s).unwrap_or_else(|| panic!("{c:?} has no time on member {m} at size {s}"))
+    };
+    let mut fastest = vec![vec![f64::NAN; sizes]; members];
+    for &(m, s) in &cells {
+        fastest[m][s] = candidates
+            .iter()
+            .map(|&c| time(c, m, s))
+            .fold(f64::INFINITY, f64::min);
+    }
+    let r: BTreeMap<K, Vec<Vec<Option<f64>>>> = candidates
         .iter()
         .map(|&c| {
             let rc = (0..members)
-                .map(|m| (0..sizes).map(|s| t(c, m, s) / fastest[m][s]).collect())
+                .map(|m| {
+                    (0..sizes)
+                        .map(|s| cell(m, s).then(|| time(c, m, s) / fastest[m][s]))
+                        .collect()
+                })
                 .collect();
             (c, rc)
         })
         .collect();
-    let flat = |c: &K| -> Vec<f64> { r[c].iter().flatten().copied().collect() };
+    let flat = |c: &K| -> Vec<f64> { r[c].iter().flatten().flatten().copied().collect() };
     let worst = |c: &K| flat(c).into_iter().fold(0.0, f64::max);
     let admitted: Vec<K> = candidates
         .iter()
@@ -178,17 +223,20 @@ pub fn generic_rule<K: Copy + Ord>(
             c == baseline
                 || (0..sizes).all(|s| {
                     let ratios: Vec<f64> = (0..members)
-                        .map(|m| t(c, m, s) / t(baseline, m, s))
+                        .filter(|&m| cell(m, s))
+                        .map(|m| time(c, m, s) / time(baseline, m, s))
                         .collect();
-                    geomean(&ratios) <= 1.0 / ADMIT * (1.0 + SLACK)
+                    ratios.is_empty() || geomean(&ratios) <= 1.0 / ADMIT * (1.0 + SLACK)
                 })
         })
         .collect();
-    let kept: Vec<K> = admitted
-        .iter()
-        .copied()
-        .filter(|c| worst(c) <= BOUND * (1.0 + SLACK))
-        .collect();
+    let within = |c: &K| worst(c) <= BOUND * (1.0 + SLACK);
+    let mut kept: Vec<K> = admitted.iter().copied().filter(within).collect();
+    let mut waived = false;
+    if kept.is_empty() && rule == GenericRule::M10c {
+        kept = candidates.iter().copied().filter(within).collect();
+        waived = !kept.is_empty();
+    }
     let (choice, fallback) = if kept.is_empty() {
         let mut best = admitted[0];
         for &c in &admitted[1..] {
@@ -212,13 +260,14 @@ pub fn generic_rule<K: Copy + Ord>(
         geomean: geomean(&flat(&choice)),
         choice,
         fallback,
+        waived,
         admitted,
         r,
     }
 }
 
 /// How the generic rule reached an entry.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GenericFit {
     /// The simplest kept candidate within 3% of the smallest geometric mean of r.
     Bound,
@@ -226,6 +275,8 @@ pub enum GenericFit {
     Fallback {
         /// The largest r of the choice over the members and sizes.
         worst: f64,
+        /// Why no candidate meets the bound, in one line for M10c's report ([`fallback_cause`]).
+        cause: String,
     },
     /// No member measured the entry, or not every candidate the rule needs: the baseline at
     /// vector size 1 on all hardware threads.
@@ -268,6 +319,8 @@ pub struct VectorEntry {
 /// The generic vector policy: `[Cpu]` and `[Gpu]`, each for 4- and 8-byte scalars.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VectorDecision {
+    /// The rule that made the decision.
+    pub rule: GenericRule,
     /// Every (class, kind, element size), Cpu first, in [`KINDS`] order.
     pub entries: Vec<VectorEntry>,
 }
@@ -294,7 +347,10 @@ impl VectorDecision {
 
     /// The text of `gridcl-device/vector-policy.toml`.
     pub fn to_toml(&self) -> String {
-        let mut out = String::from(VECTOR_TOML_HEADER);
+        let mut out = String::from(match self.rule {
+            GenericRule::M10 => VECTOR_TOML_HEADER,
+            GenericRule::M10c => VECTOR_TOML_HEADER_M10C,
+        });
         let row = |value: &dyn Fn(usize) -> String| {
             let entries: Vec<String> = ELEM_BYTES
                 .iter()
@@ -355,6 +411,21 @@ const VECTOR_TOML_HEADER: &str = "\
 # do not edit by hand.
 ";
 
+/// The header under [`GenericRule::M10c`] (ADR-0065).
+const VECTOR_TOML_HEADER_M10C: &str = "\
+# Vector policy of gridcl-device (docs/design.md, \"Launch plans and the vector policy\"; ADR-0015,
+# ADR-0058, ADR-0065).
+#
+# Two device classes, Cpu and Gpu, each with one generic set per scalar size in bytes (4 and 8;
+# ADR-0058): the QuadField tile width by scalar size; the vector size per kernel family and
+# scalar size; on Cpu, the CPU block per kernel family and scalar size of the widest stream, in
+# units of 4 KiB, and the CPU units (all hardware threads or the performance cores; ADR-0017).
+# Written by `cargo run -p gridcl-bench --bin policy_report` with the generic decision rule of
+# docs/perf/vectorization.md and M10c's fallback (ADR-0058 item 4, ADR-0065): Cpu from M10c's
+# grid records of two processes (m10c-vector-cpu-*.json), Gpu from M10's candidate records
+# (m10-vector-*.json), in docs/perf/data/; do not edit by hand.
+";
+
 /// The configuration of an entry without data: the baseline on all hardware threads.
 fn default_config(class: DeviceClass, kind: KernelKind, bytes: usize) -> VectorConfig {
     let base = vector_baseline(class, kind, bytes);
@@ -387,6 +458,39 @@ struct Member {
     scalar: Scalar,
 }
 
+/// The records `m` measured `kind` in at `size`.
+fn member_records(
+    records: &[SweepRecord],
+    m: Member,
+    kind: KernelKind,
+    size: usize,
+) -> impl Iterator<Item = &SweepRecord> {
+    records.iter().filter(move |r| {
+        r.target == m.platform.target
+            && r.backend == m.platform.backend
+            && r.family == kind
+            && r.scalar == m.scalar
+            && r.nominal_n == size
+    })
+}
+
+/// The configurations of record `r`: one per unit setting it stands for.
+fn record_configs(r: &SweepRecord) -> impl Iterator<Item = ConfigKey> + '_ {
+    record_units(r)
+        .into_iter()
+        .enumerate()
+        .filter(move |&(i, u)| !(r.backend == "cpu" && u.is_none()) && (i == 0 || u.is_some()))
+        .map(move |(_, units)| {
+            VectorConfig {
+                vector_size: r.vector_size,
+                tile: r.tile,
+                block_bytes: r.block_bytes,
+                units,
+            }
+            .key()
+        })
+}
+
 /// The time of every configuration `m` measured for `kind` at `size`; a later record of the
 /// same configuration replaces an earlier one (a repeated run).
 fn member_times(
@@ -396,49 +500,97 @@ fn member_times(
     size: usize,
 ) -> BTreeMap<ConfigKey, f64> {
     let mut out = BTreeMap::new();
-    for r in vector.iter().filter(|r| {
-        r.target == m.platform.target
-            && r.backend == m.platform.backend
-            && r.family == kind
-            && r.scalar == m.scalar
-            && r.nominal_n == size
-    }) {
-        for units in record_units(r) {
-            if r.backend == "cpu" && units.is_none() {
-                continue;
-            }
-            let c = VectorConfig {
-                vector_size: r.vector_size,
-                tile: r.tile,
-                block_bytes: r.block_bytes,
-                units,
-            };
-            out.insert(c.key(), r.median_s);
+    for r in member_records(vector, m, kind, size) {
+        for c in record_configs(r) {
+            out.insert(c, r.median_s);
         }
     }
     out
 }
 
-/// The generic vector policy from the M10 candidate records.
-pub fn decide_vector(data: &M10Data) -> VectorDecision {
-    let vector = &data.vector;
-    let present = |t: &str, b: &str| vector.iter().any(|r| r.target == t && r.backend == b);
+/// The time of every configuration `m` measured for `kind` at `size` in the M10c grid records:
+/// the geometric mean of the processes' medians, one per seed (ADR-0065 item 1); a later record
+/// of a configuration in the same process replaces an earlier one.
+///
+/// # Panics
+///
+/// If a record has no seed: grid records come from `vector_sweep --grid` only.
+fn grid_times(
+    grid: &[SweepRecord],
+    m: Member,
+    kind: KernelKind,
+    size: usize,
+) -> BTreeMap<ConfigKey, f64> {
+    let mut by_seed: BTreeMap<ConfigKey, BTreeMap<u64, f64>> = BTreeMap::new();
+    for r in member_records(grid, m, kind, size) {
+        let seed = r.seed.unwrap_or_else(|| {
+            panic!(
+                "a grid record without a seed: {} {} {:?} {} n = {} at {}",
+                r.target,
+                r.backend,
+                r.family,
+                r.scalar.name(),
+                r.vector_size,
+                r.nominal_n
+            )
+        });
+        for c in record_configs(r) {
+            by_seed.entry(c).or_default().insert(seed, r.median_s);
+        }
+    }
+    by_seed
+        .into_iter()
+        .map(|(c, t)| (c, geomean(&t.into_values().collect::<Vec<f64>>())))
+        .collect()
+}
+
+/// The generic vector policy by `rule`: from the M10 candidate records under
+/// [`GenericRule::M10`]; under [`GenericRule::M10c`], `[Cpu]` entries from the grid records of
+/// two processes (`M10Data::cpu_grid`) and `[Gpu]` entries from the M10 records.
+pub fn decide_vector(data: &M10Data, rule: GenericRule) -> VectorDecision {
+    let source = |class: DeviceClass| -> &[SweepRecord] {
+        match (rule, class) {
+            (GenericRule::M10c, DeviceClass::Cpu) => &data.cpu_grid,
+            _ => &data.vector,
+        }
+    };
+    let present = |t: &str, b: &str| {
+        let class = if b == "cpu" {
+            DeviceClass::Cpu
+        } else {
+            DeviceClass::Gpu
+        };
+        source(class)
+            .iter()
+            .any(|r| r.target == t && r.backend == b)
+    };
     let platforms = m10_platforms(present);
     let mut entries = Vec::new();
     for class in [DeviceClass::Cpu, DeviceClass::Gpu] {
+        let records = source(class);
+        let grid = rule == GenericRule::M10c && class == DeviceClass::Cpu;
+        let times = |m: Member, kind: KernelKind, size: usize| {
+            if grid {
+                grid_times(records, m, kind, size)
+            } else {
+                member_times(records, m, kind, size)
+            }
+        };
         for (kind, scalars) in candidate_kinds() {
             for bytes in ELEM_BYTES {
                 entries.push(vector_entry(
-                    vector, &platforms, class, kind, scalars, bytes,
+                    rule, &times, &platforms, class, kind, scalars, bytes,
                 ));
             }
         }
     }
-    VectorDecision { entries }
+    VectorDecision { rule, entries }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn vector_entry(
-    vector: &[SweepRecord],
+    rule: GenericRule,
+    member_times: &dyn Fn(Member, KernelKind, usize) -> BTreeMap<ConfigKey, f64>,
     platforms: &[Platform],
     class: DeviceClass,
     kind: KernelKind,
@@ -472,7 +624,7 @@ fn vector_entry(
                 .into_iter()
                 .map(move |scalar| Member { platform, scalar })
         })
-        .filter(|&m| !member_times(vector, m, kind, CANDIDATE_SIZES[0]).is_empty())
+        .filter(|&m| !member_times(m, kind, CANDIDATE_SIZES[0]).is_empty())
         .collect();
     if members.is_empty() {
         return default("no M10 record".to_owned());
@@ -482,14 +634,21 @@ fn vector_entry(
         .map(|&m| {
             CANDIDATE_SIZES
                 .iter()
-                .map(|&size| member_times(vector, m, kind, size))
+                .map(|&size| member_times(m, kind, size))
                 .collect()
         })
         .collect();
+    // The cells the rule uses: every (member, size) under M10; under M10c those with records (a
+    // case left out of a platform's grid has none; ADR-0065 item 4).
+    let cell = |m: usize, s: usize| rule == GenericRule::M10 || !times[m][s].is_empty();
     let common: Vec<ConfigKey> = times[0][0]
         .keys()
         .copied()
-        .filter(|k| times.iter().flatten().all(|t| t.contains_key(k)))
+        .filter(|k| {
+            (0..members.len()).all(|m| {
+                (0..CANDIDATE_SIZES.len()).all(|s| !cell(m, s) || times[m][s].contains_key(k))
+            })
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -500,17 +659,19 @@ fn vector_entry(
         ));
     }
     let outcome = generic_rule(
+        rule,
         baseline.key(),
         &common,
         members.len(),
         CANDIDATE_SIZES.len(),
-        |c, m, s| times[m][s][&c],
+        |c, m, s| times[m][s].get(&c).copied().filter(|_| cell(m, s)),
     );
     let choice = VectorConfig::from_key(class, outcome.choice);
     let mut per_platform: Vec<PlatformRatio> = Vec::new();
     for (j, m) in members.iter().enumerate() {
         let worst_j = outcome.r[&outcome.choice][j]
             .iter()
+            .flatten()
             .copied()
             .fold(0.0, f64::max);
         match per_platform.iter_mut().find(|p| p.platform == m.platform) {
@@ -529,7 +690,7 @@ fn vector_entry(
         let g = |c: &ConfigKey| -> f64 {
             let v: Vec<f64> = of
                 .iter()
-                .flat_map(|&j| outcome.r[c][j].iter().copied())
+                .flat_map(|&j| outcome.r[c][j].iter().flatten().copied())
                 .collect();
             geomean(&v)
         };
@@ -541,7 +702,20 @@ fn vector_entry(
         }
         p.best = VectorConfig::from_key(class, best);
     }
-    let (fit, reason) = vector_reason(&outcome, &baseline, &choice, members.len(), &times);
+    let bests: Vec<(Platform, String, f64)> = per_platform
+        .iter()
+        .map(|p| (p.platform, describe(&p.best), p.r))
+        .collect();
+    let speedup: Vec<String> = (0..CANDIDATE_SIZES.len())
+        .map(|s| {
+            let ratios: Vec<f64> = (0..members.len())
+                .filter(|&m| cell(m, s))
+                .map(|m| times[m][s][&baseline.key()] / times[m][s][&choice.key()])
+                .collect();
+            format!("{:.2}x", geomean(&ratios))
+        })
+        .collect();
+    let (fit, reason) = vector_reason(&outcome, &baseline, &choice, &speedup, &bests);
     VectorEntry {
         class,
         kind,
@@ -554,18 +728,56 @@ fn vector_entry(
     }
 }
 
-/// The fit and one-line reason of a vector entry.
+/// Why no candidate meets the bound (ADR-0065; plan question 2): the platform with the largest
+/// r for the choice and its own best, then whether the platforms' bests conflict. `bests` holds
+/// (platform, its best, its r for the choice) per platform.
+pub fn fallback_cause(bests: &[(Platform, String, f64)]) -> String {
+    let name = |p: &Platform| format!("{} {}", p.target, p.backend);
+    let Some((worst, best, r)) =
+        bests
+            .iter()
+            .fold(None, |w: Option<&(Platform, String, f64)>, b| match w {
+                Some(w) if w.2 >= b.2 => Some(w),
+                _ => Some(b),
+            })
+    else {
+        return "no platform measured the entry".to_owned();
+    };
+    let mut text = format!("largest r {r:.2} on {} (its best: {best})", name(worst));
+    let distinct: BTreeSet<&str> = bests.iter().map(|b| b.1.as_str()).collect();
+    if distinct.len() > 1 {
+        let list: Vec<String> = bests
+            .iter()
+            .map(|(p, b, _)| format!("{} best {b}", name(p)))
+            .collect();
+        text.push_str(&format!(
+            "; the platforms' bests conflict ({}), and no candidate is within {BOUND} on all \
+             of them",
+            list.join("; ")
+        ));
+    } else {
+        text.push_str(&format!(
+            "; every platform's best is {best}, but no candidate is within {BOUND} for every \
+             type and size"
+        ));
+    }
+    text
+}
+
+/// The fit and one-line reason of a vector entry, with the speedup of the choice over the
+/// baseline per rule size (geometric mean over the members) and each platform's best.
 fn vector_reason(
     outcome: &RuleOutcome<ConfigKey>,
     baseline: &VectorConfig,
     choice: &VectorConfig,
-    members: usize,
-    times: &[Vec<BTreeMap<ConfigKey, f64>>],
+    speedup: &[String],
+    bests: &[(Platform, String, f64)],
 ) -> (GenericFit, String) {
     if outcome.fallback {
         return (
             GenericFit::Fallback {
                 worst: outcome.worst,
+                cause: fallback_cause(bests),
             },
             format!(
                 "worst case r = {:.2}: no admitted candidate within {BOUND} on every platform \
@@ -574,16 +786,8 @@ fn vector_reason(
             ),
         );
     }
-    let speedup: Vec<String> = (0..CANDIDATE_SIZES.len())
-        .map(|s| {
-            let ratios: Vec<f64> = (0..members)
-                .map(|m| times[m][s][&baseline.key()] / times[m][s][&choice.key()])
-                .collect();
-            format!("{:.2}x", geomean(&ratios))
-        })
-        .collect();
     let text = if choice == baseline {
-        if outcome.admitted.len() == 1 {
+        if outcome.admitted.len() == 1 && !outcome.waived {
             "the baseline: no candidate at least 10% faster by the geometric mean over the \
              platforms at 10^6 and 10^7"
                 .to_owned()
@@ -602,6 +806,14 @@ fn vector_reason(
             outcome.geomean,
             outcome.worst
         )
+    };
+    let text = if outcome.waived {
+        format!(
+            "no admitted candidate within {BOUND}, so the bound and the choice apply to all \
+             candidates (ADR-0065): {text}"
+        )
+    } else {
+        text
     };
     (GenericFit::Bound, text)
 }
@@ -771,6 +983,8 @@ impl DegreeEntry {
 /// The generic degree policy: `[Cpu.<family>]` and `[Gpu.<family>]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeDecision {
+    /// The rule that made the decision.
+    pub rule: GenericRule,
     /// Every (class, family, cell, scalar), Cpu first, in the order of `degree-policy.toml`.
     pub entries: Vec<DegreeEntry>,
 }
@@ -791,7 +1005,10 @@ impl DegreeDecision {
 
     /// The text of `gridcl-geometry/degree-policy.toml`.
     pub fn to_toml(&self) -> String {
-        let mut out = String::from(DEGREE_TOML_HEADER);
+        let mut out = String::from(match self.rule {
+            GenericRule::M10 => DEGREE_TOML_HEADER,
+            GenericRule::M10c => DEGREE_TOML_HEADER_M10C,
+        });
         for class in [DeviceClass::Cpu, DeviceClass::Gpu] {
             for family in POLICY_FAMILIES {
                 out.push_str(&format!("\n[{class:?}.{family}]\n"));
@@ -831,6 +1048,22 @@ const DEGREE_TOML_HEADER: &str = "\
 # `cargo run -p gridcl-bench --bin high_order_report` from M10's records at p = 1, 4 and 8 and
 # M9h's in between (docs/perf/data/) with the generic decision rule of docs/perf/high-order.md
 # (ADR-0058 item 4, ADR-0060 item 3); do not edit by hand.
+";
+
+/// The header under [`GenericRule::M10c`] (ADR-0065).
+const DEGREE_TOML_HEADER_M10C: &str = "\
+# Degree policy of gridcl-geometry (docs/design.md, \"Geometric factors\"; ADR-0042, item 3;
+# ADR-0058, ADR-0065).
+#
+# Per device class (Cpu or Gpu; ADR-0058) and kernel family, per cell type and scalar size in
+# bytes: the strategy of each degree range, as [first degree, strategy] pairs with ascending
+# first degrees, starting at 1; the last range is open-ended. Families: EVector, Points,
+# Jacobian (J, det J and the pseudo-inverse), Normals (codimension 1: intervals, triangles and
+# quadrilaterals), FacetNormals and PullBack (with the device basis evaluator). Strategies:
+# direct, loops, sumfact, shared, cooperative. Written by
+# `cargo run -p gridcl-bench --bin high_order_report` from M10's records at p = 1, 4 and 8 and
+# M9h's in between (docs/perf/data/) with the generic decision rule of docs/perf/high-order.md
+# and M10c's fallback (ADR-0058 item 4, ADR-0060 item 3, ADR-0065); do not edit by hand.
 ";
 
 /// `data` without its records whose check error is not finite (ADR-0060 item 3).
@@ -886,7 +1119,11 @@ fn m9h_platforms(m9h: &HighOrderData, class: DeviceClass, scalar: Scalar) -> Vec
 ///   compared ([`DegreeEntry::moves`]); a range whose check falls back or moves by more than
 ///   10% lists the unmeasured degrees on both sides of each of its boundaries in
 ///   [`DegreeEntry::remeasure`].
-pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data) -> DegreeDecision {
+///
+/// `rule` is applied at every degree, from M10's records or M9h's: under [`GenericRule::M10c`]
+/// a pick whose admitted strategies all miss the bound chooses among all selectable strategies
+/// (ADR-0065 item 3).
+pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data, rule: GenericRule) -> DegreeDecision {
     let m9h = finite_checks(m9h);
     let m10_data = HighOrderData {
         degree: m10.degree.clone(),
@@ -902,6 +1139,7 @@ pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data) -> DegreeDecision {
             for &cell in cells_of(family) {
                 for (scalar, _) in SCALARS {
                     let ctx = EntryContext {
+                        rule,
                         class,
                         family,
                         cell,
@@ -917,11 +1155,12 @@ pub fn decide_degree(m9h: &HighOrderData, m10: &M10Data) -> DegreeDecision {
             }
         }
     }
-    DegreeDecision { entries }
+    DegreeDecision { rule, entries }
 }
 
 /// What one entry's decision reads.
 struct EntryContext<'a> {
+    rule: GenericRule,
     class: DeviceClass,
     family: &'static str,
     cell: &'static str,
@@ -1044,12 +1283,27 @@ impl EntryContext<'_> {
             };
         };
         let time = |s: &'static str, m: usize, k: usize| t(s, m, k).expect("selectable");
-        let outcome = generic_rule(base, &selectable, devices.len(), sizes.len(), time);
-        let per_platform = platforms
+        let outcome = generic_rule(
+            self.rule,
+            base,
+            &selectable,
+            devices.len(),
+            sizes.len(),
+            |s, m, k| Some(time(s, m, k)),
+        );
+        let per_platform: Vec<StrategyRatio> = platforms
             .iter()
             .enumerate()
             .map(|(m, &platform)| {
-                let g = |s: &&'static str| geomean(&outcome.r[s][m]);
+                let g = |s: &&'static str| {
+                    geomean(
+                        &outcome.r[s][m]
+                            .iter()
+                            .flatten()
+                            .copied()
+                            .collect::<Vec<_>>(),
+                    )
+                };
                 let mut best = selectable[0];
                 for s in &selectable[1..] {
                     if g(s) < g(&best) {
@@ -1061,12 +1315,17 @@ impl EntryContext<'_> {
                     best,
                     r: outcome.r[&outcome.choice][m]
                         .iter()
+                        .flatten()
                         .copied()
                         .fold(0.0, f64::max),
                 }
             })
             .collect();
-        let (fit, reason) = degree_reason(&outcome, base, sizes, devices.len(), time);
+        let bests: Vec<(Platform, String, f64)> = per_platform
+            .iter()
+            .map(|p| (p.platform, p.best.to_owned(), p.r))
+            .collect();
+        let (fit, reason) = degree_reason(&outcome, base, sizes, devices.len(), time, &bests);
         DegreePick {
             degree,
             source,
@@ -1124,11 +1383,13 @@ fn degree_reason(
     sizes: &[usize],
     members: usize,
     t: impl Fn(&'static str, usize, usize) -> f64,
+    bests: &[(Platform, String, f64)],
 ) -> (GenericFit, String) {
     if outcome.fallback {
         return (
             GenericFit::Fallback {
                 worst: outcome.worst,
+                cause: fallback_cause(bests),
             },
             format!(
                 "worst case r = {:.2}: no admitted strategy within {BOUND} on every platform \
@@ -1140,7 +1401,7 @@ fn degree_reason(
     let at: Vec<String> = sizes.iter().map(|n| format!("10^{}", n.ilog10())).collect();
     let choice = outcome.choice;
     let text = if choice == base {
-        if outcome.admitted.len() == 1 {
+        if outcome.admitted.len() == 1 && !outcome.waived {
             format!(
                 "{base}: no strategy at least 10% faster by the geometric mean over the \
                  platforms at {}",
@@ -1170,6 +1431,14 @@ fn degree_reason(
             outcome.geomean,
             outcome.worst
         )
+    };
+    let text = if outcome.waived {
+        format!(
+            "no admitted strategy within {BOUND}, so the bound and the choice apply to all \
+             selectable strategies (ADR-0065): {text}"
+        )
+    } else {
+        text
     };
     (GenericFit::Bound, text)
 }

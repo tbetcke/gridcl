@@ -8,8 +8,9 @@
 //!   (`decide_degree`) on the committed records, for any old device class, as frozen in
 //!   `gridcl-bench/history/{vector,degree}-policy-pre-m10.toml`. A Cpu entry takes the
 //!   CpuSimd128 and CpuSimd512 choices (CpuSimd256 copied CpuSimd512), a Gpu entry the Gpu ones.
-//! - **Own:** the configuration the entry's current policy names (`gridcl-device/vector-policy.toml`
-//!   and `gridcl-geometry/degree-policy.toml`, as compiled into this crate).
+//! - **Own:** the configuration the entry's own policy named in M10, frozen as history in
+//!   `gridcl-bench/history/{vector,degree}-policy-m10.toml` when M10c re-derived the live
+//!   policies (ADR-0065), so that M10's candidate sets stay what M10 measured.
 //! - Pack and PullBack, never measured before M10, also measure the widest size and the M3s
 //!   choices of Gather and GeomFactors.
 //!
@@ -45,8 +46,9 @@ pub fn candidate_kinds() -> Vec<(KernelKind, &'static [Scalar])> {
 
 /// The frozen pre-M10 vector policy (ADR-0060 item 2).
 pub const HISTORY_VECTOR_TOML: &str = include_str!("../history/vector-policy-pre-m10.toml");
-/// The live vector policy, as compiled into this crate.
-pub const VECTOR_POLICY_TOML: &str = include_str!("../../gridcl-device/vector-policy.toml");
+/// M10's vector policy, frozen as history when M10c re-derived the live one (ADR-0065): the
+/// "own policy" of M10's candidate sets.
+pub const M10_VECTOR_TOML: &str = include_str!("../history/vector-policy-m10.toml");
 
 /// One configuration of a vector-policy entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -193,10 +195,10 @@ pub fn vector_baseline(class: DeviceClass, kind: KernelKind, bytes: usize) -> Ve
     history_config(old, kind, bytes, Some(1))
 }
 
-/// The configuration the live policy names for (`class`, `kind`, `bytes`).
-pub fn policy_vector_config(class: DeviceClass, kind: KernelKind, bytes: usize) -> VectorConfig {
-    table_config(VECTOR_POLICY_TOML, &format!("{class:?}"), kind, bytes, None)
-        .unwrap_or_else(|e| panic!("gridcl-device/vector-policy.toml: {e}"))
+/// The configuration M10's policy names for (`class`, `kind`, `bytes`), from the frozen file.
+pub fn m10_vector_config(class: DeviceClass, kind: KernelKind, bytes: usize) -> VectorConfig {
+    table_config(M10_VECTOR_TOML, &format!("{class:?}"), kind, bytes, None)
+        .unwrap_or_else(|e| panic!("gridcl-bench/history/vector-policy-m10.toml: {e}"))
 }
 
 /// The M3s choice of the old class `old` for (`kind`, `bytes`), from the frozen policy.
@@ -209,7 +211,7 @@ pub fn history_vector_config(old: LegacyClass, kind: KernelKind, bytes: usize) -
 ///
 /// - the baseline ([`vector_baseline`]);
 /// - the M3s choices of the class's old classes ([`old_classes`]);
-/// - the live policy's configuration;
+/// - M10's own policy's configuration ([`m10_vector_config`]);
 /// - for Pack and PullBack, the M3s choices of Gather and GeomFactors as configurations of
 ///   the kind (PullBack has no tile of its own), and the baseline at the widest size. The
 ///   widest size is `widest`, or the widest of the other candidates if that is wider, so that a
@@ -234,7 +236,7 @@ pub fn vector_candidates(
     for &old in old_classes(class) {
         push(&mut out, history_vector_config(old, kind, bytes));
     }
-    push(&mut out, policy_vector_config(class, kind, bytes));
+    push(&mut out, m10_vector_config(class, kind, bytes));
     let nearest = match kind {
         KernelKind::Pack => Some(KernelKind::Gather),
         KernelKind::PullBack => Some(KernelKind::GeomFactors),
@@ -257,10 +259,60 @@ pub fn vector_candidates(
     out
 }
 
+/// The vector sizes of the M10c grid of `[Cpu]` vector entries (ADR-0065 item 2).
+pub const GRID_VECTOR_SIZES: [usize; 4] = [1, 4, 8, 16];
+/// The CPU blocks of the M10c grid, in bytes.
+pub const GRID_BLOCKS: [usize; 3] = [4 << 10, 16 << 10, 64 << 10];
+
+/// The cases the M10c grid leaves out, as (target, kind, scalar, size): those that do not fit a
+/// platform's memory (ADR-0065 item 4). GeomFactors f32 at 10^7 on the Mac mini comes from the
+/// M10c smoke run (18.1 GB resident, 1.6 GB of swap growth; docs/plans/M10c.md, Deviations log,
+/// T4).
+pub const GRID_OMITTED: &[(&str, KernelKind, Scalar, usize)] = &[
+    ("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000),
+    ("macmini", KernelKind::GeomFactors, Scalar::F32, 10_000_000),
+];
+
+/// The M10c grid of the `[Cpu]` vector entry of `kind` in `scalar` (ADR-0065 item 2), in the
+/// simplicity order: vector sizes 1, 4, 8 and 16, blocks of 4, 16 and 64 KiB, and both unit
+/// settings (a device without performance cores runs all threads, which count for both;
+/// ADR-0017). GeomFactors uses tile 4 up to size 4 and tile 16 above; Scalar has blocks and units
+/// only. 24 configurations (Scalar 6).
+pub fn cpu_grid(kind: KernelKind, scalar: Scalar) -> Vec<VectorConfig> {
+    // The grid is the same for every member scalar of an entry.
+    let _ = scalar;
+    let sizes: &[usize] = if kind == KernelKind::Scalar {
+        &[1]
+    } else {
+        &GRID_VECTOR_SIZES
+    };
+    let mut out = Vec::with_capacity(sizes.len() * GRID_BLOCKS.len() * 2);
+    for &vector_size in sizes {
+        let tile =
+            (kind == KernelKind::GeomFactors).then_some(if vector_size <= 4 { 4 } else { 16 });
+        for block in GRID_BLOCKS {
+            for units in [CpuUnits::All, CpuUnits::Performance] {
+                out.push(VectorConfig {
+                    vector_size,
+                    tile,
+                    block_bytes: Some(block),
+                    units: Some(units),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Whether the M10c grid leaves out `kind` in `scalar` at `size` on `target` ([`GRID_OMITTED`]).
+pub fn grid_omitted(target: &str, kind: KernelKind, scalar: Scalar, size: usize) -> bool {
+    GRID_OMITTED.contains(&(target, kind, scalar, size))
+}
+
 /// The frozen pre-M10 degree policy (ADR-0060 item 2).
 pub const HISTORY_DEGREE_TOML: &str = include_str!("../history/degree-policy-pre-m10.toml");
-/// The live degree policy, as compiled into this crate.
-pub const DEGREE_POLICY_TOML: &str = include_str!("../../gridcl-geometry/degree-policy.toml");
+/// M10's degree policy, frozen as history when M10c re-derived the live one (ADR-0065).
+pub const M10_DEGREE_TOML: &str = include_str!("../history/degree-policy-m10.toml");
 
 /// The strategy of (`family`, `cell`, `bytes`) at `degree` in the table `table` of the
 /// degree-policy text `text`: the last range whose first degree is at most `degree`.
@@ -342,9 +394,9 @@ pub fn history_strategy(
     .unwrap_or_else(|e| panic!("gridcl-bench/history/degree-policy-pre-m10.toml: {e}"))
 }
 
-/// The strategy the live degree policy names for (`class`, `family`, `cell`, `bytes`) at
-/// `degree`.
-pub fn policy_strategy(
+/// The strategy M10's degree policy names for (`class`, `family`, `cell`, `bytes`) at `degree`,
+/// from the frozen file.
+pub fn m10_strategy(
     class: DeviceClass,
     family: &str,
     cell: &str,
@@ -352,19 +404,19 @@ pub fn policy_strategy(
     degree: u32,
 ) -> &'static str {
     table_strategy(
-        DEGREE_POLICY_TOML,
+        M10_DEGREE_TOML,
         &format!("{class:?}"),
         family,
         cell,
         bytes,
         degree,
     )
-    .unwrap_or_else(|e| panic!("gridcl-geometry/degree-policy.toml: {e}"))
+    .unwrap_or_else(|e| panic!("gridcl-bench/history/degree-policy-m10.toml: {e}"))
 }
 
 /// The candidate strategies of the degree-policy entry (`class`, policy `family`, `cell`,
 /// `bytes`) at `degree`, baseline first, each once: the baseline ([`degree_baseline`]), the M9h
-/// choices of the class's old classes ([`old_classes`]) and the live policy's choice.
+/// choices of the class's old classes ([`old_classes`]) and M10's own choice ([`m10_strategy`]).
 pub fn degree_candidates(
     class: DeviceClass,
     family: &str,
@@ -376,7 +428,7 @@ pub fn degree_candidates(
     let history = old_classes(class)
         .iter()
         .map(|&old| history_strategy(old, family, cell, bytes, degree));
-    for s in history.chain([policy_strategy(class, family, cell, bytes, degree)]) {
+    for s in history.chain([m10_strategy(class, family, cell, bytes, degree)]) {
         if !out.contains(&s) {
             out.push(s);
         }
@@ -520,8 +572,8 @@ mod tests {
         }
     }
 
-    /// The expected sets: the baseline first, then the M9h choices of the old classes and the
-    /// live policy's, each once.
+    /// The expected sets: the baseline first, then the M9h choices of the old classes and M10's
+    /// own, each once.
     #[test]
     fn degree_candidates_are_the_baseline_history_and_policy() {
         use crate::decide_degree::{POLICY_FAMILIES, SCALARS, cells_of, max_degree};
@@ -537,7 +589,7 @@ mod tests {
                                 .iter()
                                 .map(|&o| history_strategy(o, family, cell, bytes, p))
                                 .collect();
-                            want.insert(policy_strategy(class, family, cell, bytes, p));
+                            want.insert(m10_strategy(class, family, cell, bytes, p));
                             want.insert(c[0]);
                             let got: BTreeSet<&str> = c.iter().copied().collect();
                             assert_eq!(got.len(), c.len(), "{at}: {c:?} repeats");
@@ -568,6 +620,26 @@ mod tests {
         assert_eq!(degree_baseline("Prism", 4), "direct");
     }
 
+    /// The frozen M10 policies are what M10's rule writes from the committed records
+    /// (ADR-0065: M10's history stays reproducible).
+    #[test]
+    fn m10_history_is_the_m10_rule_on_the_committed_records() {
+        use crate::decide_generic::{GenericRule, decide_degree, decide_vector};
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/perf/data");
+        let m10 = crate::record::load_m10_dir(&dir).unwrap();
+        assert_eq!(
+            decide_vector(&m10, GenericRule::M10).to_toml(),
+            M10_VECTOR_TOML,
+            "history/vector-policy-m10.toml"
+        );
+        let m9h = crate::record::load_high_order_dir(&dir).unwrap();
+        assert_eq!(
+            decide_degree(&m9h, &m10, GenericRule::M10).to_toml(),
+            M10_DEGREE_TOML,
+            "history/degree-policy-m10.toml"
+        );
+    }
+
     #[test]
     fn table_strategy_reads_ranges_and_rejects_bad_tables() {
         let text = "[Cpu.Points]\nHexahedron = { 4 = [[1, \"direct\"], [3, \"sumfact\"]] }\n";
@@ -582,6 +654,64 @@ mod tests {
         assert!(table_strategy(bad, "Cpu", "Points", "Hexahedron", 4, 1).is_err());
         let late = "[Cpu.Points]\nHexahedron = { 4 = [[2, \"loops\"]] }\n";
         assert!(table_strategy(late, "Cpu", "Points", "Hexahedron", 4, 1).is_err());
+    }
+
+    /// The M10c grid: 24 configurations (Scalar 6), each once, in the simplicity order; the
+    /// GeomFactors tile follows the size; every `[Cpu]` baseline lies in the grid.
+    #[test]
+    fn cpu_grid_counts_tiles_and_baselines() {
+        for (kind, scalars) in candidate_kinds() {
+            for &scalar in scalars {
+                let g = cpu_grid(kind, scalar);
+                let what = format!("{kind:?} {}", scalar.name());
+                let want = if kind == KernelKind::Scalar { 6 } else { 24 };
+                assert_eq!(g.len(), want, "{what}");
+                let keys: Vec<ConfigKey> = g.iter().map(VectorConfig::key).collect();
+                let mut sorted = keys.clone();
+                sorted.sort_unstable();
+                sorted.dedup();
+                assert_eq!(keys, sorted, "{what}: simplicity order, each once");
+                for c in &g {
+                    assert!(GRID_VECTOR_SIZES.contains(&c.vector_size), "{what}: {c:?}");
+                    assert!(
+                        GRID_BLOCKS.contains(&c.block_bytes.unwrap()),
+                        "{what}: {c:?}"
+                    );
+                    assert!(c.units.is_some(), "{what}: {c:?}");
+                    let tile = match kind {
+                        KernelKind::GeomFactors if c.vector_size <= 4 => Some(4),
+                        KernelKind::GeomFactors => Some(16),
+                        _ => None,
+                    };
+                    assert_eq!(c.tile, tile, "{what}: {c:?}");
+                    if kind == KernelKind::Scalar {
+                        assert_eq!(c.vector_size, 1, "{what}: {c:?}");
+                    }
+                }
+                let baseline = vector_baseline(DeviceClass::Cpu, kind, scalar.bytes());
+                assert!(
+                    g.contains(&baseline),
+                    "{what}: baseline {baseline:?} not in the grid"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grid_omitted_by_target() {
+        let gf = KernelKind::GeomFactors;
+        assert!(grid_omitted("macmini", gf, Scalar::F64, 10_000_000));
+        assert!(!grid_omitted("macmini", gf, Scalar::F64, 1_000_000));
+        assert!(grid_omitted("macmini", gf, Scalar::F32, 10_000_000));
+        assert!(!grid_omitted("macmini", gf, Scalar::F32, 1_000_000));
+        assert!(!grid_omitted(
+            "macmini",
+            KernelKind::EVector,
+            Scalar::F64,
+            10_000_000
+        ));
+        assert!(!grid_omitted("locust", gf, Scalar::F64, 10_000_000));
+        assert!(!grid_omitted("kathleen", gf, Scalar::F64, 10_000_000));
     }
 
     /// Pack and PullBack: the baseline, the Gather or GeomFactors choices of the old classes

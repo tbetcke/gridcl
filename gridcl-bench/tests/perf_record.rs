@@ -658,10 +658,13 @@ fn throughput_recorded_with_policy_and_scalar() {
 // As above, the rule is recomputed here from the raw records, independently of
 // `gridcl_bench::decide_generic`.
 
-use gridcl_bench::candidates::{VectorConfig, vector_candidates};
-use gridcl_bench::decide_generic::decide_vector;
+use gridcl_bench::candidates::{GRID_OMITTED, VectorConfig, cpu_grid, vector_candidates};
+use gridcl_bench::decide_generic::{GenericRule, decide_vector};
 use gridcl_bench::record::{Cores, HALO_PARTS, HaloRecord, M10Data, NodeLoad, load_m10_dir};
-use gridcl_bench::report::{M10_BEGIN_MARKER, M10_END_MARKER, render_m10_vector};
+use gridcl_bench::report::{
+    M10_BEGIN_MARKER, M10_END_MARKER, M10C_BEGIN_MARKER, M10C_END_MARKER, render_m10_vector,
+    render_m10c_vector,
+};
 use gridcl_device::CpuUnits;
 
 /// Timed runs of the candidate protocol (ADR-0057 item 3).
@@ -935,6 +938,14 @@ fn history_vector_policy() -> toml::Table {
         .expect("history/vector-policy-pre-m10.toml parses")
 }
 
+/// M10's vector policy, frozen when M10c re-derived the live one (ADR-0065): the "own policy" of
+/// M10's candidate sets.
+fn m10_vector_policy() -> toml::Table {
+    read("gridcl-bench/history/vector-policy-m10.toml")
+        .parse()
+        .expect("history/vector-policy-m10.toml parses")
+}
+
 /// The configuration of `kind` and `bytes` in the old class `old` of the pre-M10 policy, at
 /// vector size `n` if given (the baseline), else the class's own.
 fn history_config(
@@ -988,11 +999,13 @@ fn kinds_of(class: &str) -> Vec<(KernelKind, Vec<Scalar>)> {
 /// including Pack and PullBack, on every platform, at 10^6 and 10^7 items, five runs each:
 /// the baseline (vector size 1 at the old CpuSimd128 tile, block and units on Cpu, at the Gpu
 /// tile on Gpu), the M3s choices of every old class of the entry's class, the widest size for
-/// Pack and PullBack, and every configuration of `candidates::vector_candidates`.
+/// Pack and PullBack, M10's own policy (frozen in `history/vector-policy-m10.toml` since M10c)
+/// and every configuration of `candidates::vector_candidates`.
 #[test]
 fn m10_candidates_cover_every_kind_and_platform() {
     let data = m10();
     let history = history_vector_policy();
+    let own = m10_vector_policy();
     let vector = &data.vector;
     assert!(
         !vector.is_empty(),
@@ -1048,6 +1061,7 @@ fn m10_candidates_cover_every_kind_and_platform() {
                         want.push(history_config(&history, old, kind, bytes, None));
                     }
                 }
+                want.push(history_config(&own, class, kind, bytes, None));
                 want.extend(vector_candidates(device_class(class), kind, scalar, widest));
                 if matches!(kind, KernelKind::Pack | KernelKind::PullBack) {
                     assert!(
@@ -1091,6 +1105,20 @@ struct Member {
     scalar: Scalar,
 }
 
+/// The version of the generic rule a check recomputes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Rule {
+    /// M10's (ADR-0058 item 4): the fallback takes the admitted candidate with the smallest
+    /// worst case; every member has a time at every rule size.
+    M10,
+    /// M10c's (ADR-0065): `[Cpu]` entries from the grid records (a configuration's time the
+    /// geometric mean of the two processes' medians), `[Gpu]` entries from M10's records; a
+    /// member without a time at a size is left out of that size's admission mean, r and the
+    /// bound; if no admitted configuration meets the bound, the bound and the choice apply to all
+    /// candidates, and only if none meets it the admitted one with the smallest worst case.
+    M10c,
+}
+
 /// The rule's view of one entry (class, kind, bytes).
 struct GenericEntry {
     baseline: Key,
@@ -1102,13 +1130,49 @@ struct GenericEntry {
     platform_r: BTreeMap<(&'static str, &'static str), f64>,
 }
 
-/// The time of every configuration of `m` at `size` (the last record of each).
+/// The time of every configuration of `m` at `size`: the last record of each in M10's records;
+/// in the grid records (`grid`), the geometric mean of the medians of the processes (seeds).
 fn member_times(
     vector: &[SweepRecord],
     m: Member,
     kind: KernelKind,
     size: usize,
+    grid: bool,
 ) -> BTreeMap<Key, f64> {
+    if grid {
+        let mut by_seed: BTreeMap<Key, BTreeMap<u64, f64>> = BTreeMap::new();
+        for r in vector.iter().filter(|r| {
+            r.target == m.target
+                && r.backend == m.backend
+                && r.family == kind
+                && r.scalar == m.scalar
+                && r.nominal_n == size
+        }) {
+            let seed = r
+                .seed
+                .unwrap_or_else(|| panic!("a grid record without a seed: {r:?}"));
+            for units in record_units(r).into_iter().flatten() {
+                let c = VectorConfig {
+                    vector_size: r.vector_size,
+                    tile: r.tile,
+                    block_bytes: r.block_bytes,
+                    units: Some(units),
+                };
+                by_seed
+                    .entry(key_of(&c))
+                    .or_default()
+                    .insert(seed, r.median_s);
+            }
+        }
+        return by_seed
+            .into_iter()
+            .map(|(k, t)| {
+                let v: Vec<f64> = t.into_values().collect();
+                let g = (v.iter().map(|x| x.ln()).sum::<f64>() / v.len() as f64).exp();
+                (k, g)
+            })
+            .collect();
+    }
     let mut out = BTreeMap::new();
     for r in vector.iter().filter(|r| {
         r.target == m.target
@@ -1133,8 +1197,8 @@ fn member_times(
     out
 }
 
-/// The generic rule (ADR-0058 item 4) on the M10 records of one entry; `None` if no platform of
-/// the class measured it.
+/// The generic rule on the records of one entry, by `rule`; `None` if no platform of the class
+/// measured it.
 fn generic_entry(
     data: &M10Data,
     history: &toml::Table,
@@ -1142,8 +1206,10 @@ fn generic_entry(
     kind: KernelKind,
     scalars: &[Scalar],
     bytes: usize,
+    rule: Rule,
 ) -> Option<GenericEntry> {
-    let vector = &data.vector;
+    let grid = rule == Rule::M10c && class == "Cpu";
+    let vector = if grid { &data.cpu_grid } else { &data.vector };
     let present = |t: &str, b: &str| vector.iter().any(|r| r.target == t && r.backend == b);
     let members: Vec<Member> = m10_platforms(present)
         .into_iter()
@@ -1158,7 +1224,7 @@ fn generic_entry(
                     scalar,
                 })
         })
-        .filter(|&m| !member_times(vector, m, kind, RULE_SIZES[0]).is_empty())
+        .filter(|&m| !member_times(vector, m, kind, RULE_SIZES[0], grid).is_empty())
         .collect();
     if members.is_empty() {
         return None;
@@ -1170,14 +1236,21 @@ fn generic_entry(
         .map(|&m| {
             RULE_SIZES
                 .iter()
-                .map(|&size| member_times(vector, m, kind, size))
+                .map(|&size| member_times(vector, m, kind, size, grid))
                 .collect()
         })
+        .collect();
+    // The cells (member, size) the rule uses: all of them under M10; under M10c those with a
+    // time (a case left out of a platform's grid has none).
+    let cell = |m: usize, s: usize| rule == Rule::M10 || !times[m][s].is_empty();
+    let cells: Vec<(usize, usize)> = (0..members.len())
+        .flat_map(|m| (0..RULE_SIZES.len()).map(move |s| (m, s)))
+        .filter(|&(m, s)| cell(m, s))
         .collect();
     let common: BTreeSet<Key> = times[0][0]
         .keys()
         .copied()
-        .filter(|k| times.iter().flatten().all(|t| t.contains_key(k)))
+        .filter(|k| cells.iter().all(|&(m, s)| times[m][s].contains_key(k)))
         .collect();
     let baseline_class = if class == "Cpu" { "CpuSimd128" } else { "Gpu" };
     let baseline = key_of(&history_config(
@@ -1207,24 +1280,20 @@ fn generic_entry(
             *c == baseline
                 || (0..RULE_SIZES.len()).all(|s| {
                     let ratios: Vec<f64> = (0..members.len())
+                        .filter(|&m| cell(m, s))
                         .map(|m| times[m][s][c] / times[m][s][&baseline])
                         .collect();
                     geomean(&ratios) <= 1.0 / 1.10 * (1.0 + 1e-12)
                 })
         })
         .collect();
-    let all_r = |c: &Key| -> Vec<f64> {
-        (0..members.len())
-            .flat_map(|m| (0..RULE_SIZES.len()).map(move |s| (m, s)))
-            .map(|(m, s)| r(c, m, s))
-            .collect()
-    };
+    let all_r = |c: &Key| -> Vec<f64> { cells.iter().map(|&(m, s)| r(c, m, s)).collect() };
     let worst = |c: &Key| all_r(c).into_iter().fold(0.0, f64::max);
-    let kept: Vec<Key> = admitted
-        .iter()
-        .copied()
-        .filter(|c| worst(c) <= 1.25 * (1.0 + 1e-12))
-        .collect();
+    let within = |c: &Key| worst(c) <= 1.25 * (1.0 + 1e-12);
+    let mut kept: Vec<Key> = admitted.iter().copied().filter(within).collect();
+    if kept.is_empty() && rule == Rule::M10c {
+        kept = common.iter().copied().filter(within).collect();
+    }
     let (choice, fallback) = if kept.is_empty() {
         let c = admitted
             .iter()
@@ -1244,12 +1313,10 @@ fn generic_entry(
         (c, false)
     };
     let mut platform_r: BTreeMap<(&'static str, &'static str), f64> = BTreeMap::new();
-    for (j, m) in members.iter().enumerate() {
-        let worst_j = (0..RULE_SIZES.len())
-            .map(|s| r(&choice, j, s))
-            .fold(0.0, f64::max);
+    for &(j, s) in &cells {
+        let m = members[j];
         let at = platform_r.entry((m.target, m.backend)).or_insert(0.0);
-        *at = at.max(worst_j);
+        *at = at.max(r(&choice, j, s));
     }
     Some(GenericEntry {
         baseline,
@@ -1284,18 +1351,29 @@ fn policy_config(policy: &toml::Table, class: &str, kind: KernelKind, bytes: usi
     (n, tile, block, performance)
 }
 
-/// M10's generated tables in `docs/perf/vectorization.md`.
-fn m10_vector_section() -> String {
-    let text = read("docs/perf/vectorization.md");
+/// The generated part of `text` between `begin_marker` and `end_marker`.
+fn section_between(text: &str, begin_marker: &str, end_marker: &str, what: &str) -> String {
     let begin = text
-        .find(M10_BEGIN_MARKER)
-        .expect("docs/perf/vectorization.md has no M10 BEGIN marker")
-        + M10_BEGIN_MARKER.len();
+        .find(begin_marker)
+        .unwrap_or_else(|| panic!("{what} has no {begin_marker}"))
+        + begin_marker.len();
     let end = text[begin..]
-        .find(M10_END_MARKER)
-        .expect("docs/perf/vectorization.md has no M10 END marker")
+        .find(end_marker)
+        .unwrap_or_else(|| panic!("{what} has no {end_marker}"))
         + begin;
     text[begin..end].trim().to_owned()
+}
+
+/// M10's generated tables in `docs/perf/vectorization.md`.
+fn m10_vector_section() -> String {
+    let what = "docs/perf/vectorization.md";
+    section_between(&read(what), M10_BEGIN_MARKER, M10_END_MARKER, what)
+}
+
+/// M10c's generated tables in `docs/perf/vectorization.md`.
+fn m10c_vector_section() -> String {
+    let what = "docs/perf/vectorization.md";
+    section_between(&read(what), M10C_BEGIN_MARKER, M10C_END_MARKER, what)
 }
 
 /// The cells of a table row, trimmed: `| a | b |` gives `["a", "b"]`.
@@ -1304,12 +1382,16 @@ fn cells(line: &str) -> Option<Vec<&str>> {
     Some(inner.split('|').map(str::trim).collect())
 }
 
-/// Bullet 5 (ADR-0058): `vector-policy.toml` holds `[Cpu]` and `[Gpu]` with 4- and 8-byte
-/// entries only, is what `decide_generic` writes from the M10 records, and every entry follows
-/// the generic rule, recomputed here: admission at 10% over the baseline by the geometric mean
-/// over the platforms, the bound r ≤ 1.25 on every platform and size, the smallest geometric
-/// mean of r with the 3% simplicity order, and otherwise the smallest worst case, which the
-/// report marks.
+/// M10c bullet 2 (ADR-0058, ADR-0065): `vector-policy.toml` holds `[Cpu]` and `[Gpu]` with 4-
+/// and 8-byte entries only, is what `decide_generic` writes from the committed records under the
+/// M10c rule, and every entry follows that rule, recomputed here: `[Cpu]` entries from the grid
+/// records of two processes (the geometric mean of their medians), `[Gpu]` entries from M10's
+/// records; admission at 10% over the baseline by the geometric mean over the platforms present
+/// at each size; the bound r ≤ 1.25 on every platform and size present; the smallest geometric
+/// mean of r with the 3% simplicity order; if no admitted configuration meets the bound, the
+/// bound and the choice over all candidates; and only if none meets it, the admitted one with
+/// the smallest worst case, which M10c's section of the report marks with its worst case and
+/// cause.
 #[test]
 fn vector_policy_follows_the_generic_rule() {
     let data = m10();
@@ -1317,7 +1399,7 @@ fn vector_policy_follows_the_generic_rule() {
     let text = read("gridcl-device/vector-policy.toml");
     assert_eq!(
         text,
-        decide_vector(&data).to_toml(),
+        decide_vector(&data, GenericRule::M10c).to_toml(),
         "vector-policy.toml differs from the generic rule: run policy_report"
     );
     let policy: toml::Table = text.parse().expect("vector-policy.toml parses");
@@ -1327,13 +1409,16 @@ fn vector_policy_follows_the_generic_rule() {
         BTreeSet::from(["Cpu", "Gpu"]),
         "vector-policy.toml classes"
     );
-    let section = m10_vector_section();
+    let section = m10c_vector_section();
+    let rows: Vec<Vec<&str>> = section.lines().filter_map(cells).collect();
     for class in ["Cpu", "Gpu"] {
         for (kind, scalars) in kinds_of(class) {
             for bytes in [4usize, 8] {
                 let what = format!("[{class}] {kind:?} {bytes}");
                 let got = policy_config(&policy, class, kind, bytes);
-                let Some(e) = generic_entry(&data, &history, class, kind, &scalars, bytes) else {
+                let Some(e) =
+                    generic_entry(&data, &history, class, kind, &scalars, bytes, Rule::M10c)
+                else {
                     assert_eq!(got.0, 1, "{what}: vector size above 1 without data");
                     assert!(!got.3, "{what}: performance cores without data");
                     continue;
@@ -1344,13 +1429,17 @@ fn vector_policy_follows_the_generic_rule() {
                     e.choice, e.baseline
                 );
                 if e.fallback {
-                    let prefix = format!("| {kind:?} | {class} | {bytes} |");
+                    let (k, b) = (format!("{kind:?}"), bytes.to_string());
+                    let marked = rows.iter().any(|row| {
+                        row.len() == 9
+                            && row[..3] == [k.as_str(), class, &b]
+                            && row[7].contains("worst case")
+                            && !["", "–", "-"].contains(&row[8])
+                    });
                     assert!(
-                        section
-                            .lines()
-                            .any(|l| l.starts_with(&prefix) && l.contains("worst case")),
-                        "{what}: no configuration meets the bound, and the report does not mark \
-                         the entry with its worst case"
+                        marked,
+                        "{what}: no configuration meets the bound, and M10c's report does not \
+                         mark the entry with its worst case and cause"
                     );
                 }
             }
@@ -1358,11 +1447,11 @@ fn vector_policy_follows_the_generic_rule() {
     }
 }
 
-/// Bullet 4 and ADR-0058 item 6: M10's tables in `docs/perf/vectorization.md` are what
-/// `policy_report` renders, and list for every entry and platform of its class the platform's
-/// best configuration, the generic choice, the platform's r for that choice (recomputed here:
-/// the largest over its members and the rule sizes) and the reason. The M3s section stays as it
-/// was (frozen).
+/// Bullet 4 and ADR-0058 item 6, as history: M10's tables in `docs/perf/vectorization.md` are
+/// what `policy_report` renders under M10's rule, and list for every entry and platform of its
+/// class the platform's best configuration, the generic choice, the platform's r for that choice
+/// (recomputed here: the largest over its members and the rule sizes) and the reason. The M3s
+/// section stays as it was (frozen).
 #[test]
 fn vectorization_report_lists_platform_ratios() {
     let data = m10();
@@ -1370,14 +1459,16 @@ fn vectorization_report_lists_platform_ratios() {
     let section = m10_vector_section();
     assert_eq!(
         section,
-        render_m10_vector(&data, &decide_vector(&data)).trim(),
+        render_m10_vector(&data, &decide_vector(&data, GenericRule::M10)).trim(),
         "M10's tables are stale: run policy_report"
     );
     let rows: Vec<Vec<&str>> = section.lines().filter_map(cells).collect();
     for class in ["Cpu", "Gpu"] {
         for (kind, scalars) in kinds_of(class) {
             for bytes in [4usize, 8] {
-                let Some(e) = generic_entry(&data, &history, class, kind, &scalars, bytes) else {
+                let Some(e) =
+                    generic_entry(&data, &history, class, kind, &scalars, bytes, Rule::M10)
+                else {
                     continue;
                 };
                 for (&(target, backend), &r) in &e.platform_r {
@@ -1398,6 +1489,337 @@ fn vectorization_report_lists_platform_ratios() {
                 }
             }
         }
+    }
+}
+
+/// The M10c grid of a `[Cpu]` vector entry of `kind` (ADR-0065 item 2): vector sizes 1, 4, 8
+/// and 16 (Scalar: 1), blocks of 4, 16 and 64 KiB, both unit settings; GeomFactors at tile 4 up
+/// to size 4 and tile 16 above.
+fn m10c_grid(kind: KernelKind) -> Vec<VectorConfig> {
+    let sizes: &[usize] = if kind == KernelKind::Scalar {
+        &[1]
+    } else {
+        &[1, 4, 8, 16]
+    };
+    let mut out = Vec::new();
+    for &n in sizes {
+        for block in BLOCKS {
+            for units in [CpuUnits::All, CpuUnits::Performance] {
+                out.push(VectorConfig {
+                    vector_size: n,
+                    tile: (kind == KernelKind::GeomFactors).then_some(if n <= 4 { 4 } else { 16 }),
+                    block_bytes: Some(block),
+                    units: Some(units),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// A clean commit: 40 hexadecimal digits, without `-dirty`.
+fn check_clean_commit(commit: &str, what: &str) {
+    assert!(
+        commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit()),
+        "{what}: commit {commit:?} is not a clean commit"
+    );
+}
+
+/// M10c bullet 1 (ADR-0065 items 1, 2 and 4): every `[Cpu]` vector entry with a type (13
+/// four-byte, 8 eight-byte) is measured on the three Cpu platforms (the Mac mini's CPU runtime,
+/// Locust's Grace CPU, one Kathleen socket; a Myriad D node only in Kathleen's place), in every
+/// member type at 10^6 and 10^7 items, over the whole grid (24 configurations where the CPU
+/// reports performance cores, 12 elsewhere; Scalar 6 and 3), in two processes with different
+/// seeds, except the cases of `GRID_OMITTED`. Each record: five timed runs, `calls_per_run` from
+/// a calibration of at least 20 ms, release, a clean commit, `load_width`, Kathleen on 20 threads,
+/// Locust idle before and after. Per process and entry, each round is one permutation of the
+/// entry's slots (interleaving).
+#[test]
+fn m10c_grid_covers_every_cpu_entry_and_platform() {
+    let data = m10();
+    let grid = &data.cpu_grid;
+    assert!(
+        !grid.is_empty(),
+        "no M10c grid records (m10c-vector-cpu-*.json) under docs/perf/data/"
+    );
+    assert!(
+        GRID_OMITTED.contains(&("macmini", KernelKind::GeomFactors, Scalar::F64, 10_000_000)),
+        "GeomFactors f64 at 10^7 is left out on the Mac mini (ADR-0065 item 4)"
+    );
+    for r in grid {
+        let what = format!(
+            "{} {} {:?} {} n={} at {} (seed {:?})",
+            r.target,
+            r.backend,
+            r.family,
+            r.scalar.name(),
+            r.vector_size,
+            r.nominal_n,
+            r.seed
+        );
+        let c = Common {
+            target: &r.target,
+            backend: &r.backend,
+            class: class_name(&r.device_class),
+            profile: &r.profile,
+            runs: r.times_s.len(),
+            cores: &r.cores,
+            load_width: r.load_width,
+            fallback_reason: r.fallback_reason.as_deref(),
+            node_load: &r.node_load,
+        };
+        check_m10_common(c, CANDIDATE_RUNS, &what);
+        check_calls_per_run(r.calls_per_run, r.calibration_s, &what);
+        check_clean_commit(&r.commit, &what);
+        assert_eq!(r.backend, "cpu", "{what}: the grid is for `[Cpu]` entries");
+        assert!(r.seed.is_some(), "{what}: no process seed");
+        let positions = r
+            .positions
+            .as_ref()
+            .unwrap_or_else(|| panic!("{what}: no round positions"));
+        assert_eq!(
+            positions.len(),
+            r.times_s.len(),
+            "{what}: a position per run"
+        );
+        assert!(
+            (median(&r.times_s) - r.median_s).abs() <= 1e-12 * r.median_s,
+            "{what}: median_s is not the median of times_s"
+        );
+    }
+    let present = |t: &str, b: &str| grid.iter().any(|r| r.target == t && r.backend == b);
+    let platforms: Vec<(&str, &str)> = m10_platforms(present)
+        .into_iter()
+        .filter(|&(_, _, class)| class == "Cpu")
+        .map(|(t, b, _)| (t, b))
+        .collect();
+    for r in grid {
+        assert!(
+            platforms.contains(&(r.target.as_str(), r.backend.as_str())),
+            "{} {}: not a Cpu platform of M10c",
+            r.target,
+            r.backend
+        );
+    }
+    let mut entries = 0;
+    for (target, backend) in platforms {
+        let of: Vec<&SweepRecord> = grid
+            .iter()
+            .filter(|r| r.target == target && r.backend == backend)
+            .collect();
+        assert!(!of.is_empty(), "{target} {backend}: no grid records");
+        let seeds: BTreeSet<u64> = of.iter().filter_map(|r| r.seed).collect();
+        assert_eq!(
+            seeds.len(),
+            2,
+            "{target} {backend}: two processes with different seeds, got {seeds:?}"
+        );
+        let performance = of[0].cores.performance.is_some();
+        if target == "macmini" {
+            assert!(
+                performance,
+                "{target}: the Mac mini reports performance cores"
+            );
+        }
+        for (kind, scalars) in kinds_of("Cpu") {
+            for bytes in [4usize, 8] {
+                let typed: Vec<Scalar> = scalars
+                    .iter()
+                    .copied()
+                    .filter(|s| s.bytes() == bytes)
+                    .collect();
+                if typed.is_empty() {
+                    continue;
+                }
+                if target == "macmini" {
+                    entries += 1;
+                }
+                let want = m10c_grid(kind);
+                for &scalar in &typed {
+                    let mut lib = cpu_grid(kind, scalar);
+                    lib.sort_by_key(key_of);
+                    let mut ours = want.clone();
+                    ours.sort_by_key(key_of);
+                    assert_eq!(
+                        lib,
+                        ours,
+                        "{kind:?} {}: candidates::cpu_grid",
+                        scalar.name()
+                    );
+                }
+                for &seed in &seeds {
+                    let what = format!("{target} {backend} {kind:?} {bytes}-byte, seed {seed}");
+                    let entry: Vec<&SweepRecord> = of
+                        .iter()
+                        .copied()
+                        .filter(|r| {
+                            r.family == kind && r.scalar.bytes() == bytes && r.seed == Some(seed)
+                        })
+                        .collect();
+                    for round in 0..CANDIDATE_RUNS {
+                        let mut at: Vec<usize> = entry
+                            .iter()
+                            .map(|r| r.positions.as_ref().unwrap()[round])
+                            .collect();
+                        at.sort_unstable();
+                        assert_eq!(
+                            at,
+                            (0..entry.len()).collect::<Vec<_>>(),
+                            "{what}: round {round} is not one permutation of the entry's slots"
+                        );
+                    }
+                    for &scalar in &typed {
+                        for size in RULE_SIZES {
+                            let what = format!("{what} {} at {size}", scalar.name());
+                            let at: Vec<&SweepRecord> = entry
+                                .iter()
+                                .copied()
+                                .filter(|r| r.scalar == scalar && r.nominal_n == size)
+                                .collect();
+                            if GRID_OMITTED.contains(&(target, kind, scalar, size)) {
+                                assert!(at.is_empty(), "{what}: left out (GRID_OMITTED)");
+                                continue;
+                            }
+                            for c in &want {
+                                assert!(
+                                    at.iter().any(|r| measures(r, c)),
+                                    "{what}: {c:?} not measured"
+                                );
+                            }
+                            let runs = if performance {
+                                want.len()
+                            } else {
+                                want.len() / 2
+                            };
+                            assert_eq!(at.len(), runs, "{what}: one record per configuration");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(entries, 21, "13 four-byte and 8 eight-byte `[Cpu]` entries");
+}
+
+/// The 90th percentile by nearest rank of sorted `v`.
+fn nearest_rank_p90(v: &[f64]) -> f64 {
+    let i = (0.9 * v.len() as f64).ceil() as usize;
+    v[i.max(1) - 1]
+}
+
+/// M10c bullet 1 and "Benchmarks", What it reports (ADR-0065 item 1): M10c's section of
+/// `docs/perf/vectorization.md` is what `policy_report` renders; per entry of the four sets and
+/// platform of its class a row `| kind | class | bytes | target backend | best | choice | r |
+/// reason | cause |` with r recomputed under the M10c rule and a cause for every fallback; per Cpu
+/// platform a noise row `| target backend | launches | median | p90 | max |`, recomputed here
+/// over every launch both processes timed (member, size, configuration) as the ratio of the
+/// larger to the smaller of the two medians.
+#[test]
+fn m10c_vectorization_report_lists_ratios_and_noise() {
+    let data = m10();
+    let history = history_vector_policy();
+    let section = m10c_vector_section();
+    assert_eq!(
+        section,
+        render_m10c_vector(&data, &decide_vector(&data, GenericRule::M10c)).trim(),
+        "M10c's tables are stale: run policy_report"
+    );
+    let rows: Vec<Vec<&str>> = section.lines().filter_map(cells).collect();
+    for class in ["Cpu", "Gpu"] {
+        for (kind, scalars) in kinds_of(class) {
+            for bytes in [4usize, 8] {
+                let Some(e) =
+                    generic_entry(&data, &history, class, kind, &scalars, bytes, Rule::M10c)
+                else {
+                    continue;
+                };
+                for (&(target, backend), &r) in &e.platform_r {
+                    let k = format!("{kind:?}");
+                    let b = bytes.to_string();
+                    let platform = format!("{target} {backend}");
+                    let what = format!("[{class}] {k} {bytes} on {platform}");
+                    let row = rows
+                        .iter()
+                        .find(|row| {
+                            row.len() == 9 && row[..4] == [k.as_str(), class, &b, &platform]
+                        })
+                        .unwrap_or_else(|| panic!("{what}: no row"));
+                    assert!(!row[4].is_empty(), "{what}: no best configuration");
+                    assert!(!row[5].is_empty(), "{what}: no choice");
+                    assert_eq!(row[6], format!("{r:.2}"), "{what}: r of the choice");
+                    assert!(!row[7].is_empty(), "{what}: no reason");
+                    if e.fallback {
+                        assert!(
+                            !["", "–", "-"].contains(&row[8]),
+                            "{what}: a fallback without a cause"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    // The noise between the two processes, per platform.
+    type Launch = (
+        String,
+        String,
+        String,
+        Scalar,
+        usize,
+        usize,
+        Option<usize>,
+        Option<usize>,
+        CubeDimMode,
+    );
+    let mut launches: BTreeMap<Launch, BTreeMap<u64, f64>> = BTreeMap::new();
+    for r in &data.cpu_grid {
+        let launch = (
+            r.target.clone(),
+            r.backend.clone(),
+            format!("{:?}", r.family),
+            r.scalar,
+            r.nominal_n,
+            r.vector_size,
+            r.tile,
+            r.block_bytes,
+            r.cube_dim,
+        );
+        launches
+            .entry(launch)
+            .or_default()
+            .insert(r.seed.expect("a seed"), r.median_s);
+    }
+    let mut ratios: BTreeMap<(String, String), Vec<f64>> = BTreeMap::new();
+    for (launch, by_seed) in &launches {
+        if by_seed.len() < 2 {
+            continue;
+        }
+        let max = by_seed.values().copied().fold(0.0, f64::max);
+        let min = by_seed.values().copied().fold(f64::INFINITY, f64::min);
+        ratios
+            .entry((launch.0.clone(), launch.1.clone()))
+            .or_default()
+            .push(max / min);
+    }
+    assert!(!ratios.is_empty(), "no launch timed by both processes");
+    for ((target, backend), mut v) in ratios {
+        v.sort_by(f64::total_cmp);
+        let platform = format!("{target} {backend}");
+        let want = [
+            platform.clone(),
+            v.len().to_string(),
+            format!("{:.3}", median(&v)),
+            format!("{:.3}", nearest_rank_p90(&v)),
+            format!("{:.3}", v[v.len() - 1]),
+        ];
+        let row = rows
+            .iter()
+            .find(|row| row.len() == 5 && row[0] == platform)
+            .unwrap_or_else(|| panic!("{platform}: no noise row"));
+        assert_eq!(
+            row[..],
+            want.each_ref().map(String::as_str)[..],
+            "{platform}: noise"
+        );
     }
 }
 

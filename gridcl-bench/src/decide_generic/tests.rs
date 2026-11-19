@@ -58,6 +58,8 @@ fn rec(
         load_width: Some(128),
         fallback_reason: None,
         node_load: None,
+        seed: None,
+        positions: None,
     }
 }
 
@@ -98,10 +100,13 @@ fn gpu_records(
 }
 
 fn decide_of(records: Vec<SweepRecord>) -> VectorDecision {
-    decide_vector(&M10Data {
-        vector: records,
-        ..M10Data::default()
-    })
+    decide_vector(
+        &M10Data {
+            vector: records,
+            ..M10Data::default()
+        },
+        GenericRule::M10,
+    )
 }
 
 fn entry(d: &VectorDecision, class: DeviceClass, kind: KernelKind, bytes: usize) -> &VectorEntry {
@@ -140,7 +145,7 @@ fn the_bound_holds_on_every_platform() {
     let d = decide_of(records);
     let e = entry(&d, DeviceClass::Gpu, k, 4);
     assert_eq!(
-        (e.fit, e.choice.vector_size),
+        (e.fit.clone(), e.choice.vector_size),
         (GenericFit::Bound, 8),
         "{}",
         e.reason
@@ -167,8 +172,8 @@ fn fallback_takes_the_smallest_worst_case() {
     let d = decide_of(records);
     let e = entry(&d, DeviceClass::Gpu, k, 4);
     assert_eq!(e.choice.vector_size, 4);
-    match e.fit {
-        GenericFit::Fallback { worst } => assert!((worst - 1.5).abs() < 1e-12),
+    match &e.fit {
+        GenericFit::Fallback { worst, .. } => assert!((worst - 1.5).abs() < 1e-12),
         f => panic!("{f:?}"),
     }
     assert!(e.reason.contains("worst case"), "{}", e.reason);
@@ -204,7 +209,7 @@ fn shared_entries_count_each_four_byte_type() {
     let shared = decide_of(records);
     let e = entry(&shared, DeviceClass::Gpu, k, 4);
     assert_eq!(
-        (e.fit, e.choice.vector_size),
+        (e.fit.clone(), e.choice.vector_size),
         (GenericFit::Bound, 2),
         "{}",
         e.reason
@@ -480,6 +485,7 @@ fn decide_degree_of(m9h: Vec<DegreeRecord>, m10: Vec<DegreeRecord>) -> DegreeDec
             degree: m10,
             ..M10Data::default()
         },
+        GenericRule::M10,
     )
 }
 
@@ -659,8 +665,8 @@ fn degree_picks_follow_the_generic_rule() {
     let d = decide_degree_of(Vec::new(), m10);
     let k = cpu_points(&d).pick(1).unwrap();
     assert_eq!(k.strategy, "sumfact");
-    match k.fit {
-        GenericFit::Fallback { worst } => assert!((worst - 1.3).abs() < 1e-12, "{worst}"),
+    match &k.fit {
+        GenericFit::Fallback { worst, .. } => assert!((worst - 1.3).abs() < 1e-12, "{worst}"),
         f => panic!("{f:?}"),
     }
     assert!(k.reason.contains("worst case r = 1.30"), "{}", k.reason);
@@ -678,7 +684,7 @@ fn degree_picks_follow_the_generic_rule() {
         m10_points(1, &[("direct", 1.0), ("sumfact", 0.92)]),
     );
     let k = cpu_points(&d).pick(1).unwrap();
-    assert_eq!((k.strategy, k.fit), ("direct", GenericFit::Bound));
+    assert_eq!((k.strategy, k.fit.clone()), ("direct", GenericFit::Bound));
     assert!(k.reason.starts_with("direct: no strategy"), "{}", k.reason);
 }
 
@@ -874,6 +880,275 @@ fn degree_toml_holds_the_four_sets() {
     );
 }
 
+// ---------------------------------------------------------------------------------------------
+// M10c (ADR-0065): the fallback without the admission gate, missing cells and the grid records
+// of two processes.
+
+const CPUS: [(&str, &str); 3] = [("macmini", "cpu"), ("locust", "cpu"), ("kathleen", "cpu")];
+
+/// The Cpu baseline of `kind` and `bytes` at vector size `n`.
+fn cpu(kind: KernelKind, bytes: usize, n: usize) -> VectorConfig {
+    VectorConfig {
+        vector_size: n,
+        ..vector_baseline(DeviceClass::Cpu, kind, bytes)
+    }
+}
+
+/// A grid record of process `seed`: the Mac mini reports performance cores, the others not.
+fn grid_rec(
+    platform: (&str, &str),
+    kind: KernelKind,
+    scalar: Scalar,
+    size: usize,
+    config: VectorConfig,
+    t: f64,
+    seed: u64,
+) -> SweepRecord {
+    let perf = (platform.0 == "macmini").then_some(4);
+    SweepRecord {
+        seed: Some(seed),
+        positions: Some(vec![0; 5]),
+        ..rec(platform, kind, scalar, size, config, t, perf)
+    }
+}
+
+fn decide_grid(records: Vec<SweepRecord>) -> VectorDecision {
+    decide_vector(
+        &M10Data {
+            cpu_grid: records,
+            ..M10Data::default()
+        },
+        GenericRule::M10c,
+    )
+}
+
+/// A platform and its (vector size, time) pairs.
+type PlatformTimes<'a> = ((&'a str, &'a str), &'a [(usize, f64)]);
+
+/// Grid records of both processes with the same time, at `sizes`, for (vector size, time) per
+/// platform.
+fn grid_records(
+    kind: KernelKind,
+    scalar: Scalar,
+    sizes: &[usize],
+    per_platform: &[PlatformTimes],
+) -> Vec<SweepRecord> {
+    let mut out = Vec::new();
+    for &(platform, times) in per_platform {
+        for &size in sizes {
+            for &(n, t) in times {
+                for seed in [1, 2] {
+                    let c = cpu(kind, scalar.bytes(), n);
+                    out.push(grid_rec(platform, kind, scalar, size, c, t, seed));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// ADR-0065, Problem 3 (Pack 4B): a candidate within 1.2 on every platform that is only 1.06
+/// times faster than the baseline (geometric mean) is not admitted; the baseline is 1.7 times
+/// slower than the best on one platform. M10's rule falls back to the baseline; M10c's applies
+/// the bound and the choice to all candidates and takes the candidate.
+#[test]
+fn m10c_waives_admission_when_no_admitted_candidate_meets_the_bound() {
+    let t = |c: usize, m: usize, _s: usize| {
+        Some(match (c, m) {
+            (0, 0) => 1.7,
+            (1, 0) => 1.0,
+            (0, _) => 1.0,
+            _ => 1.2,
+        })
+    };
+    let m10 = generic_rule(GenericRule::M10, 0, &[0, 1], 3, 2, t);
+    assert_eq!((m10.choice, m10.fallback, m10.waived), (0, true, false));
+    assert_eq!(m10.admitted, [0], "1.06x is not admitted");
+    let m10c = generic_rule(GenericRule::M10c, 0, &[0, 1], 3, 2, t);
+    assert_eq!((m10c.choice, m10c.fallback, m10c.waived), (1, false, true));
+    assert!((m10c.worst - 1.2).abs() < 1e-12, "{}", m10c.worst);
+    assert_eq!(m10c.admitted, [0], "admission itself is unchanged");
+
+    // The same shape through the grid records of Pack 4B on the three Cpu platforms.
+    let k = KernelKind::Pack;
+    let records = grid_records(
+        k,
+        Scalar::F32,
+        &CANDIDATE_SIZES,
+        &[
+            (CPUS[0], &[(1, 1.7), (16, 1.0)]),
+            (CPUS[1], &[(1, 1.0), (16, 1.2)]),
+            (CPUS[2], &[(1, 1.0), (16, 1.2)]),
+        ],
+    );
+    let d = decide_grid(records);
+    let e = entry(&d, DeviceClass::Cpu, k, 4);
+    assert_eq!(
+        (e.fit.clone(), e.choice.vector_size),
+        (GenericFit::Bound, 16)
+    );
+    assert!(e.reason.contains("apply to all candidates"), "{}", e.reason);
+}
+
+/// Where no candidate meets the bound even without the gate, the admitted candidate with the
+/// smallest worst case, marked with its worst case and a cause naming the conflicting bests.
+#[test]
+fn m10c_fallback_stays_a_fallback_with_a_cause() {
+    let k = KernelKind::ScanTile;
+    let records = grid_records(
+        k,
+        Scalar::U32,
+        &CANDIDATE_SIZES,
+        &[
+            (CPUS[0], &[(1, 2.0), (8, 1.0)]),
+            (CPUS[1], &[(1, 1.0), (8, 2.0)]),
+            (CPUS[2], &[(1, 1.0), (8, 1.0)]),
+        ],
+    );
+    let d = decide_grid(records);
+    let e = entry(&d, DeviceClass::Cpu, k, 4);
+    assert_eq!(e.choice.vector_size, 1, "the baseline is the only admitted");
+    let GenericFit::Fallback { worst, cause } = &e.fit else {
+        panic!("{:?}", e.fit);
+    };
+    assert!((worst - 2.0).abs() < 1e-12, "{worst}");
+    assert!(e.reason.contains("worst case"), "{}", e.reason);
+    assert!(
+        cause.starts_with("largest r 2.00 on macmini cpu")
+            && cause.contains("conflict")
+            && cause.contains("locust cpu best n = 1"),
+        "{cause}"
+    );
+}
+
+/// A member without a time at one size (GeomFactors f64 at 10^7 on the Mac mini, ADR-0065
+/// item 4) is left out of that size: admission uses the platforms present, r and the bound the
+/// cells present. M10's rule needs every cell and takes the default.
+#[test]
+fn m10c_leaves_out_missing_cells() {
+    let k = KernelKind::GeomFactors;
+    let mut records = grid_records(
+        k,
+        Scalar::F64,
+        &CANDIDATE_SIZES[..1],
+        &[(CPUS[0], &[(1, 1.0), (4, 1.2)])],
+    );
+    records.extend(grid_records(
+        k,
+        Scalar::F64,
+        &CANDIDATE_SIZES,
+        &[
+            (CPUS[1], &[(1, 1.0), (4, 0.5)]),
+            (CPUS[2], &[(1, 1.0), (4, 0.5)]),
+        ],
+    ));
+    let d = decide_grid(records.clone());
+    let e = entry(&d, DeviceClass::Cpu, k, 8);
+    assert_eq!(
+        (e.fit.clone(), e.choice.vector_size),
+        (GenericFit::Bound, 4),
+        "{}",
+        e.reason
+    );
+    let r: Vec<(&str, String)> = e
+        .platforms
+        .iter()
+        .map(|p| (p.platform.target, format!("{:.2}", p.r)))
+        .collect();
+    assert_eq!(
+        r,
+        [
+            ("macmini", "1.20".to_owned()),
+            ("locust", "1.00".to_owned()),
+            ("kathleen", "1.00".to_owned())
+        ]
+    );
+    // 10^6: geometric mean of 1.2, 0.5 and 0.5; 10^7: of 0.5 and 0.5.
+    assert!(e.reason.starts_with("1.49x / 2.00x"), "{}", e.reason);
+    let m10 = decide_vector(
+        &M10Data {
+            vector: records,
+            ..M10Data::default()
+        },
+        GenericRule::M10,
+    );
+    assert_eq!(entry(&m10, DeviceClass::Cpu, k, 8).fit, GenericFit::Default);
+}
+
+/// A configuration's time is the geometric mean of the two processes' medians.
+#[test]
+fn m10c_combines_two_processes_by_the_geometric_mean() {
+    let k = KernelKind::Copy;
+    let mut records = Vec::new();
+    for size in CANDIDATE_SIZES {
+        for (seed, t4) in [(1, 0.5), (2, 0.72)] {
+            records.push(grid_rec(
+                CPUS[1],
+                k,
+                Scalar::U32,
+                size,
+                cpu(k, 4, 1),
+                1.0,
+                seed,
+            ));
+            records.push(grid_rec(
+                CPUS[1],
+                k,
+                Scalar::U32,
+                size,
+                cpu(k, 4, 4),
+                t4,
+                seed,
+            ));
+        }
+    }
+    let d = decide_grid(records);
+    let e = entry(&d, DeviceClass::Cpu, k, 4);
+    assert_eq!(e.choice.vector_size, 4);
+    // sqrt(0.5 · 0.72) = 0.6: 1.67 times faster (the last process alone would give 1.39).
+    assert!(e.reason.starts_with("1.67x / 1.67x"), "{}", e.reason);
+}
+
+/// Grid records come from `vector_sweep --grid`, which writes the process seed.
+#[test]
+#[should_panic(expected = "a grid record without a seed")]
+fn m10c_rejects_a_grid_record_without_a_seed() {
+    let k = KernelKind::Copy;
+    let mut r = grid_rec(CPUS[1], k, Scalar::U32, 1_000_000, cpu(k, 4, 1), 1.0, 1);
+    r.seed = None;
+    decide_grid(vec![r]);
+}
+
+/// The degree policy follows the waiver too: an admitted-only fallback becomes the strategy
+/// within the bound.
+#[test]
+fn m10c_degree_picks_waive_admission() {
+    // direct is the baseline; loops is within 1.2 everywhere but only 5% faster overall.
+    let mut records = Vec::new();
+    for (d, direct, loops) in [(MAC, 1.7, 1.0), (GRACE, 1.0, 1.2), (KATHLEEN, 1.0, 1.2)] {
+        for n in CANDIDATE_SIZES {
+            for (s, t) in [("direct", direct), ("loops", loops)] {
+                records.push(drec(d, "Points", "Hexahedron", 1, Scalar::F64, n, s, t));
+            }
+        }
+    }
+    let m10 = decide_degree_of(Vec::new(), records.clone());
+    let k = cpu_points(&m10).pick(1).unwrap();
+    assert_eq!(k.strategy, "direct");
+    assert!(matches!(k.fit, GenericFit::Fallback { .. }));
+    let m10c = decide_degree(
+        &HighOrderData::default(),
+        &M10Data {
+            degree: records,
+            ..M10Data::default()
+        },
+        GenericRule::M10c,
+    );
+    let k = cpu_points(&m10c).pick(1).unwrap();
+    assert_eq!((k.strategy, k.fit.clone()), ("loops", GenericFit::Bound));
+    assert!(k.reason.contains("apply to all"), "{}", k.reason);
+}
+
 mod prop {
     use super::*;
     use proptest::prelude::*;
@@ -890,12 +1165,78 @@ mod prop {
             let t = |c: usize, m: usize, s: usize| times[(m * 5 + c) * 2 + s];
             let order: Vec<usize> = (0..members).map(|m| (m + rotate) % members).collect();
             let keys: Vec<usize> = (0..candidates).collect();
-            let a = generic_rule(0, &keys, members, 2, t);
-            let b = generic_rule(0, &keys, members, 2, |c, m, s| t(c, order[m], s));
+            for rule in [GenericRule::M10, GenericRule::M10c] {
+                let a = generic_rule(rule, 0, &keys, members, 2, |c, m, s| Some(t(c, m, s)));
+                let b = generic_rule(rule, 0, &keys, members, 2, |c, m, s| {
+                    Some(t(c, order[m], s))
+                });
+                prop_assert_eq!(a.choice, b.choice);
+                prop_assert_eq!(a.fallback, b.fallback);
+                prop_assert_eq!(a.waived, b.waived);
+                prop_assert_eq!(a.admitted, b.admitted);
+                prop_assert!((a.worst - b.worst).abs() <= 1e-12 * a.worst);
+            }
+        }
+
+        /// Under M10c with cells left out (a member without a size), the choice does not depend
+        /// on the order of the members either.
+        #[test]
+        fn m10c_choice_with_missing_cells_does_not_depend_on_platform_order(
+            times in proptest::collection::vec(0.2f64..1.0, 4 * 5 * 2),
+            missing in proptest::collection::vec(any::<bool>(), 4 * 2),
+            members in 1usize..=4,
+            candidates in 1usize..=5,
+            rotate in 0usize..4,
+        ) {
+            // Member 0 keeps both sizes, so the baseline always has a time.
+            let t = |c: usize, m: usize, s: usize| {
+                (m == 0 || !missing[m * 2 + s]).then(|| times[(m * 5 + c) * 2 + s])
+            };
+            let order: Vec<usize> = (0..members).map(|m| (m + rotate) % members).collect();
+            let keys: Vec<usize> = (0..candidates).collect();
+            let a = generic_rule(GenericRule::M10c, 0, &keys, members, 2, t);
+            let b = generic_rule(GenericRule::M10c, 0, &keys, members, 2, |c, m, s| {
+                t(c, order[m], s)
+            });
             prop_assert_eq!(a.choice, b.choice);
             prop_assert_eq!(a.fallback, b.fallback);
             prop_assert_eq!(a.admitted, b.admitted);
             prop_assert!((a.worst - b.worst).abs() <= 1e-12 * a.worst);
+        }
+
+        /// The M10c vector choice does not depend on the order of the processes (which seed
+        /// measured which times) or of the records.
+        #[test]
+        fn m10c_choice_does_not_depend_on_process_or_record_order(
+            times in proptest::collection::vec(0.2f64..1.0, 3 * 3 * 2 * 2),
+            reverse in any::<bool>(),
+        ) {
+            let k = KernelKind::Copy;
+            let records = |swap: bool| -> Vec<SweepRecord> {
+                let mut out = Vec::new();
+                for (p, &platform) in CPUS.iter().enumerate() {
+                    for (si, &size) in CANDIDATE_SIZES.iter().enumerate() {
+                        for (c, n) in [1, 4, 8].into_iter().enumerate() {
+                            for process in 0..2 {
+                                let seed = if swap { 2 - process } else { 1 + process } as u64;
+                                let t = times[((p * 3 + c) * 2 + si) * 2 + process];
+                                out.push(grid_rec(platform, k, Scalar::U32, size, cpu(k, 4, n), t, seed));
+                            }
+                        }
+                    }
+                }
+                out
+            };
+            let a = decide_grid(records(false));
+            let mut swapped = records(true);
+            if reverse {
+                swapped.reverse();
+            }
+            let b = decide_grid(swapped);
+            let (a, b) = (entry(&a, DeviceClass::Cpu, k, 4), entry(&b, DeviceClass::Cpu, k, 4));
+            prop_assert_eq!(a.choice, b.choice);
+            prop_assert_eq!(&a.fit, &b.fit);
+            prop_assert_eq!(&a.reason, &b.reason);
         }
 
         /// The degree choice does not depend on which platform measured which times: permuting
@@ -925,8 +1266,8 @@ mod prop {
             let (a, b) = (cpu_points(&a).pick(1).unwrap(), cpu_points(&b).pick(1).unwrap());
             prop_assert_eq!(a.strategy, b.strategy);
             prop_assert_eq!(a.base, b.base);
-            let worst = |k: &DegreePick| match k.fit {
-                GenericFit::Fallback { worst } => Some(worst),
+            let worst = |k: &DegreePick| match &k.fit {
+                GenericFit::Fallback { worst, .. } => Some(*worst),
                 _ => None,
             };
             prop_assert_eq!(worst(a).is_some(), worst(b).is_some());

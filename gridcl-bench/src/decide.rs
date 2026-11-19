@@ -766,6 +766,8 @@ mod tests {
             },
             fallback_reason: None,
             node_load: None,
+            seed: None,
+            positions: None,
         }
     }
 

@@ -36,6 +36,498 @@ pub const M10_BEGIN_MARKER: &str = "<!-- BEGIN GENERATED M10; do not edit -->";
 /// The line after M10's generated tables.
 pub const M10_END_MARKER: &str = "<!-- END GENERATED M10 -->";
 
+/// The line before M10c's generated tables in `docs/perf/vectorization.md` and
+/// `docs/perf/high-order.md` (M10's sections stay as M10's rule wrote them; ADR-0065).
+pub const M10C_BEGIN_MARKER: &str = "<!-- BEGIN GENERATED M10c; do not edit -->";
+/// The line after M10c's generated tables.
+pub const M10C_END_MARKER: &str = "<!-- END GENERATED M10c -->";
+
+/// One Cpu platform's noise between the two processes of the M10c grid (ADR-0065 item 1): over
+/// every launch both processes timed (member, size and configuration), the ratio of the larger
+/// to the smaller of the two medians.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProcessNoise {
+    /// The target, as `macmini`.
+    pub target: String,
+    /// The backend, `cpu`.
+    pub backend: String,
+    /// Launches timed by both processes.
+    pub launches: usize,
+    /// The median ratio.
+    pub median: f64,
+    /// The 90th percentile (nearest rank).
+    pub p90: f64,
+    /// The largest ratio.
+    pub max: f64,
+}
+
+/// The noise between processes of each platform of the grid records `grid`, in target order.
+pub fn process_noise(grid: &[crate::record::SweepRecord]) -> Vec<ProcessNoise> {
+    type Launch = (
+        String,
+        String,
+        String,
+        Scalar,
+        usize,
+        usize,
+        Option<usize>,
+        Option<usize>,
+        crate::record::CubeDimMode,
+    );
+    let mut launches: BTreeMap<Launch, BTreeMap<u64, f64>> = BTreeMap::new();
+    for r in grid {
+        let seed = r.seed.unwrap_or_else(|| {
+            panic!(
+                "a grid record without a seed: {} {} {:?} {}",
+                r.target,
+                r.backend,
+                r.family,
+                r.scalar.name()
+            )
+        });
+        launches
+            .entry((
+                r.target.clone(),
+                r.backend.clone(),
+                format!("{:?}", r.family),
+                r.scalar,
+                r.nominal_n,
+                r.vector_size,
+                r.tile,
+                r.block_bytes,
+                r.cube_dim,
+            ))
+            .or_default()
+            .insert(seed, r.median_s);
+    }
+    let mut ratios: BTreeMap<(String, String), Vec<f64>> = BTreeMap::new();
+    for (launch, by_seed) in &launches {
+        if by_seed.len() < 2 {
+            continue;
+        }
+        let max = by_seed.values().copied().fold(0.0, f64::max);
+        let min = by_seed.values().copied().fold(f64::INFINITY, f64::min);
+        ratios
+            .entry((launch.0.clone(), launch.1.clone()))
+            .or_default()
+            .push(max / min);
+    }
+    ratios
+        .into_iter()
+        .map(|((target, backend), mut v)| {
+            v.sort_by(f64::total_cmp);
+            let n = v.len();
+            let median = if n % 2 == 1 {
+                v[n / 2]
+            } else {
+                0.5 * (v[n / 2 - 1] + v[n / 2])
+            };
+            let p90 = v[((0.9 * n as f64).ceil() as usize).max(1) - 1];
+            ProcessNoise {
+                target,
+                backend,
+                launches: n,
+                median,
+                p90,
+                max: v[n - 1],
+            }
+        })
+        .collect()
+}
+
+/// The records list of a generated section: per platform, its devices and commits, and with
+/// `seeds` the seeds and the record count.
+fn records_list<'a>(
+    records: impl Iterator<Item = (&'a str, &'a str, &'a str, &'a str, Option<u64>)>,
+) -> String {
+    type Seen = (BTreeSet<String>, BTreeSet<String>, BTreeSet<u64>, usize);
+    let mut platforms: BTreeMap<(String, String), Seen> = BTreeMap::new();
+    for (target, backend, device, commit, seed) in records {
+        let p = platforms
+            .entry((target.to_owned(), backend.to_owned()))
+            .or_default();
+        p.0.insert(device.to_owned());
+        p.1.insert(commit.chars().take(7).collect());
+        p.2.extend(seed);
+        p.3 += 1;
+    }
+    let mut out = String::new();
+    for ((target, backend), (devices, commits, seeds, count)) in &platforms {
+        let devices: Vec<&str> = devices.iter().map(String::as_str).collect();
+        let commits: Vec<&str> = commits.iter().map(String::as_str).collect();
+        let seeds = if seeds.is_empty() {
+            String::new()
+        } else {
+            let s: Vec<String> = seeds.iter().map(u64::to_string).collect();
+            format!("; seeds {}, {count} records", s.join(" and "))
+        };
+        let _ = writeln!(
+            out,
+            "- {target} {backend}: {} (commit {}{seeds})",
+            devices.join(", "),
+            commits.join(", ")
+        );
+    }
+    out
+}
+
+/// M10c's tables of `docs/perf/vectorization.md`: the records and their conditions, each Cpu
+/// platform's noise between processes (`| target backend | launches | median | p90 | max |`),
+/// and per entry of the four sets and platform of its class a row
+/// `| kind | class | bytes | target backend | best | choice | r | reason | cause |`, under the
+/// M10c rule (ADR-0065).
+pub fn render_m10c_vector(
+    data: &crate::record::M10Data,
+    decision: &crate::decide_generic::VectorDecision,
+) -> String {
+    use crate::decide_generic::{ADMIT, BOUND, GenericFit, WITHIN, describe};
+    let mut out = String::from(
+        "Written by `policy_report` with the generic rule and M10c's fallback (ADR-0058 item 4, \
+         ADR-0065): `[Cpu]` entries from the `m10c-vector-cpu-*.json` grid records (a \
+         configuration's time the geometric mean of the two processes' medians), `[Gpu]` \
+         entries from the `m10-vector-*.json` records.\n\nRecords:\n\n",
+    );
+    out.push_str(&records_list(
+        data.cpu_grid
+            .iter()
+            .chain(data.vector.iter().filter(|r| r.backend != "cpu"))
+            .map(|r| {
+                (
+                    r.target.as_str(),
+                    r.backend.as_str(),
+                    r.device.as_str(),
+                    r.commit.as_str(),
+                    r.seed,
+                )
+            }),
+    ));
+    out.push_str(
+        "\n### Noise between processes\n\nPer Cpu platform, over every launch both processes \
+         timed (member type, size and configuration): the ratio of the larger to the smaller of \
+         the two medians; its median, 90th percentile (nearest rank) and maximum.\n\n\
+         | target backend | launches | median | p90 | max |\n\
+         | --- | ---: | ---: | ---: | ---: |\n",
+    );
+    for n in process_noise(&data.cpu_grid) {
+        let _ = writeln!(
+            out,
+            "| {} {} | {} | {:.3} | {:.3} | {:.3} |",
+            n.target, n.backend, n.launches, n.median, n.p90, n.max
+        );
+    }
+    let count =
+        |f: &dyn Fn(&GenericFit) -> bool| decision.entries.iter().filter(|e| f(&e.fit)).count();
+    let fallbacks = count(&|f| matches!(f, GenericFit::Fallback { .. }));
+    let defaults = count(&|f| *f == GenericFit::Default);
+    let waived = decision
+        .entries
+        .iter()
+        .filter(|e| e.fit == GenericFit::Bound && e.reason.contains("ADR-0065"))
+        .count();
+    let _ = writeln!(
+        out,
+        "\n### Choices\n\nPer entry of the four sets and platform of its class: the platform's \
+         best configuration (smallest geometric mean of r over its types and sizes), the generic \
+         choice, the platform's r for that choice (largest over its types and the sizes 10^6 and \
+         10^7 it measured), the reason, and for a fallback its cause. Admission at {ADMIT}× \
+         over the baseline, bound r ≤ {BOUND}, simplest within {WITHIN}×; if no admitted \
+         configuration meets the bound, the bound and the choice apply to all configurations \
+         ({waived} entries). {fallbacks} of {} entries need the fallback (smallest worst case); \
+         {defaults} take the default (no data, or not used).\n",
+        decision.entries.len()
+    );
+    out.push_str(
+        "| kind | class | bytes | target backend | best | choice | r | reason | cause |\n\
+         | --- | --- | ---: | --- | --- | --- | ---: | --- | --- |\n",
+    );
+    for e in &decision.entries {
+        let head = format!("| {:?} | {:?} | {} |", e.kind, e.class, e.bytes);
+        let cause = match &e.fit {
+            GenericFit::Fallback { cause, .. } => cause.as_str(),
+            _ => "–",
+        };
+        if e.platforms.is_empty() {
+            let _ = writeln!(
+                out,
+                "{head} – | – | {} | – | {} | {cause} |",
+                describe(&e.choice),
+                e.reason
+            );
+            continue;
+        }
+        for p in &e.platforms {
+            let _ = writeln!(
+                out,
+                "{head} {} {} | {} | {} | {:.2} | {} | {cause} |",
+                p.platform.target,
+                p.platform.backend,
+                describe(&p.best),
+                describe(&e.choice),
+                p.r,
+                e.reason
+            );
+        }
+    }
+    out
+}
+
+/// M10c's tables of `docs/perf/high-order.md`: the degree decision under the M10c rule at the
+/// M10 degrees with each fallback's worst case and cause (`| class | family | cell | bytes | p |
+/// target backend | best | choice | r | first use s | reason | cause |`), the degree ranges, and
+/// the per-degree choices that changed against M10's decision `m10`.
+pub fn render_m10c_high_order(
+    data: &crate::record::M10Data,
+    decision: &crate::decide_generic::DegreeDecision,
+    m10: &crate::decide_generic::DegreeDecision,
+) -> String {
+    use crate::decide_generic::{BOUND, DegreeSource, GenericFit};
+    let records = &data.degree;
+    let mut out = String::from(
+        "Written by `high_order_report` from the `m10-degree-*.json` records at p = 1, 4 and 8 \
+         and M9h's records in between, with the generic rule and M10c's fallback (ADR-0058 item \
+         4, ADR-0060 item 3, ADR-0065).\n\nRecords:\n\n",
+    );
+    out.push_str(&records_list(records.iter().map(|r| {
+        (
+            r.target.as_str(),
+            r.backend.as_str(),
+            r.device.as_str(),
+            r.commit.as_str(),
+            None,
+        )
+    })));
+
+    // The choices at the M10 degrees.
+    let picks: Vec<_> = decision
+        .entries
+        .iter()
+        .flat_map(|e| {
+            e.picks
+                .iter()
+                .filter(|k| k.source == DegreeSource::M10)
+                .map(move |k| (e, k))
+        })
+        .collect();
+    let fallbacks = picks
+        .iter()
+        .filter(|(_, k)| matches!(k.fit, GenericFit::Fallback { .. }))
+        .count();
+    let defaults = picks
+        .iter()
+        .filter(|(_, k)| k.fit == GenericFit::Default)
+        .count();
+    let waived = picks
+        .iter()
+        .filter(|(_, k)| k.fit == GenericFit::Bound && k.reason.contains("ADR-0065"))
+        .count();
+    let _ = writeln!(
+        out,
+        "\n### Choices at p = 1, 4 and 8\n\nPer entry, measured degree and platform of its \
+         class: the platform's best selectable strategy (smallest geometric mean of r over the \
+         rule sizes), the generic choice, the platform's r for it (largest over the sizes), the \
+         largest first-use compile and load time of the choice's records there, the reason, \
+         and for a fallback its cause. Admission at 10% over the baseline by the geometric mean \
+         over the platforms at each size, bound r ≤ {BOUND}, simplest within 3%; if no admitted \
+         strategy meets the bound, the bound and the choice apply to all selectable strategies \
+         ({waived} choices). {fallbacks} of {} choices need the fallback (smallest worst case); \
+         {defaults} take the default `loops` (neither `direct` nor `loops` selectable).\n",
+        picks.len()
+    );
+    out.push_str(
+        "| class | family | cell | bytes | p | target backend | best | choice | r | first use s | \
+         reason | cause |\n\
+         | --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- |\n",
+    );
+    for (e, k) in &picks {
+        let head = format!(
+            "| {:?} | {} | {} | {} | {} |",
+            e.class,
+            e.family,
+            e.cell,
+            e.scalar.bytes(),
+            k.degree
+        );
+        let cause = match &k.fit {
+            GenericFit::Fallback { cause, .. } => cause.as_str(),
+            _ => "–",
+        };
+        if k.platforms.is_empty() {
+            let _ = writeln!(
+                out,
+                "{head} – | – | {} | – | – | {} | {cause} |",
+                k.strategy, k.reason
+            );
+            continue;
+        }
+        let members = crate::decide_degree::members(e.family);
+        for p in &k.platforms {
+            let first_use = records
+                .iter()
+                .filter(|r| {
+                    r.target == p.platform.target
+                        && r.backend == p.platform.backend
+                        && r.cell == e.cell
+                        && r.degree == k.degree
+                        && r.scalar == e.scalar
+                        && r.strategy == k.strategy
+                        && members.iter().any(|&(f, _)| f == r.family)
+                })
+                .map(|r| r.compile_s)
+                .fold(None, |m: Option<f64>, c| Some(m.map_or(c, |m| m.max(c))));
+            let first_use = first_use.map_or("–".to_owned(), |c| format!("{c:.2}"));
+            let _ = writeln!(
+                out,
+                "{head} {} {} | {} | {} | {:.2} | {first_use} | {} | {cause} |",
+                p.platform.target, p.platform.backend, p.best, k.strategy, p.r, k.reason
+            );
+        }
+    }
+
+    // The fallbacks among the picks from M9h's records (ADR-0065 item 3: every entry that
+    // misses the bound is marked, at every degree of the policy).
+    let m9h_picks: Vec<_> = decision
+        .entries
+        .iter()
+        .flat_map(|e| {
+            e.picks
+                .iter()
+                .filter(|k| k.source == DegreeSource::M9h)
+                .map(move |k| (e, k))
+        })
+        .collect();
+    let m9h_fallbacks: Vec<_> = m9h_picks
+        .iter()
+        .filter(|(_, k)| matches!(k.fit, GenericFit::Fallback { .. }))
+        .collect();
+    let _ = writeln!(
+        out,
+        "\n### Fallbacks at M9h's degrees\n\nThe degrees between the M10 degrees take their \
+         choice from M9h's records, on M9h's platforms of the class at M9h's rule sizes, under \
+         the same rule. {} of {} such choices need the fallback; per platform as above (first \
+         use from M9h's records is not listed).\n",
+        m9h_fallbacks.len(),
+        m9h_picks.len()
+    );
+    if !m9h_fallbacks.is_empty() {
+        out.push_str(
+            "| class | family | cell | bytes | p | target backend | best | choice | r | first use \
+             s | reason | cause |\n\
+             | --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- |\n",
+        );
+    }
+    for (e, k) in m9h_fallbacks {
+        let GenericFit::Fallback { cause, .. } = &k.fit else {
+            unreachable!("filtered to fallbacks");
+        };
+        for p in &k.platforms {
+            let _ = writeln!(
+                out,
+                "| {:?} | {} | {} | {} | {} | {} {} | {} | {} | {:.2} | – | {} | {cause} |",
+                e.class,
+                e.family,
+                e.cell,
+                e.scalar.bytes(),
+                k.degree,
+                p.platform.target,
+                p.platform.backend,
+                p.best,
+                k.strategy,
+                p.r,
+                k.reason
+            );
+        }
+    }
+
+    // The ranges.
+    out.push_str(
+        "\n### Degree ranges\n\nThe ranges of `gridcl-geometry/degree-policy.toml`; the source \
+         of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h \
+         elsewhere.\n\n\
+         | class | family | cell | bytes | ranges | M9h degrees |\n\
+         | --- | --- | --- | ---: | --- | --- |\n",
+    );
+    for e in &decision.entries {
+        let ranges: Vec<String> = e
+            .spans()
+            .iter()
+            .map(|&(first, last, s)| match last {
+                Some(l) if l == first => format!("{first} {s}"),
+                Some(l) => format!("{first}–{l} {s}"),
+                None => format!("{first}– {s}"),
+            })
+            .collect();
+        let m9h: Vec<String> = e
+            .picks
+            .iter()
+            .filter(|k| k.source == DegreeSource::M9h)
+            .map(|k| k.degree.to_string())
+            .collect();
+        let _ = writeln!(
+            out,
+            "| {:?} | {} | {} | {} | {} | {} |",
+            e.class,
+            e.family,
+            e.cell,
+            e.scalar.bytes(),
+            ranges.join(", "),
+            if m9h.is_empty() {
+                "–".to_owned()
+            } else {
+                m9h.join(", ")
+            }
+        );
+    }
+
+    // The choices that changed against M10.
+    let mut changed = Vec::new();
+    let mut compared = 0;
+    for e in &decision.entries {
+        let Some(old) = m10.entry(e.class, e.family, e.cell, e.scalar) else {
+            continue;
+        };
+        for degree in 1..=CHANGE_DEGREES {
+            compared += 1;
+            let (was, is) = (old.strategy(degree), e.strategy(degree));
+            if was != is {
+                changed.push((e, degree, was, is));
+            }
+        }
+    }
+    let _ = writeln!(
+        out,
+        "\n### Changes against M10\n\nPer entry and degree p = 1–{}: the strategy of M10's \
+         policy (M10's rule; `gridcl-bench/history/degree-policy-m10.toml`) and of M10c's, \
+         with the source and reason of M10c's pick at that degree. {} of {compared} per-degree \
+         choices change.\n",
+        CHANGE_DEGREES,
+        changed.len()
+    );
+    if !changed.is_empty() {
+        out.push_str(
+            "| class | family | cell | bytes | p | source | M10 | M10c | reason |\n\
+             | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |\n",
+        );
+        for (e, degree, was, is) in &changed {
+            let (source, reason) = e.pick(*degree).map_or(
+                ("–".to_owned(), "the range of an earlier degree".to_owned()),
+                |k| (format!("{:?}", k.source), k.reason.clone()),
+            );
+            let _ = writeln!(
+                out,
+                "| {:?} | {} | {} | {} | {degree} | {source} | {was} | {is} | {reason} |",
+                e.class,
+                e.family,
+                e.cell,
+                e.scalar.bytes()
+            );
+        }
+    }
+    out
+}
+
+/// The degrees M10c's report compares with M10's policy: gridcl's degrees 1–10.
+const CHANGE_DEGREES: u32 = 10;
+
 /// M10's tables of `docs/perf/vectorization.md`: per entry of the four sets and platform of its
 /// class, a row `| kind | class | bytes | target backend | best | choice | r | reason |`
 /// (ADR-0058 item 6).
@@ -439,15 +931,35 @@ pub fn splice(text: &str, generated: &str) -> Result<String, String> {
 ///
 /// If `text` lacks either marker, or has them out of order.
 pub fn splice_m10(text: &str, generated: &str) -> Result<String, String> {
+    splice_between(text, M10_BEGIN_MARKER, M10_END_MARKER, "M10", generated)
+}
+
+/// `text` with the part between [`M10C_BEGIN_MARKER`] and [`M10C_END_MARKER`] replaced by
+/// `generated`.
+///
+/// # Errors
+///
+/// If `text` lacks either marker, or has them out of order.
+pub fn splice_m10c(text: &str, generated: &str) -> Result<String, String> {
+    splice_between(text, M10C_BEGIN_MARKER, M10C_END_MARKER, "M10c", generated)
+}
+
+fn splice_between(
+    text: &str,
+    begin_marker: &str,
+    end_marker: &str,
+    what: &str,
+    generated: &str,
+) -> Result<String, String> {
     let begin = text
-        .find(M10_BEGIN_MARKER)
-        .ok_or("no M10 BEGIN GENERATED marker")?;
+        .find(begin_marker)
+        .ok_or_else(|| format!("no {what} BEGIN GENERATED marker"))?;
     let end = text[begin..]
-        .find(M10_END_MARKER)
-        .ok_or("an M10 BEGIN GENERATED marker without END GENERATED M10")?
+        .find(end_marker)
+        .ok_or_else(|| format!("an {what} BEGIN GENERATED marker without END GENERATED {what}"))?
         + begin;
     Ok(format!(
-        "{}{M10_BEGIN_MARKER}\n\n{}\n\n{}",
+        "{}{begin_marker}\n\n{}\n\n{}",
         &text[..begin],
         generated.trim(),
         &text[end..]
