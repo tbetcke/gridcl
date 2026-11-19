@@ -1277,3 +1277,39 @@ mod prop {
         }
     }
 }
+
+/// A worst case above the bound never prints as the bound; other values keep two decimals.
+#[test]
+fn format_r_shows_a_miss() {
+    assert_eq!(format_r(1.31), "1.31");
+    assert_eq!(format_r(1.25), "1.25");
+    assert_eq!(format_r(1.2503), "1.2503");
+    assert_eq!(format_r(1.251), "1.251");
+    assert_eq!(format_r(1.249), "1.25");
+}
+
+/// The cause counts a difference of units as a conflict only where both platforms name units
+/// (both have performance levels).
+#[test]
+fn fallback_cause_ignores_units_without_levels() {
+    let p = |target: &'static str| Platform {
+        target,
+        backend: "cpu",
+        class: DeviceClass::Cpu,
+    };
+    let agree = fallback_cause(&[
+        (p("macmini"), "n = 4, 64 KiB, performance".to_owned(), 1.30),
+        (p("locust"), "n = 4, 64 KiB".to_owned(), 1.10),
+    ]);
+    assert!(agree.contains("every platform's best is"), "{agree}");
+    let conflict = fallback_cause(&[
+        (p("macmini"), "n = 4, 64 KiB, performance".to_owned(), 1.30),
+        (p("other"), "n = 4, 64 KiB, all".to_owned(), 1.10),
+    ]);
+    assert!(conflict.contains("conflict"), "{conflict}");
+    let launch = fallback_cause(&[
+        (p("macmini"), "n = 4, 64 KiB, performance".to_owned(), 1.30),
+        (p("kathleen"), "n = 16, 16 KiB".to_owned(), 1.10),
+    ]);
+    assert!(launch.contains("conflict"), "{launch}");
+}

@@ -1270,7 +1270,10 @@ fn degree_policy_follows_the_decision_rule() {
 use gridcl_bench::candidates::degree_candidates;
 use gridcl_bench::decide_generic::{GenericRule, decide_degree};
 use gridcl_bench::record::{M10Data, load_m10_dir};
-use gridcl_bench::report::{M10_BEGIN_MARKER, M10_END_MARKER, M10C_BEGIN_MARKER, M10C_END_MARKER};
+use gridcl_bench::report::{
+    M10_BEGIN_MARKER, M10_END_MARKER, M10C_BEGIN_MARKER, M10C_END_MARKER, render_m10_high_order,
+    render_m10c_high_order,
+};
 
 /// The degrees M10 measures (ADR-0057, ADR-0058 item 5).
 const M10_DEGREES: [u32; 3] = [1, 4, 8];
@@ -1547,6 +1550,27 @@ fn m10c_high_order_section() -> String {
     high_order_section(M10C_BEGIN_MARKER, M10C_END_MARKER)
 }
 
+/// M10's and M10c's generated sections of `docs/perf/high-order.md` are what `high_order_report`
+/// writes from the committed records: M10's under M10's rule (history, ADR-0065), M10c's under
+/// the M10c rule, with its changes against M10's decision.
+#[test]
+fn high_order_sections_are_what_high_order_report_writes() {
+    let data = m10();
+    let m9h = self::data();
+    let m10_rule = decide_degree(&m9h, &data, GenericRule::M10);
+    let m10c_rule = decide_degree(&m9h, &data, GenericRule::M10c);
+    assert_eq!(
+        m10_high_order_section(),
+        render_m10_high_order(&data, &m10_rule).trim(),
+        "M10's section of high-order.md is stale: run high_order_report"
+    );
+    assert_eq!(
+        m10c_high_order_section(),
+        render_m10c_high_order(&data, &m10c_rule, &m10_rule).trim(),
+        "M10c's section of high-order.md is stale: run high_order_report"
+    );
+}
+
 /// Bullet 5 (ADR-0058, ADR-0060 item 3) and M10c bullet 2 (ADR-0065 item 3): `degree-policy.toml`
 /// holds `[Cpu.<family>]` and `[Gpu.<family>]` only, is what `decide_generic` writes under the
 /// M10c rule from M10's records at p = 1, 4 and 8 and M9h's in between, its ranges are maximal
@@ -1618,6 +1642,12 @@ fn degree_policy_follows_the_generic_rule() {
         ..HighOrderData::default()
     };
     let m9h_records = sweep_records(&m9h);
+    // The sizes M9h's degree sweep measured.
+    let m9h_sizes: BTreeSet<usize> = m9h_records
+        .iter()
+        .filter(|r| !r.launch_only)
+        .map(|r| r.nominal_points)
+        .collect();
     let mut sources = BTreeMap::new();
     for class in ["Cpu", "Gpu"] {
         for (scalar, bytes) in SCALARS {
@@ -1660,10 +1690,14 @@ fn degree_policy_follows_the_generic_rule() {
                         let (devices, sizes) = if from_m10 {
                             (on_m10, m10_sizes(family, cell, scalar, degree).to_vec())
                         } else {
+                            // The entry's rule sizes (ADR-0063's bands for FacetNormals on
+                            // intervals in f32) that M9h's sweep measured; the CPU classes vote
+                            // at the smaller one only (ADR-0052).
                             let s: Vec<usize> = m10_sizes(family, cell, scalar, degree)
                                 .into_iter()
-                                .filter(|&n| n >= 100_000)
+                                .filter(|n| m9h_sizes.contains(n))
                                 .collect();
+                            assert!(!s.is_empty(), "{at}: M9h measured none of the rule sizes");
                             let s = if class == "Gpu" { s } else { s[..1].to_vec() };
                             (m9h_devices.clone(), s)
                         };

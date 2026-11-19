@@ -565,6 +565,13 @@ pub fn decide_vector(data: &M10Data, rule: GenericRule) -> VectorDecision {
             .any(|r| r.target == t && r.backend == b)
     };
     let platforms = m10_platforms(present);
+    // The CPU platforms whose records report performance levels: elsewhere the two unit
+    // settings are one launch.
+    let levels = |p: Platform| {
+        source(p.class).iter().any(|r| {
+            r.target == p.target && r.backend == p.backend && r.cores.performance.is_some()
+        })
+    };
     let mut entries = Vec::new();
     for class in [DeviceClass::Cpu, DeviceClass::Gpu] {
         let records = source(class);
@@ -579,7 +586,7 @@ pub fn decide_vector(data: &M10Data, rule: GenericRule) -> VectorDecision {
         for (kind, scalars) in candidate_kinds() {
             for bytes in ELEM_BYTES {
                 entries.push(vector_entry(
-                    rule, &times, &platforms, class, kind, scalars, bytes,
+                    rule, &times, &levels, &platforms, class, kind, scalars, bytes,
                 ));
             }
         }
@@ -591,6 +598,7 @@ pub fn decide_vector(data: &M10Data, rule: GenericRule) -> VectorDecision {
 fn vector_entry(
     rule: GenericRule,
     member_times: &dyn Fn(Member, KernelKind, usize) -> BTreeMap<ConfigKey, f64>,
+    levels: &dyn Fn(Platform) -> bool,
     platforms: &[Platform],
     class: DeviceClass,
     kind: KernelKind,
@@ -702,9 +710,20 @@ fn vector_entry(
         }
         p.best = VectorConfig::from_key(class, best);
     }
+    // A platform without performance levels names its best without units (ADR-0065 cause).
     let bests: Vec<(Platform, String, f64)> = per_platform
         .iter()
-        .map(|p| (p.platform, describe(&p.best), p.r))
+        .map(|p| {
+            let best = if levels(p.platform) {
+                p.best
+            } else {
+                VectorConfig {
+                    units: None,
+                    ..p.best
+                }
+            };
+            (p.platform, describe(&best), p.r)
+        })
         .collect();
     let speedup: Vec<String> = (0..CANDIDATE_SIZES.len())
         .map(|s| {
@@ -728,6 +747,34 @@ fn vector_entry(
     }
 }
 
+/// A worst-case r for a reason or cause: two decimals, or as many more (up to six) as a ratio
+/// above the bound needs not to read as the bound itself (never "r = 1.25" for a miss).
+pub fn format_r(r: f64) -> String {
+    let miss = r > BOUND * (1.0 + SLACK);
+    (2..=6)
+        .map(|d| format!("{r:.d$}"))
+        .find(|t| !miss || t.parse::<f64>().is_ok_and(|x| x > BOUND))
+        .unwrap_or_else(|| format!("{r:.6}"))
+}
+
+/// Splits a configuration label into its launch and its CPU units (`all` or `performance`).
+fn split_units(label: &str) -> (&str, Option<&str>) {
+    for units in ["all", "performance"] {
+        if let Some(launch) = label.strip_suffix(units).and_then(|l| l.strip_suffix(", ")) {
+            return (launch, Some(units));
+        }
+    }
+    (label, None)
+}
+
+/// Whether two platforms' bests agree: the same launch, and the same units unless one of them is
+/// labelled without units (a platform without performance levels, where both settings are one
+/// launch).
+fn bests_agree(a: &str, b: &str) -> bool {
+    let ((la, ua), (lb, ub)) = (split_units(a), split_units(b));
+    la == lb && (ua == ub || ua.is_none() || ub.is_none())
+}
+
 /// Why no candidate meets the bound (ADR-0065; plan question 2): the platform with the largest
 /// r for the choice and its own best, then whether the platforms' bests conflict. `bests` holds
 /// (platform, its best, its r for the choice) per platform.
@@ -743,9 +790,16 @@ pub fn fallback_cause(bests: &[(Platform, String, f64)]) -> String {
     else {
         return "no platform measured the entry".to_owned();
     };
-    let mut text = format!("largest r {r:.2} on {} (its best: {best})", name(worst));
-    let distinct: BTreeSet<&str> = bests.iter().map(|b| b.1.as_str()).collect();
-    if distinct.len() > 1 {
+    let mut text = format!(
+        "largest r {} on {} (its best: {best})",
+        format_r(*r),
+        name(worst)
+    );
+    let conflict = bests
+        .iter()
+        .enumerate()
+        .any(|(i, a)| bests[i + 1..].iter().any(|b| !bests_agree(&a.1, &b.1)));
+    if conflict {
         let list: Vec<String> = bests
             .iter()
             .map(|(p, b, _)| format!("{} best {b}", name(p)))
@@ -780,9 +834,9 @@ fn vector_reason(
                 cause: fallback_cause(bests),
             },
             format!(
-                "worst case r = {:.2}: no admitted candidate within {BOUND} on every platform \
+                "worst case r = {}: no admitted candidate within {BOUND} on every platform \
                  and size; the smallest worst case",
-                outcome.worst
+                format_r(outcome.worst)
             ),
         );
     }
@@ -1392,9 +1446,9 @@ fn degree_reason(
                 cause: fallback_cause(bests),
             },
             format!(
-                "worst case r = {:.2}: no admitted strategy within {BOUND} on every platform \
+                "worst case r = {}: no admitted strategy within {BOUND} on every platform \
                  and size; the smallest worst case",
-                outcome.worst
+                format_r(outcome.worst)
             ),
         );
     }
