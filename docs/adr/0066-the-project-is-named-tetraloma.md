@@ -1,6 +1,6 @@
 # ADR-0066: The project is named tetraloma
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-19
 - **Raised in:** E1 planning (maintainer request, 2026-11-19)
 - **Design sections affected:** the title and "Summary" (**Name:**); "Workspace layout" (crate table, directory
@@ -86,4 +86,4 @@ Option 3, with this mapping and these rules:
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-19, as proposed. The repository transfer was done the same day.
