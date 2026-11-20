@@ -9,7 +9,8 @@ use tetraloma_parallel::CommDyn;
 use super::chunk::{BlockHeader, Layout, complete, geometric_dim, missing_node};
 use super::{ElementBlock, FORMAT, MshFile, PhysicalName, element_type, lagrange_element_type};
 
-/// The cells of one cell type and degree.
+/// The cells of one cell type and degree in a [`GmshMesh`], with their nodes in tetraloma's node
+/// order ([Lagrange nodes]).
 ///
 /// # Example
 ///
@@ -29,13 +30,16 @@ use super::{ElementBlock, FORMAT, MshFile, PhysicalName, element_type, lagrange_
 /// assert_eq!(block.nodes, [0, 1, 2, 0, 2, 3]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GmshCellBlock {
     /// The cell type.
     pub cell: CellType,
     /// The degree of the complete Lagrange element (serendipity cells are upgraded to 2).
     pub degree: u32,
-    /// Indices into [`GmshMesh::nodes`], `[cell][nodes per cell]` in A.5 order.
+    /// Indices of nodes of the mesh (rows of [`GmshMesh::nodes`]), `[cell][nodes per cell]`
+    /// in tetraloma's node order.
     pub nodes: Vec<u32>,
     /// The element tag of each cell (its origin id).
     pub tags: Vec<i64>,
@@ -45,7 +49,8 @@ pub struct GmshCellBlock {
     pub physical: Vec<(u32, i32)>,
 }
 
-/// The lower-dimensional elements of one cell type, which become tags.
+/// The lower-dimensional elements of one cell type in a [`GmshMesh`], such as boundary facets,
+/// which become tags. See [Physical groups].
 ///
 /// # Example
 ///
@@ -65,13 +70,16 @@ pub struct GmshCellBlock {
 /// assert_eq!(group.elementary, [5]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GmshTagGroup {
     /// The dimension of the elements.
     pub dim: usize,
     /// The element's cell type.
     pub cell: CellType,
-    /// The corner node tags of each element in internal vertex order, `[element][vertices]`.
+    /// The corner node tags of each element in tetraloma's vertex order,
+    /// `[element][vertices]`.
     pub corners: Vec<i64>,
     /// The element tag of each element.
     pub tags: Vec<i64>,
@@ -81,9 +89,12 @@ pub struct GmshTagGroup {
     pub physical: Vec<(u32, i32)>,
 }
 
-/// The mesh a file describes: D_TOP and D_GEO, nodes with tags, cell blocks of the D_TOP
-/// elements in `CellType` order, the lower-dimensional elements as tag groups, and the
-/// physical names.
+/// The mesh a file describes, on the host: the topological and geometric dimensions, the
+/// nodes with their tags, cell blocks of the elements of the highest dimension in `CellType`
+/// order, the lower-dimensional elements as tag groups, and the physical names.
+///
+/// [`to_gmsh_mesh`] makes it from a file and [`from_gmsh_mesh`] turns it back into one. tetraloma's
+/// reader and writer go through it; the tutorial [Reading and writing files] shows them.
 ///
 /// # Example
 ///
@@ -102,11 +113,13 @@ pub struct GmshTagGroup {
 /// assert_eq!((mesh.blocks.len(), mesh.tag_groups.len()), (1, 1));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#reading-gmsh
 #[derive(Clone, Debug, PartialEq)]
 pub struct GmshMesh {
-    /// D_TOP: the highest element dimension.
+    /// The topological dimension: the highest element dimension.
     pub tdim: usize,
-    /// D_GEO: inferred, or fixed by the caller.
+    /// The geometric dimension: inferred from the coordinates, or fixed by the caller.
     pub gdim: usize,
     /// The node coordinates, `[node][gdim]`.
     pub nodes: Vec<f64>,
@@ -155,16 +168,19 @@ fn check_unique(tags: impl IntoIterator<Item = i64>) -> Result<()> {
     Ok(())
 }
 
-/// The mesh `file` describes. `gdim` fixes D_GEO; otherwise it is inferred over all nodes of
-/// the file, reduced over `comm`.
+// ADR-0022, item 11 (the serendipity upgrade).
+/// The mesh `file` describes. `gdim` fixes the geometric dimension; otherwise it is inferred from
+/// all nodes of the file, reduced over `comm`: 3 if any |z| exceeds 10⁻¹² L, else 2 if any |y|
+/// does, else 1, with L the diameter of the bounding box. tetraloma's reader calls it; see
+/// [Fixing the dimensions].
 ///
-/// - D_TOP is the highest element dimension; its elements form cell blocks in `CellType`
-///   order, cells in file order within a block. Serendipity cells are upgraded to complete P2
-///   (ADR-0022, item 11): an added face-centre node is shared per face, keyed by its sorted
-///   corner tags, reuses the node of a complete-P2 neighbour, and otherwise takes a fresh tag
-///   above the file's largest node tag, in order of first use.
-/// - Lower-dimensional elements become tag groups with their corner tags in internal vertex
-///   order.
+/// - The topological dimension is the highest element dimension. Its elements form cell
+///   blocks in `CellType` order, cells in file order within a block. Serendipity cells are
+///   upgraded to complete P2: an added face-centre node is shared per face, keyed by its
+///   sorted corner tags, reuses the node of a complete-P2 neighbour, and otherwise takes a
+///   fresh tag above the file's largest node tag, in order of first use.
+/// - Lower-dimensional elements become tag groups with their corner tags in tetraloma's
+///   vertex order.
 /// - Elementary tags are the entity tags; in a partitioned file, the parent entity's.
 ///   Elements on partition interfaces (whose partitioned entity has a parent of higher
 ///   dimension) are dropped, so the file reads as its unpartitioned mesh.
@@ -173,16 +189,18 @@ fn check_unique(tags: impl IntoIterator<Item = i64>) -> Result<()> {
 /// # Errors
 ///
 /// - `DuplicateOriginId` for repeated node or element tags, checked over the whole file first;
-/// - `Parse` for a file without elements of dimension ≥ 1 or with an element node that is not
-///   in `$Nodes`;
+/// - `Parse` for a file without elements of dimension ≥ 1 or with an element node that is not in
+///   `$Nodes`;
 /// - `DuplicateCellBlock` for one cell type in two degrees (serendipity counts as degree 2);
-/// - `DimensionMismatch` for a `gdim` outside 1–3, below D_TOP or below the inferred D_GEO;
-/// - `UnmatchedTagElement` for a lower-dimensional element with a corner that is not a vertex
-///   of a cell;
-/// - `UnsupportedElementType` for a type outside A.7; `Parse` for an element type of another
-///   dimension than its block, and `LengthMismatch` for an element block whose node list does
-///   not hold its type's node count per element or a node block with more or fewer coordinates
-///   than tags (both only in a hand-built `MshFile`);
+/// - `DimensionMismatch` for a `gdim` outside 1–3, below the topological dimension or below the
+///   inferred geometric dimension;
+/// - `UnmatchedTagElement` for a lower-dimensional element with a corner that is not a vertex of a
+///   cell;
+/// - `UnsupportedElementType` for a type that tetraloma does not read (the chapter [File formats]
+///   lists those it reads); `Parse` for an element type of another dimension than its block, and
+///   `LengthMismatch` for an element block whose node list does not hold its type's node count per
+///   element or a node block with more or fewer coordinates than tags (both only in a hand-built
+///   `MshFile`);
 /// - `TooLarge` if a count or tag overflows.
 ///
 /// # Example
@@ -204,6 +222,9 @@ fn check_unique(tags: impl IntoIterator<Item = i64>) -> Result<()> {
 /// assert_eq!(mesh.tag_groups[0].elementary, [5]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Fixing the dimensions]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#fixing-the-dimensions
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 pub fn to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> Result<GmshMesh> {
     check_unique(file.node_blocks.iter().flat_map(|b| b.tags.iter().copied()))?;
     check_unique(
@@ -354,7 +375,9 @@ fn shift_to_one(tags: impl Iterator<Item = i64>) -> Result<i64> {
     }
 }
 
-/// The file of `mesh` (ADR-0022, item 10):
+// ADR-0022, item 10 (the numbering of the written file).
+/// The file of `mesh`, as tetraloma's Gmsh writer makes it. The tutorial [Writing Gmsh] shows the
+/// writer.
 ///
 /// - **Node tags:** the tags of vertex nodes (the first nodes of each cell) are kept; the other
 ///   nodes, whose `node_tags` are ignored, are numbered after the largest vertex tag in node
@@ -368,7 +391,8 @@ fn shift_to_one(tags: impl Iterator<Item = i64>) -> Result<i64> {
 ///   elementary tag as its tag (a fresh tag above the dimension's largest when two physical
 ///   sets share an elementary tag), a bounding box from its nodes, the first point's
 ///   coordinates for dimension 0, and empty boundary lists.
-/// - One node block, in the first D_TOP entity; three coordinates per node.
+/// - One node block, in the first entity of the topological dimension; three coordinates per
+///   node.
 ///
 /// # Errors
 ///
@@ -407,6 +431,8 @@ fn shift_to_one(tags: impl Iterator<Item = i64>) -> Result<i64> {
 /// assert_eq!(file.entities.unwrap().surfaces[0].max, [1.0, 1.0, 0.0]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing Gmsh]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-gmsh
 pub fn from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile> {
     file_of(mesh, None)
 }

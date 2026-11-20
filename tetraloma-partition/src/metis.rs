@@ -10,18 +10,33 @@ use crate::graph::validate;
 use crate::rank0::{Csr, RANDOM_STATE, gather_to_root, narrow, scatter_parts};
 use crate::{DistGraph, Partitioner};
 
-/// METIS (`METIS_PartGraphKway`) on rank 0: the graph is gathered on rank 0, partitioned there
-/// and the destinations scattered back (ADR-0029).
+// Design: "Partitioning"; ADR-0029 (item 9: the validation), ADR-0033 (`metis` excludes
+// `parmetis`).
+/// METIS (`METIS_PartGraphKway`) on rank 0, with the feature `metis`: the graph is gathered on
+/// rank 0, partitioned there, and the destinations are scattered back.
 ///
-/// Seeded (default 0); a fixed seed reproduces the partition for a fixed rank count. The
-/// balance target is 3% (`ufactor` 30); vertex weights are used, edge weights are not. The
-/// feature `metis` excludes `parmetis` (ADR-0033).
+/// Rank 0 holds the whole graph, which suits meshes of up to about 10⁷ cells. The partition is
+/// seeded (default 0): a fixed seed gives the same partition for the same graph and number of
+/// ranks. The balance target is 3% (`ufactor` 30); vertex weights are used, edge weights are not.
+/// METIS is built from source by the crate `metis`, so it needs no system library. The feature
+/// `metis` excludes `parmetis`. See [Cargo features] and the tutorial [Distributed meshes].
 ///
 /// # Errors
 ///
-/// The validation errors of ADR-0029, item 9 (`TooLarge` for totals beyond the 32-bit
-/// `idx_t`), and `PartitionerFailed { name: "metis", code }` with METIS's status (−2 input,
-/// −3 memory, −4 other) if the library fails; agreed over the ranks.
+/// Before any library call, every rank checks its part of the graph:
+///
+/// - `LengthMismatch` for `nparts` 0, for inconsistent arrays, or for a `vtxdist` that
+///   disagrees with the ranks' vertex counts;
+/// - `IndexOutOfRange` for a neighbour outside the graph;
+/// - `PartitionerFailed { name: "metis", code: -2 }` for a self-loop, and `code: -3` for an
+///   edge whose reverse edge is missing;
+/// - `TooLarge` for a negative weight, or for totals beyond METIS's 32-bit `idx_t`;
+/// - `MessageTooLarge` if the check of the reverse edges would send a rank more than
+///   `i32::MAX` values.
+///
+/// If the library fails, `PartitionerFailed { name: "metis", code }` carries METIS's status
+/// (−2 input, −3 memory, −4 other). Errors are agreed over the ranks: the ranks without a local
+/// error return `RemoteFailure` with the lowest failing rank.
 ///
 /// # Example
 ///
@@ -42,13 +57,39 @@ use crate::{DistGraph, Partitioner};
 /// assert_ne!(parts[0], parts[3]);
 /// # Ok::<(), tetraloma_parallel::GridError>(())
 /// ```
+///
+/// [Cargo features]: https://tetracl.github.io/tetraloma/features.html#partitioners
+/// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metis {
     seed: u32,
 }
 
 impl Metis {
-    /// The partitioner with random seed `seed`.
+    /// The partitioner with random seed `seed`; the default is 0. The same seed gives the same
+    /// partition for the same graph and number of ranks. See [Distributed meshes].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::Serial;
+    /// use tetraloma_partition::{DistGraph, Metis, Partitioner};
+    ///
+    /// // A ring of six vertices.
+    /// let g = DistGraph {
+    ///     vtxdist: vec![0, 6],
+    ///     xadj: vec![0, 2, 4, 6, 8, 10, 12],
+    ///     adjncy: vec![1, 5, 0, 2, 1, 3, 2, 4, 3, 5, 4, 0],
+    ///     vwgt: None,
+    /// };
+    /// let first = Metis::default().seed(42).partition(&Serial, &g, 3)?;
+    /// let again = Metis::default().seed(42).partition(&Serial, &g, 3)?;
+    /// assert_eq!(first, again);
+    /// assert!(first.iter().all(|&p| (0..3).contains(&p)));
+    /// # Ok::<(), tetraloma_parallel::GridError>(())
+    /// ```
+    ///
+    /// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
     pub fn seed(self, seed: u32) -> Self {
         Metis { seed }
     }

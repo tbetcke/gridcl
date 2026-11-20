@@ -2,7 +2,8 @@
 
 use tetraloma_dims::CellType;
 
-/// The values of one data array, in one of the VTK types tetraloma reads and writes.
+/// The values of one data array, in one of the VTK types tetraloma reads and writes. See
+/// [Writing VTU].
 ///
 /// # Example
 ///
@@ -20,6 +21,8 @@ use tetraloma_dims::CellType;
 /// assert_eq!(file.points, DataValues::F32(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0]));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataValues {
     /// `Float32`.
@@ -36,7 +39,8 @@ pub enum DataValues {
     U8(Vec<u8>),
 }
 
-/// A named point or cell data array, `[entry][components]`.
+/// A named point or cell data array, `[entry][components]`: one entry per point or per cell, each
+/// of `components` values. See [Writing VTU].
 ///
 /// # Example
 ///
@@ -51,6 +55,8 @@ pub enum DataValues {
 /// };
 /// assert_eq!(velocity.components, 3);
 /// ```
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 #[derive(Clone, Debug, PartialEq)]
 pub struct DataArray {
     /// The `Name` attribute.
@@ -61,7 +67,9 @@ pub struct DataArray {
     pub values: DataValues,
 }
 
-/// The arrays of one `UnstructuredGrid` piece, as stored.
+/// The arrays of one `UnstructuredGrid` piece, as stored: points, cells with their VTK cell types
+/// and VTK node order, and point and cell data. [`to_vtu`](super::to_vtu) makes it from a
+/// [`VtkMesh`]; tetraloma's `VtkWriter` adds the data arrays. See [Writing VTU].
 ///
 /// # Example
 ///
@@ -88,6 +96,8 @@ pub struct DataArray {
 /// assert!(file.point_data.is_empty() && file.cell_data.is_empty());
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 #[derive(Clone, Debug, PartialEq)]
 pub struct VtuFile {
     /// Point coordinates `[point][3]`, `F32` or `F64`.
@@ -96,7 +106,7 @@ pub struct VtuFile {
     pub connectivity: Vec<i64>,
     /// The end of each cell in `connectivity`.
     pub offsets: Vec<i64>,
-    /// The VTK cell type of each cell (A.8).
+    /// The VTK cell type of each cell, as [`vtk_cell_type`](super::vtk_cell_type) gives it.
     pub types: Vec<u8>,
     /// Point data, one entry per point.
     pub point_data: Vec<DataArray>,
@@ -104,8 +114,9 @@ pub struct VtuFile {
     pub cell_data: Vec<DataArray>,
 }
 
-/// The mesh a VTU file describes: nodes with the origin added, and cell blocks in internal
-/// (A.5) node order.
+/// The mesh a VTU file describes, on the host: node coordinates with the origin added, and cell
+/// blocks in tetraloma's node order ([Lagrange nodes]). tetraloma's `VtkWriter` downloads a mesh
+/// into it; see [Writing VTU].
 ///
 /// # Example
 ///
@@ -113,7 +124,7 @@ pub struct VtuFile {
 /// use tetraloma_dims::CellType;
 /// use tetraloma_io::vtk::{VtkCellBlock, VtkMesh, to_vtu};
 ///
-/// // One P2 interval on the x axis: vertices first, then the midpoint (A.5).
+/// // One P2 interval on the x axis: vertices first, then the midpoint.
 /// let mesh = VtkMesh {
 ///     gdim: 1,
 ///     nodes: vec![0.0, 1.0, 0.5],
@@ -123,6 +134,9 @@ pub struct VtuFile {
 /// assert_eq!((file.types[0], &file.connectivity[..]), (68, &[0, 1, 2][..]));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 #[derive(Clone, Debug, PartialEq)]
 pub struct VtkMesh {
     /// The geometric dimension, 1–3.
@@ -133,7 +147,8 @@ pub struct VtkMesh {
     pub blocks: Vec<VtkCellBlock>,
 }
 
-/// One block of equispaced Lagrange cells of one type and degree.
+/// One block of a [`VtkMesh`]: equispaced Lagrange cells of one type and degree, with their nodes
+/// in tetraloma's node order ([Lagrange nodes]).
 ///
 /// # Example
 ///
@@ -141,16 +156,19 @@ pub struct VtkMesh {
 /// use tetraloma_dims::CellType;
 /// use tetraloma_io::vtk::VtkCellBlock;
 ///
-/// // One P2 triangle: three vertices, then the edges (0,1), (0,2), (1,2) (A.5).
+/// // One P2 triangle: three vertices, then the edges (0,1), (0,2), (1,2).
 /// let block = VtkCellBlock { cell: CellType::Triangle, degree: 2, nodes: vec![0, 1, 2, 3, 4, 5] };
 /// assert_eq!(block.nodes.len(), tetraloma_refcell::num_lagrange_nodes(block.cell, block.degree));
 /// ```
+///
+/// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
 #[derive(Clone, Debug, PartialEq)]
 pub struct VtkCellBlock {
     /// The cell type.
     pub cell: CellType,
     /// The degree p ≥ 1.
     pub degree: u32,
-    /// Cell → node lists in A.5 order, `num_lagrange_nodes(cell, degree)` per cell.
+    /// Cell → node lists in tetraloma's node order, `num_lagrange_nodes(cell, degree)` per
+    /// cell.
     pub nodes: Vec<u32>,
 }

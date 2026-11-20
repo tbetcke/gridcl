@@ -111,14 +111,28 @@ impl Layout {
     }
 }
 
+// Design: "VTK", VTKHDF; ADR-0035, rule 8.
 /// Writes this rank's `piece` as partition `comm.rank()` of the VTKHDF file at `path`,
 /// collectively over `comm`: every rank calls it, and the partitions follow in rank order. The
-/// file is created or truncated.
+/// file is created or truncated. Feature `hdf5`.
 ///
 /// With an MPI communicator (`comm.raw()` is `Some`, feature `mpi`) every rank writes its
 /// partition through HDF5's MPI-IO driver; a rank with an empty piece still takes part in every
 /// collective call. Otherwise the pieces are gathered and rank 0 writes the file with HDF5's
-/// default driver. Both give the same datasets and attributes (module documentation).
+/// default driver. Both give the same datasets and attributes:
+///
+/// - the group `/VTKHDF` with the attributes `Version` (Int64 `[2, 8]`, as VTK 9.7.1's
+///   `vtkHDFWriter` writes) and `Type` (the 16-byte ASCII string `UnstructuredGrid`);
+/// - `NumberOfPoints`, `NumberOfCells` and `NumberOfConnectivityIds`: Int64, one per partition;
+/// - `Points` `[points][3]` (Float32 or Float64), `Connectivity` (Int64, partition-local point
+///   ids), `Offsets` (Int64, `cells + 1` per partition, each starting at 0) and `Types`
+///   (UInt8), the partitions one after the other in rank order;
+/// - the groups `PointData` and `CellData`, with one dataset per array (`[entries]` with one
+///   component, else `[entries][components]`), and an empty `FieldData`.
+///
+/// The datasets are contiguous and of fixed size. The file-format bounds are v18 to v18, so any
+/// HDF5 from 1.8 on reads the file. tetraloma's `VtkWriter::vtkhdf` writes a mesh this way; see
+/// [Writing VTKHDF] and, on several ranks, [VTKHDF output].
 ///
 /// # Errors
 ///
@@ -153,6 +167,9 @@ impl Layout {
 /// std::fs::remove_file(&path)?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
+///
+/// [Writing VTKHDF]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtkhdf
+/// [VTKHDF output]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#vtkhdf-output
 pub fn write_vtkhdf(path: &Path, piece: &VtuFile, comm: &dyn CommDyn) -> Result<()> {
     let points = agree(comm, piece.check())?;
     let layout = Layout::new(all_gather_sizes(comm, Sizes::of(piece, points))?)?;

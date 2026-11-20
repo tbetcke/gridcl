@@ -2,9 +2,11 @@
 
 use tetraloma_dims::CellType;
 
-/// The VTK cell type tetraloma writes for `cell` of degree `degree` (A.8): the linear type for
-/// p = 1 or `lagrange == false`, else the Lagrange type (68–73). Pyramids of degree p ≥ 2 give
-/// 14: they are written from their vertices (ADR-0024).
+// Design: Appendix A.8; ADR-0024 (pyramids from their vertices).
+/// The VTK cell type tetraloma writes for `cell` of degree `degree`: the linear type for p = 1 or
+/// `lagrange == false`, else the Lagrange type (68–73). Pyramids of degree p ≥ 2 give 14: they are
+/// written from their vertices, because VTK has no usable Lagrange pyramid. The chapter
+/// [File formats] lists the types with VTK's node orders.
 ///
 /// | Cell | Linear | Lagrange (p ≥ 2) |
 /// | --- | --- | --- |
@@ -34,6 +36,8 @@ use tetraloma_dims::CellType;
 /// // VTK has no usable Lagrange pyramid: high-order pyramids are written from their vertices.
 /// assert_eq!(vtk_cell_type(CellType::Pyramid, 3, true), 14);
 /// ```
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#vtk
 pub fn vtk_cell_type(cell: CellType, degree: u32, lagrange: bool) -> u8 {
     assert!(
         degree >= 1,

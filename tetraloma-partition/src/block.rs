@@ -5,10 +5,15 @@ use tetraloma_parallel::{CommDyn, Result};
 use crate::graph::{agree, check_shape};
 use crate::{DistGraph, Partitioner};
 
-/// Built-in block partitioner: global graph vertex i goes to rank ⌊i · nparts / N⌋, with
-/// N = `vtxdist[nranks]` (ADR-0026).
+// Design: "Partitioning", Listing S3; ADR-0026.
+/// The built-in block partitioner: global graph vertex i goes to part ⌊i · nparts / N⌋, where
+/// N = `vtxdist[nranks]` is the number of vertices.
 ///
-/// The parts differ in size by at most one. The edges are not read.
+/// The parts are contiguous ranges of the global numbering and differ in size by at most one.
+/// `Block` reads neither the edges nor the vertex weights, so it is fast and needs no library. It
+/// keeps the input order of the cells, which suits input that is already ordered so that
+/// neighbouring cells are close. It is the default partitioner of tetraloma's mesh builder; see
+/// [Distributed meshes].
 ///
 /// # Example
 ///
@@ -26,6 +31,8 @@ use crate::{DistGraph, Partitioner};
 /// assert_eq!(Block.partition(&Serial, &g, 2)?, [0, 0, 0, 1, 1]);
 /// # Ok::<(), tetraloma_parallel::GridError>(())
 /// ```
+///
+/// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Block;
 
@@ -33,13 +40,18 @@ impl Partitioner for Block {
     fn name(&self) -> &str {
         "block"
     }
+    // ADR-0026, item 15 (agreed errors).
+    /// The part ⌊i · nparts / N⌋ of every local graph vertex i. Collective: it checks the
+    /// graph's shape on every rank and agrees on the result, but sends no graph data.
+    ///
     /// # Errors
     ///
-    /// Agreed over the ranks (ADR-0026, item 15): `LengthMismatch` if `nparts` is 0
-    /// (expected 1), if `vtxdist` does not have `comm.size() + 1` non-decreasing entries from
-    /// 0, if `xadj` does not have one more entry than this rank's vertices, starting at 0, not
-    /// decreasing and ending at `adjncy.len()`, or if `vwgt` does not have one entry per
-    /// vertex; `TooLarge` if `nparts` exceeds `i32::MAX`. Other ranks return `RemoteFailure`.
+    /// Agreed over the ranks: `LengthMismatch` if `nparts` is 0 (expected 1), if `vtxdist` does
+    /// not have `comm.size() + 1` non-decreasing entries from 0, if `xadj` does not have one
+    /// more entry than this rank's vertices, starting at 0, not decreasing and ending at
+    /// `adjncy.len()`, or if `vwgt` does not have one entry per vertex; `TooLarge` if `nparts`
+    /// exceeds `i32::MAX`. The ranks without a local error return `RemoteFailure` with the
+    /// lowest failing rank.
     fn partition(&self, comm: &dyn CommDyn, g: &DistGraph, nparts: usize) -> Result<Vec<i32>> {
         let (begin, end) = agree(comm, check_shape(comm, g, nparts))?;
         let total = g.vtxdist[comm.size()] as u128;
