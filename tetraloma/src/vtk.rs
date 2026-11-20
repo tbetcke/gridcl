@@ -1,6 +1,20 @@
-//! VTU and PVTU output: [`VtkWriter`] (docs/design.md, "Import and export / VTK", Listing B13;
-//! ADR-0024). The file model, the cell-type table, the writer and the parser are in
-//! `tetraloma_io::vtk`.
+// Design: "Import and export / VTK", Listing B13; ADR-0024; ADR-0035, items 4, 8 and 12.
+//! VTK output for visualisation: [`VtkWriter`] writes VTU, PVTU and (with the feature `hdf5`)
+//! VTKHDF files, which ParaView reads.
+//!
+//! A VTU file holds one unstructured grid; a PVTU file is a small header with one VTU piece per
+//! rank; a VTKHDF file holds the pieces as the partitions of one HDF5 file. Cells of degree 2
+//! and higher become VTK Lagrange cells, so ParaView shows the curved geometry. You attach
+//! point and cell data that lives on the device, of one of the [`VtkScalar`] types. Writes are
+//! collective on the mesh's communicator.
+//!
+//! The tutorial [Reading and writing files] writes each format on one process, and
+//! [Parallel I/O] on several ranks. [File formats] lists the VTK cell types and node orders.
+//! The file model, without a device, is in `tetraloma_io::vtk`.
+//!
+//! [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
+//! [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#pvtu-output
+//! [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#vtk
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -59,7 +73,13 @@ mod sealed {
     }
 }
 
-/// The scalars of point and cell data: f32, f64, i32 and u32 (sealed; ADR-0024, item 3).
+// ADR-0024, item 3.
+/// The scalar types of point and cell data: `f32`, `f64`, `i32` and `u32`.
+///
+/// The trait is sealed: these four types implement it, and no other type can. They become the
+/// VTK types Float32, Float64, Int32 and UInt32. [Writing VTU] attaches data to a file.
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 pub trait VtkScalar: sealed::Sealed {}
 
 impl VtkScalar for f32 {}
@@ -70,8 +90,17 @@ impl VtkScalar for u32 {}
 /// One attached data array: name, buffer and component count.
 type Attached<'a> = (String, sealed::DataRef<'a>, usize);
 
+// Design: "Import and export / VTK"; ADR-0024; ADR-0035, items 4, 8 and 12.
 /// Writes meshes as VTU files, as a PVTU header with one VTU piece per rank, or (feature
-/// `hdf5`) as one VTKHDF file with those pieces (ADR-0024, ADR-0035).
+/// `hdf5`) as one VTKHDF file with those pieces.
+///
+/// Make a writer with [`vtu`](VtkWriter::vtu), [`pvtu`](VtkWriter::pvtu) or `vtkhdf`, set its
+/// options and data with the builder methods, and call [`write`](VtkWriter::write). The
+/// tutorial [Reading and writing files] shows each format, and [Parallel I/O] the output of a
+/// distributed mesh.
+///
+/// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
+/// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#pvtu-output
 ///
 /// - Cells of degree p ≥ 2 are VTK Lagrange cells (68–73) unless `.lagrange(false)`; pyramids
 ///   of degree p ≥ 2 are written from their vertices (type 14), with one warning per file,
@@ -301,15 +330,31 @@ where
 
 impl<'a> VtkWriter<'a> {
     /// A writer of the VTU file at `path`, with `.vtu` appended if `path` has no extension.
+    /// On more than one rank, the file holds the owned cells of every rank, gathered to rank 0.
+    ///
+    /// [Writing VTU] shows the options and data you can add.
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// // Writes out/scalp.vtu.
-    /// let writer = VtkWriter::vtu("out/scalp");
-    /// # let _ = writer;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let dir = std::env::temp_dir().join(format!("tetraloma-doc-vtu-{}", std::process::id()));
+    /// std::fs::create_dir_all(&dir).unwrap();
+    /// // Writes square.vtu.
+    /// VtkWriter::vtu(dir.join("square")).write(&mesh)?;
+    /// let file = tetraloma_io::vtk::parse_vtu(&std::fs::read(dir.join("square.vtu")).unwrap())?;
+    /// std::fs::remove_dir_all(&dir).ok();
+    /// // Four quadrilaterals (VTK type 9).
+    /// assert_eq!(file.types, [9; 4]);
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn vtu(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
@@ -338,13 +383,21 @@ impl<'a> VtkWriter<'a> {
     /// The PVTU declares the points and the data arrays of the pieces. Every rank writes its
     /// piece, with `vtkGhostType` on more than one rank, and rank 0 the header.
     ///
+    /// [Writing PVTU] writes one on one process, and [Parallel I/O] on several ranks.
+    ///
+    /// [Writing PVTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-pvtu
+    /// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#pvtu-output
+    ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let rank = DeviceBuffer::from_host(&client, &[0i32; 4])?;
     /// let dir = std::env::temp_dir().join(format!("tetraloma-doc-pvtu-{}", std::process::id()));
     /// std::fs::create_dir_all(&dir).unwrap();
@@ -371,15 +424,25 @@ impl<'a> VtkWriter<'a> {
         }
     }
 
-    /// Lagrange cells for p ≥ 2 (the default), or linear cells from the corner nodes.
+    /// VTK Lagrange cells for cells of degree p ≥ 2 if `lagrange` is true (the default), or
+    /// linear cells from the corner nodes if false.
+    ///
+    /// Lagrange cells show the curved geometry in ParaView. [Writing VTU] explains the choice,
+    /// and [Lagrange geometry] the high-order cells themselves.
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
+    /// [Lagrange geometry]: https://tetracl.github.io/tetraloma/concepts/geometry.html#high-order-geometry
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 2).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as two triangles of degree 2; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 2).build(&client)?;
     /// let path = std::env::temp_dir().join(format!("tetraloma-doc-lagrange-{}.vtu", std::process::id()));
     /// VtkWriter::vtu(&path).lagrange(false).write(&mesh)?;
     /// let file = tetraloma_io::vtk::parse_vtu(&std::fs::read(&path).unwrap())?;
@@ -393,35 +456,60 @@ impl<'a> VtkWriter<'a> {
         VtkWriter { lagrange, ..self }
     }
 
-    /// Inline base64 data instead of appended raw data (the default).
+    /// Inline base64 data if `base64` is true, instead of raw data appended after the XML (the
+    /// default). Base64 files are about a third larger, but are valid XML throughout.
+    ///
+    /// [Writing VTU] lists the encodings.
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let writer = VtkWriter::vtu("out/scalp").base64(true);
-    /// # let _ = writer;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let path = std::env::temp_dir().join(format!("tetraloma-doc-base64-{}.vtu", std::process::id()));
+    /// VtkWriter::vtu(&path).base64(true).write(&mesh)?;
+    /// let text = std::fs::read_to_string(&path).unwrap();
+    /// std::fs::remove_file(&path).ok();
+    /// assert!(text.contains("format=\"binary\"") && !text.contains("<AppendedData"));
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn base64(self, base64: bool) -> Self {
         VtkWriter { base64, ..self }
     }
 
-    /// A writer of the VTKHDF file `<stem>.vtkhdf`: the pieces of [`pvtu`](VtkWriter::pvtu),
-    /// `vtkGhostType` included, as the partitions of one `UnstructuredGrid`, in rank order
-    /// (feature `hdf5`; ADR-0035, rule 8). The stem is `path` without a `.vtkhdf` extension.
+    // ADR-0035, rule 8.
+    /// A writer of the VTKHDF file `<stem>.vtkhdf` (feature `hdf5`): the pieces of
+    /// [`pvtu`](VtkWriter::pvtu), `vtkGhostType` included, as the partitions of one
+    /// `UnstructuredGrid`, in rank order. The stem is `path` without a `.vtkhdf` extension.
     ///
     /// With an MPI communicator (feature `mpi`) every rank writes its partition through HDF5's
     /// MPI-IO driver; otherwise the pieces are gathered and rank 0 writes the file
     /// ([`tetraloma_io::vtk::write_vtkhdf`]). `.base64` has no effect; `.zlib(true)` is refused.
+    ///
+    /// [Writing VTKHDF] describes the format, [Parallel I/O] writes it on several ranks, and
+    /// [Cargo features] lists what the feature `hdf5` needs.
+    ///
+    /// [Writing VTKHDF]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtkhdf
+    /// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#vtkhdf-output
+    /// [Cargo features]: https://tetracl.github.io/tetraloma/features.html#hdf5
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let dir = std::env::temp_dir().join(format!("tetraloma-doc-vtkhdf-{}", std::process::id()));
     /// std::fs::create_dir_all(&dir).unwrap();
     /// VtkWriter::vtkhdf(dir.join("square")).origin_ids(true).write(&mesh)?;
@@ -452,16 +540,26 @@ impl<'a> VtkWriter<'a> {
         }
     }
 
-    /// Adds the cell data array `OriginId` (Int64), the origin id of every cell in the writer's
-    /// cell order (default off; ADR-0035, item 4).
+    // ADR-0035, item 4.
+    /// Adds the cell data array `OriginId` (Int64) if `origin_ids` is true: the origin id of
+    /// every cell, in the writer's cell order (default off).
+    ///
+    /// The origin ids identify the cells across files and rank counts. [Origin ids] explains
+    /// them, and [Writing VTU] uses the array.
+    ///
+    /// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let path = std::env::temp_dir().join(format!("tetraloma-doc-origin-{}.vtu", std::process::id()));
     /// VtkWriter::vtu(&path).origin_ids(true).write(&mesh)?;
     /// let file = tetraloma_io::vtk::parse_vtu(&std::fs::read(&path).unwrap())?;
@@ -474,15 +572,31 @@ impl<'a> VtkWriter<'a> {
         VtkWriter { origin_ids, ..self }
     }
 
-    /// zlib compression of every data array (default off). Not available for VTKHDF.
+    /// zlib compression of every data array if `zlib` is true (default off). Not available for
+    /// VTKHDF: [`write`](VtkWriter::write) refuses it there.
+    ///
+    /// [Writing VTU] lists the encodings.
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let writer = VtkWriter::vtu("out/scalp").base64(true).zlib(true);
-    /// # let _ = writer;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let path = std::env::temp_dir().join(format!("tetraloma-doc-zlib-{}.vtu", std::process::id()));
+    /// VtkWriter::vtu(&path).zlib(true).write(&mesh)?;
+    /// let bytes = std::fs::read(&path).unwrap();
+    /// let file = tetraloma_io::vtk::parse_vtu(&bytes)?;
+    /// std::fs::remove_file(&path).ok();
+    /// assert!(String::from_utf8_lossy(&bytes).contains("compressor=\"vtkZLibDataCompressor\""));
+    /// assert_eq!(file.types, [9; 4]);
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn zlib(self, zlib: bool) -> Self {
         VtkWriter { zlib, ..self }
@@ -492,16 +606,25 @@ impl<'a> VtkWriter<'a> {
     /// the same name replaces the first.
     ///
     /// Geometry nodes are the points of the file, also for linear output, which leaves the
-    /// non-vertex nodes unreferenced.
+    /// non-vertex nodes unreferenced. `data` stays on the device until [`write`](VtkWriter::write)
+    /// copies it to the host.
+    ///
+    /// [Writing VTU] attaches data to a file.
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
-    /// // One vector per node: the node's coordinates, relative to the origin.
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as two triangles; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
+    /// // One vector per node: the node's coordinates, relative to the origin. The copy to the
+    /// // host is for the example; a program computes its data on the device.
     /// let xy = mesh.nodes().to_host()?;
     /// let vectors: Vec<f32> = xy.chunks_exact(2).flat_map(|x| [x[0], x[1], 0.0]).collect();
     /// let vectors = DeviceBuffer::from_host(&client, &vectors)?;
@@ -525,15 +648,24 @@ impl<'a> VtkWriter<'a> {
     }
 
     /// Attaches cell data `name`: `components` values per cell, in flat cell order over the
-    /// blocks. A second array of the same name replaces the first.
+    /// blocks (owned before ghost cells in each block). A second array of the same name replaces
+    /// the first. `data` stays on the device until [`write`](VtkWriter::write) copies it to the
+    /// host.
+    ///
+    /// [Writing VTU] attaches the cell block of every cell.
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let first = DeviceBuffer::from_host(&client, &[0u32; 4])?;
     /// let index = DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3])?;
     /// let path = std::env::temp_dir().join(format!("tetraloma-doc-cell-data-{}.vtu", std::process::id()));
@@ -562,28 +694,35 @@ impl<'a> VtkWriter<'a> {
         }
     }
 
+    // ADR-0026, item 15; ADR-0035, item 12.
     /// Writes `mesh`, copying it to the host: the VTU file, the PVTU header and the pieces, or
-    /// the VTKHDF file. Collective: on more than one rank every rank calls it, and every rank returns an
-    /// error if any rank fails (ADR-0035, item 12).
+    /// the VTKHDF file. Collective: on more than one rank every rank calls it with the same
+    /// settings, and every rank returns an error if any rank fails.
     ///
-    /// Pyramids of degree p ≥ 2 are written from their five vertices (VTK type 14), with one
-    /// `log::warn!` per file, unless `.lagrange(false)` asks for linear cells anyway.
+    /// Pyramids of degree p ≥ 2 are written from their five vertices (VTK type 14), because VTK
+    /// has no Lagrange pyramid. Rank 0 then logs one warning per file, unless `.lagrange(false)`
+    /// asks for linear cells anyway. [Reading and writing files] writes each format.
+    ///
+    /// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     ///
     /// # Errors
     ///
     /// `LengthMismatch` for a data array of the wrong length or without components, and
     /// `NotYetImplemented` for compressed VTKHDF, before anything is written; `Io` if a file
     /// cannot be written, also for a PVTU stem without a UTF-8 file name; `TooLarge`;
-    /// allocation and device errors. Errors of one rank are `RemoteFailure` with the lowest
-    /// failing rank on the others (ADR-0026, item 15).
+    /// allocation and device errors. When one rank fails, the others return `RemoteFailure`
+    /// with the lowest failing rank.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let scalp: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 2).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // scalp: the unit sphere as 20 triangles of degree 2; the tutorial "Building a
+    /// // mesh" shows how to build one.
+    /// # let scalp: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 2).build(&client)?;
     /// let dir = std::env::temp_dir().join(format!("tetraloma-doc-vtk-{}", std::process::id()));
     /// std::fs::create_dir_all(&dir).unwrap();
     /// VtkWriter::vtu(dir.join("scalp")).lagrange(true).write(&scalp)?; // generic over TD, GD
@@ -796,7 +935,12 @@ impl<'a> VtkWriter<'a> {
         write_file(path, |w| file.write_to(w, binary, self.zlib))
     }
 
-    /// Writes the mesh behind `mesh`.
+    /// Writes the mesh behind `mesh`, an [`AnyMesh`](crate::AnyMesh) whose dimensions are known
+    /// only at run time, as [`write`](VtkWriter::write) writes a typed mesh. Collective.
+    ///
+    /// [Reading and writing files] explains when a program keeps an `AnyMesh`.
+    ///
+    /// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#fixing-the-dimensions
     ///
     /// # Errors
     ///
@@ -807,8 +951,10 @@ impl<'a> VtkWriter<'a> {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let any = AnyMesh::Curve1(tetraloma_testing::interval_box(4, 3).build::<f32, D1, D1>(&client)?);
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // any: the unit interval as 4 cells of degree 3, as an `AnyMesh`.
+    /// # let any = AnyMesh::Curve1(tetraloma_testing::interval_box(4, 3).build::<f32, D1, D1>(&client)?);
     /// let path = std::env::temp_dir().join(format!("tetraloma-doc-vtk-any-{}.vtu", std::process::id()));
     /// VtkWriter::vtu(&path).base64(true).zlib(true).write_any(any.as_ref())?;
     /// let file = tetraloma_io::vtk::parse_vtu(&std::fs::read(&path).unwrap())?;

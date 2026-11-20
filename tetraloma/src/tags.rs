@@ -9,17 +9,27 @@ use tetraloma_device::{
     fill,
 };
 
-/// Tags of the entities of one dimension, on the device: entries sorted by (index, value), an
-/// index repeating only with distinct values (an element in several physical groups). Indices
-/// are flat entity indices; cells (dim = tdim) are numbered over the cell blocks in block
-/// order.
+// Design: "Tags, regions and submeshes"; ADR-0022, item 3.
+/// Tags of the entities of one dimension, on the device: pairs of an entity index and a tag
+/// value.
+///
+/// The entries are sorted by index and then by value. An index repeats only with distinct
+/// values, when an entity belongs to several physical groups. Indices are local entity indices
+/// of dimension `dim`; cells (`dim` = TD) are numbered over the cell blocks, block after block.
+/// [`TagRegistry::group`] and [`TagRegistry::named`] return one group as a `MeshTags`, and the
+/// submesh methods of [`Mesh`](crate::Mesh) take one.
+///
+/// [Tags and submeshes] explains tags and physical groups.
+///
+/// [Tags and submeshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// // Entity 3 in groups 1 and 2, entity 5 in group 1.
 /// let tags = MeshTags {
 ///     dim: 1,
@@ -49,8 +59,14 @@ impl MeshTags {
     }
 }
 
-/// Codimension addressing (NGSolve): a dimension relative to D_TOP, so that region code works
-/// for curve, surface and volume meshes alike.
+/// A dimension counted down from the mesh's topological dimension TD, as in NGSolve, so that
+/// code that selects regions works for curve, surface and volume meshes alike.
+///
+/// `Codim::Vol` addresses the cells, `Codim::Bnd` their facets, `Codim::BBnd` the facets of
+/// those, and `Codim::BBBnd` one dimension further. [Regions] selects tagged cells and facets
+/// with it.
+///
+/// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
 ///
 /// # Example
 ///
@@ -63,19 +79,23 @@ impl MeshTags {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Codim {
-    /// D_TOP.
+    /// Dimension TD: the cells.
     Vol,
-    /// D_TOP − 1.
+    /// Dimension TD − 1: the facets.
     Bnd,
-    /// D_TOP − 2.
+    /// Dimension TD − 2.
     BBnd,
-    /// D_TOP − 3.
+    /// Dimension TD − 3.
     BBBnd,
 }
 
 impl Codim {
-    /// The dimension this codimension addresses in a mesh of topological dimension `tdim`;
-    /// `None` below 0.
+    /// The dimension this codimension addresses in a mesh of topological dimension `tdim`, or
+    /// `None` if it lies below 0.
+    ///
+    /// [Regions] uses codimensions to select tagged entities.
+    ///
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Example
     ///
@@ -97,9 +117,16 @@ impl Codim {
     }
 }
 
+// Design: "Tags, regions and submeshes"; ADR-0022, item 3.
 /// The tags of a mesh: per dimension one physical and one elementary [`MeshTags`], the name
-/// table (name, dimension) → value, and each physical group's size, recorded on the host when
-/// the tags were read. A named group without entities has size 0. `Default` is empty.
+/// table from (name, dimension) to value, and the size of each physical group.
+///
+/// The sizes are recorded on the host when the tags are read, so selecting a group needs no
+/// read from the device. A named group without entities has size 0. `Default` is empty.
+/// [`Mesh::tags`](crate::Mesh::tags) returns the registry of a mesh, and
+/// [Tags and submeshes] shows how to use it.
+///
+/// [Tags and submeshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
 ///
 /// # Example
 ///
@@ -258,27 +285,61 @@ impl TagRegistry {
             .sum()
     }
 
-    /// The physical names: (name, dimension, value).
+    /// The physical names as triples (name, dimension, value), in the order of the file or of
+    /// [`MeshBuilder::tag_names`](crate::MeshBuilder::tag_names).
+    ///
+    /// [Physical groups] lists the names of a file.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// assert!(TagRegistry::default().names().next().is_none());
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// let names: Vec<_> = tags.names().collect();
+    /// assert_eq!(names.len(), 6);
+    /// assert!(names.contains(&("interface", 1, 11)));
+    /// // The same name in two dimensions is two groups.
+    /// assert!(names.contains(&("boundary", 0, 20)) && names.contains(&("boundary", 1, 10)));
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn names(&self) -> impl Iterator<Item = (&str, usize, i32)> {
         self.names.iter().map(|(n, d, v)| (n.as_str(), *d, *v))
     }
 
-    /// The value of the physical group `name` in dimension `dim`.
+    /// The value of the physical group `name` in dimension `dim`, or `None` if dimension `dim`
+    /// has no group of this name.
+    ///
+    /// [Physical groups] looks up a group by name.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// assert_eq!(TagRegistry::default().lookup(2, "domain"), None);
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// assert_eq!(tags.lookup(2, "triangles"), Some(1));
+    /// assert_eq!(tags.lookup(1, "boundary"), Some(10));
+    /// assert_eq!(tags.lookup(2, "boundary"), None);
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn lookup(&self, dim: usize, name: &str) -> Option<i32> {
         self.names
@@ -287,52 +348,106 @@ impl TagRegistry {
             .map(|e| e.2)
     }
 
-    /// The physical tags of dimension `dim`, if any.
+    /// The physical tags of dimension `dim`: every entity of that dimension in a physical
+    /// group, once per group. `None` if the dimension has no physical tags.
+    ///
+    /// [Physical groups] explains the layout.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// assert!(TagRegistry::default().physical(0).is_none());
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// // Every cell is in its region and in "all": 26 + 9 + 35 entries.
+    /// let cells = tags.physical(2).unwrap();
+    /// assert_eq!((cells.dim, cells.indices.len()), (2, 70));
+    /// assert!(tags.physical(3).is_none());
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn physical(&self, dim: usize) -> Option<&MeshTags> {
         self.physical.get(dim)?.as_ref()
     }
 
-    /// The elementary (entity) tags of dimension `dim`, if any.
+    /// The elementary tags of dimension `dim`: the number of the geometric entity of the
+    /// mesh generator that each tagged entity belongs to. `None` if the dimension has none.
+    ///
+    /// [Physical groups] describes elementary tags.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// assert!(TagRegistry::default().elementary(3).is_none());
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// // One elementary tag per cell.
+    /// assert_eq!(tags.elementary(2).unwrap().indices.len(), 35);
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn elementary(&self, dim: usize) -> Option<&MeshTags> {
         self.elementary.get(dim)?.as_ref()
     }
 
-    /// The number of entities in physical group `value` of dimension `dim`.
+    /// The number of entities in the physical group `value` of dimension `dim`, or `None` if
+    /// there is no such group. It reads a table on the host and launches no device work.
+    ///
+    /// [Physical groups] prints the size of every group.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// assert_eq!(TagRegistry::default().group_size(1, 7), None);
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// assert_eq!(tags.group_size(2, 1), Some(26)); // "triangles"
+    /// assert_eq!(tags.group_size(1, 11), Some(3)); // "interface"
+    /// assert_eq!(tags.group_size(1, 99), None);
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn group_size(&self, dim: usize, value: i32) -> Option<usize> {
         self.sizes.get(&(dim, value)).copied()
     }
 
-    /// The entities of physical group `value` of dimension `dim`, selected on the device into
-    /// arrays of the recorded group size (no count read), in index order; every value is
-    /// `value`.
+    /// The entities of the physical group `value` of dimension `dim`, in index order, with
+    /// every value equal to `value`.
+    ///
+    /// The selection runs on the device, into arrays of the recorded group size, so nothing is
+    /// read back to the host. [Physical groups] selects a group by value, and [Regions] passes
+    /// one to a submesh.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Errors
     ///
-    /// `UnknownTag` (the value as the name) if dimension `dim` has no such group, named or
+    /// `UnknownTag` (with the value as the name) if dimension `dim` has no such group, named or
     /// tagged; allocation and device errors.
     ///
     /// # Example
@@ -340,8 +455,20 @@ impl TagRegistry {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let e = TagRegistry::default().group(2, 5).err().unwrap();
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// let quadrilaterals = tags.group(2, 2)?;
+    /// assert_eq!((quadrilaterals.dim, quadrilaterals.indices.len()), (2, 9));
+    ///
+    /// let e = tags.group(2, 5).err().unwrap();
     /// assert_eq!(e.to_string(), "no tag named \"5\" in dimension 2");
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn group(&self, dim: usize, value: i32) -> Result<MeshTags> {
         let unknown = || GridError::UnknownTag {
@@ -409,12 +536,18 @@ impl TagRegistry {
         })
     }
 
-    /// The entities of the physical group `name` in the dimension `codim` addresses, as
+    /// The entities of the physical group `name` in the dimension that `codim` addresses, as
     /// [`group`](TagRegistry::group) selects them.
+    ///
+    /// Because `codim` counts down from the mesh's dimension, the same call selects the
+    /// boundary facets of a curve, a surface or a volume mesh. [Regions] selects regions by
+    /// name.
+    ///
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Errors
     ///
-    /// `UnknownTag` if that dimension has no group of this name (with `dim` the mesh's tdim
+    /// `UnknownTag` if that dimension has no group of this name (with `dim` the mesh's TD
     /// when `codim` lies below dimension 0); a named group without entities is empty;
     /// allocation and device errors.
     ///
@@ -423,8 +556,23 @@ impl TagRegistry {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let e = TagRegistry::default().named(Codim::Vol, "domain").err().unwrap();
-    /// assert!(matches!(e, GridError::UnknownTag { dim: 0, .. }));
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // path: the rectangle [0, 2] × [0, 1] with the physical groups "triangles" (26 cells),
+    /// // "quadrilaterals" (9) and "all" (35), the edge groups "boundary" (18) and "interface"
+    /// // (3), and the vertex group "boundary" (4); a test file of tetraloma-io.
+    /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
+    /// let mesh = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
+    /// let tags = mesh.tags();
+    /// let interface = tags.named(Codim::Bnd, "interface")?;
+    /// assert_eq!((interface.dim, interface.indices.len()), (1, 3));
+    /// let corners = tags.named(Codim::BBnd, "boundary")?;
+    /// assert_eq!((corners.dim, corners.indices.len()), (0, 4));
+    ///
+    /// // No cell group of this name.
+    /// let e = tags.named(Codim::Vol, "interface").err().unwrap();
+    /// assert!(matches!(e, GridError::UnknownTag { dim: 2, .. }));
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn named(&self, codim: Codim, name: &str) -> Result<MeshTags> {
         let unknown = |dim| GridError::UnknownTag {
