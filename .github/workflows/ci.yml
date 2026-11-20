@@ -330,7 +330,10 @@ jobs:
   pages:
     needs: docs
     if: github.ref == 'refs/heads/main'
+    # A called workflow gets at most its caller's permissions: contents: read for pages.yml's
+    # top level too.
     permissions:
+      contents: read
       pages: write
       id-token: write
     uses: ./.github/workflows/pages.yml
