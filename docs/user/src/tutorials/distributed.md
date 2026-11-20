@@ -28,6 +28,13 @@ runs the program in f64 where the device supports it:
 {{#include ../../../../tetraloma-examples/examples/distributed_mesh.rs:main}}
 ```
 
+`check_world_size` belongs to the example crate, not to tetraloma. It compares the size of the
+communicator with the variable `TETRALOMA_EXPECT_RANKS`, which the repository's script
+`scripts/run-examples.sh` sets to the rank count it passes to `mpirun`, and returns an error if
+they differ. Without the variable it accepts any size. A launcher that starts every process on
+its own, as rank 0 of 1, then stops the program at once instead of running several one-rank
+copies of it ([Troubleshooting](../troubleshooting.md#ranks-that-do-not-see-each-other)).
+
 `local_gpu_index` gives each rank the index of a GPU on its node, as explained in
 [Compute devices](../devices.md#one-gpu-per-mpi-rank). An `Mpi` communicator holds a reference
 count and is not `Send`: each rank runs one host thread that owns its mesh.

@@ -17,6 +17,7 @@ use tetraloma_examples::{device, has_f64, parallel_io};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let universe = mpi::initialize().ok_or("MPI already initialised")?; // one host thread per rank
     let comm = Mpi::world(&universe);
+    tetraloma_examples::check_world_size(&comm)?; // stop if each rank was started alone
     let out_dir = std::env::args_os().nth(1).map_or_else(
         || {
             PathBuf::from(concat!(

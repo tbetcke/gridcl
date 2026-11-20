@@ -156,11 +156,19 @@ and [One GPU per MPI rank](devices.md#one-gpu-per-mpi-rank) how ranks share a no
 
 ### Ranks that do not see each other
 
-If every rank reports itself as rank 0 of 1, the program and the launcher come from different MPI
-implementations, for example a program built against MPICH started with Open MPI's `mpirun`.
-Start the program with the `mpirun` or `mpiexec` of the implementation it was built against. The
-same applies to HDF5: with `mpi` and `hdf5` on, HDF5 must be built against the same MPI
-implementation as your program ([HDF5](features.md#hdf5)).
+If every rank reports itself as rank 0 of 1, the launcher has started each process on its own. Most
+often the program and the launcher come from different MPI implementations, for example a program
+built against MPICH started with Open MPI's `mpirun`. Start the program with the `mpirun` or
+`mpiexec` of the implementation it was built against. The same applies to HDF5: with `mpi` and
+`hdf5` on, HDF5 must be built against the same MPI implementation as your program
+([HDF5](features.md#hdf5)).
+
+The MPICH package of Ubuntu 24.04 (MPICH 4.2.0) does the same, even with its own launcher. That
+package is built for the PMIx process interface, which its launcher, hydra, does not provide, so
+`mpirun -n 4` starts four separate one-rank programs (Launchpad bug 2072338). Use the MPICH of
+Ubuntu 26.04 (4.3.2), an MPICH you build yourself, or Open MPI. The programs of tetraloma-examples
+check their world size against the rank count that their run script requests, and stop at once if it
+differs.
 
 ### `MPI_Init` hangs on a Mac
 
