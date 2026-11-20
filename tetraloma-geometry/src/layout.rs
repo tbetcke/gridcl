@@ -16,7 +16,28 @@ use crate::strategy::{self, Strategy, StrategyFamily};
 use crate::sumfact::tensor::{factor_sumfact_kernel, sumfact_factor_live, sumfact_layout};
 use crate::{CoordinateElement, DeviceGrid, FieldShape, PointSet, QuadField};
 
-/// The comptime layout of a factor kernel.
+// Design: "Kernels receive dimensions from types", Listing B5.
+/// The sizes that a geometric factor kernel needs at compile time: the dimensions, the nodes
+/// of the coordinate element, the points per cell and the tile width of the
+/// [`QuadField`](crate::QuadField)s it writes.
+///
+/// A CubeCL kernel takes it as a `#[comptime]` parameter, so its loops over nodes, points and
+/// dimensions have fixed bounds and unroll. [Writing kernels] shows a kernel of your own over
+/// the same data.
+///
+/// # Example
+///
+/// ```
+/// use tetraloma_dims::{Cell3, D3};
+/// use tetraloma_geometry::{CoordinateElement, GeomLayout, NodeFamily};
+///
+/// // Quadratic tetrahedra, 4 points per cell, tiles of 8 cells.
+/// let e = CoordinateElement::<D3> { cell: Cell3::Tetrahedron, degree: 2, family: NodeFamily::Equispaced };
+/// let l = GeomLayout::new::<D3, D3>(&e, 4, 8);
+/// assert_eq!((l.tdim, l.gdim, l.nodes_per_cell, l.num_points, l.tile), (3, 3, 10, 4, 8));
+/// ```
+///
+/// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#a-kernel-that-integrates
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GeomLayout {
     /// The topological dimension.
@@ -32,7 +53,10 @@ pub struct GeomLayout {
 }
 
 impl GeomLayout {
-    /// The layout of element `e` at `points` points per cell in tiles of `tile` cells.
+    /// The layout of element `e` in dimension `GD`, at `points` points per cell, in tiles of
+    /// `tile` cells.
+    ///
+    /// The node count comes from the element's cell type and degree ([Node counts]).
     ///
     /// # Example
     ///
@@ -40,10 +64,13 @@ impl GeomLayout {
     /// use tetraloma_dims::{Cell2, D2, D3};
     /// use tetraloma_geometry::{CoordinateElement, GeomLayout, NodeFamily};
     ///
+    /// // Quadratic triangles on a surface in 3D, 7 points per cell, tiles of 16 cells.
     /// let e = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 2, family: NodeFamily::Equispaced };
     /// let l = GeomLayout::new::<D2, D3>(&e, 7, 16);
     /// assert_eq!((l.tdim, l.gdim, l.nodes_per_cell, l.num_points, l.tile), (2, 3, 6, 7, 16));
     /// ```
+    ///
+    /// [Node counts]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-counts
     pub fn new<TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
         e: &CoordinateElement<TD>,
         points: usize,

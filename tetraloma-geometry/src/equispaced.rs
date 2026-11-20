@@ -105,26 +105,29 @@ fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
-/// The L-vector of `grid` with the numbering, length and origin of
-/// [`nodes`](DeviceGrid::nodes), where every node of a GLL block holds the equispaced
-/// interpolant of its cell's geometry. Equispaced blocks are copied unchanged.
+// Design: "Reference cells and conventions", node families; ADR-0024, item 7.
+/// The node coordinates of `grid` converted to equispaced nodes: a new device buffer with the
+/// numbering, length and origin of [`nodes`](DeviceGrid::nodes), in which every node of a GLL
+/// block holds the equispaced interpolant of its cell's geometry. Nodes of equispaced blocks
+/// are copied unchanged.
 ///
-/// A node shared by several cells takes its value from its first occurrence in flat
-/// (block, cell, local node) order, so the result is bitwise deterministic.
+/// GLL and equispaced nodes of the same degree span the same polynomials, so the conversion is
+/// exact up to rounding ([GLL and equispaced nodes]); the writers use it to write GLL geometry
+/// in formats that expect equispaced nodes. The geometry is evaluated on the device at the
+/// equispaced nodes of each GLL cell, relative to the origin. A node shared by several cells
+/// takes its value from its first cell in (block, cell) order, so the result is the same on
+/// every run. Only local cells are evaluated, so on a distributed grid a ghost node that no
+/// local GLL cell touches keeps its GLL value.
 ///
-/// The geometry is evaluated by the physical-points kernel at the equispaced lattice of each
-/// GLL element, relative to the origin (no round trip through the absolute coordinates). Only
-/// local cells are evaluated, so on a distributed grid a ghost node that no local GLL cell
-/// touches keeps its GLL value.
-///
-/// The copy into the L-vector runs once per field chunk, and each run scans all unique nodes,
-/// so its work is (unique nodes) × (chunks). A block has one chunk unless its field exceeds
-/// the device's largest allocation.
+/// The copy into the node array scans all distinct nodes once per field chunk, so its work is
+/// (distinct nodes) × (chunks); a block has one chunk unless its field exceeds the device's
+/// largest allocation.
 ///
 /// # Errors
 ///
 /// `LengthMismatch` if a GLL block's dofmap has fewer rows than local cells; `TooLarge` if
-/// the occurrences or a field chunk do not fit u32 indices; allocation and device errors.
+/// the node occurrences or a field chunk do not fit 32-bit indices; allocation and device
+/// errors.
 ///
 /// # Example
 ///
@@ -133,21 +136,24 @@ fn fit(x: usize) -> Result<u32> {
 /// use tetraloma_geometry::equispaced_nodes;
 /// use tetraloma_refcell::lagrange_points;
 ///
-/// let client = tetraloma_testing::test_client();
-/// // One GLL interval of degree 4 on [0, 2]: its nodes are the GLL points, in A.5 order.
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // One GLL interval of degree 4 on [0, 2]: its nodes are the GLL points, vertices first.
 /// let gll = lagrange_points(CellType::Interval, 4, NodeFamily::Gll).unwrap();
 /// let coords: Vec<f64> = gll.iter().map(|x| 2.0 * x).collect();
 /// let e = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 4, family: NodeFamily::Gll };
 /// let mesh: Mesh<f32, D1, D1> =
 ///     MeshBuilder::new(&client).nodes(&coords, None).cell_block(e, &[0, 1, 2, 3, 4], None).build()?;
 /// // The interval is affine, so its equispaced nodes are 0, 2, 0.5, 1, 1.5, relative to the
-/// // origin 1.
+/// // origin 1. The copy to the host is for inspection.
 /// let x = equispaced_nodes(&mesh)?.to_host()?;
 /// for (got, want) in x.iter().zip([-1.0, 1.0, -0.5, 0.0, 0.5]) {
 ///     assert!((got - want).abs() < 1e-6, "{got} != {want}");
 /// }
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [GLL and equispaced nodes]: https://tetracl.github.io/tetraloma/concepts/geometry.html#gll-and-equispaced-nodes
 pub fn equispaced_nodes<G: DeviceGrid>(grid: &G) -> Result<DeviceBuffer<G::F>> {
     let client = grid.client();
     let nodes = grid.nodes();

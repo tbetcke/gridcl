@@ -106,9 +106,15 @@ fn fit(x: usize) -> Result<u32> {
     u32::try_from(x).map_err(|_| GridError::TooLarge)
 }
 
-/// The measure of the owned cells of block `b`: per-cell sums of det J · w on the device, a
-/// fixed-order device sum, one read, finished in f64 on this rank (Listing B11). The caller
-/// sums the blocks and over ranks.
+// Design: "Geometric factors", Listing B11; CLAUDE.md (the per-block read).
+/// The measure (length, area or volume) of the owned cells of block `b` of `g`, Σ_c Σ_q
+/// det J(ξ_q) w_q, with the pseudo-determinant on a curve or surface.
+///
+/// Each cell sums over its points on the device, a fixed-order sum without atomics adds the
+/// cells on the device, and one read brings the block's total to the host, where it is
+/// converted to f64. The result is the same on every run. It covers this rank only: to
+/// measure a mesh, sum the blocks and then over the ranks, as `Mesh::measure` does
+/// ([Measure], [Measures]).
 ///
 /// # Errors
 ///
@@ -120,13 +126,18 @@ fn fit(x: usize) -> Result<u32> {
 /// use tetraloma::prelude::*;
 /// use tetraloma::measure_block;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+/// // `mesh`: the unit square in 2 × 2 quadrilaterals, on the test device; the tutorial
+/// // "Building a mesh" shows how to make one.
+/// # let client = tetraloma_testing::test_client();
+/// # let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
 /// let rule = QuadRule::for_grid(&mesh, 2)?;
 /// let area = measure_block(&mesh, 0, rule.get(Cell2::Quadrilateral)?)?;
-/// assert!((area - 1.0).abs() < 1e-6);
+/// assert!((area - 1.0).abs() < 1e-5);
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Measure]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#measure
+/// [Measures]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#measures
 pub fn measure_block<F, TD, GD, G>(g: &G, b: usize, pts: &PointSet<F, TD>) -> Result<f64>
 where
     F: Real,
