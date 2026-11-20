@@ -1,5 +1,10 @@
 //! MPI integration tests of tetraloma.
 //!
+//! This crate lives in the repository and is not published. It is for the developers of tetraloma,
+//! and for you if you want to check a build of tetraloma with MPI on your own machine or cluster.
+//! The [user book] shows how to write MPI programs in [Distributed meshes], and [Cargo features]
+//! lists what MPI needs.
+//!
 //! Each test is a `[[test]]` target with `harness = false` and the `mpi` feature, run on 1–4
 //! ranks by `scripts/mpi-test.sh`. A test exits with a non-zero status on any rank that fails.
 //!
@@ -9,6 +14,10 @@
 //! guard: under `scripts/mpi-test.sh` (which exports `TETRALOMA_EXPECT_RANKS`) a world of another
 //! size than `mpirun -n` requested fails at once (ADR-0068). The checks themselves are in
 //! `tetraloma_testing::parallel`, shared with the `ThreadComm` tests of tetraloma.
+//!
+//! [user book]: https://tetracl.github.io/tetraloma/
+//! [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html
+//! [Cargo features]: https://tetracl.github.io/tetraloma/features.html#mpi
 
 #[cfg(feature = "mpi")]
 use std::process::ExitCode;

@@ -1,6 +1,20 @@
-//! Gmsh MSH 4.1 meshes: [`read`] and [`GmshWriter`] (docs/design.md, "Import and export /
-//! Gmsh MSH 4.1"; ADR-0022, ADR-0035). The file model and the conversion to a host mesh
-//! description are in `tetraloma_io::gmsh`.
+// Design: "Import and export / Gmsh MSH 4.1"; ADR-0022, ADR-0035.
+//! Gmsh MSH 4.1 files: [`read`] reads one into a mesh, and [`GmshWriter`] writes a mesh as one.
+//!
+//! [`read`] returns an [`AnyMesh`](crate::AnyMesh), because the file decides the dimensions:
+//! the highest element dimension is the topological dimension TD, and the coordinates give the
+//! geometric dimension GD. Lower-dimensional elements become tags of the mesh's facets, edges
+//! or vertices. [`GmshOptions`] fixes GD and, on more than one rank, the partitioner, the ghost
+//! cells and the cell order. [`GmshWriter`] writes ASCII or binary files, gathered on rank 0 or
+//! one per rank. Reads and writes are collective on the mesh's communicator.
+//!
+//! The tutorial [Reading and writing files] shows both directions on one process, and
+//! [Parallel I/O] on several ranks. [File formats] lists the element types and node orders of
+//! the format. The file model itself, without a device, is in `tetraloma_io::gmsh`.
+//!
+//! [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#reading-gmsh
+//! [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
+//! [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 
 mod options;
 mod read;

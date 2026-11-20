@@ -155,12 +155,13 @@ pub(crate) fn tree_half(cube_dim: u32) -> u32 {
     cube_dim.next_power_of_two() / 2
 }
 
-/// Reduces `x` with `op`. Length 1; an empty input gives the identity of `op`: 0,
-/// `T::max_value()` for `Min`, `T::min_value()` for `Max` (for floats the largest finite
-/// values, not infinities).
+/// The sum, minimum or maximum of `x`, as a buffer of length 1 on the device.
 ///
-/// The result is bitwise identical across runs on one device. Float sums depend on the vector
-/// size and the launch shape, which the vector policy fixes per device class.
+/// An empty input gives the identity of `op`: 0 for `Sum`, the largest value of `T` for `Min`
+/// and the smallest for `Max` (for floats the largest and smallest finite values, not
+/// infinities). The result is the same on every run on a device. Floating-point sums depend on
+/// the vector size and the launch shape, which the vector policy fixes per device class
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Errors
 ///
@@ -173,7 +174,8 @@ pub(crate) fn tree_half(cube_dim: u32) -> u32 {
 /// ```
 /// use tetraloma_device::{DeviceBuffer, ReduceOp, reduce};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let x = DeviceBuffer::from_host(&client, &[3i32, -1, 4, 1, -5]).unwrap();
 /// assert_eq!(reduce(&x, ReduceOp::Sum).unwrap().to_host().unwrap(), vec![2]);
 /// assert_eq!(reduce(&x, ReduceOp::Min).unwrap().to_host().unwrap(), vec![-5]);

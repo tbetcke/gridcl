@@ -1666,6 +1666,50 @@ tetraloma has its own Gmsh MSH 4.1 reader and writer, a VTU/PVTU writer, and a V
     - agree with files written by a pinned Gmsh version;
     - check VTK prisms at p = 3, 5 and 6 against VTK-written fixtures, since DOLFINx has no VTK wedge map above p = 2 and the wedge's triangular faces first differ from the recursive order at p = 5 (one level of recursion) and p = 6 (two levels).
 
+## User documentation
+
+Users learn tetraloma from a book and from API documentation written for them, published together on one site. This design and the other developer documents are not part of it (ADR-0067).
+
+- **Location.** The book's sources are in `docs/user/` (mdBook root: `book.toml`, `src/SUMMARY.md`, `src/**/*.md`, `src/figures/*.svg`). The developer documents stay where they are (`docs/design.md`, `docs/adr/`, `docs/plans/`, `docs/perf/`, …); `docs/README.md` says which is which.
+- **Site.** One site at `https://tetracl.github.io/tetraloma/`: the book at `/`, and at `/api/` the rustdoc of the nine published library crates (tetraloma, tetraloma-dims, tetraloma-refcell, tetraloma-device, tetraloma-parallel, tetraloma-topology, tetraloma-geometry, tetraloma-partition, tetraloma-io).
+    - The API is built with `cargo doc --no-deps` and one `-p` per crate, with the features `tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis`, into an empty output directory. No unpublished crate and no test-support feature (`testing`, `bench`) is built into the site.
+    - `ParMetis` is not on the site (`metis` and `parmetis` are exclusive, ADR-0033); the book's features chapter describes it, and the checks audit it in a second run with `parmetis`.
+    - A CI job builds the site on every push and deploys it to GitHub Pages from `main`. Until the first crates.io release the site documents `main`; per-release copies under `/vX.Y/` start with that release (a later decision).
+    - docs.rs shows the default-feature API and links to the site.
+- **Tools.** mdBook and the `mdbook-katex` preprocessor at a pinned, tested pair of versions (same mdBook major version), installed with `cargo install --locked` by `scripts/install-doc-tools.sh`.
+    - Maths in the book is LaTeX between `$…$` and `$$…$$`, rendered at build time; the KaTeX stylesheet and fonts are served from the site, not from a CDN.
+    - `book.toml` sets the Rust edition 2024 and turns the playground's run buttons off.
+    - Figures are SVG files. The figures of reference cells and node orderings are generated from tetraloma-refcell's tables by a program in tetraloma-examples, and a test checks that the committed files equal its output.
+- **Contents.** Written for a graduate student who knows linear algebra and calculus but not necessarily finite elements, in British English. The parts:
+    - overview and installation;
+    - mathematical concepts: meshes and topology, reference cells and maps, Lagrange geometry, Jacobians, pseudo-inverses, measures, normals and orientation, quadrature, pull-back, precision;
+    - element definitions: reference cells, sub-entity numbering, Lagrange nodes, orientation bits, Gmsh and VTK maps, conversion to Basix and DOLFINx;
+    - tutorials: building a mesh, reading and writing files, iterating over cells and entities, geometric data and Jacobians, quadrature and high-order geometry, the pull-back, tags and submeshes and manifolds, distributed meshes and partitioners, halo exchange, parallel I/O, writing downstream kernels;
+    - compute devices: CPU runtime, Metal, CUDA, Vulkan, HIP; choosing a device; precision; one GPU per MPI rank; performance settings;
+    - Cargo features and system libraries; troubleshooting; a glossary.
+- **Code in the book.** Every fenced block has a language tag, and the book has no indented code blocks (rustdoc would compile both as Rust).
+    - Every `rust` block either runs as a doctest on the CPU runtime (a `#[cfg(doctest)]` module of tetraloma-examples includes each chapter with `include_str!`), or is marked `ignore` and consists only of an mdBook `{{#include}}` of a program in tetraloma-examples, which `scripts/run-examples.sh` runs on the CPU runtime, on Metal and on CUDA (MPI programs under `mpirun` on 1–4 ranks).
+    - Snippets obtain devices the way a user does, through `cubecl::Device` (for example `Device::cpu()?.client()`), never through tetraloma-testing.
+    - Links from the book into `/api/` target item pages, not method anchors.
+- **API documentation** of the nine published library crates. In rendered docs (`///`, `//!`):
+    1. no citation of developer documents: no `docs/` path, ADR number, plan question or milestone id. The provenance goes in a plain `//` comment directly above the doc comment (`// Design: "Geometry", "Geometric factors"; ADR-0044.`);
+    2. these items link to at least one section of the book with an absolute URL under the site's base URL (a reference-style link is fine): each crate's root, every public module, struct, enum, union, trait, type alias, constant, static, function and macro, every inherent method and associated function, and every method of a trait defined in these crates. Fields, variants and associated types and constants are documented but need no link;
+    3. every function and method of item 2 has an `# Example` doctest that runs: not `ignore` and not `no_run`, and listed by `cargo test --doc -- --list`. An item is exempt only by an entry with a reason in `docs/user/doc-audit-allow.toml` (for example an accessor that its type's example calls). Examples of MPI-only items run as one-process programs in the CI job `docs`. API doctests may obtain their client and test meshes from tetraloma-testing on hidden (`# `) lines, so they run on every backend of the standing matrix; a visible comment then names what the hidden line makes and, where a reader needs it, links to the tutorial that shows how to make it. tetraloma-parallel and tetraloma-partition therefore have the dev-dependency tetraloma-testing;
+    4. maths is written in Unicode, with the book's symbols, and links to the book for derivations.
+
+  `#[doc(hidden)]` items and the test- and benchmark-support features keep their own rules (dependency rule 7). The unpublished crates and the two `-sys` crates have a crate page that says what they are and links to the book; their items are not audited. This strengthens M10's "every public item is documented".
+- **Checks.** `scripts/check-user-docs.sh` (run by the CI job `docs`, and locally) builds the site and fails on:
+    - a warning of mdBook (its log is searched for `WARN`) or of rustdoc;
+    - a broken link or anchor inside the site, including links into `/api/` and absolute links to the site's base URL, which it maps to the local build;
+    - a developer citation in a rendered doc block of the audited crates;
+    - an item of "API documentation", item 2, without a book link, or a function of its item 3 without a running example and without an allowlist entry;
+    - a book chapter missing from the outline of the contents above, or one left as a stub;
+    - a fenced block without a language tag, an indented code block, or an `ignore` block that is not an include of a program that `scripts/run-examples.sh` runs;
+    - while D1 is open, a difference from D1's base commit in the sources (`src/**/*.rs`) of the nine library crates other than in comments. A stdlib tokenizer strips `//`, `///`, `//!` and block comments, respecting strings, raw strings, characters and lifetimes, and compares the remaining tokens file by file.
+
+  The audit reads the generated HTML, so it sees exactly the items users see, and fails if it finds no items (a changed rustdoc markup). The `docs` job also runs the book's doctests and `cargo test --doc` of the nine crates with the site's features, and the audit once more for tetraloma-partition with `parmetis`.
+- **Keeping it current.** From D1 on, a milestone that adds or changes public items documents them by the rules above and updates the book in the same task; `/review-milestone` runs `scripts/check-user-docs.sh`.
+
 ## Tags, regions and submeshes
 
 Tags and submeshes connect the volume mesh to boundary problems; the boundary of a volume mesh becomes the BEM surface mesh with outward orientation.
@@ -1785,17 +1829,17 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | tetraloma-dims | Dimension markers, `EmbeddedIn`/`Codim`, `CellType`, `Cell1`–`Cell3`, `TopoDim` | – |
 | tetraloma-refcell | Reference cells, sub-entity tables, Lagrange layouts for any p (including the prism and pyramid rules), point families, quadrature, tabulation with its own dense LU, orientation bits, A.6 storage slots, reference facet normals and facet point maps, format permutation generators. Tests read committed JSON fixtures. | tetraloma-dims; dev: serde_json |
 | tetraloma-device | `DeviceBuffer` family, `GridError` and `ConnKey`, capability and limit checks, launch plans and the vector policy, primitives, pack/unpack kernels, re-exports of `Client` and `CubeElement` (ADR-0026), (GPU-aware pointer access deferred, ADR-0059), test hooks (feature `testing`). The only crate that uses CubeCL runtime types. | cubecl; toml; libc (macOS, ADR-0017); dev: proptest |
-| tetraloma-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | tetraloma-device; bytemuck; mpi (optional) |
+| tetraloma-parallel | `CommDyn`, `Comm`, `CommExt`, `Serial`, `Mpi` (feature `mpi`), `IndexMap`, `Scatterer`, neighbourhood exchange, wrappers over `mpi::ffi` | tetraloma-device; bytemuck; mpi (optional); dev: tetraloma-testing (ADR-0067) |
 | tetraloma-topology | Cell and entity blocks, sort-based entity creation, ownership, connectivity, permutation info, benchmark hooks (feature `bench`) | dims, refcell, device, parallel, cubecl; dev: tetraloma-testing |
 | tetraloma-geometry | Coordinate elements, geometry blocks, `DeviceGrid`, point sets and quadrature rules, factor kernels, orientation, E-vectors, pull-back, GLL → equispaced conversion (`equispaced_nodes`) | dims, refcell, device, parallel, topology, cubecl; dev: tetraloma-testing |
-| tetraloma-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional); build: scotch-sys-bindgen (bindgen 0.65.1, feature `scotch`; ADR-0039) |
+| tetraloma-partition | `DistGraph`, `Partitioner`, block partitioner; METIS, Scotch, PT-Scotch and ParMETIS behind features | parallel; metis, scotch, scotch-sys, ptscotch-sys, parmetis-sys (all optional); build: scotch-sys-bindgen (bindgen 0.65.1, feature `scotch`; ADR-0039); dev: tetraloma-testing (ADR-0067) |
 | tetraloma-io | Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; flate2; hdf5-metno and ndarray (optional, with `hdf5`; `mpio` with feature `mpi`; ADR-0039); dev: mshio, serde_json, tetraloma-testing |
 | tetraloma | Facade: `Mesh`, builder (distributed with `build_on`, `GhostMode`, `CellOrdering`; ADR-0026), `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `DeviceGrid` (re-exported), tags, submeshes, `gmsh::read` and `GmshWriter`, `VtkWriter`, prelude | all of the above; log; mpi (optional, for `CommDyn::raw` of the test communicator; ADR-0028) |
 | ptscotch-sys | bindgen FFI to PT-Scotch, with `SCOTCH_Num` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | parmetis-sys | bindgen FFI to ParMETIS, with `idx_t` and `real_t` width detection | mpi, bindgen, build-probe-mpi (all behind the crate's feature `mpi`) |
 | tetraloma-testing (unpublished) | `test_client()` chosen by the `TETRALOMA_TEST_DEVICE` environment variable, test-mesh generators, tolerance helpers, `test_client_at(index)` (ADR-0060), `ThreadComm` (an in-process multi-rank communicator; ADR-0026), the Python oracle helper and `gen-gmsh-box` (ADR-0035); forwards runtime features | tetraloma; tetraloma-device (feature `testing`); tetraloma-dims; tetraloma-refcell; cubecl with runtime features; serde_json; mpi (optional, for `CommDyn::raw` of `ThreadComm`; ADR-0028) |
 | tetraloma-mpi-tests (unpublished) | MPI integration tests as `[[test]]` targets with `harness = false`, run by `scripts/mpi-test.sh` | tetraloma, tetraloma-testing; nix (unix; getrusage; ADR-0035) |
-| tetraloma-examples (unpublished) | The examples of the API walkthrough, each over a tested `run(&Client)`; forwards runtime features (ADR-0060) | tetraloma, tetraloma-testing; cubecl with runtime features; mpi (optional) |
+| tetraloma-examples (unpublished) | The examples of the API walkthrough and the programs of the user book, each over a tested `run(&Client)`; forwards runtime features (ADR-0060); the doctest harness of the book (a `#[cfg(doctest)]` module that includes every chapter) and the figure generator (the binary `figures`, from tetraloma-refcell's tables) (ADR-0067) | tetraloma, tetraloma-refcell, tetraloma-testing; cubecl with runtime features; mpi (optional) |
 | tetraloma-bench (unpublished) | Kernel benchmarks across vector sizes, tile widths and CPU block sizes; end-to-end throughput; JSON output for `docs/perf/` | tetraloma, tetraloma-device (feature `testing`), tetraloma-geometry (features `bench`, `testing`), tetraloma-dims, tetraloma-refcell, tetraloma-topology (feature `bench`), tetraloma-testing; cubecl with runtime features; serde_json, toml, bytemuck; mpi (optional, feature `mpi`, for `halo_exchange`; ADR-0060); dev: proptest (ADR-0039) |
 | conformance/ (tetraloma-conformance, outside the workspace) | Compares tetraloma-refcell with ndelement at the pinned commit and exports JSON fixtures. The only crate that depends on ndelement and BLAS/LAPACK. | tetraloma-refcell (path), ndelement (git), blas-src, lapack-src, openblas-src |
 | tools/env-check (outside the workspace) | Probe of a development target: devices, properties, sample kernels in f32 and f64, MPI allreduce; JSON report. Built in E0. | cubecl with the target's runtime features; mpi (optional) |
@@ -1813,7 +1857,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 ### Cargo features
 
 - **Library features** (on tetraloma, forwarded to the crates concerned): `mpi`, `ptscotch`, `parmetis`, `metis`, `scotch`, `hdf5`, `gpu-aware-cuda` (reserved; enables nothing, ADR-0059). `ptscotch` and `parmetis` imply `mpi`. `metis` and `parmetis` are mutually exclusive: the vendored METIS and ParMETIS's METIS clash at run time (ADR-0033). The sys crates have a feature `mpi`, off by default, that tetraloma-partition enables (ADR-0029). `hdf5` builds the VTKHDF writer with any HDF5 1.10.10–2.2.0; with `mpi` it enables hdf5-metno's `mpio` and needs a parallel HDF5 (`HDF5_DIR`) (ADR-0035).
-- **Runtime features** (on tetraloma-testing, tetraloma-examples and tetraloma-bench): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL.
+- **Runtime features** (on tetraloma-testing, tetraloma-examples and tetraloma-bench): `cpu` (default), `cuda`, `hip`, `vulkan`, `metal`, `metal-native`, `wgpu`. Each maps to the cubecl feature of the same name; cubecl's `vulkan` is wgpu with SPIR-V and `metal` is wgpu with MSL. tetraloma-examples also has `hdf5`, which forwards `tetraloma/hdf5`, for the VTKHDF part of the book's parallel I/O program (ADR-0067).
 - **Test-support feature** (on tetraloma-device; not a library feature): `testing` enables `tetraloma_device::testing` (Listing S2). tetraloma-testing turns it on, so every workspace test has it. tetraloma-geometry has a `testing` feature too, for the hidden `tetraloma_geometry::testing` (strategy overrides; ADR-0042), also turned on by tetraloma-testing.
 - **Benchmark-support feature** (on tetraloma-topology; not a library feature): `bench` enables the hidden `tetraloma_topology::bench` module (ADR-0015). tetraloma-bench turns it on. tetraloma-geometry's `bench` feature enables the hidden `tetraloma_geometry::bench` (the basis-evaluator timing hook; the pull-back is timed through its public call at 1 and 9 iterations; ADR-0042), also turned on by tetraloma-bench.
 
@@ -1823,9 +1867,11 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- | --- |
 | local | the local Mac (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `TETRALOMA_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
 | cpu | hosted Linux | `cargo test --workspace` on the CPU runtime in f32 and f64; clippy; rustdoc | every push |
-| mpi-mpich, mpi-openmpi | hosted Linux; the MPICH jobs on Ubuntu 26.04 with its MPICH 4.3.2 (Ubuntu 24.04's MPICH starts singletons, Launchpad bug 2072338; ADR-0068) | tetraloma-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI); every run checks that the world size equals the rank count requested | every push |
+| mpi-mpich, mpi-openmpi | hosted Linux; the MPICH jobs on Ubuntu 26.04 with its MPICH 4.3.2 (Ubuntu 24.04's MPICH starts singletons, Launchpad bug 2072338; ADR-0068) | tetraloma-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI); the MPI programs of tetraloma-examples on 1–4 ranks (`scripts/run-examples.sh --mpi`; ADR-0067); every run checks that the world size equals the rank count requested | every push |
 | vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `TETRALOMA_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
 | ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to tetraloma-partition; nightly |
+| docs | hosted Linux, the image of the `ptscotch` job with MPI, parallel HDF5 and Scotch | `scripts/check-user-docs.sh` (the checks of "User documentation"); the book's doctests; `cargo test --doc` of the nine library crates with the site's features; the audit of tetraloma-partition with `parmetis` (ADR-0067) | every push |
+| pages | hosted Linux (GitHub Actions) | builds the site and deploys it to GitHub Pages (ADR-0067) | pushes to `main` |
 | conformance | hosted Linux with OpenBLAS, or the local Mac with Accelerate | `cargo test --manifest-path conformance/Cargo.toml` | nightly; every ndelement pin bump |
 | cuda-v100 | Myriad E/F node through `scripts/hpc` | `TETRALOMA_TEST_DEVICE=cuda`, f32 and f64 | multi-GPU; fallback |
 | cuda-a100 | Myriad L node through `scripts/hpc` | as cuda-v100, with the newest toolkit the driver supports | when required |
@@ -1857,6 +1903,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 | M10c CPU vector policy | M10 |
 | E1 Rename to tetraloma | M10c |
 | E2 Real MPICH runs in hosted CI | E1 |
+| D1 User documentation | E1; E2 for its MPICH acceptance item (ADR-0068) |
 
 ### E0 Development environment
 
@@ -2145,6 +2192,19 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - the MPI examples pass on 1–4 ranks under MPICH in CI with the guard;
 - the Open MPI jobs pass unchanged, with the guard, in CI and locally.
 
+### D1 User documentation
+
+**Scope (ADR-0067):** the user documentation of "User documentation": the book in `docs/user/` with the contents listed there, its figures and its programs in tetraloma-examples; the doc tools; the site at `https://tetracl.github.io/tetraloma/` with the API of the nine published library crates, built and deployed by CI; the API documentation of those crates rewritten for users; and the checks of `scripts/check-user-docs.sh`. No public item, signature or behaviour changes; only doc comments change in the library crates.
+
+**Acceptance:**
+
+- `scripts/check-user-docs.sh` passes in CI;
+- the book's doctests pass on the CPU runtime;
+- the book's programs pass on the CPU runtime, Metal and CUDA in f32 and, where supported, f64, and the MPI programs on 1–4 ranks under MPICH and Open MPI;
+- the library sources differ from the base commit only in comments;
+- the site is deployed from `main`;
+- the hosted CI jobs pass.
+
 ## Risks and mitigations
 
 The largest risks are CubeCL churn, the capability gaps of wgpu and Metal, and the external partitioner and MPI bindings that must be written from scratch.
@@ -2256,6 +2316,18 @@ Convert this document to `docs/design.md` in the repository, add the working agr
   tetraloma-device (GPU-aware; the macOS performance-core count, ADR-0017) and tetraloma-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
   and examples may call its declarations (ADR-0039). Every unsafe block needs a SAFETY comment.
+- User documentation (ADR-0067): the book lives in docs/user/. Public items of the nine
+  published library crates are documented for users:
+  - no developer citations (docs/ paths, ADR numbers, plan questions, milestone ids) in
+    `///` or `//!`; the provenance goes in a `//` comment directly above the doc comment;
+  - a link to a book section (absolute URL under the site) on each crate root, public
+    module, type, trait, constant, static, function and macro, inherent method and method
+    of a trait defined in these crates;
+  - a running `# Example` doctest (not ignore, not no_run) on each such function and method,
+    or an entry with a reason in docs/user/doc-audit-allow.toml;
+  - maths in Unicode with the book's symbols, linking to the book for derivations.
+- A milestone that adds or changes public items documents them so and updates the book in
+  the same task; scripts/check-user-docs.sh passes at the review.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.

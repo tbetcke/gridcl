@@ -6,8 +6,11 @@ use crate::dim::{D1, D2, D3, Dim};
 
 /// Every reference cell type, of any topological dimension.
 ///
-/// The cells of one dimension convert to and from their family [`Cell1`], [`Cell2`] or
-/// [`Cell3`]:
+/// The cells of one dimension convert to and from their family [`Cell1`], [`Cell2`] or [`Cell3`].
+/// The book defines each reference cell, with its vertices and sub-entity numbering, in
+/// [Reference cell definitions].
+///
+/// # Example
 ///
 /// ```
 /// use tetraloma_dims::{Cell3, CellType};
@@ -16,6 +19,8 @@ use crate::dim::{D1, D2, D3, Dim};
 /// assert_eq!(cell_type, CellType::Prism);
 /// assert_eq!(Cell3::try_from(cell_type), Ok(Cell3::Prism));
 /// ```
+///
+/// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CellType {
     /// A point (dimension 0); in no cell family, so every conversion to one fails.
@@ -36,14 +41,22 @@ pub enum CellType {
     Pyramid,
 }
 
-/// The cell types of topological dimension 1.
+/// The cell types of topological dimension 1: the cell family of [`D1`] meshes.
+///
+/// See [Typed dimensions] for the cell family of each dimension.
+///
+/// [Typed dimensions]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell1 {
     /// An interval.
     Interval,
 }
 
-/// The cell types of topological dimension 2.
+/// The cell types of topological dimension 2: the cell family of [`D2`] meshes.
+///
+/// See [Typed dimensions] for the cell family of each dimension.
+///
+/// [Typed dimensions]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell2 {
     /// A triangle.
@@ -52,7 +65,11 @@ pub enum Cell2 {
     Quadrilateral,
 }
 
-/// The cell types of topological dimension 3.
+/// The cell types of topological dimension 3: the cell family of [`D3`] meshes.
+///
+/// See [Typed dimensions] for the cell family of each dimension.
+///
+/// [Typed dimensions]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell3 {
     /// A tetrahedron.
@@ -65,7 +82,12 @@ pub enum Cell3 {
     Pyramid,
 }
 
-/// A cell type used where a different topological dimension is required.
+/// The error of a conversion from [`CellType`] to a cell family of another topological
+/// dimension.
+///
+/// See [Typed dimensions].
+///
+/// # Example
 ///
 /// ```
 /// use tetraloma_dims::{Cell2, CellType, WrongCellDim};
@@ -75,6 +97,8 @@ pub enum Cell3 {
 ///     Err(WrongCellDim { found: CellType::Tetrahedron, expected_tdim: 2 }),
 /// );
 /// ```
+///
+/// [Typed dimensions]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WrongCellDim {
     /// The cell type that was given.
@@ -84,6 +108,11 @@ pub struct WrongCellDim {
 }
 
 /// A topological dimension of a mesh: [`D1`], [`D2`] or [`D3`], with its cell family.
+///
+/// [`D0`](crate::D0) is not a topological dimension, so a curve mesh has no boundary mesh. See
+/// [Typed dimensions].
+///
+/// [Typed dimensions]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 pub trait TopoDim: Dim {
     /// The admissible cell types of this dimension.
     type Cell: Copy

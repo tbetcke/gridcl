@@ -1,4 +1,5 @@
-# Hosted CI jobs of docs/design.md, "CI matrix": cpu, mpi-mpich, mpi-openmpi and vulkan.
+# Hosted CI jobs of docs/design.md, "CI matrix": cpu, mpi-mpich, mpi-openmpi, vulkan, docs and
+# pages.
 # The commands are the ones docs/dev-environment.md, "Test commands", records.
 #
 # Every push runs once; a pull request shows the checks of its head commit's push run, so there
@@ -14,9 +15,11 @@ on:
 permissions:
   contents: read
 
+# A newer push cancels a branch's running run; on main it waits instead, so a Pages deployment
+# that has started (job pages) is never cancelled.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -171,16 +174,10 @@ jobs:
       # launch with TETRALOMA_EXPECT_RANKS=3 (ADR-0068).
       - if: matrix.part == 'tests'
         run: scripts/check-rank-guard.sh
-      # The halo_exchange example under mpirun on 1-4 ranks (ADR-0060 item 6; ADR-0068).
+      # The MPI examples (ADR-0060 item 6; ADR-0067; ADR-0068) run on 1-4 ranks in the hdf5 part:
+      # parallel_io writes VTKHDF with feature hdf5.
       - if: matrix.part == 'tests'
         run: cargo clippy -p tetraloma-examples --features mpi --all-targets -- -D warnings
-      - if: matrix.part == 'tests'
-        run: |
-          for ranks in 1 2 3 4; do
-            scripts/run-examples.sh --mpi --ranks "$ranks"
-          done
-        env:
-          TETRALOMA_EXAMPLES_PROFILE: debug
       # Feature hdf5 with the parallel HDF5 of this MPI's Ubuntu package (ADR-0035, rules 8-9;
       # 1.10.10 on Ubuntu 24.04 for Open MPI, 1.14.6 on Ubuntu 26.04 for MPICH; the next step
       # fails outside 1.10.10-2.2.0 or without H5_HAVE_PARALLEL): the gather path (tetraloma-io,
@@ -225,6 +222,18 @@ jobs:
         env:
           TETRALOMA_MPI_FEATURES: hdf5
           TETRALOMA_MPI_TESTS: vtkhdf_parallel
+      # The MPI examples of the book (halo_exchange, distributed_mesh, parallel_io) on 1-4 ranks
+      # (ADR-0067, rule 5), each behind the rank-count guard (ADR-0068), in the debug build of the
+      # step before.
+      - if: matrix.part == 'hdf5'
+        run: cargo clippy -p tetraloma-examples --features mpi,hdf5 --all-targets -- -D warnings
+      - if: matrix.part == 'hdf5'
+        run: |
+          for ranks in 1 2 3 4; do
+            scripts/run-examples.sh --mpi --ranks "$ranks" --features hdf5
+          done
+        env:
+          TETRALOMA_EXAMPLES_PROFILE: debug
 
   # In nine jobs (33 min in one, M8 review): tetraloma's shards of scripts/ci-tetraloma-shard.sh, two
   # or more to a job where they are short, and the other crates, whose job saves the cache.
@@ -270,3 +279,95 @@ jobs:
         run: cargo test --release --workspace --exclude tetraloma --features tetraloma-testing/vulkan
         env:
           TETRALOMA_TEST_DEVICE: vulkan
+
+  # The user documentation (docs/design.md, "User documentation"; ADR-0067, rule 7) on the image
+  # of ptscotch.yml (MPI, its parallel HDF5, Scotch, PT-Scotch, METIS and ParMETIS): the site
+  # (book and API, scripts/build-site.sh) and its checks, the parmetis audit, the book's doctests
+  # and the doctests of the nine library crates with the site's features. On main it uploads the
+  # site, which the job pages deploys.
+  docs:
+    runs-on: ubuntu-24.04
+    env:
+      # As in the mpi jobs: the one-process MPI doctests must not pick an unusable RDMA device.
+      UCX_TLS: self,sm,tcp
+      # The site's features (scripts/build-site.sh), and tetraloma-testing's ThreadComm with them.
+      DOCTEST_FEATURES: tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis,tetraloma-testing/mpi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Check (h) compares the library sources with D1's base commit.
+          fetch-depth: 0
+      - name: Scotch, PT-Scotch, METIS, ParMETIS, Open MPI, its parallel HDF5 and libclang (bindgen)
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libhdf5-openmpi-dev libclang-dev
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal
+          rustc --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: docs
+          cache-directories: ~/.local/share/tracel
+          # The book tools have their own cache below.
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # mdBook and mdbook-katex at their pinned versions (scripts/install-doc-tools.sh), cached
+      # per pin and toolchain; saved from main only, as the other caches.
+      - id: doc-tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/mdbook
+            ~/.cargo/bin/mdbook-katex
+          key: doc-tools-${{ runner.os }}-${{ hashFiles('scripts/install-doc-tools.sh', 'rust-toolchain.toml') }}
+      - run: scripts/install-doc-tools.sh
+      - if: github.ref == 'refs/heads/main' && steps.doc-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/mdbook
+            ~/.cargo/bin/mdbook-katex
+          key: doc-tools-${{ runner.os }}-${{ hashFiles('scripts/install-doc-tools.sh', 'rust-toolchain.toml') }}
+      - name: HDF5_DIR for Open MPI's parallel HDF5
+        run: |
+          # As in ptscotch.yml: hdf5-metno-sys looks for include/ and lib/ under HDF5_DIR.
+          so=$(dpkg -L libhdf5-openmpi-dev | grep '/libhdf5\.so$' | head -n 1)
+          test -n "$so"
+          root=$RUNNER_TEMP/hdf5-openmpi
+          mkdir -p "$root"
+          ln -sfn /usr/include/hdf5/openmpi "$root/include"
+          ln -sfn "$(dirname "$so")" "$root/lib"
+          echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
+      # Checks (a)-(h). The steps after it run even if it fails, so one push reports them all.
+      - run: scripts/check-user-docs.sh --verbose
+      # tetraloma-partition's API with parmetis instead of metis (ADR-0033): checks (c)-(e).
+      - if: ${{ !cancelled() }}
+        run: scripts/check-user-docs.sh --parmetis --verbose
+      # The book's Rust blocks (tetraloma-examples' doctest harness) on the CPU runtime.
+      - if: ${{ !cancelled() }}
+        run: cargo test -p tetraloma-examples --doc
+      # The API examples with the site's features; the MPI ones as one-process programs.
+      - if: ${{ !cancelled() }}
+        run: |
+          cargo test --doc --features "$DOCTEST_FEATURES" \
+            -p tetraloma -p tetraloma-dims -p tetraloma-refcell -p tetraloma-device \
+            -p tetraloma-parallel -p tetraloma-topology -p tetraloma-geometry \
+            -p tetraloma-partition -p tetraloma-io
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  # Deploys the site of the docs job to GitHub Pages, from main only (.github/workflows/pages.yml).
+  pages:
+    needs: docs
+    if: github.ref == 'refs/heads/main'
+    # A called workflow gets at most its caller's permissions: contents: read for pages.yml's
+    # top level too.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

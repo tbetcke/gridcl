@@ -142,10 +142,11 @@ fn scan_tile_kernel<T: Numeric, N: Size>(
     }
 }
 
-/// Inclusive prefix sums: `out[i] = x[0] + … + x[i]`, with `x.len()` elements.
+/// The inclusive prefix sums of `x`: `out[i] = x[0] + … + x[i]`, with `x.len()` elements.
 ///
-/// The result is bitwise identical across runs on one device. Float sums depend on the vector
-/// size and the launch shape, which the vector policy fixes per device class; integer sums wrap.
+/// The result is the same on every run on a device. Floating-point sums depend on the vector
+/// size and the launch shape, which the vector policy fixes per device class; integer sums
+/// wrap ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Errors
 ///
@@ -158,7 +159,8 @@ fn scan_tile_kernel<T: Numeric, N: Size>(
 /// ```
 /// use tetraloma_device::{DeviceBuffer, inclusive_scan};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let x = DeviceBuffer::from_host(&client, &[3u32, 1, 4, 1, 5]).unwrap();
 /// assert_eq!(inclusive_scan(&x).unwrap().to_host().unwrap(), vec![3, 4, 8, 9, 14]);
 /// ```
@@ -169,12 +171,13 @@ pub fn inclusive_scan<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Result<DeviceBuff
     scan(x, false)
 }
 
-/// Exclusive prefix sums with **n + 1** elements, the last being the total, so the result can
-/// serve as CSR offsets. This differs from the usual length-n exclusive scan:
-/// `out[i] = x[0] + … + x[i - 1]` for `i` in `0..=n`, and `out[0] = 0`. An empty input gives
-/// `[0]`.
+/// The exclusive prefix sums of `x` with **n + 1** elements, the last being the total, so the
+/// result can serve as the offsets of compressed sparse rows. This differs from the usual
+/// length-n exclusive scan: `out[i] = x[0] + … + x[i - 1]` for `i` in `0..=n`, and `out[0] = 0`.
+/// An empty input gives `[0]`.
 ///
-/// Determinism as for [`inclusive_scan`].
+/// The result is the same on every run on a device, as for [`inclusive_scan`]
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Errors
 ///
@@ -185,7 +188,8 @@ pub fn inclusive_scan<T: DeviceScalar>(x: &DeviceBuffer<T>) -> Result<DeviceBuff
 /// ```
 /// use tetraloma_device::{DeviceBuffer, exclusive_scan};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let x = DeviceBuffer::from_host(&client, &[3u32, 1, 4, 1, 5]).unwrap();
 /// let offsets = exclusive_scan(&x).unwrap();
 /// assert_eq!(offsets.len(), 6);

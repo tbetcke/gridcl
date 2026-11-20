@@ -13,15 +13,22 @@ use crate::emission::{EmissionPlan, emission_plans, sub_entity_vertices};
 use crate::keys::emit_keys;
 use crate::ownership::{Candidates, GHOST_CELL, Ownership, Sharing, SharingExchange, agree};
 
-/// The entities of one type and dimension (Listing T1).
+// Design: Listing T1.
+/// The entities of one type and dimension, for example the triangular faces of a mesh of
+/// prisms.
+///
+/// See [Cells and entities] and the tutorial [Entities].
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mut mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // mesh: a `PlanarMesh<f32>`, the unit square in two triangles; the tutorial "Building a
+/// // mesh" shows how to make a mesh.
+/// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
 /// mesh.create_entities(1)?;
 /// let edges = &mesh.entity_blocks(1)?[0];
 /// assert_eq!(edges.cell, CellType::Interval);
@@ -31,12 +38,16 @@ use crate::ownership::{Candidates, GHOST_CELL, Ownership, Sharing, SharingExchan
 /// assert_eq!(edges.offset, 0);
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Cells and entities]: https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities
+/// [Entities]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#entities
 pub struct EntityBlock {
     /// The entity type, e.g. `Triangle`.
     pub cell: CellType,
     /// The [owned | ghost] entities of this block.
     pub index_map: IndexMap,
-    /// Local vertex indices in canonical orientation (A.6), one row per entity.
+    /// Local vertex indices in canonical orientation (see
+    /// [`canonical_order`](tetraloma_refcell::canonical_order)), one row per entity.
     pub vertices: DeviceStrided<u32>,
     /// The first flat index of this block in its dimension.
     pub offset: u32,
@@ -45,6 +56,8 @@ pub struct EntityBlock {
 impl EntityBlock {
     /// A deep copy of every device array. The index map, ghosts included, is cloned and
     /// shares its neighbourhoods with the original; `comm` is unused.
+    ///
+    /// See [Cells and entities].
     ///
     /// # Errors
     ///
@@ -55,8 +68,11 @@ impl EntityBlock {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in two triangles; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let edges = &mesh.entity_blocks(1)?[0];
     /// let copy = edges.try_clone(mesh.comm())?;
@@ -64,6 +80,8 @@ impl EntityBlock {
     /// assert_eq!(copy.index_map.num_local(), 5);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Cells and entities]: https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
         let _ = comm;
         Ok(EntityBlock {
@@ -75,15 +93,22 @@ impl EntityBlock {
     }
 }
 
-/// A stored connectivity (Listing T1).
+// Design: Listing T1.
+/// A stored connectivity: downward (cell → entities, fixed row length) or upward (entity →
+/// cells, variable row length).
+///
+/// See [Connectivity] and the tutorial [Connectivity][Connectivity 2].
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mut mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // mesh: a `PlanarMesh<f32>`, the unit square in two triangles; the tutorial "Building a
+/// // mesh" shows how to make a mesh.
+/// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
 /// mesh.create_connectivity(2, 1)?;
 /// let Connectivity::Downward(blocks) = mesh.connectivity(ConnKey { from: 2, to: 1 })? else {
 ///     unreachable!("cell -> edge is downward")
@@ -98,6 +123,9 @@ impl EntityBlock {
 /// assert_eq!((csr.offsets.len(), csr.indices.len()), (6, 6));
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Connectivity]: https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity
+/// [Connectivity 2]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#connectivity
 #[allow(clippy::large_enum_variant)] // Listing T1's layout; one value per stored key
 pub enum Connectivity {
     /// One strided array per cell block (cell -> edges, cell -> faces, ...), flat indices.
@@ -109,6 +137,8 @@ pub enum Connectivity {
 impl Connectivity {
     /// A deep copy of every device array.
     ///
+    /// See [Connectivity].
+    ///
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
@@ -118,14 +148,19 @@ impl Connectivity {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in two triangles; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
     /// mesh.create_connectivity(2, 1)?;
     /// let copy = mesh.connectivity(ConnKey { from: 2, to: 1 })?.try_clone()?;
     /// let Connectivity::Downward(blocks) = copy else { unreachable!("cell -> edge is downward") };
     /// assert_eq!(blocks[0].data.len(), 6);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Connectivity]: https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity
     pub fn try_clone(&self) -> Result<Self> {
         Ok(match self {
             Connectivity::Downward(blocks) => Connectivity::Downward(

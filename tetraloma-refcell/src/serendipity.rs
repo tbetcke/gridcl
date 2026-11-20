@@ -27,6 +27,9 @@ use crate::{RefCellError, gmsh_to_internal, lagrange_points, num_lagrange_nodes,
 /// serendipity element of the same cell: 8 → 9 (quadrilateral), 20 → 27 (hexahedron), 15 → 18
 /// (prism), 13 → 14 (pyramid).
 ///
+/// The Gmsh reader uses it to read serendipity elements as complete quadratic ones; see
+/// [File formats].
+///
 /// Both node lists are in Gmsh order. The serendipity nodes are the first
 /// [`num_file_nodes`](Self::num_file_nodes) nodes of Gmsh's complete-P2 element; missing node
 /// m (Gmsh P2 index `num_file_nodes + m`) is Σⱼ `weights[m * num_file_nodes + j]` · node j.
@@ -45,6 +48,8 @@ use crate::{RefCellError, gmsh_to_internal, lagrange_points, num_lagrange_nodes,
 ///     assert!((w - want).abs() < 1e-14);
 /// }
 /// ```
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Debug, PartialEq)]
 pub struct SerendipityUpgrade {
     /// The node count of the serendipity element: 8, 20, 15 or 13.
@@ -201,6 +206,8 @@ pub(crate) fn serendipity_basis(cell: CellType) -> Option<NodalBasis> {
 /// The upgrade of Gmsh's serendipity element on `cell` (host, f64): its serendipity map
 /// evaluated at the missing complete-P2 nodes.
 ///
+/// See [File formats] for the serendipity elements that Gmsh writes.
+///
 /// # Errors
 ///
 /// `NotInFormat` (format `"Gmsh serendipity"`, degree 2) for cells without a Gmsh serendipity
@@ -221,6 +228,8 @@ pub(crate) fn serendipity_basis(cell: CellType) -> Option<NodalBasis> {
 /// }
 /// assert!(serendipity_upgrade(CellType::Triangle).is_err());
 /// ```
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 pub fn serendipity_upgrade(cell: CellType) -> Result<SerendipityUpgrade, RefCellError> {
     let num_file_nodes = num_serendipity_nodes(cell).ok_or(RefCellError::NotInFormat {
         format: "Gmsh serendipity",

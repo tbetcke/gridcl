@@ -18,7 +18,10 @@ use tetraloma_dims::CellType;
 
 use crate::{NodeFamily, RefCellError, lagrange_points, num_lagrange_nodes, tdim};
 
+// Design: Appendix A, A.9.
 /// The map from Gmsh's node order to the internal order for `cell` of degree `degree`.
+///
+/// The chapter [File formats] shows the orders side by side.
 ///
 /// Generated for any p ≥ 1 from Gmsh's recursive rule (Gmsh 4.15.2,
 /// `src/numeric/pointsGenerators.cpp`): vertices, edge interiors, face interiors as
@@ -30,7 +33,7 @@ use crate::{NodeFamily, RefCellError, lagrange_points, num_lagrange_nodes, tdim}
 /// use tetraloma_dims::CellType;
 /// use tetraloma_refcell::gmsh_to_internal;
 ///
-/// // A.9: Gmsh's quadrilateral runs round the boundary, tetraloma's is tensor ordered.
+/// // Gmsh's quadrilateral runs round the boundary, tetraloma's is tensor ordered.
 /// let map = gmsh_to_internal(CellType::Quadrilateral, 1).unwrap();
 /// assert_eq!(map, [0, 1, 3, 2]);
 ///
@@ -46,6 +49,8 @@ use crate::{NodeFamily, RefCellError, lagrange_points, num_lagrange_nodes, tdim}
 /// # Errors
 ///
 /// [`RefCellError::UnsupportedDegree`] if `degree == 0`.
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 pub fn gmsh_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCellError> {
     if degree == 0 {
         return Err(RefCellError::UnsupportedDegree { cell, degree });
@@ -57,13 +62,16 @@ pub fn gmsh_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCe
     ))
 }
 
+// Design: Appendix A, A.8 and A.9.
 /// The map from VTK's Lagrange node order to the internal order for `cell` of degree `degree`.
+///
+/// The chapter [File formats] shows the orders side by side.
 ///
 /// Generated for any p ≥ 1 from VTK's index functions (VTK 9.7.1,
 /// `Common/DataModel/vtkHigherOrder*.cxx`): vertices, then edges and faces with VTK's own
 /// directions, then the interior; triangle and tetrahedron interiors are recursive, the
 /// others lexicographic (the triangle faces and layers of a prism too). The pyramid has only
-/// the linear VTK pyramid (A.8), and the point cell gives `[0]`.
+/// the linear VTK pyramid, and the point cell gives `[0]`.
 ///
 /// # Example
 ///
@@ -71,7 +79,7 @@ pub fn gmsh_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCe
 /// use tetraloma_dims::CellType;
 /// use tetraloma_refcell::{RefCellError, vtk_to_internal};
 ///
-/// // A.9: VTK's quadrilateral runs counter-clockwise, then the edges, then the interior.
+/// // VTK's quadrilateral runs counter-clockwise, then the edges, then the interior.
 /// let map = vtk_to_internal(CellType::Quadrilateral, 2).unwrap();
 /// assert_eq!(map, [0, 1, 3, 2, 4, 6, 7, 5, 8]);
 ///
@@ -83,7 +91,7 @@ pub fn gmsh_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCe
 /// }
 /// assert_eq!(internal, [0, 1, 3, 2, 4, 7, 5, 6, 8]);
 ///
-/// // VTK has no usable Lagrange pyramid (A.8).
+/// // VTK has no usable Lagrange pyramid.
 /// assert_eq!(
 ///     vtk_to_internal(CellType::Pyramid, 2),
 ///     Err(RefCellError::NotInFormat { format: "VTK", cell: CellType::Pyramid, degree: 2 })
@@ -93,7 +101,9 @@ pub fn gmsh_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCe
 /// # Errors
 ///
 /// - [`RefCellError::UnsupportedDegree`] if `degree == 0`;
-/// - [`RefCellError::NotInFormat`] for pyramids of degree 2 or more (A.8).
+/// - [`RefCellError::NotInFormat`] for pyramids of degree 2 or more.
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#vtk
 pub fn vtk_to_internal(cell: CellType, degree: u32) -> Result<Vec<usize>, RefCellError> {
     if degree == 0 {
         return Err(RefCellError::UnsupportedDegree { cell, degree });

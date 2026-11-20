@@ -4,10 +4,16 @@ use cubecl::prelude::*;
 
 use crate::{GridError, Result, testing};
 
-/// Scalar of mesh geometry, re-exported by tetraloma. Host arithmetic uses `widen`/`narrow` (or
-/// f64 directly), never method calls on `Self`: CubeCL's `Float` and `num_traits::Float` share
-/// method names (sqrt, abs, min, ...), and CubeCL's versions are device-only stubs that panic
-/// on the host.
+// Listing B3.
+/// The scalar type of a mesh: `f32` or `f64`.
+///
+/// Write code that works in both precisions generic over `F: Real`. On the host, compute with
+/// `f64`: [`widen`](Real::widen) converts a value to `f64` exactly, and
+/// [`narrow`](Real::narrow) rounds an `f64` back to `F`. Do not call arithmetic methods such as
+/// `sqrt`, `abs` or `min` on `F` in host code. `F` gets them from CubeCL's `Float`, whose
+/// versions are meant for kernels and panic on the host.
+/// [Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#f32-and-f64)
+/// explains what changes between the two types.
 ///
 /// # Example
 ///
@@ -21,9 +27,31 @@ use crate::{GridError, Result, testing};
 /// assert_eq!(0.1f32.widen(), 0.1f32 as f64);
 /// ```
 pub trait Real: Float + CubeElement {
-    /// The value as f64 (exact).
+    /// The value as `f64`, exactly: every `f32` is an `f64` too. See
+    /// [Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#f32-and-f64).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::Real;
+    ///
+    /// assert_eq!(0.1f32.widen(), f64::from(0.1f32));
+    /// assert_eq!(0.1f64.widen(), 0.1);
+    /// ```
     fn widen(self) -> f64;
-    /// `x` rounded to `Self`.
+    /// `x` rounded to the nearest value of `Self`: unchanged for `f64`, rounded for `f32`. See
+    /// [Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#f32-and-f64).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::Real;
+    ///
+    /// assert_eq!(f32::narrow(0.1), 0.1f32);
+    /// assert_eq!(f64::narrow(0.1), 0.1);
+    /// // A round trip through f64 is exact.
+    /// assert_eq!(f32::narrow(1.5f32.widen()), 1.5);
+    /// ```
     fn narrow(x: f64) -> Self;
 }
 
@@ -45,16 +73,26 @@ impl Real for f64 {
     }
 }
 
-/// `Ok` if the device supports `F`, else `GridError::UnsupportedPrecision`. Called whenever a
-/// mesh is created on a client, so precision errors surface early. An f64 request on Metal
-/// fails.
+// Listing S1.
+/// Checks that `client`'s device supports the scalar type `F`.
+///
+/// tetraloma calls it whenever a mesh is created, so a mesh of an unsupported type fails before
+/// any kernel runs. Call it yourself to choose `F` for a device: Metal has no `f64`, the CPU
+/// runtime and CUDA have both. [Compute
+/// devices](https://tetracl.github.io/tetraloma/devices.html#f64-support) lists the backends.
+///
+/// # Errors
+///
+/// `GridError::UnsupportedPrecision`, naming the type and the device, if the device does not
+/// support `F`.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{GridError, check_precision};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// check_precision::<f32>(&client).unwrap();
 /// match check_precision::<f64>(&client) {
 ///     Ok(()) => {}

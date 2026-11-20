@@ -1,0 +1,7 @@
+# Functions and methods exempt from ADR-0067 rule 6.3 (a running `# Example` doctest), each with a
+# reason. scripts/check-user-docs.sh (check e) fails on an entry that names no audited function,
+# or one that has an example after all.
+#
+# [[allow]]
+# item = "tetraloma_refcell::LagrangeElement::degree"
+# reason = "an accessor; the example of LagrangeElement calls it"

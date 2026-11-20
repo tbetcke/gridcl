@@ -23,7 +23,14 @@ use crate::sumfact::pull_back::{
 use crate::sumfact::tensor::sumfact_layout;
 use crate::{BlockFields, DeviceGrid, GeomLayout, QuadChunk, QuadField, ScalarShape, VecShape};
 
-/// Options of the pull-back (ADR-0039, item 13).
+// Design: "Pull-back"; ADR-0039, item 13.
+/// The options of the pull-back: the tolerance at which a point stops changing, and the
+/// number of iterations.
+///
+/// The iteration always runs `max_iterations` steps for every point, so that the result does
+/// not depend on how many points a vector instruction handles together. The default is the
+/// tolerance of the scalar type and 16 iterations, enough for most curved cells; an affine
+/// mesh needs only 2 ([The iteration]).
 ///
 /// # Example
 ///
@@ -36,6 +43,8 @@ use crate::{BlockFields, DeviceGrid, GeomLayout, QuadChunk, QuadField, ScalarSha
 /// let opts = PullBackOptions { tolerance: Some(1e-10), max_iterations: 32 };
 /// assert_eq!(opts.max_iterations, 32);
 /// ```
+///
+/// [The iteration]: https://tetracl.github.io/tetraloma/concepts/pull-back.html#the-iteration
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PullBackOptions {
     /// A lane freezes once |Δξ|∞ ≤ tolerance; `None` is 10^−13 in f64 and 10^−5 in f32.
@@ -53,24 +62,35 @@ impl Default for PullBackOptions {
     }
 }
 
-/// The result of a pull-back, one field per cell block, tiled like the input.
+// Design: "Pull-back", Listing B4b.
+/// The result of `Mesh::pull_back`: the reference points and the size of each point's last
+/// step, one field per cell block, tiled like the input points.
+///
+/// A point has converged when its last step is at most the tolerance; otherwise its reference
+/// point is an iterate, not an answer ([Convergence and failure], [Checking the result]).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+/// // `mesh`: the unit square in 2 × 2 quadrilaterals, on the test device; the tutorial
+/// // "Building a mesh" shows how to make one.
+/// # let client = tetraloma_testing::test_client();
+/// # let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
 /// let rule = QuadRule::for_grid(&mesh, 1)?;
 /// let pb = mesh.pull_back(&mesh.physical_points(&rule)?, &PullBackOptions::default())?;
-/// // One block; the cell centres pull back to the reference centre, converged.
+/// // The cell centres pull back to the reference centre, converged. The copies to the host
+/// // are for inspection.
 /// let xi = pb.reference.blocks[0].to_host_cell_major()?;
 /// assert!(xi.iter().all(|p| (p[0] - 0.5).abs() < 1e-6 && (p[1] - 0.5).abs() < 1e-6));
 /// let steps = pb.last_step.blocks[0].to_host_cell_major()?;
 /// assert!(steps.iter().all(|&s| s <= 1e-5));
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Convergence and failure]: https://tetracl.github.io/tetraloma/concepts/pull-back.html#convergence-and-failure
+/// [Checking the result]: https://tetracl.github.io/tetraloma/tutorials/pull-back.html#checking-the-result
 pub struct PullBack<F: Real, TD: TopoDim> {
     /// The reference point ξ per cell and point.
     pub reference: BlockFields<F, VecShape<TD>>,
@@ -480,39 +500,36 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
     out
 }
 
-/// The reference points of the physical points `x` (absolute coordinates per cell and point
-/// of block `b`, as `physical_points_block` returns them), and |Δξ|∞ of the last iteration,
-/// both tiled like `x`.
+// Design: "Pull-back", Listing B4b; ADR-0039, items 13-15; ADR-0046; ADR-0049. The strategies
+// (`loops`, `sumfact`, `cooperative`, `shared`) are chosen by the degree policy (ADR-0042).
+/// The reference points ξ with X(ξ) = x of the physical points `x` of block `b` of `g`, and
+/// the size |Δ|∞ of each point's last step, both tiled like `x`.
 ///
-/// Iteration starts at the reference cell's vertex centroid with Δ = K(ξ)(x − X(ξ)), K the
-/// pseudo-inverse: Newton in codimension 0, Gauss–Newton otherwise. Each iterate is clamped to
-/// [−0.1, 1.1]^TD, the box of every reference cell widened by 0.1, while the freeze test and
-/// the last step use the unclamped Δ, so a point whose preimage lies outside that box does not
-/// converge (ADR-0046). A lane freezes once
-/// |Δ|∞ ≤ tolerance; the loop always runs `max_iterations`, so the result is the same at
-/// every vector size (ADR-0039, items 13 and 14). Where the iteration has not converged, the
-/// last step exceeds the tolerance: a step with a non-finite component counts as
-/// `F::MAX`, and so does the step of `max_iterations = 0`. X(ξ) and J(ξ) come from the
-/// device evaluation of the coordinate element's basis; pyramid points are clamped to
-/// ζ ≤ 1 − 2^−10 (ADR-0039, item 15). Absolute input coordinates lose about |origin| · ε_F,
-/// as `physical_points_block` does.
+/// `x` holds absolute coordinates per cell and point, as
+/// [`physical_points_block`](crate::physical_points_block) returns them, with one cell per
+/// local cell of the block; each point is pulled back through its own cell.
 ///
-/// Plans use `KernelKind::PullBack` with `max_vector` = the tile width of `x`. The first call
-/// for a block uploads its expansion coefficients, cached with the E-vector. Under the `loops`
-/// strategy a set-up kernel first writes each cell's coordinate-map coefficients to a scratch
-/// buffer of the size of the largest range of the E-vector chunks, which the iterations read.
-/// Under `sumfact` (quadrilaterals, hexahedra and prisms) the set-up forms the same
-/// coefficients by sum factorisation, and each step evaluates the 1D Legendre polynomials at ξ
-/// and contracts them one direction at a time; the first call uploads the interval's
-/// coefficients, the node permutation and on prisms the triangle's coefficients instead of the
-/// expansion coefficients (ADR-0049). Under `cooperative` the `loops` set-up runs once per cell,
-/// and each Newton step's sum over the basis functions is split among a group of units
-/// (planned by `LaunchPlan::per_group`, `crate::cooperative`).
+/// The iteration starts at the vertex centroid of the reference cell and repeats
+/// ξ ← ξ + Δ with Δ = K(ξ) (x − X(ξ)), K the pseudo-inverse of the Jacobian: Newton's method
+/// in codimension 0, Gauss–Newton on a curve or surface, where it finds the (locally) closest
+/// point of the cell. Each iterate is clamped to the box [−0.1, 1.1]^TD around the reference cell, so a
+/// point whose preimage lies outside the box does not converge. A point stops changing once
+/// |Δ|∞ ≤ tolerance, but the loop always runs `max_iterations` steps, so the result is the same
+/// at every vector size. On pyramids, the basis is evaluated with ξ₂ ≤ 1 − 2⁻¹⁰, away from the
+/// apex. [The pull-back] explains the method, and [Pulling back points] shows it in use.
+///
+/// Where a point has not converged, its last step exceeds the tolerance; a step with a
+/// non-finite component, and every step when `max_iterations` is 0, counts as the largest
+/// finite value of `F`. Absolute coordinates lose about |origin| · ε of `F` when they are
+/// made relative to the origin, as in `physical_points_block`.
+///
+/// The first call for a block uploads the data that the device needs to evaluate the block's
+/// coordinate element, and keeps it with the block's E-vector.
 ///
 /// # Errors
 ///
-/// `LengthMismatch` if `x` does not have one cell per local cell of block `b`; the element
-/// errors of the block's coordinate element; allocation and device errors.
+/// `LengthMismatch` if `x` does not have one cell per local cell of block `b`; the errors of
+/// the block's coordinate element; allocation and device errors.
 ///
 /// # Example
 ///
@@ -520,15 +537,19 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// use tetraloma::prelude::*;
 /// use tetraloma::{physical_points_block, pull_back_block};
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh = tetraloma_testing::square_box(Cell2::Triangle, 2, 2)
-///     .perturbed(0.05)
-///     .build::<f32, D2, D2>(&client)?;
+/// // `mesh`: the unit square in 2 × 2 squares of two quadratic triangles each, its interior
+/// // nodes moved by up to 0.05 so that the cells are curved, on the test device; the tutorial
+/// // "Building a mesh" shows how to make a curved mesh.
+/// # let client = tetraloma_testing::test_client();
+/// # let mesh = tetraloma_testing::square_box(Cell2::Triangle, 2, 2)
+/// #     .perturbed(0.05)
+/// #     .build::<f32, D2, D2>(&client)?;
 /// let pts = QuadRule::for_grid(&mesh, 2)?;
 /// let pts = pts.get(Cell2::Triangle)?;
 /// let x = physical_points_block(&mesh, 0, pts)?;
 /// let (xi, step) = pull_back_block(&mesh, 0, &x, &PullBackOptions::default())?;
-/// // Every Gauss point comes back, and every lane has converged.
+/// // Every Gauss point comes back, and every point has converged. The copies to the host are
+/// // for inspection.
 /// let want = pts.points();
 /// for (i, p) in xi.to_host_cell_major()?.iter().enumerate() {
 ///     let q = i % pts.len();
@@ -538,6 +559,9 @@ fn ranges<F: Real>(parts: [&[QuadChunk<F>]; 4], tile: usize) -> Vec<Range> {
 /// assert!(step.to_host_cell_major()?.iter().all(|&s| s <= 1e-5));
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [The pull-back]: https://tetracl.github.io/tetraloma/concepts/pull-back.html
+/// [Pulling back points]: https://tetracl.github.io/tetraloma/tutorials/pull-back.html#points-to-reference-coordinates
 #[allow(clippy::type_complexity)] // Listing B4b's signature
 pub fn pull_back_block<F, TD, GD, G>(
     g: &G,

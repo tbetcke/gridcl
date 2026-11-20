@@ -14,8 +14,14 @@ use crate::DeviceGrid;
 use parity::{Neighbours, SideExchange};
 pub use propagate::OrientationComponents;
 
-/// How `orient` chooses the direction of each connected component of a codimension-1 mesh
-/// (ADR-0039, item 2). Points are absolute coordinates; the first gdim entries are used.
+// Design: "Manifold orientation"; ADR-0039, item 2.
+/// How `Mesh::orient` chooses the direction of the normals on each connected component of a
+/// surface in 3D or a curve in 2D.
+///
+/// `orient` first makes the normals of neighbouring cells agree; each connected component then
+/// has two consistent orientations, and the rule picks one. The points are absolute
+/// coordinates; on a curve in 2D only their first two entries are used. [Manifold orientation]
+/// explains the steps, and [Orientation] shows `orient` on a surface.
 ///
 /// # Example
 ///
@@ -27,14 +33,18 @@ pub use propagate::OrientationComponents;
 /// assert_ne!(rule, OrientationRule::Outward);
 /// assert_eq!(rule, OrientationRule::AwayFrom([0.0, 0.0, 2.0]));
 /// ```
+///
+/// [Manifold orientation]: https://tetracl.github.io/tetraloma/concepts/orientation.html#manifold-orientation
+/// [Orientation]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#orientation
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OrientationRule {
-    /// Closed components get positive enclosed signed measure (1/gdim) ∮ x·n; open components
-    /// give `GridError::NeedsReferencePoint`.
+    /// Normals out of the enclosed region: each closed component gets a positive enclosed
+    /// signed measure (1/gdim) ∮ x·n. A component with a boundary encloses nothing and gives
+    /// `GridError::NeedsReferencePoint`.
     Outward,
-    /// Each component gets ∫ (x − p)·n ≥ 0: normals away from p.
+    /// Normals away from the point p: each component gets ∫ (x − p)·n ≥ 0.
     AwayFrom([f64; 3]),
-    /// Each component gets ∫ (x − p)·n ≤ 0: normals towards p.
+    /// Normals towards the point p: each component gets ∫ (x − p)·n ≤ 0.
     Towards([f64; 3]),
 }
 

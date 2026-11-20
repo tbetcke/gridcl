@@ -111,10 +111,13 @@ fn check_packed(packed: usize, num_idx: usize, block: usize) -> Result<()> {
     Ok(())
 }
 
-/// Packs blocks of `src` in the order of `idx`:
-/// `out[k·block .. (k+1)·block] = src[idx[k]·block .. (idx[k]+1)·block]`, moved as u32 words,
-/// so `size_of::<T>()` must be a multiple of 4 (checked at compile time). An index past the
-/// last block of `src` packs zeros. An empty `idx` launches nothing.
+/// Packs blocks of `block` values of `src` in the order of `idx`:
+/// `out[k·block .. (k+1)·block] = src[idx[k]·block .. (idx[k]+1)·block]`.
+///
+/// A halo exchange packs the values to send with it ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)). The
+/// kernel moves 32-bit words, so `size_of::<T>()` must be a multiple of 4, which the compiler
+/// checks. An index past the last block of `src` packs zeros. An empty `idx` launches nothing.
 ///
 /// # Errors
 ///
@@ -127,7 +130,8 @@ fn check_packed(packed: usize, num_idx: usize, block: usize) -> Result<()> {
 /// ```
 /// use tetraloma_device::{DeviceBuffer, pack};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// // Three blocks of two values.
 /// let src = DeviceBuffer::from_host(&client, &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
 /// let idx = DeviceBuffer::from_host(&client, &[2u32, 0]).unwrap();
@@ -205,12 +209,15 @@ pub fn pack<T: CubeElement>(
     Ok(())
 }
 
-/// Unpacks blocks into `dst` at the positions of `idx`:
-/// `dst[idx[k]·block .. (idx[k]+1)·block] = packed[k·block .. (k+1)·block]`, moved as u32
-/// words, so `size_of::<T>()` must be a multiple of 4 (checked at compile time). Blocks of
-/// `dst` not named in `idx` are unchanged. The indices must be distinct and below
-/// `dst.len() / block`; in release builds an index past the end writes the last block. An
-/// empty `idx` launches nothing.
+/// Unpacks blocks of `block` values into `dst` at the positions of `idx`:
+/// `dst[idx[k]·block .. (idx[k]+1)·block] = packed[k·block .. (k+1)·block]`.
+///
+/// A halo exchange unpacks the values it receives with it ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)). The
+/// kernel moves 32-bit words, so `size_of::<T>()` must be a multiple of 4, which the compiler
+/// checks. Blocks of `dst` not named in `idx` are unchanged. The indices must be distinct and below
+/// `dst.len() / block`; in release builds an index past the end writes the last block. An empty
+/// `idx` launches nothing.
 ///
 /// # Errors
 ///
@@ -220,15 +227,16 @@ pub fn pack<T: CubeElement>(
 ///
 /// # Panics
 ///
-/// In debug builds, on an index past the end or a repeated index (ADR-0009): the checks read
-/// back the maximum index and the maximum of `histogram(idx, dst.len() / block)`.
+/// In debug builds, on an index past the end or a repeated index: the checks read back the
+/// maximum index and the maximum of `histogram(idx, dst.len() / block)`.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, unpack};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let packed = DeviceBuffer::from_host(&client, &[7i32, 8, 9, 10]).unwrap();
 /// let idx = DeviceBuffer::from_host(&client, &[2u32, 0]).unwrap();
 /// let mut dst = DeviceBuffer::from_host(&client, &[0i32; 6]).unwrap();

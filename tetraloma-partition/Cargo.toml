@@ -32,3 +32,6 @@ scotch-sys-bindgen = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
+# The client and test meshes of the API examples, on hidden lines (ADR-0067, rule 6.3). With
+# `mpi` on, its ThreadComm needs `tetraloma-testing/mpi` too.
+tetraloma-testing = { path = "../tetraloma-testing" }

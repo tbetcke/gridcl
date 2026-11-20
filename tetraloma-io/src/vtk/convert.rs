@@ -40,14 +40,16 @@ fn vtk_order(cell: CellType, degree: u32, linear: bool) -> Result<Vec<usize>> {
     })
 }
 
-/// The file of `mesh`: every node as a point (in f32 if `f32_points`), and every cell with its
-/// type from [`vtk_cell_type`](super::vtk_cell_type) and its nodes in VTK order (the inverse
-/// of `tetraloma_refcell::vtk_to_internal`). Linear cells use their corner nodes. Also returns
-/// the number of pyramids of degree ≥ 2 written as linear cells with `lagrange`.
+// ADR-0024, items 4 and 5 (unreferenced points, the pyramid count).
+/// The file of `mesh`: every node as a point (in f32 if `f32_points`), and every cell with its type
+/// from [`vtk_cell_type`](super::vtk_cell_type) and its nodes in VTK order (the inverse of
+/// `tetraloma_refcell::vtk_to_internal`). Linear cells use their corner nodes. Also returns the
+/// number of pyramids of degree ≥ 2 written as linear cells with `lagrange`. tetraloma's
+/// `VtkWriter` calls it; see [Writing VTU] and, for the node orders, [File formats].
 ///
 /// - **Points:** all nodes in node order, padded to three coordinates with zeros: Float64, or
 ///   Float32 (rounded to nearest) if `f32_points`. Nodes no cell references are written too,
-///   such as the non-corner nodes of linear output (ADR-0024, item 4).
+///   such as the non-corner nodes of linear output.
 /// - **Cells:** in block order, each block's cells in order. VTK node k of a Lagrange cell is
 ///   its internal node `vtk_to_internal(cell, p)[k]`. A cell written linear (p = 1,
 ///   `lagrange == false`, or a pyramid of degree ≥ 2) uses its corners, which come first in
@@ -55,7 +57,7 @@ fn vtk_order(cell: CellType, degree: u32, linear: bool) -> Result<Vec<usize>> {
 /// - **Offsets** are the cumulative ends of the cells in `connectivity`; there is no point or
 ///   cell data.
 /// - **The count** is the number of pyramid cells of degree ≥ 2 if `lagrange`, else 0: the
-///   cells the caller warns about (ADR-0024, item 5).
+///   cells the caller warns about.
 ///
 /// # Errors
 ///
@@ -76,7 +78,7 @@ fn vtk_order(cell: CellType, degree: u32, linear: bool) -> Result<Vec<usize>> {
 /// use tetraloma_dims::CellType;
 /// use tetraloma_io::vtk::{VtkCellBlock, VtkMesh, to_vtu};
 ///
-/// // The reference P2 quadrilateral, nodes in internal (A.5) order: tensor-ordered vertices,
+/// // The reference P2 quadrilateral, nodes in tetraloma's order: tensor-ordered vertices,
 /// // the edges (0,1), (0,2), (1,3), (2,3), then the centre.
 /// let mesh = VtkMesh {
 ///     gdim: 2,
@@ -92,7 +94,7 @@ fn vtk_order(cell: CellType, degree: u32, linear: bool) -> Result<Vec<usize>> {
 ///     }],
 /// };
 ///
-/// // VTK runs counter-clockwise round the vertices and the edges (A.9).
+/// // VTK runs counter-clockwise round the vertices and the edges.
 /// let (file, pyramids) = to_vtu(&mesh, true, false)?;
 /// assert_eq!(file.types, [70]);
 /// assert_eq!(file.connectivity, [0, 1, 3, 2, 4, 6, 7, 5, 8]);
@@ -108,6 +110,9 @@ fn vtk_order(cell: CellType, degree: u32, linear: bool) -> Result<Vec<usize>> {
 /// assert!(to_vtu(&bad, true, false).is_err());
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#vtk
 pub fn to_vtu(mesh: &VtkMesh, lagrange: bool, f32_points: bool) -> Result<(VtuFile, usize)> {
     let gd = mesh.gdim;
     if !(1..=3).contains(&gd) {

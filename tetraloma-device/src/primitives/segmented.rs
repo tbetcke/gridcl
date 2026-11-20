@@ -35,17 +35,27 @@ fn segmented_kernel<T: Numeric>(
     }
 }
 
-/// One value per CSR segment, combined in index order. `offsets` has segments + 1 entries
-/// (fewer than two give no segments). Offsets are clamped to `[0, values.len()]`; a decreasing
-/// pair gives an empty segment, whose value is the identity of `op` (0, `T::max_value()`,
-/// `T::min_value()`).
+/// The sum, minimum or maximum of each segment `values[offsets[s]..offsets[s + 1]]`, combined
+/// in index order: one value per segment.
+///
+/// `offsets` has one entry more than there are segments (fewer than two entries give no segments).
+/// Offsets are clamped to `[0, values.len()]`; a decreasing pair gives an empty segment, whose
+/// value is the identity of `op`, as for [`reduce`](crate::reduce). The reverse halo exchange
+/// combines each owner's value with its ghosts' values this way, so its sums are the same on every
+/// run ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
+///
+/// # Errors
+///
+/// `TooLarge` if `values` has 2^32 or more elements, or if there are 2^32 or more segments;
+/// device errors.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, ReduceOp, segmented_reduce};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let values = DeviceBuffer::from_host(&client, &[1u32, 2, 3, 4, 5]).unwrap();
 /// let offsets = DeviceBuffer::from_host(&client, &[0u32, 2, 2, 5]).unwrap();
 /// let sums = segmented_reduce(&values, &offsets, ReduceOp::Sum).unwrap();

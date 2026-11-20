@@ -12,6 +12,8 @@ use CellType::{Hexahedron, Interval, Point, Prism, Pyramid, Quadrilateral, Tetra
 
 /// The topological dimension of `cell`: 0 for a point, up to 3 for volume cells.
 ///
+/// See [Reference cell definitions].
+///
 /// # Example
 ///
 /// ```
@@ -20,6 +22,8 @@ use CellType::{Hexahedron, Interval, Point, Prism, Pyramid, Quadrilateral, Tetra
 /// assert_eq!(tetraloma_refcell::tdim(CellType::Point), 0);
 /// assert_eq!(tetraloma_refcell::tdim(CellType::Prism), 3);
 /// ```
+///
+/// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html
 pub const fn tdim(cell: CellType) -> usize {
     match cell {
         Point => 0,
@@ -29,10 +33,12 @@ pub const fn tdim(cell: CellType) -> usize {
     }
 }
 
-/// The vertex coordinates of the reference cell (A.1), in local vertex order.
+// Design: Appendix A, table A.1.
+/// The vertex coordinates of the reference cell, in local vertex order.
 ///
-/// Each vertex has [`tdim`] coordinates; the point cell has one vertex with none.
-/// Quadrilaterals and hexahedra use tensor (lexicographic) order.
+/// Each vertex has [`tdim`] coordinates; the point cell has one vertex with none. Quadrilaterals
+/// and hexahedra use tensor (lexicographic) order. The chapter [Reference cell definitions] draws
+/// every cell.
 ///
 /// # Example
 ///
@@ -42,6 +48,8 @@ pub const fn tdim(cell: CellType) -> usize {
 /// let v = tetraloma_refcell::vertices(CellType::Quadrilateral);
 /// assert_eq!(v, [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]);
 /// ```
+///
+/// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html
 pub const fn vertices(cell: CellType) -> &'static [&'static [f64]] {
     match cell {
         Point => &[&[]],
@@ -82,12 +90,13 @@ pub const fn vertices(cell: CellType) -> &'static [&'static [f64]] {
     }
 }
 
-/// The local vertex lists of the sub-entities of dimension `dim` (A.2, A.3), numbered by
-/// DefElement Convention 2: sorted vertex lists in lexicographic order.
+// Design: Appendix A, tables A.2 and A.3.
+/// The local vertex lists of the sub-entities of dimension `dim`, numbered by DefElement
+/// Convention 2: sorted vertex lists in lexicographic order.
 ///
 /// Dimension 0 gives the vertices as one-element lists, dimension [`tdim`] the cell itself.
-/// Quadrilateral faces list their vertices in the face's tensor order, which is their sorted
-/// order. Empty if `dim > tdim`.
+/// Quadrilateral faces list their vertices in the face's tensor order, which is their sorted order.
+/// Empty if `dim > tdim`. See [Sub-entities] and the tables of [Reference cell definitions].
 ///
 /// # Example
 ///
@@ -101,6 +110,9 @@ pub const fn vertices(cell: CellType) -> &'static [&'static [f64]] {
 /// assert_eq!(sub_entities(CellType::Prism, 2)[1], [0, 1, 3, 4]);
 /// assert_eq!(sub_entity_types(CellType::Prism, 2)[1], CellType::Quadrilateral);
 /// ```
+///
+/// [Sub-entities]: https://tetracl.github.io/tetraloma/concepts/reference-cells.html#sub-entities
+/// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html
 pub const fn sub_entities(cell: CellType, dim: usize) -> &'static [&'static [usize]] {
     match (cell, dim) {
         (Point, 0) => &[&[0]],
@@ -185,6 +197,25 @@ pub const fn sub_entities(cell: CellType, dim: usize) -> &'static [&'static [usi
 
 /// The cell types of the sub-entities of dimension `dim`, in the order of [`sub_entities`].
 /// Empty if `dim > tdim`.
+///
+/// The faces of prisms and pyramids mix triangles and quadrilaterals; see
+/// [Reference cell definitions].
+///
+/// # Example
+///
+/// ```
+/// use tetraloma_dims::CellType;
+/// use tetraloma_refcell::sub_entity_types;
+///
+/// // The pyramid's base is a quadrilateral, its four other faces are triangles.
+/// let faces = sub_entity_types(CellType::Pyramid, 2);
+/// assert_eq!(faces.len(), 5);
+/// assert_eq!(faces.iter().filter(|&&t| t == CellType::Triangle).count(), 4);
+/// assert_eq!(faces.iter().filter(|&&t| t == CellType::Quadrilateral).count(), 1);
+/// assert!(sub_entity_types(CellType::Triangle, 3).is_empty());
+/// ```
+///
+/// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html#prism
 pub const fn sub_entity_types(cell: CellType, dim: usize) -> &'static [CellType] {
     match (cell, dim) {
         (_, 0) => match cell {
@@ -225,6 +256,8 @@ pub const fn sub_entity_types(cell: CellType, dim: usize) -> &'static [CellType]
 
 /// The number of sub-entities of dimension `dim`; 0 if `dim > tdim`.
 ///
+/// See [Sub-entities].
+///
 /// # Example
 ///
 /// ```
@@ -234,6 +267,8 @@ pub const fn sub_entity_types(cell: CellType, dim: usize) -> &'static [CellType]
 ///     (0..4).map(|d| tetraloma_refcell::num_sub_entities(CellType::Pyramid, d)).collect();
 /// assert_eq!(counts, [5, 8, 5, 1]);
 /// ```
+///
+/// [Sub-entities]: https://tetracl.github.io/tetraloma/concepts/reference-cells.html#sub-entities
 pub const fn num_sub_entities(cell: CellType, dim: usize) -> usize {
     sub_entities(cell, dim).len()
 }

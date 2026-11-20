@@ -255,9 +255,9 @@ fn scatter_blocks_kernel(
 }
 
 /// The split scheme (`items_per_unit = 1`): each unit owns `N` consecutive keys. The cube's
-/// `num_slots = cube_dim · N` slots hold `digit << SLOT_BITS | position`; eight stable 1-bit splits sort them by digit,
-/// and a key's rank is its sorted slot minus the first slot of its digit. Keys at index
-/// >= `len` take digit 255 and sort after every real key, so they change no rank.
+/// `num_slots = cube_dim · N` slots hold `digit << SLOT_BITS | position`; eight stable 1-bit splits
+/// sort them by digit, and a key's rank is its sorted slot minus the first slot of its digit. Keys
+/// at index >= `len` take digit 255 and sort after every real key, so they change no rank.
 #[cube(launch_unchecked)]
 fn scatter_split_kernel<N: Size>(
     keys_in: &[u32],
@@ -380,10 +380,14 @@ enum Scheme {
     Split,
 }
 
-/// Stable LSD sort with 8-bit digits: the keys in ascending order (word 0 most significant),
-/// and the payload permuted with them. Equal keys keep their input order.
+/// Sorts `keys` in ascending order, word 0 most significant, and permutes `payload` with them:
+/// a stable least-significant-digit radix sort with 8-bit digits. Equal keys keep their input
+/// order.
 ///
-/// The result is bitwise identical across runs.
+/// Entity creation finds equal sub-entities with it ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)). The
+/// result is the same on every run
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Errors
 ///
@@ -397,7 +401,8 @@ enum Scheme {
 /// ```
 /// use tetraloma_device::{DeviceBuffer, SortKeys, radix_sort};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// // Keys of two words, key-major: (1, 5), (0, 9), (1, 2), (0, 9).
 /// let keys = SortKeys::from_host(&client, &[1, 5, 0, 9, 1, 2, 0, 9], 2).unwrap();
 /// let payload = DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3]).unwrap();
@@ -427,7 +432,8 @@ pub fn radix_sort(
 /// ```
 /// use tetraloma_device::{DeviceBuffer, SortKeys, radix_sort_owned};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let keys = SortKeys::from_host(&client, &[1, 5, 0, 9, 1, 2, 0, 9], 2).unwrap();
 /// let payload = DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3]).unwrap();
 /// let (sorted, perm) = radix_sort_owned(keys, payload).unwrap();

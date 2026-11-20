@@ -12,9 +12,13 @@ use crate::rule::distinct;
 use crate::sumfact::TensorFactors;
 use crate::{DeviceGrid, PointSet};
 
-/// Points on every facet of a cell, in cell coordinates, facet-major (ADR-0012). A cell's
-/// facets may differ in point count (prism, pyramid), so a facet field has Σ_f n_f points per
-/// cell.
+// Design: "Geometry", "Tabulation and quadrature", Listing B4b; ADR-0012.
+/// Quadrature points on every facet of one reference cell, in the coordinates of the cell,
+/// facet-major: the points of facet 0 first, then those of facet 1, and so on.
+///
+/// The facets of a prism or pyramid have different types, so their point counts differ; a
+/// field on facet points has Σ_f n_f points per cell, with n_f the point count of facet f. The
+/// weights are those of each facet's own reference cell. [Facet rules] explains the layout.
 ///
 /// # Example
 ///
@@ -22,13 +26,16 @@ use crate::{DeviceGrid, PointSet};
 /// use tetraloma_dims::{Cell2, D2};
 /// use tetraloma_geometry::FacetQuadRule;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let rule = FacetQuadRule::<f32, D2>::gauss(&client, &[Cell2::Triangle], 3).unwrap();
 /// let fps = rule.get(Cell2::Triangle).unwrap();
 /// // Two Gauss points on each of the three edges.
 /// assert_eq!(fps.facet_offsets(), &[0, 2, 4, 6]);
 /// assert_eq!(fps.points().len(), 6);
 /// ```
+///
+/// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
 pub struct FacetPointSet<F: Real, TD: TopoDim> {
     points: PointSet<F, TD>,
     facet_offsets: Vec<usize>,
@@ -86,7 +93,11 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
         &self.normals_device
     }
 
-    /// All facet points as one point set, with the facets' weights.
+    /// All facet points as one point set, in cell coordinates, with the weights of the facet
+    /// rules.
+    ///
+    /// The weights add up to the volume of each facet's reference cell (1 on an edge, 1/2 on
+    /// a triangle), whatever the facet's size in the cell; see [Facet rules].
     ///
     /// # Example
     ///
@@ -94,18 +105,24 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
     /// use tetraloma_dims::{Cell3, D3};
     /// use tetraloma_geometry::FacetQuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = FacetQuadRule::<f32, D3>::gauss(&client, &[Cell3::Hexahedron], 1).unwrap();
     /// let fps = rule.get(Cell3::Hexahedron).unwrap();
     /// // The six unit faces have total area 6.
     /// let area: f64 = fps.points().weights().iter().sum();
     /// assert!((area - 6.0).abs() < 1e-14);
     /// ```
+    ///
+    /// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
     pub fn points(&self) -> &PointSet<F, TD> {
         &self.points
     }
 
-    /// Where each facet's points start; facets + 1 entries.
+    /// Where each facet's points start: the points of facet f are
+    /// `facet_offsets()[f]..facet_offsets()[f + 1]`, one entry per facet plus one.
+    ///
+    /// See [Facet rules].
     ///
     /// # Example
     ///
@@ -113,18 +130,25 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
     /// use tetraloma_dims::{Cell3, D3};
     /// use tetraloma_geometry::FacetQuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = FacetQuadRule::<f32, D3>::gauss(&client, &[Cell3::Prism], 1).unwrap();
     /// let offsets = rule.get(Cell3::Prism).unwrap().facet_offsets();
     /// // Two triangles and three quadrilaterals.
     /// assert_eq!(offsets.len(), 6);
     /// assert_eq!(*offsets.last().unwrap(), rule.get(Cell3::Prism).unwrap().points().len());
     /// ```
+    ///
+    /// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
     pub fn facet_offsets(&self) -> &[usize] {
         &self.facet_offsets
     }
 
-    /// The outward reference normal at point `q` (`tdim` entries).
+    /// The outward unit normal n̂ of the reference cell on the facet of point `q`: `tdim`
+    /// entries, in f64.
+    ///
+    /// The facet normal kernels map it to the physical normal n = Kᵀ n̂ / |Kᵀ n̂|; see
+    /// [Facet normals].
     ///
     /// # Panics
     ///
@@ -136,7 +160,8 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
     /// use tetraloma_dims::{Cell1, D1};
     /// use tetraloma_geometry::FacetQuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = FacetQuadRule::<f32, D1>::gauss(&client, &[Cell1::Interval], 1).unwrap();
     /// let fps = rule.get(Cell1::Interval).unwrap();
     /// // The facets of the interval are its vertices 0 and 1.
@@ -144,13 +169,21 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
     /// assert_eq!(fps.reference_normal(0), &[-1.0]);
     /// assert_eq!(fps.reference_normal(1), &[1.0]);
     /// ```
+    ///
+    /// [Facet normals]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#facet-normals
     pub fn reference_normal(&self, q: usize) -> &[f64] {
         let td = TD::N;
         &self.normals[q * td..(q + 1) * td]
     }
 }
 
-/// Facet point sets for each cell type of a dimension.
+// Design: "Geometry", "Tabulation and quadrature", Listing B4b.
+/// A quadrature rule on the facets of the reference cells of one dimension: one
+/// [`FacetPointSet`] per cell type.
+///
+/// Each facet gets the Gauss rule of its own cell type, mapped into the coordinates of the
+/// cell. Use it for boundary integrals, for fluxes between cells and for facet normals
+/// ([Facet rules], [Facet normals]).
 ///
 /// # Example
 ///
@@ -158,11 +191,16 @@ impl<F: Real, TD: TopoDim> FacetPointSet<F, TD> {
 /// use tetraloma_dims::{Cell2, D2};
 /// use tetraloma_geometry::FacetQuadRule;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let rule = FacetQuadRule::<f32, D2>::gauss(&client, &[Cell2::Quadrilateral], 1).unwrap();
 /// let fps = rule.get(Cell2::Quadrilateral).unwrap();
-/// assert_eq!(fps.facet_offsets().len(), 5);
+/// // One point on each of the four edges.
+/// assert_eq!(fps.facet_offsets(), &[0, 1, 2, 3, 4]);
 /// ```
+///
+/// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
+/// [Facet normals]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#facet-normals
 pub struct FacetQuadRule<F: Real, TD: TopoDim> {
     sets: Vec<FacetPointSet<F, TD>>,
 }
@@ -170,12 +208,13 @@ pub struct FacetQuadRule<F: Real, TD: TopoDim> {
 impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
     /// Gauss rules of `degree` on every facet of the given cell types.
     ///
-    /// Repeated cell types get one facet point set; the sets keep the order of first
-    /// appearance.
+    /// A repeated cell type gets one facet point set; the sets keep the order of first
+    /// appearance. The points, weights and reference normals stay on the host in f64; the
+    /// weights and normals are also uploaded to `client`, narrowed to `F`. See [Facet rules].
     ///
     /// # Errors
     ///
-    /// Device errors: `UnsupportedPrecision` if the client does not support `F`.
+    /// `UnsupportedPrecision` if the client does not support `F`; allocation and device errors.
     ///
     /// # Example
     ///
@@ -183,11 +222,15 @@ impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
     /// use tetraloma_dims::{Cell3, D3};
     /// use tetraloma_geometry::FacetQuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = FacetQuadRule::<f32, D3>::gauss(&client, &[Cell3::Tetrahedron], 2).unwrap();
     /// let fps = rule.get(Cell3::Tetrahedron).unwrap();
-    /// assert_eq!(fps.facet_offsets().len(), 5);
+    /// // Four triangular faces with 4 points each.
+    /// assert_eq!(fps.facet_offsets(), &[0, 4, 8, 12, 16]);
     /// ```
+    ///
+    /// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
     pub fn gauss(client: &Client, cells: &[TD::Cell], degree: u32) -> Result<Self> {
         check_precision::<F>(client)?;
         let sets = distinct(cells.iter().copied())
@@ -197,7 +240,10 @@ impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
         Ok(Self { sets })
     }
 
-    /// Facet rules for every cell type present in `grid`.
+    /// Facet rules of `degree` for every cell type of `grid`'s cell blocks, on the grid's
+    /// client.
+    ///
+    /// See [Facet rules] and [Facet normals].
     ///
     /// # Errors
     ///
@@ -208,13 +254,19 @@ impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::mixed_box(1, 1).build::<f32, D3, D3>(&client).unwrap();
-    /// let rule = FacetQuadRule::for_grid(&mesh, 2).unwrap();
+    /// // `mesh`: the unit cube in pyramids and tetrahedra, one block per cell type, on the
+    /// // test device; the tutorial "Building a mesh" shows how to make one.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let mesh = tetraloma_testing::mixed_box(1, 1).build::<f32, D3, D3>(&client)?;
+    /// let rule = FacetQuadRule::for_grid(&mesh, 2)?;
     /// for block in mesh.cell_blocks() {
     ///     assert!(rule.get(block.cell).is_ok());
     /// }
+    /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
+    /// [Facet normals]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#facet-normals
     pub fn for_grid<G: DeviceGrid<F = F, TD = TD>>(grid: &G, degree: u32) -> Result<Self> {
         let cells: Vec<TD::Cell> = grid.cell_blocks().iter().map(|b| b.cell).collect();
         Self::gauss(grid.client(), &cells, degree)
@@ -222,9 +274,11 @@ impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
 
     /// The facet point set of `cell`.
     ///
+    /// See [Facet rules].
+    ///
     /// # Errors
     ///
-    /// `CellNotInRule` if the rule has none.
+    /// `CellNotInRule` if the rule has no facet point set for `cell`.
     ///
     /// # Example
     ///
@@ -233,13 +287,17 @@ impl<F: Real, TD: TopoDim> FacetQuadRule<F, TD> {
     /// use tetraloma_dims::{Cell2, D2};
     /// use tetraloma_geometry::FacetQuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = FacetQuadRule::<f32, D2>::gauss(&client, &[Cell2::Triangle], 1).unwrap();
+    /// assert!(rule.get(Cell2::Triangle).is_ok());
     /// assert!(matches!(
     ///     rule.get(Cell2::Quadrilateral),
     ///     Err(GridError::CellNotInRule("Quadrilateral"))
     /// ));
     /// ```
+    ///
+    /// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
     pub fn get(&self, cell: TD::Cell) -> Result<&FacetPointSet<F, TD>> {
         self.sets
             .iter()

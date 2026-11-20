@@ -11,16 +11,20 @@ fn mix(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// The owner and rendezvous hash of `key` (docs/design.md, "Ownership of vertices and
-/// entities"; ADR-0026): starting at h = 0x6772_6964_636C_0006, h = mix(h ^ (w as u64)) for
-/// each word w, where mix is SplitMix64's finaliser.
+// Design: "Ownership of vertices and entities"; ADR-0026.
+/// The hash that chooses owners on a distributed mesh: starting at
+/// h = 0x6772_6964_636C_0006, h = mix(h ^ (w as u64)) for each word w of `key`, where mix is
+/// SplitMix64's finaliser.
 ///
 /// - The owner of a vertex or node is the candidate at position `owner_hash(&[origin id]) mod n`
-///   among the n candidates, sorted by rank.
+///   among the n ranks that hold it in an owned cell, sorted by rank.
 /// - The owner of an entity is the candidate at `owner_hash(sorted origin ids) mod n`.
-/// - The rendezvous rank of any key is `owner_hash(key) mod P`.
+/// - The rank that collects the information about a key (its rendezvous rank) is
+///   `owner_hash(key) mod P` on P ranks.
 ///
-/// The value is the same on every platform, and later milestones use the same function.
+/// The value is the same on every platform, so owners depend only on the input and the partition
+/// ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#ownership-and-ghosts)).
 ///
 /// # Example
 ///

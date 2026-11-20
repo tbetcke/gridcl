@@ -1,0 +1,28 @@
+# Deploys the user documentation site to GitHub Pages (docs/design.md, "CI matrix", row pages;
+# ADR-0067, rule 2): the artifact `github-pages` that ci.yml's docs job uploads from a push to
+# main. Called by ci.yml's job pages after docs, so the artifact is in the same run; the
+# repository's Pages source is "GitHub Actions".
+name: pages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One deployment at a time; a newer one waits instead of cancelling a running one.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

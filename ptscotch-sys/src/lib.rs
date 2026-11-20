@@ -1,12 +1,19 @@
+// ADR-0029, items 4, 5 and 13; seeded calls: ADR-0031.
 //! FFI bindings to PT-Scotch, with the width of `SCOTCH_Num` from the binding.
 //!
+//! This crate is the raw C interface behind tetraloma's partitioner `PtScotch` (feature `ptscotch`
+//! of the crate `tetraloma`). It is for the developers of tetraloma: a program partitions a mesh
+//! through `PtScotch` and never calls these functions itself. The [user book] describes the
+//! partitioners in [Distributed meshes], and [Cargo features] says where the build looks for
+//! PT-Scotch.
+//!
 //! The bindings exist only with the feature `mpi` (off by default); without it the crate is
-//! empty, so the workspace build needs neither MPI nor PT-Scotch (ADR-0029, items 4 and 5).
+//! empty, so the workspace build needs neither MPI nor PT-Scotch.
 //!
 //! With `mpi`, the build script runs bindgen on `ptscotch.h`, found through `SCOTCH_DIR`
 //! (`include/`, `lib/`) or the system paths, and links `ptscotch`, `scotch` and `ptscotcherr`.
 //! The bindings cover the `SCOTCH_dgraph*`, `SCOTCH_strat*`, `SCOTCH_random*` and
-//! `SCOTCH_context*` functions (the last for deterministic, seeded calls; ADR-0031),
+//! `SCOTCH_context*` functions (the last for deterministic, seeded calls),
 //! `SCOTCH_version`, the types they use and the `SCOTCH_*` constants. The strategy flags
 //! `SCOTCH_STRAT*` have type `SCOTCH_Num`; the other integer constants are C `int`.
 //!
@@ -14,7 +21,12 @@
 //!   communicator's `as_raw()` passes straight to `SCOTCH_dgraphInit`.
 //! - `FILE` is opaque: only the functions that load or save files take it.
 //! - tetraloma supports PT-Scotch builds without `SCOTCH_PTHREAD_MPI`, which work with MPI
-//!   initialised as `Threading::Single` (ADR-0029, item 13; the example `threading_probe`).
+//!   initialised as `Threading::Single`; the example `threading_probe` checks that a
+//!   PT-Scotch library works this way.
+//!
+//! [user book]: https://tetracl.github.io/tetraloma/
+//! [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
+//! [Cargo features]: https://tetracl.github.io/tetraloma/features.html#partitioners
 
 #[cfg(feature = "mpi")]
 #[allow(

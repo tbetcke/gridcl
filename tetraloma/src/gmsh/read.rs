@@ -486,27 +486,38 @@ where
         .map_err(missing_node)
 }
 
-/// Reads the Gmsh MSH 4.1 file at `path` into a mesh on `comm` whose dimensions the file
-/// decides (docs/design.md, "Gmsh MSH 4.1"; ADR-0022, ADR-0035). Collective.
+// Design: "Import and export / Gmsh MSH 4.1"; ADR-0022; ADR-0035, rules 1, 2, 5 and 6.
+/// Reads the Gmsh MSH 4.1 file at `path` into a mesh on `comm`, whose dimensions the file
+/// decides. Collective: every rank of `comm` calls it with the same path and options.
 ///
-/// - D_TOP is the highest element dimension; its elements form the cell blocks, in `CellType`
-///   order with cells in file order. D_GEO is inferred from the nodes, or fixed by
+/// - The topological dimension TD is the highest element dimension in the file, and the
+///   elements of that dimension are the cells. They form one cell block per cell type, in the
+///   order of [`CellType`](crate::CellType), with the cells of each block in file
+///   order. The geometric dimension GD is inferred from the nodes or fixed by
 ///   [`GmshOptions::gdim`].
-/// - Node tags are the vertex origin ids and element tags the cell origin ids; serendipity
-///   cells are upgraded to complete P2.
-/// - Physical groups and elementary tags become the mesh's [`TagRegistry`](crate::TagRegistry):
-///   cells carry theirs, lower-dimensional elements are matched against the mesh's entities
-///   (created for each tagged dimension).
-/// - Each rank takes an even chunk of the nodes and of the elements of each dimension and
-///   builds the mesh with the others through the parallel creation pipeline, with the
-///   partitioner, ghost mode and cell order of `options`. A binary file without serendipity
-///   elements is read in chunks by every rank; any other file is read by rank 0, which
-///   scatters the chunks (ADR-0035, rules 1, 2 and 6).
-/// - With [`Block`](crate::Block), a partitioned file whose partition count equals the rank
-///   count keeps its partitions: each cell goes to rank `partition − 1` (rule 5). Ghost
-///   entities of the file are ignored.
-/// - Reading into an f32 mesh narrows the coordinates; rank 0 logs one warning per file, and
-///   one if the default partitioner falls back to `Block`.
+/// - The node tags of the vertices become their origin ids, and the element tags of the cells
+///   become the cells' origin ids. Serendipity cells of degree 2 are upgraded to complete
+///   Lagrange cells.
+/// - Physical groups and elementary tags become the mesh's [`TagRegistry`](crate::TagRegistry).
+///   Cells carry their own tags. Each lower-dimensional element is matched by its vertices to
+///   an entity of the mesh; the reader creates the entities of every tagged dimension.
+/// - On more than one rank, each rank takes an even share of the nodes and of the elements of
+///   each dimension, and the ranks build the mesh together, with the partitioner, ghost mode
+///   and cell order of `options`. Every rank reads its own share of a binary file without
+///   serendipity elements; rank 0 reads any other file and sends each rank its share.
+/// - With [`Block`](crate::Block) as partitioner, a partitioned file whose partition count
+///   equals the rank count keeps its partitions: the cells of partition r + 1 go to rank r.
+///   The file's ghost entities are ignored.
+/// - Reading into an `f32` mesh narrows the coordinates. Rank 0 then logs one warning per
+///   file, and another one if the default partitioner falls back to `Block`.
+///
+/// The tutorial [Reading and writing files] reads a file on one process and fixes its
+/// dimensions, [Parallel I/O] reads it on several ranks, and [File formats] lists the element
+/// types that the reader accepts.
+///
+/// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#reading-gmsh
+/// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 ///
 /// # Errors
 ///
@@ -524,8 +535,10 @@ where
 /// ```
 /// use tetraloma::prelude::*;
 ///
+/// // path: the rectangle [0, 2] × [0, 1] in two regions, a test file of tetraloma-io.
 /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/two_regions_p1.msh");
-/// let client = tetraloma_testing::test_client();
+/// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let any: AnyMesh<f32> = gmsh::read(&client, Serial, path, GmshOptions::default())?;
 /// let mesh = PlanarMesh::<f32>::try_from(any)?;
 /// assert!((mesh.measure(2)? - 2.0).abs() < 1e-5);
@@ -535,21 +548,27 @@ where
 /// # Ok::<(), GridError>(())
 /// ```
 ///
-/// On three threads, with ghost cells across facets:
+/// On three ranks, with ghost cells across facets; the ranks own every cell of the serial
+/// read once between them:
 ///
 /// ```
 /// use tetraloma::prelude::*;
-/// use tetraloma_testing::ThreadComm;
+/// // ThreadComm: a test communicator whose ranks are threads of this process; an MPI
+/// // program uses `Mpi` instead.
+/// # use tetraloma_testing::ThreadComm;
 ///
+/// // path: a box of mixed cell types, a test file of tetraloma-io.
 /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tetraloma-io/tests/fixtures/gmsh/hybrid_p1.msh");
 /// let owned = ThreadComm::run(3, |comm| {
-///     let client = tetraloma_testing::test_client();
+///     // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+///     # let client = tetraloma_testing::test_client();
 ///     let options = GmshOptions::default().ghosts(GhostMode::SharedFacet);
 ///     let mesh = VolumeMesh::<f32, ThreadComm>::try_from(gmsh::read(&client, comm.clone(), path, options)?)?;
 ///     let owned: usize = mesh.cell_blocks().iter().map(|b| b.index_map.num_owned()).sum();
 ///     Ok::<_, GridError>(comm.sum(owned as u64))
 /// });
-/// let serial = VolumeMesh::<f32>::try_from(gmsh::read(&tetraloma_testing::test_client(), Serial, path, GmshOptions::default())?)?;
+/// # let client = tetraloma_testing::test_client();
+/// let serial = VolumeMesh::<f32>::try_from(gmsh::read(&client, Serial, path, GmshOptions::default())?)?;
 /// let cells: usize = serial.cell_blocks().iter().map(|b| b.index_map.num_owned()).sum();
 /// for total in owned {
 ///     assert_eq!(total?, cells as u64);

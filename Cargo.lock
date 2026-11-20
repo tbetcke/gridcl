@@ -4459,6 +4459,7 @@ dependencies = [
  "cubecl",
  "mpi",
  "tetraloma",
+ "tetraloma-refcell",
  "tetraloma-testing",
 ]
 
@@ -4516,6 +4517,7 @@ dependencies = [
  "mpi",
  "proptest",
  "tetraloma-device",
+ "tetraloma-testing",
 ]
 
 [[package]]
@@ -4530,6 +4532,7 @@ dependencies = [
  "scotch",
  "scotch-sys",
  "tetraloma-parallel",
+ "tetraloma-testing",
 ]
 
 [[package]]

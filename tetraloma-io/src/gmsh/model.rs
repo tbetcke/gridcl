@@ -1,6 +1,7 @@
 //! The file model: the sections of an MSH 4.1 file as stored.
 
-/// One entry of `$PhysicalNames`.
+/// One entry of `$PhysicalNames`: the name of a physical group. tetraloma's reader turns physical
+/// groups into named tags; see [Physical groups].
 ///
 /// # Example
 ///
@@ -13,6 +14,8 @@
 /// assert_eq!((name.dim, name.tag, name.name.as_str()), (2, 7, "domain"));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicalName {
     /// The dimension of the physical group.
@@ -23,7 +26,9 @@ pub struct PhysicalName {
     pub name: String,
 }
 
-/// A geometric entity of `$Entities` (or the entity part of a `$PartitionedEntities` entry).
+/// A geometric entity of `$Entities` (or the entity part of a `$PartitionedEntities` entry): a
+/// point, curve, surface or volume of the CAD model, with its bounding box, physical groups and
+/// boundary. See [the Gmsh format].
 ///
 /// # Example
 ///
@@ -38,6 +43,8 @@ pub struct PhysicalName {
 /// assert_eq!((&curve.physical_tags[..], &curve.boundary[..]), (&[3][..], &[1, -2][..]));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [the Gmsh format]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entity {
     /// The entity tag.
@@ -52,7 +59,7 @@ pub struct Entity {
     pub boundary: Vec<i32>,
 }
 
-/// `$Entities`: the geometric entities by dimension.
+/// `$Entities`: the geometric entities by dimension. See [the Gmsh format].
 ///
 /// # Example
 ///
@@ -66,6 +73,8 @@ pub struct Entity {
 /// assert_eq!(e.points[1].min, [1.0, 0.0, 0.0]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [the Gmsh format]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Entities {
     /// Dimension 0.
@@ -78,7 +87,8 @@ pub struct Entities {
     pub volumes: Vec<Entity>,
 }
 
-/// An entity of a partitioned mesh, with its parent in the unpartitioned model.
+/// An entity of a partitioned mesh, with its parent in the unpartitioned model. Gmsh writes these
+/// for a mesh it has partitioned; see [Reading Gmsh in parallel].
 ///
 /// # Example
 ///
@@ -92,6 +102,8 @@ pub struct Entities {
 /// assert_eq!(point.partitions, [1]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedEntity {
     /// The partitioned entity itself.
@@ -104,7 +116,8 @@ pub struct PartitionedEntity {
     pub partitions: Vec<i32>,
 }
 
-/// `$PartitionedEntities`.
+/// `$PartitionedEntities`: the entities of a mesh that Gmsh has partitioned, and the number of
+/// partitions. See [Reading Gmsh in parallel].
 ///
 /// # Example
 ///
@@ -117,6 +130,8 @@ pub struct PartitionedEntity {
 /// assert!(!p.surfaces.is_empty());
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PartitionedEntities {
     /// The number of partitions.
@@ -133,7 +148,8 @@ pub struct PartitionedEntities {
     pub volumes: Vec<PartitionedEntity>,
 }
 
-/// One block of `$Nodes`. Parametric coordinates are read and dropped.
+/// One block of `$Nodes`: the nodes classified on one entity. Parametric coordinates are read and
+/// dropped. See [the Gmsh format].
 ///
 /// # Example
 ///
@@ -148,6 +164,8 @@ pub struct PartitionedEntities {
 /// assert_eq!(block.coords[1], [1.0, 0.0, 0.0]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [the Gmsh format]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeBlock {
     /// The dimension of the entity the nodes are classified on.
@@ -160,7 +178,8 @@ pub struct NodeBlock {
     pub coords: Vec<[f64; 3]>,
 }
 
-/// One block of `$Elements`.
+/// One block of `$Elements`: elements of one type on one entity, with their node tags in Gmsh's
+/// node order. See [the Gmsh format] for the element types and node orders.
 ///
 /// # Example
 ///
@@ -176,13 +195,15 @@ pub struct NodeBlock {
 /// assert_eq!(block.nodes, [1, 2, 3]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [the Gmsh format]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ElementBlock {
     /// The dimension of the elements.
     pub dim: usize,
     /// The tag of the entity the elements are classified on.
     pub entity_tag: i32,
-    /// The Gmsh element type (A.7).
+    /// The Gmsh element type id; [`element_type`](fn@super::element_type) describes it.
     pub element_type: i32,
     /// The element tags (≥ 1).
     pub tags: Vec<i64>,
@@ -190,7 +211,8 @@ pub struct ElementBlock {
     pub nodes: Vec<i64>,
 }
 
-/// One link of `$Periodic`: stored, not applied.
+/// One link of `$Periodic`: an entity, its master entity and the affine map between them. tetraloma
+/// stores the links but does not apply them. See [the Gmsh format].
 ///
 /// # Example
 ///
@@ -204,6 +226,8 @@ pub struct ElementBlock {
 /// assert_eq!((link.affine.len(), &link.nodes[..]), (16, &[(2, 1)][..]));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [the Gmsh format]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Debug, PartialEq)]
 pub struct Periodic {
     /// The dimension of the entities.
@@ -218,9 +242,10 @@ pub struct Periodic {
     pub nodes: Vec<(i64, i64)>,
 }
 
-/// An MSH 4.1 file: the sections tetraloma reads, as stored. Unknown sections are skipped by the
-/// parser; the version, byte order and `size_t` width are properties of the encoding, not of
-/// the model.
+/// An MSH 4.1 file: the sections tetraloma reads, as stored. The parser skips unknown sections. The
+/// version, byte order and `size_t` width belong to the encoding, not to the model.
+/// [`to_gmsh_mesh`](super::to_gmsh_mesh) makes a mesh of it; the tutorial
+/// [Reading and writing files] shows tetraloma's reader, which does this for you.
 ///
 /// # Example
 ///
@@ -234,6 +259,8 @@ pub struct Periodic {
 /// assert!(file.entities.is_none() && file.physical_names.is_empty());
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#reading-gmsh
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MshFile {
     /// `$PhysicalNames`, in file order.

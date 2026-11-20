@@ -118,18 +118,25 @@ pub(crate) fn chunk_pairs<'a, F: Real, S: FieldShape>(
     pairs
 }
 
-/// Values at quadrature points of one cell block, in tiles of `tile` cells (1, 2, 4, 8 or 16;
-/// `VectorPolicy::quad_tile(size_of::<F>())`, 16 by default). Component k at point q of cell c
-/// is stored at
+// Design: "Geometry", "Padding and tiles", Listing B4b; ADR-0012.
+/// Values at the quadrature points of one cell block, on the device: one value of shape `S`
+/// per cell and point, for example det J ([`ScalarShape`](crate::ScalarShape)) or the
+/// Jacobian ([`JacShape`](crate::JacShape)).
+///
+/// The cells are stored in tiles of `tile` consecutive cells (1, 2, 4, 8 or 16, chosen per
+/// scalar type by tetraloma's vector policy), so that the lanes of a kernel over consecutive
+/// cells read and write contiguous memory. Component k at point q of cell c is stored at
 ///
 /// ```text
 /// ((c / tile) * num_points * LEN + q * LEN + k) * tile + c % tile
 /// ```
 ///
-/// counted from the first cell of its chunk, so the lanes of a kernel over consecutive cells
-/// read and write contiguous memory. `tile` = 1 is the plain `[cell][point][component]` layout.
-/// Stored in chunks of whole tiles so that no chunk exceeds the device's largest allocation
-/// (`device_properties(client).memory.max_page_size`); the cell count is padded to whole tiles.
+/// counted from the first cell of its chunk, where `LEN` is the number of components of `S`.
+/// `tile` = 1 is the plain `[cell][point][component]` layout. The field is stored in chunks of
+/// whole tiles, so that no chunk exceeds the device's largest allocation, and the cell count is
+/// padded to whole tiles. [`to_host_cell_major`](QuadField::to_host_cell_major) undoes the
+/// tiling on the host. [Geometric data] shows the methods that return fields, and
+/// [Writing kernels] reads them in a kernel.
 ///
 /// # Example
 ///
@@ -137,16 +144,21 @@ pub(crate) fn chunk_pairs<'a, F: Real, S: FieldShape>(
 /// use tetraloma::prelude::*;
 /// use tetraloma::ScalarShape;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+/// // `mesh`: the unit square in 2 × 2 quadrilaterals, on the test device; the tutorial
+/// // "Building a mesh" shows how to make one.
+/// # let client = tetraloma_testing::test_client();
+/// # let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
 /// let rule = QuadRule::for_grid(&mesh, 1)?;
 /// let detj = mesh.detj(&rule)?;
 /// let field: &QuadField<f32, ScalarShape> = &detj.blocks[0];
 /// assert_eq!((field.num_cells(), field.num_points()), (4, 1));
-/// // Squares of side 1/2.
+/// // Squares of side 1/2. The copy to the host is for inspection.
 /// assert!(field.to_host_cell_major()?.iter().all(|d| (d - 0.25).abs() < 1e-6));
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Geometric data]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html
+/// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#blockfields
 pub struct QuadField<F: Real, S: FieldShape> {
     chunks: Vec<QuadChunk<F>>,
     num_cells: usize,
@@ -155,7 +167,11 @@ pub struct QuadField<F: Real, S: FieldShape> {
     _s: PhantomData<S>,
 }
 
-/// One chunk of a [`QuadField`] or [`EVector`](crate::EVector): whole tiles of cells.
+// Design: "Padding and tiles", Listing B4b.
+/// One chunk of a [`QuadField`] or [`EVector`](crate::EVector): a device buffer that holds
+/// whole tiles of consecutive cells.
+///
+/// A kernel launches once per chunk; [Writing kernels] shows how to walk the chunks.
 ///
 /// # Example
 ///
@@ -163,7 +179,8 @@ pub struct QuadField<F: Real, S: FieldShape> {
 /// use tetraloma::prelude::*;
 /// use tetraloma::ScalarShape;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 5, 3, 4)?;
 /// let chunk = &field.chunks()[0];
 /// assert_eq!((chunk.first_cell, chunk.num_cells), (0, 5));
@@ -171,6 +188,8 @@ pub struct QuadField<F: Real, S: FieldShape> {
 /// assert_eq!(chunk.data.len(), 8 * 3);
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#blockfields
 pub struct QuadChunk<F: Real> {
     /// The first cell of the chunk.
     pub first_cell: usize,
@@ -182,11 +201,14 @@ pub struct QuadChunk<F: Real> {
 
 impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// An uninitialised field of `num_cells` cells with `num_points` points each, in tiles of
-    /// `tile` cells, chunked by the device's `max_page_size`.
+    /// `tile` cells, chunked by the device's largest allocation.
+    ///
+    /// Use it for the output of a kernel of your own; [Writing kernels] shows one.
     ///
     /// # Errors
     ///
-    /// `AllocationTooLarge` if one tile does not fit one allocation; `TooLarge` on overflow.
+    /// `AllocationTooLarge` if one tile does not fit one allocation; `TooLarge` if a size
+    /// overflows; allocation and device errors.
     ///
     /// # Panics
     ///
@@ -198,7 +220,8 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// use tetraloma::prelude::*;
     /// use tetraloma::VecShape;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // 20 cells, 4 points of 3 components each, in tiles of 16 cells.
     /// let field = QuadField::<f32, VecShape<D3>>::uninit(&client, 20, 4, 16)?;
     /// assert_eq!((field.num_cells(), field.num_points(), field.tile()), (20, 4, 16));
@@ -206,6 +229,8 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// assert_eq!(field.chunks()[0].data.len(), 32 * 4 * 3);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#blockfields
     pub fn uninit(
         client: &Client,
         num_cells: usize,
@@ -227,7 +252,9 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
         })
     }
 
-    /// Cells per tile.
+    /// The number of cells per tile: 1, 2, 4, 8 or 16.
+    ///
+    /// See [Writing kernels] for the layout.
     ///
     /// # Example
     ///
@@ -235,33 +262,44 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// use tetraloma::prelude::*;
     /// use tetraloma::ScalarShape;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
     /// assert_eq!(field.tile(), 8);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#blockfields
     pub fn tile(&self) -> usize {
         self.tile
     }
 
     /// The number of cells, padding excluded.
     ///
+    /// A field of a mesh's cell block has one cell per local cell; see [Geometric data].
+    ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     /// use tetraloma::ScalarShape;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
     /// assert_eq!(field.num_cells(), 10);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Geometric data]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html
     pub fn num_cells(&self) -> usize {
         self.num_cells
     }
 
-    /// Points per cell.
+    /// The number of points per cell.
+    ///
+    /// A field computed with a rule has the point count of the rule's point set; see
+    /// [Geometric data].
     ///
     /// # Example
     ///
@@ -269,47 +307,63 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// use tetraloma::prelude::*;
     /// use tetraloma::ScalarShape;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
     /// assert_eq!(field.num_points(), 6);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Geometric data]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html
     pub fn num_points(&self) -> usize {
         self.num_points
     }
 
     /// The chunks, in cell order.
     ///
+    /// A field has one chunk unless it exceeds the device's largest allocation; see
+    /// [Writing kernels].
+    ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     /// use tetraloma::ScalarShape;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let field = QuadField::<f32, ScalarShape>::uninit(&client, 10, 6, 8)?;
     /// // The chunks cover the cells in order.
     /// let cells: usize = field.chunks().iter().map(|c| c.num_cells).sum();
     /// assert_eq!(cells, 10);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#blockfields
     pub fn chunks(&self) -> &[QuadChunk<F>] {
         &self.chunks
     }
 
-    /// Host copy in plain `[cell][point]` order, whatever the tile width.
+    /// A copy on the host in plain `[cell][point]` order, whatever the tile width, padding
+    /// excluded: one `S::Host<F>` per cell and point, for example `[[F; GD]; TD]` for a
+    /// Jacobian (column-major).
+    ///
+    /// It waits for the device and copies the whole field, so use it for inspection, tests
+    /// and output, not inside a loop over the mesh ([Reading data back to the host]).
     ///
     /// # Errors
     ///
-    /// Device read errors.
+    /// Device errors of the copy.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // `mesh`: the unit square in 2 × 2 quadrilaterals, on the test device; the tutorial
+    /// // "Building a mesh" shows how to make one.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 2)?;
     /// let jac = mesh.jacobians(&rule)?;
     /// let values = jac.blocks[0].to_host_cell_major()?;
@@ -321,6 +375,8 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     /// }
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Reading data back to the host]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#reading-data-back-to-the-host
     pub fn to_host_cell_major(&self) -> Result<Vec<S::Host<F>>> {
         let len = S::LEN;
         assert_eq!(
@@ -352,15 +408,22 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
     }
 }
 
-/// One `QuadField` per cell block, indexed like `cell_blocks()`.
+// Design: "Geometry", "Geometric factors", Listing B4b.
+/// One [`QuadField`] per cell block, indexed like
+/// [`cell_blocks()`](crate::DeviceGrid::cell_blocks).
+///
+/// The geometric methods of `Mesh` (`physical_points`, `jacobians`, `detj`, …) return one;
+/// [Geometric data] calls each of them, and [Writing kernels] passes one to a kernel.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh = tetraloma_testing::mixed_box(1, 1).build::<f32, D3, D3>(&client)?;
+/// // `mesh`: the unit cube in pyramids and tetrahedra, one block per cell type, on the test
+/// // device; the tutorial "Building a mesh" shows how to make one.
+/// # let client = tetraloma_testing::test_client();
+/// # let mesh = tetraloma_testing::mixed_box(1, 1).build::<f32, D3, D3>(&client)?;
 /// let rule = QuadRule::for_grid(&mesh, 1)?;
 /// let detj = mesh.detj(&rule)?;
 /// assert_eq!(detj.blocks.len(), mesh.cell_blocks().len());
@@ -369,6 +432,9 @@ impl<F: Real, S: FieldShape> QuadField<F, S> {
 /// }
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Geometric data]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html
+/// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#blockfields
 pub struct BlockFields<F: Real, S: FieldShape> {
     /// The fields, one per cell block.
     pub blocks: Vec<QuadField<F, S>>,

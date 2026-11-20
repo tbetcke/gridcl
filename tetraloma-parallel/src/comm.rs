@@ -4,12 +4,21 @@ use std::rc::Rc;
 
 use crate::{GridError, ReduceOp, Result};
 
-/// Object-safe communicator interface used by IndexMap, Scatterer and partitioners.
+// Listing S2c.
+/// The interface of a communicator: a group of ranks and the collective operations between
+/// them.
 ///
-/// Byte buffers hold elements of a [`DType`] in native byte order; counts are in elements.
-/// The identity of a [`ReduceOp`], which [`CommDyn::exscan_bytes`] writes on rank 0, follows
-/// tetraloma-device: 0 for `Sum`, the largest finite value of the type for `Min` (`f32::MAX`, not
-/// infinity) and the smallest finite value for `Max` (`f32::MIN`, `i32::MIN`, 0 for unsigned).
+/// [`Serial`](crate::Serial) is the communicator of one process, and `Mpi` (feature `mpi`) wraps an
+/// MPI communicator. The trait is object-safe, so index maps, scatterers and partitioners take a
+/// `&dyn CommDyn`; a mesh stores its communicator as a [`Comm`]. The typed collectives of
+/// [`CommExt`] are easier to use than the byte-level methods here ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+///
+/// Collective methods must be called by every rank, in the same order. Byte buffers hold
+/// elements of a [`DType`] in native byte order, and counts are in elements. The identity of a
+/// [`ReduceOp`], which [`exscan_bytes`](CommDyn::exscan_bytes) writes on rank 0, is 0 for
+/// `Sum`, the largest finite value of the type for `Min` (`f32::MAX`, not infinity) and the
+/// smallest finite value for `Max` (`f32::MIN`, `i32::MIN`, 0 for unsigned types).
 ///
 /// # Example
 ///
@@ -27,17 +36,98 @@ use crate::{GridError, ReduceOp, Result};
 /// assert_eq!(i32::from_ne_bytes(buf), i32::MAX);
 /// ```
 pub trait CommDyn: 'static {
-    /// This rank, in `0..size()`.
+    /// This rank's number, in `0..size()` ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, Serial};
+    ///
+    /// let comm: &dyn CommDyn = &Serial;
+    /// assert_eq!(comm.rank(), 0);
+    /// ```
     fn rank(&self) -> usize;
-    /// The number of ranks.
+    /// The number of ranks ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, Serial};
+    ///
+    /// let comm: &dyn CommDyn = &Serial;
+    /// assert_eq!(comm.size(), 1);
+    /// ```
     fn size(&self) -> usize;
-    /// Blocks until every rank has entered the barrier.
+    /// Blocks until every rank has entered the barrier. Collective ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, Serial};
+    ///
+    /// // One rank: returns at once.
+    /// Serial.barrier();
+    /// ```
     fn barrier(&self);
-    /// In-place all-reduce of `buf`, read as elements of `dtype`.
+    /// Replaces each element of `buf`, read as elements of `dtype`, by its sum, minimum or maximum
+    /// over all ranks. Collective; [`CommExt::sum`] and its siblings are the typed form
+    /// ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, DType, ReduceOp, Serial};
+    ///
+    /// let mut buf = [2.5_f64.to_ne_bytes(), 4.0_f64.to_ne_bytes()].concat();
+    /// Serial.all_reduce_bytes(&mut buf, DType::F64, ReduceOp::Max);
+    /// // One rank: every element is its own maximum.
+    /// assert_eq!(f64::from_ne_bytes(buf[8..].try_into().unwrap()), 4.0);
+    /// ```
     fn all_reduce_bytes(&self, buf: &mut [u8], dtype: DType, op: ReduceOp);
-    /// In-place exclusive scan; rank 0 receives the identity of `op`.
+    /// Replaces each element of `buf`, read as elements of `dtype`, by the sum, minimum or maximum
+    /// of that element over the lower ranks: an exclusive scan. Rank 0 receives the identity of
+    /// `op`. Collective; [`CommExt::exscan_sum`] is the typed form ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, DType, ReduceOp, Serial};
+    ///
+    /// let mut buf = 5_u32.to_ne_bytes();
+    /// Serial.exscan_bytes(&mut buf, DType::U32, ReduceOp::Sum);
+    /// // Rank 0 has no lower ranks: the identity of the sum.
+    /// assert_eq!(u32::from_ne_bytes(buf), 0);
+    /// ```
     fn exscan_bytes(&self, buf: &mut [u8], dtype: DType, op: ReduceOp);
-    /// Variable all-to-all; counts in elements.
+    /// Variable all-to-all: this rank sends the next `send_counts[r]` elements of `send` to rank r,
+    /// and receives `recv_counts[r]` elements from rank r into `recv`, in rank order. Counts are in
+    /// elements of `dtype`. Collective; [`CommExt::all_to_all_v`] exchanges the counts for you
+    /// ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` unless there is one count per rank and the counts fill `send` and
+    /// `recv` exactly; `TooLarge` if a byte length overflows; for `Mpi`, `MessageTooLarge` if a
+    /// count or offset exceeds `i32::MAX`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, DType, Serial};
+    ///
+    /// let send = [1_i32.to_ne_bytes(), 2_i32.to_ne_bytes()].concat();
+    /// let mut recv = [0_u8; 8];
+    /// // One rank sends both elements to itself.
+    /// Serial.all_to_all_v_bytes(&send, &[2], &mut recv, &[2], DType::I32)?;
+    /// assert_eq!(recv[..], send[..]);
+    /// # Ok::<(), tetraloma_parallel::GridError>(())
+    /// ```
     fn all_to_all_v_bytes(
         &self,
         send: &[u8],
@@ -46,7 +136,29 @@ pub trait CommDyn: 'static {
         recv_counts: &[usize],
         dtype: DType,
     ) -> Result<()>;
-    /// Neighbourhood variant on a distributed-graph communicator.
+    /// Variable all-to-all between neighbours only: this rank sends `send_counts[i]` elements of
+    /// `send` to `nb.destinations()[i]`, and receives `recv_counts[i]` elements from
+    /// `nb.sources()[i]`, in that order. Collective over the ranks of `nb`'s communicator;
+    /// [`CommExt::neighbour_all_to_all_v`] exchanges the counts for you. A halo exchange sends its
+    /// values this way ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
+    ///
+    /// # Errors
+    ///
+    /// `LengthMismatch` unless there is one count per neighbour and the counts fill `send` and
+    /// `recv` exactly ([`Serial`](crate::Serial) accepts only the empty neighbourhood); `TooLarge`
+    /// if a byte length overflows; for `Mpi`, `MessageTooLarge`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, DType, Neighbourhood, Serial};
+    ///
+    /// // One rank has no neighbours: nothing to send or receive.
+    /// let nb = Neighbourhood::empty();
+    /// Serial.neighbour_all_to_all_v_bytes(&nb, &[], &[], &mut [], &[], DType::F32)?;
+    /// # Ok::<(), tetraloma_parallel::GridError>(())
+    /// ```
     fn neighbour_all_to_all_v_bytes(
         &self,
         nb: &Neighbourhood,
@@ -56,17 +168,42 @@ pub trait CommDyn: 'static {
         recv_counts: &[usize],
         dtype: DType,
     ) -> Result<()>;
-    /// Raw handle for PT-Scotch and ParMETIS; None for Serial.
+    /// The MPI communicator handle, for libraries that call MPI themselves, such as the
+    /// partitioners PT-Scotch and ParMETIS; `None` for a communicator that is not an MPI one, such
+    /// as [`Serial`](crate::Serial). Feature `mpi` ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, Serial};
+    ///
+    /// assert!(Serial.raw().is_none());
+    /// ```
     #[cfg(feature = "mpi")]
     fn raw(&self) -> Option<mpi::ffi::MPI_Comm>;
-    /// Cheap clone that refers to the same communicator (for `Mpi` an `Rc` clone, not
-    /// `MPI_Comm_dup`), so a [`Neighbourhood`] can hold it (ADR-0026).
+    // ADR-0026.
+    /// A cheap copy that refers to the same communicator, so that a [`Neighbourhood`] can keep it:
+    /// for `Mpi` a reference-counted clone, not a new MPI communicator (`MPI_Comm_dup`)
+    /// ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{CommDyn, Serial};
+    ///
+    /// let copy = Serial.duplicate();
+    /// assert_eq!((copy.rank(), copy.size()), (0, 1));
+    /// ```
     fn duplicate(&self) -> Rc<dyn CommDyn>;
 }
 
-/// The communicator stored in a Mesh. Not required to be Send or Sync.
+/// A communicator that a mesh can store: every [`CommDyn`] that is `Clone`.
 ///
-/// Every `CommDyn` that is `Clone` is a `Comm`.
+/// It is the last type parameter `C` of a mesh, `Serial` or `Mpi`. It need not be `Send` or `Sync`:
+/// each rank keeps its mesh on one host thread ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
 ///
 /// # Example
 ///
@@ -81,10 +218,12 @@ pub trait CommDyn: 'static {
 pub trait Comm: CommDyn + Clone {}
 impl<T: CommDyn + Clone> Comm for T {}
 
-/// Typed helpers on any communicator, including `&dyn CommDyn`.
+/// Typed collectives on any communicator, including `&dyn CommDyn`: sums, minima, maxima,
+/// exclusive sums, gathers and all-to-all exchanges of [`CommScalar`] values.
 ///
-/// They go through [`CommDyn::all_reduce_bytes`] and [`CommDyn::exscan_bytes`] on a
-/// one-element buffer, so every rank must call them in the same order.
+/// They are collective and go through the byte-level methods of [`CommDyn`], so every rank must
+/// call them in the same order ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
 ///
 /// # Example
 ///
@@ -97,7 +236,10 @@ impl<T: CommDyn + Clone> Comm for T {}
 /// assert_eq!(comm.exscan_sum(5_i32), 0);
 /// ```
 pub trait CommExt {
-    /// The sum of `x` over all ranks.
+    /// The sum of `x` over all ranks, the same on every rank. Collective ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, Serial};
@@ -105,7 +247,10 @@ pub trait CommExt {
     /// assert_eq!(Serial.sum(1.5_f32), 1.5);
     /// ```
     fn sum<T: CommScalar>(&self, x: T) -> T;
-    /// The maximum of `x` over all ranks.
+    /// The maximum of `x` over all ranks. Collective ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, Serial};
@@ -113,7 +258,11 @@ pub trait CommExt {
     /// assert_eq!(Serial.max(-4_i64), -4);
     /// ```
     fn max<T: CommScalar>(&self, x: T) -> T;
-    /// The sum of `x` over the lower ranks; 0 on rank 0.
+    /// The sum of `x` over the lower ranks; 0 on rank 0. Collective. It gives each rank the first
+    /// global number of its own entities ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, Serial};
@@ -121,7 +270,10 @@ pub trait CommExt {
     /// assert_eq!(Serial.exscan_sum(9_u32), 0);
     /// ```
     fn exscan_sum<T: CommScalar>(&self, x: T) -> T;
-    /// The minimum of `x` over all ranks.
+    /// The minimum of `x` over all ranks. Collective ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, Serial};
@@ -129,7 +281,10 @@ pub trait CommExt {
     /// assert_eq!(Serial.min(2.5_f64), 2.5);
     /// ```
     fn min<T: CommScalar>(&self, x: T) -> T;
-    /// `x` of every rank, in rank order.
+    /// `x` of every rank, in rank order, on every rank. Collective ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, Serial};
@@ -139,13 +294,16 @@ pub trait CommExt {
     fn all_gather<T: CommScalar>(&self, x: T) -> Vec<T>;
     /// Variable all-to-all: the first `send_counts[0]` values of `send` go to rank 0, the next
     /// `send_counts[1]` to rank 1, and so on. Exchanges the counts first; returns the received
-    /// values, grouped by source rank, and the count from each rank.
+    /// values, grouped by source rank, and the count from each rank. Collective ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
     ///
     /// # Errors
     ///
     /// `LengthMismatch` unless there is one count per rank and the counts add up to
     /// `send.len()`; `TooLarge` if a sum overflows; the communicator's errors (for `Mpi`,
     /// `MessageTooLarge`).
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, GridError, Serial};
@@ -160,13 +318,17 @@ pub trait CommExt {
         send_counts: &[usize],
     ) -> Result<(Vec<T>, Vec<usize>)>;
     /// Neighbourhood all-to-all: `send_counts[i]` consecutive values of `send` go to
-    /// `nb.destinations()[i]`. Exchanges the counts first; returns the received values, grouped
-    /// in the order of `nb.sources()`, and the count from each source.
+    /// `nb.destinations()[i]`. Exchanges the counts first; returns the received values, grouped in
+    /// the order of `nb.sources()`, and the count from each source. Collective over the ranks of
+    /// `nb`'s communicator ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
     ///
     /// # Errors
     ///
     /// `LengthMismatch` unless there is one count per destination and the counts add up to
     /// `send.len()`; `TooLarge` if a sum overflows; the communicator's errors.
+    ///
+    /// # Example
     ///
     /// ```
     /// use tetraloma_parallel::{CommExt, GridError, Neighbourhood, Serial};
@@ -335,7 +497,9 @@ pub(crate) fn agree<T>(comm: &dyn CommDyn, local: Result<T>) -> Result<T> {
     }
 }
 
-/// Element type of a byte-level collective.
+/// The element type of a byte-level collective of [`CommDyn`]: what the bytes of a buffer mean
+/// ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
 ///
 /// # Example
 ///
@@ -424,7 +588,9 @@ pub(crate) fn identity_bytes(dtype: DType, op: ReduceOp) -> [u8; 8] {
     out
 }
 
-/// Scalars of the typed collectives: i32, i64, u32, u64, f32, f64.
+/// The scalar types of the typed collectives of [`CommExt`]: `i32`, `i64`, `u32`, `u64`, `f32` and
+/// `f64` ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
 ///
 /// # Example
 ///
@@ -460,10 +626,16 @@ impl CommScalar for f64 {
     const DTYPE: DType = DType::F64;
 }
 
-/// Source and destination ranks of a distributed-graph communicator, with the communicator it
-/// was made on (ADR-0026). Opaque; Serial accepts only the empty one.
+// ADR-0026.
+/// The ranks this rank exchanges data with: the ranks it receives from (sources) and the ranks
+/// it sends to (destinations), with the communicator they belong to.
 ///
-/// Under `Mpi` it owns a distributed-graph communicator, and dropping it is collective
+/// An [`IndexMap`](crate::IndexMap) with ghosts holds two of them, one per direction of the halo
+/// exchange ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
+/// [`Serial`](crate::Serial) accepts only the empty one.
+///
+/// Under `Mpi` it owns an MPI distributed-graph communicator, and dropping it is collective
 /// (`MPI_Comm_free`): every rank of the communicator drops its neighbourhoods in the same order.
 ///
 /// # Example
@@ -489,7 +661,8 @@ pub struct Neighbourhood {
 }
 
 impl Neighbourhood {
-    /// No sources and no destinations.
+    /// The neighbourhood with no sources and no destinations, on no communicator ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
     ///
     /// # Example
     ///
@@ -508,18 +681,21 @@ impl Neighbourhood {
             graph: None,
         }
     }
+    // ADR-0026.
     /// The neighbourhood of `comm` in which this rank receives from `sources` and sends to
-    /// `destinations`. Collective; every rank's lists must be the transpose of the others'.
-    /// With `comm.raw()` = `Some` it creates the graph communicator by
-    /// `MPI_Dist_graph_create_adjacent` (unweighted, `reorder = 0`); otherwise it keeps the rank
-    /// lists. It holds `comm.duplicate()` for the exchanges (ADR-0026).
+    /// `destinations`. Collective; the lists of all ranks must agree: rank r is a source of rank s
+    /// exactly when s is a destination of r ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
+    ///
+    /// On an MPI communicator (`comm.raw()` is `Some`) it creates an MPI distributed-graph
+    /// communicator with `MPI_Dist_graph_create_adjacent` (unweighted, ranks not reordered);
+    /// otherwise it keeps the rank lists. It holds `comm.duplicate()` for the exchanges.
     ///
     /// # Errors
     ///
-    /// Agreed over the ranks (ADR-0026, item 15): `IndexOutOfRange` if a rank is not below
-    /// `comm.size()` or is this rank (so `Serial` accepts only empty lists), `LengthMismatch`
-    /// if a list repeats a rank (expected: the distinct count); `RemoteFailure` on the other
-    /// ranks.
+    /// Agreed over the ranks: `IndexOutOfRange` if a rank is not below `comm.size()` or is this
+    /// rank (so `Serial` accepts only empty lists), `LengthMismatch` if a list repeats a rank
+    /// (expected: the distinct count); `RemoteFailure` on the other ranks.
     ///
     /// # Example
     ///
@@ -593,7 +769,8 @@ impl Neighbourhood {
             graph: None,
         }
     }
-    /// The ranks this rank receives from.
+    /// The ranks this rank receives from, in the order of the received data ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
     ///
     /// # Example
     ///
@@ -606,7 +783,8 @@ impl Neighbourhood {
     pub fn sources(&self) -> &[usize] {
         &self.sources
     }
-    /// The ranks this rank sends to.
+    /// The ranks this rank sends to, in the order of the sent data ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
     ///
     /// # Example
     ///

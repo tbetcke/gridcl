@@ -1,21 +1,33 @@
-//! `EntityMap`: the map from the cells, vertices and nodes of a submesh to those of its parent
-//! (docs/design.md, "Tags, regions and submeshes"; ADR-0039, item 1).
+// Design: "Tags, regions and submeshes"; ADR-0039, item 1.
+//! `EntityMap`: the map from the cells, vertices and nodes of a submesh to those of its parent.
 
 use tetraloma_device::{DeviceBuffer, Result};
 
-/// The map from a submesh to its parent, on the device, for every local child cell, vertex and
-/// node, owned or ghost (ADR-0039, item 1).
+// Design: "Tags, regions and submeshes"; ADR-0039, item 1.
+/// The map from a submesh to its parent mesh, on the device: the parent entity of every local child
+/// cell, and the parent vertex and node of every child vertex and node, owned or ghost.
+///
+/// [`Mesh::boundary`](crate::Mesh::boundary), [`facet_submesh`](crate::Mesh::facet_submesh),
+/// [`edge_submesh`](crate::Mesh::edge_submesh) and [`cell_submesh`](crate::Mesh::cell_submesh)
+/// return one with the submesh. Indices are local on both sides. [Regions] and [Boundary meshes]
+/// show it with submeshes.
+///
+/// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
+/// [Boundary meshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#boundary-meshes
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mut mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 1, 1).build(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // mesh: a `VolumeMesh<f32>`, the unit cube in six tetrahedra; the tutorial "Building a mesh"
+/// // shows how to make a mesh.
+/// # let mut mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 1, 1).build(&client)?;
 /// mesh.create_entities(2)?;
 /// let (surface, map) = mesh.boundary()?;
-/// // Two triangles per face of the cube; the eight corners.
+/// // Two triangles per face of the cube, and its eight corners.
 /// assert_eq!(map.child_to_parent().len(), 12);
 /// assert_eq!(map.vertex_to_parent().len(), surface.vertex_index_map().num_local());
 /// # Ok::<(), GridError>(())
@@ -68,19 +80,26 @@ impl EntityMap {
         }
     }
 
-    /// The dimension of the parent entities the child cells come from: tdim − 1 for `boundary`
-    /// and `facet_submesh`, 1 for `edge_submesh`, tdim for `cell_submesh`.
+    /// The dimension of the parent entities that the child cells come from: tdim − 1 for `boundary`
+    /// and `facet_submesh`, 1 for `edge_submesh`, and tdim for `cell_submesh`.
+    ///
+    /// [Tags and submeshes] shows each kind of submesh.
+    ///
+    /// [Tags and submeshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let (_, map) = mesh.boundary()?;
-    /// // Boundary edges of the square.
+    /// // The boundary edges of the square.
     /// assert_eq!(map.parent_dim(), 1);
     /// # Ok::<(), GridError>(())
     /// ```
@@ -88,19 +107,26 @@ impl EntityMap {
         self.parent_dim
     }
 
-    /// The flat local parent entity of each local child cell, in flat child order (over the
-    /// child's cell blocks in block order).
+    /// The flat local index of the parent entity of each local child cell, in flat child order: the
+    /// child cells over the child's cell blocks in block order.
+    ///
+    /// [Regions] shows how to use it.
+    ///
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let (_, map) = mesh.boundary()?;
-    /// // Eight boundary edges of the twelve.
+    /// // Eight boundary edges of the twelve; the copy to the host is for inspection.
     /// let parents = map.child_to_parent().to_host()?;
     /// assert_eq!(parents.len(), 8);
     /// assert!(parents.iter().all(|&e| e < 12));
@@ -110,16 +136,23 @@ impl EntityMap {
         &self.child_to_parent
     }
 
-    /// The sparse inverse of [`child_to_parent`](EntityMap::child_to_parent): the parent flat
-    /// indices that have a child, ascending, and the flat child cell of each.
+    /// The sparse inverse of [`child_to_parent`](EntityMap::child_to_parent): the flat parent
+    /// entities that have a child, ascending, and the flat child cell of each.
+    ///
+    /// [Regions] shows the maps of a submesh.
+    ///
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let (_, map) = mesh.boundary()?;
     /// let (parents, children) = map.parent_to_child();
@@ -133,15 +166,22 @@ impl EntityMap {
         (&self.parents, &self.children)
     }
 
-    /// The parent local vertex of each child local vertex.
+    /// The parent's local vertex of each local vertex of the child.
+    ///
+    /// [Boundary meshes] shows the maps of a submesh.
+    ///
+    /// [Boundary meshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#boundary-meshes
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let (_, map) = mesh.boundary()?;
     /// // The eight vertices on the boundary of the nine.
@@ -152,15 +192,22 @@ impl EntityMap {
         &self.vertex_to_parent
     }
 
-    /// The parent geometry node of each child geometry node.
+    /// The parent's local geometry node of each local geometry node of the child.
+    ///
+    /// [Boundary meshes] shows the maps of a submesh.
+    ///
+    /// [Boundary meshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#boundary-meshes
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let (_, map) = mesh.boundary()?;
     /// // Degree 1: the nodes are the vertices.
@@ -171,19 +218,26 @@ impl EntityMap {
         &self.node_to_parent
     }
 
-    /// A deep copy of every device array.
+    /// A deep copy of the map: every device array is copied on the device.
+    ///
+    /// [Regions] shows the maps of a submesh.
+    ///
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone`.
+    /// Allocation and device errors of the copies.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// let (_, map) = mesh.boundary()?;
     /// let copy = map.try_clone()?;

@@ -37,3 +37,7 @@ target/hpc/
 
 # Python bytecode (scripts/fixtures)
 __pycache__/
+
+# The user documentation site (scripts/check-user-docs.sh) and mdBook's default output.
+/site/
+/docs/user/book/

@@ -12,6 +12,9 @@ use crate::{NodeFamily, RefCellError, lagrange_points, num_lagrange_nodes, polyn
 /// A Lagrange element on a reference cell: its nodes and the coefficients of its basis in an
 /// orthonormal polynomial set, found with tetraloma-refcell's own dense LU.
 ///
+/// The basis function ψⱼ is 1 at node j and 0 at the other nodes. The chapter [Tabulation] explains
+/// what the tables are for, and [Lagrange nodes] where the nodes sit.
+///
 /// # Example
 ///
 /// ```
@@ -30,6 +33,9 @@ use crate::{NodeFamily, RefCellError, lagrange_points, num_lagrange_nodes, polyn
 /// let dsum: f64 = (0..6).map(|k| table.get(1, 0, k)).sum();
 /// assert!(dsum.abs() < 1e-13);
 /// ```
+///
+/// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
+/// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html
 #[derive(Clone, Debug)]
 pub struct LagrangeElement {
     cell: CellType,
@@ -43,10 +49,32 @@ pub struct LagrangeElement {
 impl LagrangeElement {
     /// The Lagrange element of degree `degree` on `cell` with nodes of `family`.
     ///
+    /// It computes the nodes and solves one dense N × N system for the coefficients, with N the
+    /// number of nodes. See [Lagrange nodes] for the node families of each cell.
+    ///
     /// # Errors
     ///
     /// The errors of [`lagrange_points`](crate::lagrange_points), and
     /// [`RefCellError::Singular`] if the Vandermonde matrix is singular.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily, RefCellError};
+    ///
+    /// let element = LagrangeElement::new(CellType::Hexahedron, 2, NodeFamily::Gll)?;
+    /// assert_eq!(element.dim(), 27);
+    ///
+    /// // GLL nodes exist on intervals, quadrilaterals and hexahedra only.
+    /// assert!(matches!(
+    ///     LagrangeElement::new(CellType::Triangle, 2, NodeFamily::Gll),
+    ///     Err(RefCellError::UnsupportedNodeFamily { .. })
+    /// ));
+    /// # Ok::<(), RefCellError>(())
+    /// ```
+    ///
+    /// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-families
     pub fn new(cell: CellType, degree: u32, family: NodeFamily) -> Result<Self, RefCellError> {
         let points = lagrange_points(cell, degree, family)?;
         let n = num_lagrange_nodes(cell, degree);
@@ -66,32 +94,117 @@ impl LagrangeElement {
     }
 
     /// The cell type.
+    ///
+    /// See [Reference cell definitions].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily};
+    ///
+    /// let element = LagrangeElement::new(CellType::Prism, 1, NodeFamily::Equispaced).unwrap();
+    /// assert_eq!(element.cell(), CellType::Prism);
+    /// ```
+    ///
+    /// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html
     pub fn cell(&self) -> CellType {
         self.cell
     }
 
-    /// The degree.
+    /// The polynomial degree.
+    ///
+    /// See [Node counts].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily};
+    ///
+    /// let element = LagrangeElement::new(CellType::Interval, 4, NodeFamily::Gll).unwrap();
+    /// assert_eq!(element.degree(), 4);
+    /// ```
+    ///
+    /// [Node counts]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-counts
     pub fn degree(&self) -> u32 {
         self.degree
     }
 
     /// The node family.
+    ///
+    /// See [Node families].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily};
+    ///
+    /// let element = LagrangeElement::new(CellType::Quadrilateral, 3, NodeFamily::Gll).unwrap();
+    /// assert_eq!(element.family(), NodeFamily::Gll);
+    /// ```
+    ///
+    /// [Node families]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-families
     pub fn family(&self) -> NodeFamily {
         self.family
     }
 
     /// The number of basis functions, [`num_lagrange_nodes`](crate::num_lagrange_nodes).
+    ///
+    /// See [Node counts].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily, num_lagrange_nodes};
+    ///
+    /// let element = LagrangeElement::new(CellType::Tetrahedron, 3, NodeFamily::Equispaced).unwrap();
+    /// assert_eq!(element.dim(), 20);
+    /// assert_eq!(element.dim(), num_lagrange_nodes(CellType::Tetrahedron, 3));
+    /// ```
+    ///
+    /// [Node counts]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-counts
     pub fn dim(&self) -> usize {
         num_lagrange_nodes(self.cell, self.degree)
     }
 
-    /// The nodes, as [`lagrange_points`](crate::lagrange_points) returns them.
+    /// The nodes, as [`lagrange_points`](crate::lagrange_points) returns them: flat and
+    /// node-major, in tetraloma's order.
+    ///
+    /// See [Node ordering].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily};
+    ///
+    /// // The quadratic interval: the two vertices, then the midpoint.
+    /// let element = LagrangeElement::new(CellType::Interval, 2, NodeFamily::Equispaced).unwrap();
+    /// assert_eq!(element.points(), [0.0, 1.0, 0.5]);
+    ///
+    /// // Each basis function is 1 at its own node and 0 at the others.
+    /// let table = element.tabulate(element.points(), 0).unwrap();
+    /// for i in 0..3 {
+    ///     for j in 0..3 {
+    ///         let want = if i == j { 1.0 } else { 0.0 };
+    ///         assert!((table.get(0, i, j) - want).abs() < 1e-14);
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// [Node ordering]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
     pub fn points(&self) -> &[f64] {
         &self.points
     }
 
-    /// The expansion coefficients C, row-major N × N: ψ_j = Σ_k C[k · N + j] φ_k over the
-    /// orthonormal basis φ_k of "Tabulation" (ADR-0039, item 15).
+    // Design: "Tabulation"; ADR-0039, item 15.
+    /// The expansion coefficients C, row-major N × N: ψⱼ = Σₖ C[k · N + j] φₖ over an
+    /// orthonormal polynomial basis φₖ of the cell.
+    ///
+    /// Sum-factorised and downstream kernels can evaluate the basis from these; see [Tabulation].
     ///
     /// # Example
     ///
@@ -106,6 +219,8 @@ impl LagrangeElement {
     /// assert!((c[0] - 0.5).abs() < 1e-15);
     /// assert!((c[2] + 0.5 / 3f64.sqrt()).abs() < 1e-15);
     /// ```
+    ///
+    /// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
     pub fn coefficients(&self) -> &[f64] {
         &self.coefficients
     }
@@ -114,11 +229,40 @@ impl LagrangeElement {
     /// and first derivatives for `nderivs == 1`. For the point cell, `points` must be empty and
     /// stands for its one point.
     ///
+    /// The book's [Tabulation] section shows the device tables that tetraloma makes from this one.
+    ///
     /// # Errors
     ///
     /// - [`RefCellError::UnsupportedDerivativeOrder`] if `nderivs > 1`;
     /// - [`RefCellError::PointsShape`] if `points.len()` is not a multiple of the cell's
     ///   topological dimension.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily, RefCellError};
+    ///
+    /// // The linear triangle at its centroid: φ₀ = 1 − ξ₀ − ξ₁, φ₁ = ξ₀, φ₂ = ξ₁.
+    /// let element = LagrangeElement::new(CellType::Triangle, 1, NodeFamily::Equispaced)?;
+    /// let table = element.tabulate(&[1.0 / 3.0, 1.0 / 3.0], 1)?;
+    /// for k in 0..3 {
+    ///     assert!((table.get(0, 0, k) - 1.0 / 3.0).abs() < 1e-14);
+    /// }
+    /// // Block 1 + d holds ∂φₖ/∂ξ_d.
+    /// let d0: Vec<f64> = (0..3).map(|k| table.get(1, 0, k)).collect();
+    /// let want = [-1.0, 1.0, 0.0];
+    /// assert!(d0.iter().zip(want).all(|(d, w)| (d - w).abs() < 1e-13));
+    ///
+    /// // Second derivatives are not offered.
+    /// assert_eq!(
+    ///     element.tabulate(&[0.0, 0.0], 2),
+    ///     Err(RefCellError::UnsupportedDerivativeOrder(2))
+    /// );
+    /// # Ok::<(), RefCellError>(())
+    /// ```
+    ///
+    /// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
     pub fn tabulate(&self, points: &[f64], nderivs: u32) -> Result<Tabulation, RefCellError> {
         if nderivs > 1 {
             return Err(RefCellError::UnsupportedDerivativeOrder(nderivs));
@@ -159,11 +303,27 @@ impl LagrangeElement {
     }
 }
 
+// Design: Listing B5 (the device layout `dphi[q][k][d]`).
 /// Basis values and derivatives at a set of points.
 ///
 /// `data[(deriv * num_points + point) * num_basis + basis]`, where `deriv` 0 is the value and
-/// `1 + d` the derivative along reference coordinate `d`. tetraloma-geometry reorders this to
-/// Listing B5's `dphi[q][k][d]` when it narrows and uploads.
+/// `1 + d` the derivative along reference coordinate `d`. tetraloma reorders this to the device
+/// layout `[q][k][d]` when it narrows and uploads the table; see [Tabulation].
+///
+/// # Example
+///
+/// ```
+/// use tetraloma_dims::CellType;
+/// use tetraloma_refcell::{LagrangeElement, NodeFamily};
+///
+/// let element = LagrangeElement::new(CellType::Quadrilateral, 1, NodeFamily::Equispaced).unwrap();
+/// let table = element.tabulate(&[0.5, 0.5, 0.0, 0.0], 1).unwrap();
+/// // Values and two derivative blocks, at two points, of four basis functions.
+/// assert_eq!((table.num_derivs, table.num_points, table.num_basis), (3, 2, 4));
+/// assert_eq!(table.data.len(), 3 * 2 * 4);
+/// ```
+///
+/// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tabulation {
     /// The number of derivative blocks: 1 for values only, 1 + tdim with first derivatives.
@@ -179,9 +339,28 @@ pub struct Tabulation {
 impl Tabulation {
     /// The entry for derivative block `deriv`, point `point` and basis function `basis`.
     ///
+    /// Block 0 holds the values, block 1 + d the derivatives along ξ_d; see [Tabulation].
+    ///
     /// # Panics
     ///
     /// If an index is out of range.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_dims::CellType;
+    /// use tetraloma_refcell::{LagrangeElement, NodeFamily};
+    ///
+    /// // The linear interval at ξ = 0.25: φ₀ = 1 − ξ, φ₁ = ξ.
+    /// let element = LagrangeElement::new(CellType::Interval, 1, NodeFamily::Equispaced).unwrap();
+    /// let table = element.tabulate(&[0.25], 1).unwrap();
+    /// assert!((table.get(0, 0, 0) - 0.75).abs() < 1e-15);
+    /// assert!((table.get(0, 0, 1) - 0.25).abs() < 1e-15);
+    /// assert!((table.get(1, 0, 0) + 1.0).abs() < 1e-14);
+    /// assert!((table.get(1, 0, 1) - 1.0).abs() < 1e-14);
+    /// ```
+    ///
+    /// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
     pub fn get(&self, deriv: usize, point: usize, basis: usize) -> f64 {
         assert!(
             deriv < self.num_derivs && point < self.num_points && basis < self.num_basis,

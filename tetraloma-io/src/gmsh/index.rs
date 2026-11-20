@@ -43,13 +43,17 @@ struct ElementBlockAt {
     at: u64,
 }
 
+// Design: "Gmsh MSH 4.1", parallel read; ADR-0035, rules 1 and 2.
 /// The layout of an MSH 4.1 file: its encoding, its small sections (`$PhysicalNames`,
 /// `$Entities`, `$PartitionedEntities`, `$Periodic`) and the byte offsets of its node and
 /// element blocks.
 ///
-/// An ASCII file is scanned only up to its `$MeshFormat`: [`is_binary`](MshIndex::is_binary)
-/// is false and its chunks are refused (the parallel reader reads it on rank 0, ADR-0035,
-/// rule 2).
+/// With the layout of a binary file, each rank reads only its own range of nodes and elements
+/// ([`read_nodes`](MshIndex::read_nodes), [`read_elements`](MshIndex::read_elements)) instead of
+/// the whole file. An ASCII file is scanned only up to its `$MeshFormat`:
+/// [`is_binary`](MshIndex::is_binary) is false and its chunks are refused, so tetraloma's parallel
+/// reader reads such a file on rank 0. The tutorial [Reading Gmsh in parallel] describes both
+/// paths.
 ///
 /// # Example
 ///
@@ -68,6 +72,8 @@ struct ElementBlockAt {
 /// assert_eq!(tags, all[n / 2..]);
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
 #[derive(Debug)]
 pub struct MshIndex {
     path: PathBuf,
@@ -81,7 +87,8 @@ pub struct MshIndex {
     bytes_read: AtomicU64,
 }
 
-/// A range of nodes in file order: their tags and coordinates.
+/// A range of nodes in file order, as [`MshIndex::read_nodes`] returns it: their tags and
+/// coordinates. See [Reading Gmsh in parallel].
 ///
 /// # Example
 ///
@@ -93,6 +100,8 @@ pub struct MshIndex {
 /// assert_eq!((chunk.tags.len(), chunk.coords.len()), (2, 2));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NodeChunk {
     /// The node tags.
@@ -101,8 +110,8 @@ pub struct NodeChunk {
     pub coords: Vec<[f64; 3]>,
 }
 
-/// A range of the elements of one dimension in file order, as the element blocks that hold
-/// them, cut to the range.
+/// A range of the elements of one dimension in file order, as [`MshIndex::read_elements`] returns
+/// it: the element blocks that hold them, cut to the range. See [Reading Gmsh in parallel].
 ///
 /// # Example
 ///
@@ -115,6 +124,8 @@ pub struct NodeChunk {
 /// assert_eq!((chunk.blocks[0].element_type, chunk.blocks[0].nodes.len()), (1, 2));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ElementChunk {
     /// The blocks, in file order.
@@ -324,14 +335,16 @@ fn extent(count: u64, bytes: u64, offset: u64, len: u64, at: u64) -> Result<u64>
 }
 
 impl MshIndex {
-    /// Scans the file at `path`: `$MeshFormat`, then for a binary file the small sections,
-    /// parsed, and the node and element block headers, located by seeking over the block data.
-    /// Other sections are skipped.
+    /// Scans the file at `path`: `$MeshFormat`, then for a binary file the small sections, parsed,
+    /// and the node and element block headers, located by seeking over the block data. Other
+    /// sections are skipped. The scan reads a small part of a large file. See
+    /// [Reading Gmsh in parallel].
     ///
     /// # Errors
     ///
-    /// `Io` if the file cannot be read; `Parse` with the byte offset for a malformed or
-    /// truncated section; `UnsupportedElementType` for an element type not in A.7.
+    /// `Io` if the file cannot be read; `Parse` with the byte offset for a malformed or truncated
+    /// section; `UnsupportedElementType` for an element type that tetraloma does not read
+    /// ([File formats] lists those it reads).
     ///
     /// # Example
     ///
@@ -344,6 +357,9 @@ impl MshIndex {
     /// assert_eq!(index.num_elements(2), 35);
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
+    /// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
     pub fn scan(path: &Path) -> Result<MshIndex> {
         let mut r = Reader::open(path)?;
         let (head, after) = r.through(0, b"$EndMeshFormat", true)?;
@@ -517,7 +533,8 @@ impl MshIndex {
         r.end(pos, "Elements")
     }
 
-    /// Whether the file is binary; an ASCII file has no block offsets.
+    /// Whether the file is binary; an ASCII file has no block offsets, and tetraloma's parallel
+    /// reader reads it on rank 0. See [Reading Gmsh in parallel].
     ///
     /// # Example
     ///
@@ -528,11 +545,14 @@ impl MshIndex {
     /// assert!(!MshIndex::scan(path)?.is_binary());
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     pub fn is_binary(&self) -> bool {
         self.binary.is_some()
     }
 
-    /// The number of nodes (0 for an ASCII file).
+    /// The number of nodes over all node blocks (0 for an ASCII file). tetraloma's parallel reader
+    /// gives each rank an equal share of them; see [Reading Gmsh in parallel].
     ///
     /// # Example
     ///
@@ -544,11 +564,14 @@ impl MshIndex {
     /// assert_eq!(index.read_nodes(0..index.num_nodes())?.tags.len(), index.num_nodes());
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     pub fn num_nodes(&self) -> usize {
         self.num_nodes
     }
 
-    /// The number of elements of dimension `dim` (0 for an ASCII file or `dim` > 3).
+    /// The number of elements of dimension `dim` (0 for an ASCII file or `dim` > 3). See
+    /// [Reading Gmsh in parallel].
     ///
     /// # Example
     ///
@@ -561,6 +584,8 @@ impl MshIndex {
     /// assert_eq!(index.num_elements(4), 0);
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     pub fn num_elements(&self, dim: usize) -> usize {
         self.num_elements.get(dim).copied().unwrap_or(0)
     }
@@ -571,7 +596,8 @@ impl MshIndex {
             .ok_or_else(|| parse_error(0, "chunked reading needs a binary file"))
     }
 
-    /// The nodes `range` in file order over all node blocks.
+    /// The nodes `range` in file order over all node blocks. Only the bytes of these nodes are
+    /// read. See [Reading Gmsh in parallel].
     ///
     /// # Errors
     ///
@@ -590,6 +616,8 @@ impl MshIndex {
     /// assert_eq!(chunk.tags, tags[4..9]);
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     pub fn read_nodes(&self, range: Range<usize>) -> Result<NodeChunk> {
         let b = self.encoding()?;
         if range.start > range.end || range.end > self.num_nodes {
@@ -643,8 +671,9 @@ impl MshIndex {
         Ok(out)
     }
 
-    /// The elements `range` of dimension `dim`, in file order within the dimension, as the
-    /// blocks that hold them cut to the range.
+    /// The elements `range` of dimension `dim`, in file order within the dimension, as the blocks
+    /// that hold them cut to the range. Only the bytes of these elements are read. See
+    /// [Reading Gmsh in parallel].
     ///
     /// # Errors
     ///
@@ -665,6 +694,8 @@ impl MshIndex {
     /// assert_eq!(count, n - 2 * n / 3);
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Reading Gmsh in parallel]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     pub fn read_elements(&self, dim: usize, range: Range<usize>) -> Result<ElementChunk> {
         let b = self.encoding()?;
         let n_dim = self.num_elements(dim);
