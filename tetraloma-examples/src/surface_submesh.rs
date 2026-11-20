@@ -32,7 +32,9 @@ fn surfaces<F: Real>(client: &Client) -> tetraloma::Result<()> {
         .chunk(0, 1)
         .builder::<F, D3, D3>(client)?
         .build()?;
+    // ANCHOR: entities
     head.create_entities(2)?;
+    // ANCHOR_END: entities
     println!(
         "ball: {} hexahedra of degree 2 on {} in {}",
         head.cell_blocks()[0].index_map.num_owned(),
@@ -42,17 +44,21 @@ fn surfaces<F: Real>(client: &Client) -> tetraloma::Result<()> {
 
     let mut total = 0.0;
     for name in ["boundary-100", "boundary-101"] {
+        // ANCHOR: facet_submesh
         let scalp_tag = head.tags().named(Codim::Bnd, name)?; // boundary facets only
         let (scalp, emap): (SurfaceMesh<F>, EntityMap) = head.facet_submesh(&scalp_tag)?;
         // Each facet has one parent cell; normals inherit outward orientation from it.
         assert_eq!(emap.child_to_parent().len(), scalp_tag.indices.len());
+        // ANCHOR_END: facet_submesh
 
+        // ANCHOR: factors
         let rule = QuadRule::for_grid(&scalp, 6)?; // one point set per cell type present
         let x = scalp.physical_points(&rule)?;
         let n = scalp.normals(&rule)?; // compiles: D2 is Codim1 in D3
         let j = scalp.jacobians(&rule)?; // per point a [[F; 3]; 2]: two columns of three
         let k = scalp.pseudo_inverse_jacobians(&rule)?; // per point a [[F; 2]; 3]
         let area = scalp.measure(6)?; // pseudo-determinant path, chosen at comptime
+        // ANCHOR_END: factors
         total += area;
 
         let tol = 100.0 * crate::tol::<F>();

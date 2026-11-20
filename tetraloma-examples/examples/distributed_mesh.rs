@@ -8,6 +8,7 @@
 //! Each rank opens the GPU of its node-local rank (`local_gpu_index`) where the build links a
 //! GPU runtime that takes an index (CUDA).
 
+// ANCHOR: main
 use tetraloma::prelude::*;
 use tetraloma_examples::{device, distributed_mesh, has_f64};
 
@@ -23,3 +24,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+// ANCHOR_END: main
