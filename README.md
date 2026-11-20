@@ -18,10 +18,27 @@ Under active development and not yet released: the public API may still change. 
 
 ## Documentation
 
+The user documentation is at **https://tetracl.github.io/tetraloma/**: a book with installation,
+a first program, the mathematical concepts, the element definitions, tutorials, and the guides
+to compute devices and Cargo features, together with the API documentation of the library crates
+([`tetraloma`](https://tetracl.github.io/tetraloma/api/tetraloma/index.html) and the crates it
+re-exports). The site documents the `main` branch. The book's sources are in
+[docs/user](docs/user/); `scripts/install-doc-tools.sh` installs the pinned book tools, and
+`mdbook build docs/user` builds the book locally.
+
+A first program on the CubeCL CPU runtime, from a checkout of this repository:
+
+```sh
+cargo run --release -p tetraloma-examples --example first_program
+```
+
+For developers of tetraloma:
+
 - [docs/design.md](docs/design.md): the design, the source of truth for the implementation.
 - [docs/adr/](docs/adr/): architecture decision records.
 - [docs/dev-environment.md](docs/dev-environment.md): toolchain, test targets and how to run the tests.
 - [IMPLEMENTATION.md](IMPLEMENTATION.md): how the milestones are planned, implemented and reviewed.
+- [docs/README.md](docs/README.md): which folder of `docs/` holds what.
 
 Build and test on the CubeCL CPU runtime with the pinned toolchain (`rust-toolchain.toml`):
 
