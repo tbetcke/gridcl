@@ -11,6 +11,8 @@
 # feature and `mpi`. In a scripts/hpc job on a clean tree the records carry the job's commit
 # (TETRALOMA_BENCH_COMMIT from TETRALOMA_HPC_COMMIT), since the remote tree has no .git. On Apple chips
 # with three or more performance levels it applies mpi-test.sh's hwloc workaround (ADR-0034).
+# Each run gets TETRALOMA_EXPECT_RANKS=<ranks> and fails at once if its world size differs
+# (ADR-0068).
 # Runs under bash 3.2 (macOS).
 set -euo pipefail
 
@@ -66,7 +68,7 @@ if [[ $(uname -s) == Darwin ]]; then
 fi
 case $(mpirun --version 2>&1 || true) in
     *"Open MPI"* | *"Open RTE"* | *OpenRTE*)
-        flags+=(--oversubscribe -x TETRALOMA_TEST_DEVICE)
+        flags+=(--oversubscribe -x TETRALOMA_TEST_DEVICE -x TETRALOMA_EXPECT_RANKS)
         [[ -z "${TETRALOMA_BENCH_COMMIT:-}" ]] || flags+=(-x TETRALOMA_BENCH_COMMIT)
         [[ -z "${TETRALOMA_HPC_TARGET:-}" ]] || flags+=(-x TETRALOMA_HPC_TARGET)
         if [[ -n "${HWLOC_COMPONENTS:-}" ]]; then
@@ -83,6 +85,7 @@ mkdir -p "$(dirname "$out")"
 rm -f "$out"
 for n in $ranks; do
     echo "halo-exchange.sh: $n rank(s), $device ($SECONDS s)"
+    export TETRALOMA_EXPECT_RANKS=$n
     mpirun ${flags[@]+"${flags[@]}"} -n "$n" "$bin" --out "$out" --append "$@"
 done
 echo "halo-exchange.sh: done ($SECONDS s)"

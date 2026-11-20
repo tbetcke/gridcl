@@ -1748,7 +1748,7 @@ Every acceptance test in the roadmap is automated and runs on the targets below.
     - unit-cube volume equals 1 for p = 1–4;
     - sphere surface area converges at a rate of at least p+1 − 0.2 for p = 1–4 over four refinements (even p may superconverge);
     - divergence check: ∮ x·n = D_GEO · V on closed boundaries.
-- **Parallel invariance** on 1, 2, 3 and 4 ranks, under both MPICH and Open MPI. The following must be identical to the one-rank run:
+- **Parallel invariance** on 1, 2, 3 and 4 ranks, under both MPICH and Open MPI. Every MPI run checks that its world size equals the rank count requested, so a launcher that starts singletons fails (ADR-0068). The following must be identical to the one-rank run:
     - global entity counts, total volume and tag counts;
     - canonical entity vertex lists, as origin ids;
     - permutation bits, keyed by cell origin id;
@@ -1867,7 +1867,7 @@ The crate graph keeps serial builds free of MPI and lets kernels live in the cra
 | --- | --- | --- | --- |
 | local | the local Mac (developer machine) | CPU runtime in f32 and f64; Metal in f32; MPI on 1–4 ranks; kernel tests also at `TETRALOMA_VECTOR_SIZE=scalar` and `widest` | every change, by Claude (verify skill, test-runner) |
 | cpu | hosted Linux | `cargo test --workspace` on the CPU runtime in f32 and f64; clippy; rustdoc | every push |
-| mpi-mpich, mpi-openmpi | hosted Linux | tetraloma-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI); the MPI programs of tetraloma-examples on 1–4 ranks (`scripts/run-examples.sh --mpi`; ADR-0067) | every push |
+| mpi-mpich, mpi-openmpi | hosted Linux; the MPICH jobs on Ubuntu 26.04 with its MPICH 4.3.2 (Ubuntu 24.04's MPICH starts singletons, Launchpad bug 2072338; ADR-0068) | tetraloma-mpi-tests on 1–4 ranks with the Python oracles, and the VTKHDF targets with Ubuntu's parallel HDF5 (`--oversubscribe` for Open MPI); the MPI programs of tetraloma-examples on 1–4 ranks (`scripts/run-examples.sh --mpi`; ADR-0067); every run checks that the world size equals the rank count requested | every push |
 | vulkan | hosted Linux with a software Vulkan driver (Mesa lavapipe) | `TETRALOMA_TEST_DEVICE=vulkan`, f32, plus f64 if the adapter supports it | every push |
 | ptscotch | hosted Linux image with PT-Scotch | partitioner tests | changes to tetraloma-partition; nightly |
 | docs | hosted Linux, the image of the `ptscotch` job with MPI, parallel HDF5 and Scotch | `scripts/check-user-docs.sh` (the checks of "User documentation"); the book's doctests; `cargo test --doc` of the nine library crates with the site's features; the audit of tetraloma-partition with `parmetis` (ADR-0067) | every push |
@@ -1902,6 +1902,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 | M10 Hardening | all |
 | M10c CPU vector policy | M10 |
 | E1 Rename to tetraloma | M10c |
+| E2 Real MPICH runs in hosted CI | E1 |
 | D1 User documentation | E1; E2 for its MPICH acceptance item (ADR-0068) |
 
 ### E0 Development environment
@@ -2180,6 +2181,17 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 - `scripts/check-name.sh` passes, in CI: no old name in tracked paths or content outside the allowlist of ADR-0066, every workspace crate except the two `-sys` crates is named `tetraloma` or `tetraloma-*`, the workspace manifest names the repository, and only `TETRALOMA_*` variables are read;
 - the standing matrix passes unchanged.
 
+### E2 Real MPICH runs in hosted CI
+
+**Scope (ADR-0068):** hosted CI's MPICH jobs start every rank as a singleton (Ubuntu 24.04's MPICH 4.2.0 is built with PMIx, which its hydra launcher does not serve; Launchpad bug 2072338), so the MPICH half of "under both MPICH and Open MPI" has not run on more than one rank. E2 adds a rank-count guard: `scripts/mpi-test.sh` and `scripts/run-examples.sh` pass the requested rank count to every rank (`TETRALOMA_EXPECT_RANKS`), and `tetraloma_mpi_tests::run` and the MPI examples fail at once if the world size differs. The jobs `mpi-mpich` and `mpi-mpich-hdf5` move to `ubuntu-26.04` with Ubuntu's MPICH 4.3.2 and its parallel HDF5 (within the supported 1.10.10–2.2.0); the other jobs stay on `ubuntu-24.04`. Failures that real multi-rank MPICH runs expose are fixed in E2. Fallback if `ubuntu-26.04` breaks those jobs: Debian's fixed MPICH `4.2.0-5.1` on `ubuntu-24.04`. No public API changes; tetraloma-mpi-tests and tetraloma-examples (unpublished) gain the check.
+
+**Acceptance:**
+
+- the guard fails a singleton launch (checked once under Ubuntu 24.04's MPICH);
+- `scripts/mpi-test.sh 1 2 3 4` and the hdf5 targets pass under MPICH in CI with the guard;
+- the MPI examples pass on 1–4 ranks under MPICH in CI with the guard;
+- the Open MPI jobs pass unchanged, with the guard, in CI and locally.
+
 ### D1 User documentation
 
 **Scope (ADR-0067):** the user documentation of "User documentation": the book in `docs/user/` with the contents listed there, its figures and its programs in tetraloma-examples; the doc tools; the site at `https://tetracl.github.io/tetraloma/` with the API of the nine published library crates, built and deployed by CI; the API documentation of those crates rewritten for users; and the checks of `scripts/check-user-docs.sh`. No public item, signature or behaviour changes; only doc comments change in the library crates.
@@ -2266,7 +2278,8 @@ Convert this document to `docs/design.md` in the repository, add the working agr
 - Tests: cargo test --workspace must pass on the CPU runtime.
   GPU runs: TETRALOMA_TEST_DEVICE=vulkan | metal | cuda.
 - MPI tests: crate tetraloma-mpi-tests ([[test]] targets, harness = false),
-  run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI.
+  run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI; the scripts check that
+  the world size equals the rank count requested (ADR-0068).
 - Run plans: only the runs that show the code works and the timings a decision needs
   (ADR-0057). The standing matrix stays (CPU runtime and Metal on every change, Locust after
   kernel tasks, MPI on 1-4 ranks under both flavours, f32 and f64, scalar and widest vector

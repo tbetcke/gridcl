@@ -1,6 +1,7 @@
 // Design: "Cargo features", "Dependency rules"; ADR-0059, ADR-0060.
 //! Test support for tetraloma: the test device chosen by `TETRALOMA_TEST_DEVICE`, test meshes,
-//! tolerance helpers, a threaded communicator and the Python oracles.
+//! tolerance helpers, a threaded communicator, the Python oracles and the rank-count guard of the
+//! MPI runs ([`check_world_size`]).
 //!
 //! This crate lives in the repository and is not published. It is for the developers of tetraloma:
 //! the library's tests, its API examples and the benchmarks get their device and their test meshes
@@ -26,6 +27,7 @@ pub mod oracle;
 pub mod parallel;
 pub mod partition;
 pub mod reference;
+mod world_size;
 
 pub use comm::ThreadComm;
 pub use meshes::{
@@ -33,6 +35,7 @@ pub use meshes::{
     hemisphere, hex_prism_pyramid_box, interval_box, mixed_box, mixed_surface, mobius_strip,
     sphere, square_box, triangle_strip, y_junction,
 };
+pub use world_size::{EXPECT_RANKS_VAR, check_world_size, check_world_size_against};
 
 use cubecl::Device;
 use cubecl::device::{DeviceUnavailable, MetalDevice, WgpuDeviceKind};
