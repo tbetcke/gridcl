@@ -12,7 +12,12 @@ and `/*!` included). It keeps string literals (with escapes), raw strings (`r#"â
 strings, and character and byte literals whole, and tells lifetimes (`'a`) from character literals
 (`'a'`), so a `//` or `/*` inside a literal is never taken for a comment. Whitespace only separates
 tokens, so re-wrapping code around a removed comment is no difference. An added or removed file is
-a difference. Standard library only.
+a difference.
+
+Every other file of the directories (manifests, build scripts, policy files, data that `src/`
+includes) must equal the base commit's byte for byte, except `Cargo.toml`, which may gain comment
+lines and the dev-dependency on tetraloma-testing that the API examples use (ADR-0067, rule 6.3).
+Standard library only.
 
 Exit status: 0 if every file passes, 1 if one differs, 2 on a usage or git error.
 """
@@ -187,11 +192,57 @@ def first_difference(a: list[str], b: list[str]) -> str:
     return f"token {min(len(a), len(b))}: base has {len(a)} tokens, now {len(b)}"
 
 
+def manifest_lines(text: str) -> list[str]:
+    """The lines of a Cargo.toml that count: no blank or comment lines, and no tetraloma-testing
+    entry in `[dev-dependencies]`."""
+    out, section = [], ""
+    for line in text.splitlines():
+        t = line.strip()
+        if not t or t.startswith("#"):
+            continue
+        if t.startswith("["):
+            section = t
+        elif section == "[dev-dependencies]" and t.split("=", 1)[0].strip() == "tetraloma-testing":
+            continue
+        out.append(t)
+    return out
+
+
+def tracked_files(commit: str | None, dirs: list[str]) -> set[str]:
+    """The files of `dirs` other than `src/**/*.rs`: at `commit`, or in the working tree (tracked
+    and untracked, git-ignored files excluded) if `commit` is None."""
+    cmd = ["git", "ls-tree", "-r", "--name-only", commit] if commit else [
+        "git", "ls-files", "--cached", "--others", "--exclude-standard"]
+    res = subprocess.run([*cmd, "--", *dirs], capture_output=True, text=True, check=True)
+    paths = {p for p in res.stdout.splitlines() if commit or Path(p).exists()}
+    return {p for p in paths if not (p.split("/", 2)[1:2] == ["src"] and p.endswith(".rs"))}
+
+
+def compare_others(base: str, dirs: list[str]) -> list[str]:
+    """The non-source files of `dirs` that differ from `base` beyond what `manifest_lines` allows."""
+    before = tracked_files(base, dirs)
+    now = tracked_files(None, dirs)
+    problems = [f"{p}: added" for p in sorted(now - before)]
+    problems += [f"{p}: removed" for p in sorted(before - now)]
+    for path in sorted(now & before):
+        res = subprocess.run(["git", "show", f"{base}:{path}"], capture_output=True, check=True)
+        old, new = res.stdout, Path(path).read_bytes()
+        if old == new:
+            continue
+        if Path(path).name == "Cargo.toml":
+            if manifest_lines(old.decode()) == manifest_lines(new.decode()):
+                continue
+        problems.append(f"{path}: differs from the base commit (only src/**/*.rs comments may change)")
+    return problems
+
+
 def compare(base: str, dirs: list[str]) -> list[str]:
-    """The differences of `dirs`' sources from `base`, one line each; empty if comments only."""
+    """The differences of `dirs` from `base`, one line each; empty if only comments changed (and
+    the allowed manifest lines)."""
     before = git_files(base, dirs)
     now = work_files(dirs)
-    problems = [f"{p}: added" for p in sorted(now - before)]
+    problems = compare_others(base, dirs)
+    problems += [f"{p}: added" for p in sorted(now - before)]
     problems += [f"{p}: removed" for p in sorted(before - now)]
     for path in sorted(now & before):
         old = git_show(base, path)
@@ -262,9 +313,39 @@ PLANTED = [
 ]
 
 
+# Planted manifest cases: (name, base, now, allowed?).
+MANIFEST_BASE = '[package]\nname = "x"\n\n[dependencies]\nmpi = { workspace = true }\n\n[dev-dependencies]\nproptest.workspace = true\n'
+MANIFEST_PLANTED = [
+    (
+        "manifest: tetraloma-testing dev-dependency with a comment",
+        MANIFEST_BASE,
+        MANIFEST_BASE + '# the API examples\ntetraloma-testing = { path = "../tetraloma-testing" }\n',
+        True,
+    ),
+    (
+        "manifest: tetraloma-testing as a normal dependency",
+        MANIFEST_BASE,
+        MANIFEST_BASE.replace("[dependencies]\n", '[dependencies]\ntetraloma-testing = { path = "../t" }\n'),
+        False,
+    ),
+    (
+        "manifest: a changed dependency",
+        MANIFEST_BASE,
+        MANIFEST_BASE.replace("workspace = true }", "workspace = true, optional = true }"),
+        False,
+    ),
+]
+
+
 def self_test() -> int:
-    """Runs the planted cases; returns the number that the tokenizer judges wrongly."""
+    """Runs the planted cases; returns the number that the tokenizer or the manifest comparison
+    judges wrongly."""
     wrong = 0
+    for name, base, now, allowed in MANIFEST_PLANTED:
+        same = manifest_lines(base) == manifest_lines(now)
+        ok = same == allowed
+        print(f"{'ok   ' if ok else 'WRONG'} {name}: {'passes' if same else 'fails'}")
+        wrong += not ok
     for name, base, now, comments_only in PLANTED:
         same = tokens(base) == tokens(now)
         ok = same == comments_only

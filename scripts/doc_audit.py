@@ -153,15 +153,17 @@ OUTLINE = [
 ]
 
 # Developer citations (check c), searched in the prose of rendered doc blocks (code excluded),
-# except DOC_PATH, which is searched in code too.
+# except DOC_PATH and FULL_CITATIONS, which are searched in code (inline and blocks) too.
 DOC_PATH = re.compile(r"\bdocs/[\w./-]+|\b(?:IMPLEMENTATION|CLAUDE)\.md\b|\bdesign\.md\b")
-PROSE_CITATIONS = [
+FULL_CITATIONS = [
     ("ADR", re.compile(r"\bADR[- ]?\d+\b")),
+    ("design listing", re.compile(r"\bListings?\s+[A-Z]\d+[a-z]?\b")),
+    ("design appendix", re.compile(r"\bAppendix\s+[A-Z]\b")),
+]
+PROSE_CITATIONS = [
     ("plan question", re.compile(r"\b(?:plan|plans)\b[^.]{0,40}\bquestion\s+\d+|\bquestion\s+\d+\b", re.I)),
     ("milestone", re.compile(r"\b(?:M\d{1,2}[a-z]?|E\d)\b")),
     ("task", re.compile(r"\bT\d{1,2}\b")),
-    ("design listing", re.compile(r"\bListings?\s+[A-Z]\d+[a-z]?\b")),
-    ("design appendix", re.compile(r"\bAppendix\s+[A-Z]\b")),
     ("roadmap", re.compile(r"\b[Rr]oadmap\b")),
 ]
 
@@ -509,7 +511,8 @@ def parse_api_page(api: Path, page: Path):
     if m and src is None:
         # An item of a crate outside the site (`--no-deps`), inlined by a re-export (CubeCL's
         # `Client`, re-exported by tetraloma-device): not an item of the audited crates (rule
-        # 6.2), and its docs are that crate's.
+        # 6.2), and its docs are that crate's. check_api fails unless it is in FOREIGN_INLINED.
+        FOREIGN_SKIPPED.append(rel)
         return page_crate, [], []
     top =main.find(lambda n: n.tag == "details" and n.has_class(TOP_DOC_CLASS))
     doc = None
@@ -627,6 +630,16 @@ def load_allowlist(res: Results):
     return allow
 
 
+# Item pages without a source link that the audit skips (parse_api_page), filled while it runs.
+FOREIGN_SKIPPED: list[str] = []
+# The pages it may skip: items of crates outside the site that a re-export inlines. Any other
+# skipped page fails check (d), so a doc-build regression cannot drop items of the nine crates.
+FOREIGN_INLINED = {
+    "tetraloma_device/struct.Client.html",  # cubecl::prelude::Client
+    "tetraloma_device/trait.CubeElement.html",  # cubecl::prelude::CubeElement
+}
+
+
 def check_api(api: Path, work: Path, checks: str, only: str | None, res: Results):
     crates_us = [c.replace("-", "_") for c in LIBRARY_CRATES]
     # Dependencies first, so that an item inlined into the facade is seen where it is defined.
@@ -667,8 +680,16 @@ def check_api(api: Path, work: Path, checks: str, only: str | None, res: Results
                     found = [m.group(0) for m in DOC_PATH.finditer(full)]
                     for label, rx in PROSE_CITATIONS:
                         found += [f"{label} '{m.group(0)}'" for m in rx.finditer(prose)]
+                    for label, rx in FULL_CITATIONS:
+                        found += [f"{label} '{m.group(0)}'" for m in rx.finditer(full)]
                     if found:
                         res.fail("c", page_crate, f"{page.relative_to(api)}: {'; '.join(sorted(set(found)))}")
+    skipped = sorted(set(FOREIGN_SKIPPED))
+    for rel in skipped:
+        if rel not in FOREIGN_INLINED and (not only or rel.split("/")[0] == only):
+            res.fail("d", rel.split("/")[0], f"{rel}: an item page without a source link, not in FOREIGN_INLINED")
+    if skipped:
+        res.notes.append(f"API audit: skipped {len(skipped)} inlined foreign item page(s): {', '.join(skipped)}")
     if n_pages == 0 or not items:
         print(f"doc_audit: no items found under {api} (rustdoc markup changed?)", file=sys.stderr)
         sys.exit(2)

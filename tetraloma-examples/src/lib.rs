@@ -134,7 +134,8 @@ pub fn device(gpu: usize) -> Result<Device, DeviceUnavailable> {
     device
 }
 
-/// The rank-count guard of the MPI examples (ADR-0068): an error if the size of `comm` differs
+// The rank-count guard of ADR-0068.
+/// The rank-count guard of the MPI examples: an error if the size of `comm` differs
 /// from `TETRALOMA_EXPECT_RANKS`, which `scripts/run-examples.sh` exports to every rank; unset,
 /// any size passes ([`tetraloma_testing::check_world_size`]).
 ///

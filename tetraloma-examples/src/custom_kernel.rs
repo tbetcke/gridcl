@@ -224,7 +224,7 @@ pub fn integrate<G: DeviceGrid>(grid: &G, degree: u32) -> tetraloma::Result<[f64
 ///
 /// # Errors
 ///
-/// `TooLarge` if the cubes exceed the device's largest cube count.
+/// `TooLarge` if the cells of one cube or the cubes exceed what the device or `u32` can hold.
 fn launch_shape(client: &Client, cells: usize) -> tetraloma::Result<(CubeCount, CubeDim, u32)> {
     let hardware = &client.properties().hardware;
     let units = 64u32
@@ -235,7 +235,10 @@ fn launch_shape(client: &Client, cells: usize) -> tetraloma::Result<(CubeCount, 
     } else {
         1
     };
-    let cubes = fit(cells.div_ceil(cells_per_unit * units as usize))?;
+    let cells_per_cube = cells_per_unit
+        .checked_mul(units as usize)
+        .ok_or(GridError::TooLarge)?;
+    let cubes = fit(cells.div_ceil(cells_per_cube))?;
     if cubes > hardware.max_cube_count.0 {
         return Err(GridError::TooLarge);
     }

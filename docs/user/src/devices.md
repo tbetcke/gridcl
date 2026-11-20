@@ -58,9 +58,10 @@ The cubecl feature `cuda` runs kernels on NVIDIA GPUs, and `Device::cuda(index)`
 with that index. CUDA supports `f32` and `f64`. CubeCL compiles each kernel to PTX with its own
 LLVM, and the NVIDIA driver compiles the PTX for the GPU when the kernel is first loaded.
 
-The build needs the CUDA toolkit, because the CUDA bindings read the CUDA version from the
-toolkit's `nvcc` at build time: set `CUDA_PATH` to the toolkit and put its `nvcc` on the `PATH`.
-At run time only the driver is needed. Two rules about versions follow:
+The build needs the CUDA toolkit, because the CUDA bindings read the CUDA version from the toolkit's
+`nvcc` at build time: set `CUDA_PATH` to the toolkit and put its `nvcc` on the `PATH`. At run time
+only the driver is needed with `cuda`; `cuda-cpp` also needs the toolkit's NVRTC. Two rules about
+versions follow:
 
 - **Volta GPUs (V100) need CUDA 12.** CUDA 13 dropped Volta (compute capability 7.0), so build
   for these GPUs with a CUDA 12.x toolkit. Ampere (A100) and Hopper (GH200) GPUs work with CUDA 12

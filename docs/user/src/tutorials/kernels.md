@@ -216,8 +216,12 @@ tetraloma's prelude share some names.
 ### The launch shape
 
 A launch needs a cube count and a cube dimension. tetraloma's own kernels take theirs from
-launch plans that the `tetraloma` crate does not export, so a downstream kernel chooses its own
-shape from the device's properties. The function below uses cubes of up to 64 units. On a GPU
+[`LaunchPlan`](../api/tetraloma_device/struct.LaunchPlan.html) in tetraloma-device. A plan is
+tuned for one of tetraloma's kernel families
+([`KernelKind`](../api/tetraloma_device/enum.KernelKind.html)), whose vector sizes and work per
+unit come from tetraloma's measurements of those kernels, so it does not fit a kernel of yours. A
+downstream kernel chooses its own shape from the device's properties, with checked arithmetic
+where sizes multiply. The function below uses cubes of up to 64 units. On a GPU
 each unit integrates one cell. The CPU runtime reports its core count and runs every unit of a
 cube as a worker thread, so there each unit integrates a contiguous run of cells. One cell per
 unit would make the threads share cache lines.
