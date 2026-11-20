@@ -19,6 +19,7 @@ on:
       - "tetraloma-testing/src/partition.rs"
       - "tetraloma-testing/src/meshes/boxes.rs"
       - "tetraloma-testing/src/io_parallel.rs"
+      - "tetraloma-testing/src/world_size.rs"
       - "scripts/mpi-test.sh"
       - "scripts/check-docs.sh"
       - ".github/workflows/ptscotch.yml"

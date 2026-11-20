@@ -14,6 +14,7 @@ use tetraloma_examples::{device, halo_exchange};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let universe = mpi::initialize().ok_or("MPI already initialised")?; // one host thread per rank
     let comm = Mpi::world(&universe);
+    tetraloma_examples::check_world_size(&comm)?; // the scripts' rank-count guard (ADR-0068)
     let gpu = local_gpu_index(&comm); // node-local rank (ADR-0026, ADR-0060)
     let client = device(gpu)?.client();
     halo_exchange::run(&client, comm)?;

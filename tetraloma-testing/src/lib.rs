@@ -1,5 +1,6 @@
 //! Test support for tetraloma: the test device chosen by `TETRALOMA_TEST_DEVICE`, test meshes,
-//! tolerance helpers and the Python oracles.
+//! tolerance helpers, the Python oracles and the rank-count guard of the MPI runs
+//! ([`check_world_size`]).
 //!
 //! This crate is not published. Its features forward CubeCL's runtime features; besides it,
 //! only tetraloma-bench and tetraloma-examples enable them. tetraloma-device's `gpu-aware-cuda` is an
@@ -14,6 +15,7 @@ pub mod oracle;
 pub mod parallel;
 pub mod partition;
 pub mod reference;
+mod world_size;
 
 pub use comm::ThreadComm;
 pub use meshes::{
@@ -21,6 +23,7 @@ pub use meshes::{
     hemisphere, hex_prism_pyramid_box, interval_box, mixed_box, mixed_surface, mobius_strip,
     sphere, square_box, triangle_strip, y_junction,
 };
+pub use world_size::{EXPECT_RANKS_VAR, check_world_size, check_world_size_against};
 
 use cubecl::Device;
 use cubecl::device::{DeviceUnavailable, MetalDevice, WgpuDeviceKind};

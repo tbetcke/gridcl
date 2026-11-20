@@ -4,7 +4,8 @@
 //! Each example under `examples/` is a thin `main` that picks its device as Listing B8 does
 //! ([`device`]) and calls the `run` function of one module here; `run` picks the precision of
 //! the device (f64 where the device supports it, f32 otherwise). `tests/examples.rs` runs every
-//! `run` on the test device, and `scripts/run-examples.sh` runs the binaries.
+//! `run` on the test device, and `scripts/run-examples.sh` runs the binaries. The MPI example
+//! checks its world size first (`check_world_size`, feature `mpi`).
 //!
 //! - [`read_gmsh`]: read a Gmsh file and fix the dimensions once (Listing B8);
 //! - [`surface_submesh`]: a boundary surface mesh, its normals, Jacobians and area (Listing B9);
@@ -72,6 +73,31 @@ pub fn device(gpu: usize) -> Result<Device, DeviceUnavailable> {
     }
     let _ = gpu;
     device
+}
+
+/// The rank-count guard of the MPI examples (ADR-0068): an error if the size of `comm` differs
+/// from `TETRALOMA_EXPECT_RANKS`, which `scripts/run-examples.sh` exports to every rank; unset,
+/// any size passes ([`tetraloma_testing::check_world_size`]).
+///
+/// # Errors
+///
+/// The guard's message, which names the world size and the requested count.
+///
+/// # Example
+///
+/// ```no_run
+/// use tetraloma::Mpi;
+///
+/// let universe = mpi::initialize().ok_or("MPI already initialised")?;
+/// let comm = Mpi::world(&universe);
+/// tetraloma_examples::check_world_size(&comm)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[cfg(feature = "mpi")]
+pub fn check_world_size(comm: &tetraloma::Mpi) -> Result<(), String> {
+    use tetraloma::CommDyn;
+
+    tetraloma_testing::check_world_size(comm.size())
 }
 
 /// Whether `client`'s device supports f64: the examples run in f64 there and in f32 otherwise

@@ -5,14 +5,21 @@
 //!
 //! `run` (feature `mpi`) initialises MPI and installs a panic hook that aborts the whole job,
 //! so that a panic on one rank (a failed check, or a `todo!()`) ends every rank instead of
-//! leaving the others waiting in the next collective. The checks themselves are in
+//! leaving the others waiting in the next collective. Before the test it applies the rank-count
+//! guard: under `scripts/mpi-test.sh` (which exports `TETRALOMA_EXPECT_RANKS`) a world of another
+//! size than `mpirun -n` requested fails at once (ADR-0068). The checks themselves are in
 //! `tetraloma_testing::parallel`, shared with the `ThreadComm` tests of tetraloma.
 
 #[cfg(feature = "mpi")]
 use std::process::ExitCode;
 
-/// Initialises MPI, installs the abort hook, runs `f` on the world communicator and reports
-/// success on rank 0.
+/// Initialises MPI, installs the abort hook, checks the world size against
+/// `TETRALOMA_EXPECT_RANKS` ([`tetraloma_testing::check_world_size`]), runs `f` on the world
+/// communicator and reports success on rank 0.
+///
+/// A world size that differs from `TETRALOMA_EXPECT_RANKS` prints the guard's message on every
+/// rank and returns `ExitCode::FAILURE` before any collective: every rank sees the same
+/// mismatch, so none is left waiting.
 #[cfg(feature = "mpi")]
 pub fn run(name: &str, f: impl FnOnce(&tetraloma::Mpi)) -> ExitCode {
     use tetraloma::CommDyn;
@@ -20,6 +27,13 @@ pub fn run(name: &str, f: impl FnOnce(&tetraloma::Mpi)) -> ExitCode {
     let universe = mpi::initialize().expect("MPI is already initialised");
     install_abort_hook();
     let comm = tetraloma::Mpi::world(&universe);
+    if let Err(message) = tetraloma_testing::check_world_size(comm.size()) {
+        // One write of the whole line, so that the ranks' lines never interleave
+        // (scripts/check-rank-guard.sh looks for every rank's line).
+        let line = format!("{name}: rank {}: {message}\n", comm.rank());
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), line.as_bytes());
+        return ExitCode::FAILURE;
+    }
     f(&comm);
     comm.barrier();
     if comm.rank() == 0 {

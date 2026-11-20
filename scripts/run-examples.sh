@@ -16,6 +16,9 @@
 #                              the debug build of the tests already)
 #   CARGO_TARGET_DIR           as for cargo (default target)
 #
+# halo_exchange gets TETRALOMA_EXPECT_RANKS=<ranks> (Open MPI: -x; MPICH forwards by default) and
+# fails at once if its world size differs (ADR-0068).
+#
 # Prints one line per example and exits non-zero if any failed. Runs under bash 3.2.
 set -euo pipefail
 
@@ -48,7 +51,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --features=*) features=${1#--features=} ;;
         -h | --help)
-            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *) die "unknown argument '$1' (see --help)" ;;
@@ -143,7 +146,7 @@ if [[ -n $run_mpi ]]; then
     case $version in
         *"Open MPI"* | *"Open RTE"* | *OpenRTE*)
             flavour="Open MPI"
-            mpirun_flags+=(--oversubscribe)
+            mpirun_flags+=(--oversubscribe -x TETRALOMA_EXPECT_RANKS)
             if [[ -n $hwloc_workaround ]]; then
                 mpirun_flags+=(-x HWLOC_COMPONENTS)
                 [[ ${TETRALOMA_MPIRUN_FLAGS:-} == *--map-by* ]] || mpirun_flags+=(--map-by slot)
@@ -169,6 +172,7 @@ if [[ -n $run_mpi ]]; then
     exe=${CARGO_TARGET_DIR:-target}/$profile/examples/halo_exchange
     [[ -x $exe ]] || die "$exe was not built"
     echo "--- halo_exchange"
+    export TETRALOMA_EXPECT_RANKS=$ranks
     run_one halo_exchange ${mpi_env[@]+"${mpi_env[@]}"} \
         mpirun ${mpirun_flags[@]+"${mpirun_flags[@]}"} -n "$ranks" "$exe"
 fi
