@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="492" viewBox="0 0 420 492" role="img">
+<title>The Lagrange nodes of degree 2 on the reference prism, in tetraloma's order</title>
+<style>text{font-family:sans-serif;font-size:15px;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}text.n{font-size:13px;text-anchor:start}text.k{text-anchor:start;fill:#1a1a1a}.v{fill:#1a1a1a;font-weight:bold}.e{fill:#1764ab}.f{fill:#b5480b;font-style:italic}.i{fill:#6a3d9a}.h{opacity:0.45}line,path.a{stroke:#1a1a1a;stroke-width:2;fill:none}line.l{stroke:#8c8c8c;stroke-width:1.5}line.h{stroke-dasharray:6 4;opacity:0.6}polygon{stroke:none}polygon.v{fill:#1a1a1a}polygon.h{opacity:0.6}circle{stroke:#fff;stroke-width:1.5}</style>
+<rect width="100%" height="100%" fill="#fff"/>
+<line x1="90.0" y1="396.0" x2="270.0" y2="288.0" class="l h"/>
+<line x1="330.0" y1="396.0" x2="270.0" y2="288.0" class="l h"/>
+<line x1="270.0" y1="288.0" x2="270.0" y2="48.0" class="l h"/>
+<line x1="90.0" y1="396.0" x2="330.0" y2="396.0" class="l"/>
+<line x1="90.0" y1="396.0" x2="90.0" y2="156.0" class="l"/>
+<line x1="330.0" y1="396.0" x2="330.0" y2="156.0" class="l"/>
+<line x1="90.0" y1="156.0" x2="330.0" y2="156.0" class="l"/>
+<line x1="90.0" y1="156.0" x2="270.0" y2="48.0" class="l"/>
+<line x1="330.0" y1="156.0" x2="270.0" y2="48.0" class="l"/>
+<circle cx="90.0" cy="396.0" r="5" class="v"/>
+<text x="96.0" y="389.0" class="n v">0</text>
+<circle cx="330.0" cy="396.0" r="5" class="v"/>
+<text x="336.0" y="389.0" class="n v">1</text>
+<circle cx="270.0" cy="288.0" r="5" class="v h"/>
+<text x="276.0" y="281.0" class="n v h">2</text>
+<circle cx="90.0" cy="156.0" r="5" class="v"/>
+<text x="96.0" y="149.0" class="n v">3</text>
+<circle cx="330.0" cy="156.0" r="5" class="v"/>
+<text x="336.0" y="149.0" class="n v">4</text>
+<circle cx="270.0" cy="48.0" r="5" class="v"/>
+<text x="276.0" y="41.0" class="n v">5</text>
+<circle cx="210.0" cy="396.0" r="5" class="e"/>
+<text x="216.0" y="389.0" class="n e">6</text>
+<circle cx="180.0" cy="342.0" r="5" class="e h"/>
+<text x="186.0" y="335.0" class="n e h">7</text>
+<circle cx="90.0" cy="276.0" r="5" class="e"/>
+<text x="96.0" y="269.0" class="n e">8</text>
+<circle cx="300.0" cy="342.0" r="5" class="e h"/>
+<text x="306.0" y="335.0" class="n e h">9</text>
+<circle cx="330.0" cy="276.0" r="5" class="e"/>
+<text x="336.0" y="269.0" class="n e">10</text>
+<circle cx="270.0" cy="168.0" r="5" class="e h"/>
+<text x="276.0" y="161.0" class="n e h">11</text>
+<circle cx="210.0" cy="156.0" r="5" class="e"/>
+<text x="216.0" y="149.0" class="n e">12</text>
+<circle cx="180.0" cy="102.0" r="5" class="e"/>
+<text x="186.0" y="95.0" class="n e">13</text>
+<circle cx="300.0" cy="102.0" r="5" class="e"/>
+<text x="306.0" y="95.0" class="n e">14</text>
+<circle cx="210.0" cy="276.0" r="5" class="f"/>
+<text x="216.0" y="269.0" class="n f">15</text>
+<circle cx="180.0" cy="222.0" r="5" class="f h"/>
+<text x="186.0" y="215.0" class="n f h">16</text>
+<circle cx="300.0" cy="222.0" r="5" class="f h"/>
+<text x="306.0" y="215.0" class="n f h">17</text>
+<circle cx="25.0" cy="468.0" r="5" class="v"/>
+<text x="35.0" y="468.0" dy="0.35em" class="k">vertex</text>
+<circle cx="112.0" cy="468.0" r="5" class="e"/>
+<text x="122.0" y="468.0" dy="0.35em" class="k">edge</text>
+<circle cx="181.0" cy="468.0" r="5" class="f"/>
+<text x="191.0" y="468.0" dy="0.35em" class="k">face</text>
+<path class="a" d="M340.0,480.0L370.0,480.0"/>
+<text x="379.0" y="480.0" dy="0.35em" class="k" style="text-anchor:middle">x</text>
+<path class="a" d="M340.0,480.0L362.5,466.5"/>
+<text x="370.2" y="461.9" dy="0.35em" class="k" style="text-anchor:middle">y</text>
+<path class="a" d="M340.0,480.0L340.0,450.0"/>
+<text x="340.0" y="441.0" dy="0.35em" class="k" style="text-anchor:middle">z</text>
+</svg>

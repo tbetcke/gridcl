@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="144" viewBox="0 0 420 144" role="img">
+<title>The reference interval with its vertex, edge and face numbers</title>
+<style>text{font-family:sans-serif;font-size:15px;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}text.n{font-size:13px;text-anchor:start}text.k{text-anchor:start;fill:#1a1a1a}.v{fill:#1a1a1a;font-weight:bold}.e{fill:#1764ab}.f{fill:#b5480b;font-style:italic}.i{fill:#6a3d9a}.h{opacity:0.45}line,path.a{stroke:#1a1a1a;stroke-width:2;fill:none}line.l{stroke:#8c8c8c;stroke-width:1.5}line.h{stroke-dasharray:6 4;opacity:0.6}polygon{stroke:none}polygon.v{fill:#1a1a1a}polygon.h{opacity:0.6}circle{stroke:#fff;stroke-width:1.5}</style>
+<rect width="100%" height="100%" fill="#fff"/>
+<line x1="90.0" y1="48.0" x2="330.0" y2="48.0"/>
+<polygon points="270.0,48.0 259.0,52.5 259.0,43.5" class="v"/>
+<text x="210.0" y="48.0" dy="0.35em" class="e">0</text>
+<circle cx="90.0" cy="48.0" r="5" class="v"/>
+<text x="73.0" y="48.0" dy="0.35em" class="v">0</text>
+<circle cx="330.0" cy="48.0" r="5" class="v"/>
+<text x="347.0" y="48.0" dy="0.35em" class="v">1</text>
+<circle cx="25.0" cy="120.0" r="5" class="v"/>
+<text x="35.0" y="120.0" dy="0.35em" class="k">vertex</text>
+<circle cx="112.0" cy="120.0" r="5" class="e"/>
+<text x="122.0" y="120.0" dy="0.35em" class="k">edge</text>
+<path class="a" d="M340.0,132.0L370.0,132.0"/>
+<text x="379.0" y="132.0" dy="0.35em" class="k" style="text-anchor:middle">x</text>
+</svg>
