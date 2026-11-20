@@ -91,7 +91,7 @@ pub struct NodeLoad {
 /// One measured configuration of the sweep.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SweepRecord {
-    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
+    /// CubeCL runtime as `TETRALOMA_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,
@@ -173,7 +173,7 @@ pub enum Measure {
 /// One end-to-end throughput measurement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThroughputRecord {
-    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
+    /// CubeCL runtime as `TETRALOMA_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,
@@ -872,7 +872,7 @@ fn as_u32(v: &Value) -> Option<u32> {
 /// [`STRATEGIES`] or `policy`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DegreeRecord {
-    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
+    /// CubeCL runtime as `TETRALOMA_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,
@@ -1262,7 +1262,7 @@ pub const HALO_PARTS: [&str; 7] = ["pack", "d2h", "mpi", "h2d", "unpack", "forwa
 /// ranks; `times_s` holds the timed runs after `warmups` untimed ones.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HaloRecord {
-    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
+    /// CubeCL runtime as `TETRALOMA_TEST_DEVICE` names it: `cpu`, `metal`, `cuda`, ...
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,

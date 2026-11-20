@@ -9,7 +9,7 @@
 #   --target: macmini, locust or kathleen (myriad-cpu only as Kathleen's fallback, with
 #       --fallback-reason after `--`).
 #   --out-dir: where the files go; default the job's results directory in a scripts/hpc job
-#       (the parent of GRIDCL_MPI_TEST_DIR, fetched with the job), else target/m10c-grid.
+#       (the parent of TETRALOMA_MPI_TEST_DIR, fetched with the job), else target/m10c-grid.
 #   --bind: a command prefix for each process; default 'numactl --physcpubind=0-19
 #       --membind=0' (one socket and its memory, ADR-0020) for --target kathleen, else none.
 #   --max-load: before each process, wait until the 1-minute load average is below L (at most
@@ -21,8 +21,8 @@
 #       of RESULTS_DIR (results/<job id>/) to every record of DIR's files of TARGET, since the
 #       "after" snapshot is taken once the job's command has finished (ADR-0002, ADR-0005).
 #
-# In a scripts/hpc job on a clean tree the records carry the job's commit (GRIDCL_BENCH_COMMIT
-# from GRIDCL_HPC_COMMIT), since the remote tree has no .git. Runs under bash 3.2 (macOS).
+# In a scripts/hpc job on a clean tree the records carry the job's commit (TETRALOMA_BENCH_COMMIT
+# from TETRALOMA_HPC_COMMIT), since the remote tree has no .git. Runs under bash 3.2 (macOS).
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -70,8 +70,8 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$target" ]] || die "--target NAME is required"
 if [[ -z "$out_dir" ]]; then
-    if [[ -n "${GRIDCL_MPI_TEST_DIR:-}" ]]; then
-        out_dir=$(dirname "$GRIDCL_MPI_TEST_DIR")
+    if [[ -n "${TETRALOMA_MPI_TEST_DIR:-}" ]]; then
+        out_dir=$(dirname "$TETRALOMA_MPI_TEST_DIR")
     else
         out_dir=target/m10c-grid
     fi
@@ -80,11 +80,11 @@ if [[ -z "$bind" && "$target" == kathleen ]]; then
     bind="numactl --physcpubind=0-19 --membind=0"
 fi
 [[ -z "$max_load" || "$max_load" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--max-load '$max_load'"
-[[ "${GRIDCL_TEST_DEVICE:-cpu}" == cpu ]] || die "the grid runs on the CPU runtime only"
-export GRIDCL_TEST_DEVICE=cpu
-if [[ -n "${GRIDCL_HPC_COMMIT:-}" && -z "${GRIDCL_BENCH_COMMIT:-}" ]]; then
-    [[ "${GRIDCL_HPC_DIRTY:-}" == no ]] || die "the job's tree is dirty; record a clean commit"
-    export GRIDCL_BENCH_COMMIT=$GRIDCL_HPC_COMMIT
+[[ "${TETRALOMA_TEST_DEVICE:-cpu}" == cpu ]] || die "the grid runs on the CPU runtime only"
+export TETRALOMA_TEST_DEVICE=cpu
+if [[ -n "${TETRALOMA_HPC_COMMIT:-}" && -z "${TETRALOMA_BENCH_COMMIT:-}" ]]; then
+    [[ "${TETRALOMA_HPC_DIRTY:-}" == no ]] || die "the job's tree is dirty; record a clean commit"
+    export TETRALOMA_BENCH_COMMIT=$TETRALOMA_HPC_COMMIT
 fi
 
 # The 1-minute load average.

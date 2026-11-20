@@ -182,7 +182,7 @@ r_collect() { # r_collect <tree> <job id>: moves the scheduler log in, drops the
     if [ -f "$tree/results/slurm-$id.log" ]; then
         mkdir -p "$tree/results/$id" && mv -f "$tree/results/slurm-$id.log" "$tree/results/$id/slurm.log"
     fi
-    rm -f "$tree/.gridcl-hpc/jobs/$id"
-    [ -f "$tree/.gridcl-hpc/run/$id.pid" ] || rm -f "$tree/.gridcl-hpc/run/$id.wrap"
+    rm -f "$tree/.tetraloma-hpc/jobs/$id"
+    [ -f "$tree/.tetraloma-hpc/run/$id.pid" ] || rm -f "$tree/.tetraloma-hpc/run/$id.wrap"
     if [ -d "$tree/results/$id" ]; then echo results=yes; else echo results=no; fi
 }

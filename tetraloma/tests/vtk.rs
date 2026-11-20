@@ -6,7 +6,7 @@
 //!
 //! Every test checks the written files in Rust through `parse_vtu` first; the Python oracles
 //! (`scripts/oracles/vtk_oracle.py`, pinned VTK and meshio) follow unless
-//! `GRIDCL_SKIP_PYTHON=1` (ADR-0024, item 11).
+//! `TETRALOMA_SKIP_PYTHON=1` (ADR-0024, item 11).
 
 use crate::common;
 

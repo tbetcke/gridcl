@@ -1,7 +1,7 @@
 #!/bin/bash -l
 # Job script of Kathleen (Slurm): whole diskless nodes of 2 × 20 cores (Xeon Gold 6248,
 # Cascade Lake, AVX-512), 192 GB and Omni-Path, no GPU; at most two nodes per job (ADR-0016).
-# The job sets GRIDCL_TEST_DEVICE=cpu. remote-test.sh renders it for every submission
+# The job sets TETRALOMA_TEST_DEVICE=cpu. remote-test.sh renders it for every submission
 # (lib/submit.sh): it replaces the @...@ placeholders (@QOS@: singlenode for one node, test for
 # two nodes up to 1 h, small beyond), and appends the job settings and jobs/common.sh. The
 # #SBATCH lines must come before the first command; the commands below them set the parts of
@@ -30,8 +30,8 @@ export OMPI_MCA_orte_tmpdir_base=/dev/shm PSM2_TID=0
 # Slurm gives the batch step every hardware thread (80 per node); the CPU runtime takes one
 # thread per CPU it may use, so the batch shell, and everything it starts, is bound to the
 # first hardware thread of each physical core (40 per node). mpirun binds its ranks itself.
-gridcl_kathleen_cores=$(lscpu -p=CPU,CORE 2>/dev/null | grep -v '^#' | sort -t, -k2,2n -u |
+tetraloma_kathleen_cores=$(lscpu -p=CPU,CORE 2>/dev/null | grep -v '^#' | sort -t, -k2,2n -u |
     cut -d, -f1 | sort -n | paste -sd, -)
-if [ -n "$gridcl_kathleen_cores" ]; then
-    taskset -cp "$gridcl_kathleen_cores" $$ >/dev/null 2>&1 || true
+if [ -n "$tetraloma_kathleen_cores" ]; then
+    taskset -cp "$tetraloma_kathleen_cores" $$ >/dev/null 2>&1 || true
 fi

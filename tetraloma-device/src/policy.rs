@@ -176,11 +176,11 @@ impl CpuUnits {
 }
 
 /// The environment variable that overrides the vector size of every plan.
-pub(crate) const VECTOR_SIZE_VAR: &str = "GRIDCL_VECTOR_SIZE";
+pub(crate) const VECTOR_SIZE_VAR: &str = "TETRALOMA_VECTOR_SIZE";
 /// The environment variable that overrides the QuadField tile width.
-pub(crate) const QUAD_TILE_VAR: &str = "GRIDCL_QUAD_TILE";
+pub(crate) const QUAD_TILE_VAR: &str = "TETRALOMA_QUAD_TILE";
 
-/// Value of `GRIDCL_VECTOR_SIZE` (`scalar | policy | widest | <n>`) and of
+/// Value of `TETRALOMA_VECTOR_SIZE` (`scalar | policy | widest | <n>`) and of
 /// `testing::with_vector_size`. `Widest` is the first of `io_optimized_vector_sizes(elem_bytes)`.
 /// `Fixed(n)` and `Widest` skip the register budget but stay clamped by `max_vector` (and by the
 /// device's `max_vector_size`); `Policy` applies the full rule of
@@ -212,7 +212,7 @@ pub enum VectorSizeOverride {
 }
 
 impl VectorSizeOverride {
-    /// Parses a value of `GRIDCL_VECTOR_SIZE`: `scalar`, `policy`, `widest`, or a power of two
+    /// Parses a value of `TETRALOMA_VECTOR_SIZE`: `scalar`, `policy`, `widest`, or a power of two
     /// from 1 to `VECTOR_PAD`.
     pub(crate) fn parse(value: &str) -> Result<VectorSizeOverride, String> {
         match value {
@@ -229,7 +229,7 @@ impl VectorSizeOverride {
         }
     }
 
-    /// The scoped override of `kind`, else the scoped override, else `GRIDCL_VECTOR_SIZE` (read
+    /// The scoped override of `kind`, else the scoped override, else `TETRALOMA_VECTOR_SIZE` (read
     /// once per process), else `Policy`.
     pub(crate) fn current(kind: KernelKind) -> VectorSizeOverride {
         static ENV: OnceLock<Option<VectorSizeOverride>> = OnceLock::new();
@@ -243,7 +243,7 @@ impl VectorSizeOverride {
     }
 }
 
-/// Parses a value of `GRIDCL_QUAD_TILE`: 1, 2, 4, 8 or 16.
+/// Parses a value of `TETRALOMA_QUAD_TILE`: 1, 2, 4, 8 or 16.
 pub(crate) fn parse_quad_tile(value: &str) -> Result<usize, String> {
     match value.parse::<usize>() {
         Ok(n) if is_vector_size(n) => Ok(n),
@@ -275,8 +275,8 @@ fn read_env(var: &str) -> Option<String> {
 
 /// Vector sizes, QuadField tiles, CPU block sizes and CPU units chosen from benchmarks
 /// (docs/perf/vectorization.md), per (`KernelKind`, `DeviceClass`, element size), compiled in
-/// from tetraloma-device/vector-policy.toml (ADR-0015, ADR-0017). `GRIDCL_VECTOR_SIZE` and
-/// `GRIDCL_QUAD_TILE` override it for tests and benchmarks.
+/// from tetraloma-device/vector-policy.toml (ADR-0015, ADR-0017). `TETRALOMA_VECTOR_SIZE` and
+/// `TETRALOMA_QUAD_TILE` override it for tests and benchmarks.
 ///
 /// # Example
 ///
@@ -334,7 +334,7 @@ impl VectorPolicy {
     }
 
     /// Tile width of QuadField and E-vector chunks for one scalar size: 1, 2, 4, 8 or 16. The
-    /// scoped override (`testing::with_quad_tile`), then `GRIDCL_QUAD_TILE`, then the policy;
+    /// scoped override (`testing::with_quad_tile`), then `TETRALOMA_QUAD_TILE`, then the policy;
     /// 16 for scalar sizes the policy does not list. The overrides apply to every scalar size.
     ///
     /// # Example
@@ -759,14 +759,14 @@ mod tests {
         }
         for bad in ["", "0", "3", "32", "-1", "Widest", " 4", "four"] {
             let e = VectorSizeOverride::parse(bad).unwrap_err();
-            assert!(e.starts_with("GRIDCL_VECTOR_SIZE="), "{e}");
+            assert!(e.starts_with("TETRALOMA_VECTOR_SIZE="), "{e}");
         }
         assert_eq!(parse_quad_tile("8"), Ok(8));
         for bad in ["0", "12", "32", "x"] {
             assert!(
                 parse_quad_tile(bad)
                     .unwrap_err()
-                    .starts_with("GRIDCL_QUAD_TILE=")
+                    .starts_with("TETRALOMA_QUAD_TILE=")
             );
         }
     }

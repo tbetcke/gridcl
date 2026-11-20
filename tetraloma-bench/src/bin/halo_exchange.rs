@@ -1,5 +1,5 @@
 //! The host-staged halo exchange, part by part (M10 T6; ADR-0059, ADR-0061), on the device
-//! named by `GRIDCL_TEST_DEVICE`, as JSON records (`tetraloma_bench::record::HaloRecord`).
+//! named by `TETRALOMA_TEST_DEVICE`, as JSON records (`tetraloma_bench::record::HaloRecord`).
 //!
 //! ```text
 //! cargo run --release -p tetraloma-bench --bin halo_exchange [--features mpi] -- [--target NAME]
@@ -163,7 +163,7 @@ fn positive(flag: &str, value: &str) -> Result<usize, String> {
 impl Args {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, Failure> {
         let mut parsed = Args {
-            target: std::env::var("GRIDCL_HPC_TARGET")
+            target: std::env::var("TETRALOMA_HPC_TARGET")
                 .ok()
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| "local".to_owned()),

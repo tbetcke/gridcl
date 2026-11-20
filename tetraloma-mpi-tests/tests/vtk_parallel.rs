@@ -1,7 +1,7 @@
 //! M8 acceptance, VTU and PVTU (docs/plans/M8.md, T0b; ADR-0035, rule 8): after VTK removes the
 //! ghost cells of the PVTU every cell appears exactly once (shared-facet and one-layer
 //! shared-vertex ghosts), the gathered VTU equals the one-rank VTU after sorting by origin id,
-//! and failed writes are agreed. The oracle checks run on rank 0 unless `GRIDCL_SKIP_PYTHON=1`.
+//! and failed writes are agreed. The oracle checks run on rank 0 unless `TETRALOMA_SKIP_PYTHON=1`.
 
 use std::process::ExitCode;
 

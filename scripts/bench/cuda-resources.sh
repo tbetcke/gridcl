@@ -95,7 +95,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$time_limit" =~ ^[1-9][0-9]*$ ]] || die "--timeout '$time_limit' is not a positive integer"
 
-target=${GRIDCL_HPC_TARGET:-local}
+target=${TETRALOMA_HPC_TARGET:-local}
 if [[ -z "$out" ]]; then
     if [[ -n "${JOB_ID:-}" ]]; then
         out=results/$JOB_ID/m9h-cuda-resources-$target.json

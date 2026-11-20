@@ -1,5 +1,5 @@
 //! The vector-size sweep of "Benchmarks" (docs/plans/M3s.md, T8; batched runs, ADR-0018) on the
-//! device named by `GRIDCL_TEST_DEVICE`, as JSON records (`tetraloma_bench::record::SweepRecord`).
+//! device named by `TETRALOMA_TEST_DEVICE`, as JSON records (`tetraloma_bench::record::SweepRecord`).
 //!
 //! ```text
 //! cargo run --release -p tetraloma-bench --bin vector_sweep -- [--target NAME]
@@ -27,7 +27,7 @@
 //!   `--vector-sizes`, `--blocks`, `--cube-dim` and `--runs` are ignored.
 //!
 //! - `--target`: the machine, `m3max` or a target of scripts/hpc/remote-test.sh; default
-//!   `GRIDCL_HPC_TARGET` (set in runner jobs), else `local`.
+//!   `TETRALOMA_HPC_TARGET` (set in runner jobs), else `local`.
 //! - `--families`, `--types`, `--sizes`, `--vector-sizes`: filters, so a busy part can be
 //!   repeated; by default every family, type, size (10^5, 10^6, 10^7) and vector size the device
 //!   offers. Family names are the policy keys, in any case.
@@ -42,7 +42,7 @@
 //! `node-load-after.txt` in `results/<job id>/`) to every record of each file, because the
 //! "after" snapshot is taken once the command has finished (ADR-0002, ADR-0005).
 //!
-//! The commit is `GRIDCL_BENCH_COMMIT`, else `GITHUB_SHA`, else `git rev-parse HEAD` (with
+//! The commit is `TETRALOMA_BENCH_COMMIT`, else `GITHUB_SHA`, else `git rev-parse HEAD` (with
 //! `-dirty` when the tree has changes), else `unknown`.
 
 use std::path::{Path, PathBuf};
@@ -137,7 +137,7 @@ impl Args {
         let mut parsed = Args {
             candidates: false,
             grid: None,
-            target: std::env::var("GRIDCL_HPC_TARGET")
+            target: std::env::var("TETRALOMA_HPC_TARGET")
                 .ok()
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| "local".to_owned()),

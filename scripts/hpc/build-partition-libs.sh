@@ -6,7 +6,7 @@
 # METIS of its tarball into <prefix>/parmetis-<version>. Shared libraries (libmetis is static and
 # also inside libparmetis); each records its own lib/ (RUNPATH on Linux, install name on macOS). A library whose stamp matches its version,
 # checksum and options is skipped; downloads are kept in <prefix>/src.
-# The prefix is the argument, else $GRIDCL_PARTITION_LIBS, else, in a job of
+# The prefix is the argument, else $TETRALOMA_PARTITION_LIBS, else, in a job of
 # scripts/hpc/remote-test.sh, partition-libs/ in the target's base directory (beside the trees).
 # Prints the settings for the sys crates: SCOTCH_DIR, PARMETIS_DIR and METIS_DIR (the same
 # prefix as PARMETIS_DIR), and the library paths. Runs on Linux and macOS.
@@ -106,7 +106,7 @@ build_scotch() {
         "$(rpath_options "$dest/lib")"
     )
     stamp="scotch $SCOTCH_VERSION $SCOTCH_SHA256 ${options[*]}"
-    if fresh "$dest/.gridcl-stamp" "$stamp"; then
+    if fresh "$dest/.tetraloma-stamp" "$stamp"; then
         msg "scotch $SCOTCH_VERSION: up to date in $dest"
         return 0
     fi
@@ -134,7 +134,7 @@ build_scotch() {
     cmake --install "$build/build" >"$build/install.log" 2>&1 ||
         die "scotch: install failed; see $build/install.log"
     [ -f "$dest/include/ptscotch.h" ] || die "scotch: no include/ptscotch.h in $dest"
-    printf '%s\n' "$stamp" >"$dest/.gridcl-stamp"
+    printf '%s\n' "$stamp" >"$dest/.tetraloma-stamp"
     rm -rf "$build"
 }
 
@@ -156,7 +156,7 @@ build_parmetis() {
         "$(rpath_options "$dest/lib")"
     )
     stamp="parmetis $PARMETIS_VERSION $PARMETIS_SHA256 ${options[*]}"
-    if fresh "$dest/.gridcl-stamp" "$stamp"; then
+    if fresh "$dest/.tetraloma-stamp" "$stamp"; then
         msg "parmetis $PARMETIS_VERSION: up to date in $dest"
         return 0
     fi
@@ -183,7 +183,7 @@ build_parmetis() {
     mkdir -p "$dest/include"
     cp "$src/metis/include/metis.h" "$dest/include/metis.h"
     [ -f "$dest/include/parmetis.h" ] || die "parmetis: no include/parmetis.h in $dest"
-    printf '%s\n' "$stamp" >"$dest/.gridcl-stamp"
+    printf '%s\n' "$stamp" >"$dest/.tetraloma-stamp"
     rm -rf "$build"
 }
 
@@ -198,12 +198,12 @@ main() {
         usage >&2
         return 2
     }
-    PREFIX=${1:-${GRIDCL_PARTITION_LIBS:-}}
-    if [ -z "$PREFIX" ] && [ -n "${GRIDCL_HPC_TREE:-}" ]; then
-        PREFIX=$(dirname "$GRIDCL_HPC_TREE")/partition-libs
+    PREFIX=${1:-${TETRALOMA_PARTITION_LIBS:-}}
+    if [ -z "$PREFIX" ] && [ -n "${TETRALOMA_HPC_TREE:-}" ]; then
+        PREFIX=$(dirname "$TETRALOMA_HPC_TREE")/partition-libs
     fi
     [ -n "$PREFIX" ] || {
-        msg "no prefix: give one, or set GRIDCL_PARTITION_LIBS"
+        msg "no prefix: give one, or set TETRALOMA_PARTITION_LIBS"
         usage >&2
         return 2
     }

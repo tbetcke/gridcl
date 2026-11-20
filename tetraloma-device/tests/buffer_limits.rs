@@ -74,10 +74,10 @@ fn allocation_above_max_page_size_is_rejected_zeros() {
 fn f64_unsupported_where_device_lacks_it() {
     let client = test_client();
     let supported = supports::<f64>(&client);
-    let device = std::env::var("GRIDCL_TEST_DEVICE").unwrap_or_default();
+    let device = std::env::var("TETRALOMA_TEST_DEVICE").unwrap_or_default();
     let result = check_precision::<f64>(&client);
     println!(
-        "check_precision::<f64> on {} (GRIDCL_TEST_DEVICE={device:?}): supports_type {supported}, {}",
+        "check_precision::<f64> on {} (TETRALOMA_TEST_DEVICE={device:?}): supports_type {supported}, {}",
         client.name(),
         match &result {
             Ok(()) => "Ok".to_string(),

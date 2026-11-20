@@ -60,7 +60,7 @@ impl LaunchPlan {
     ///
     /// - **Vector size:** the largest power of two not above the policy's size, `max_vector`,
     ///   the device's `hardware.max_vector_size` (ADR-0011) and the widest of
-    ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by `GRIDCL_VECTOR_SIZE`,
+    ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by `TETRALOMA_VECTOR_SIZE`,
     ///   `testing::with_vector_size` or `testing::with_kind_vector_size` (see
     ///   [`VectorSizeOverride`]). `KernelKind::Scalar` is always 1.
     /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` (at most `max_cube_dim.0`) if

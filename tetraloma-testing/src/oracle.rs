@@ -1,10 +1,10 @@
 //! The Python oracles of the VTK tests (ADR-0024, item 11; ADR-0035): interpreter discovery,
-//! `GRIDCL_SKIP_PYTHON`, and runs of `scripts/oracles/vtk_oracle.py` with JSON on stdout. The
+//! `TETRALOMA_SKIP_PYTHON`, and runs of `scripts/oracles/vtk_oracle.py` with JSON on stdout. The
 //! script's docstring describes its commands and their output.
 //!
-//! The interpreter is `GRIDCL_PYTHON`, else `<repo>/.venv/bin/python`. A missing interpreter, or
+//! The interpreter is `TETRALOMA_PYTHON`, else `<repo>/.venv/bin/python`. A missing interpreter, or
 //! one without the pinned packages, fails the test with the install command, unless
-//! `GRIDCL_SKIP_PYTHON=1`: then [`Oracle::find`] prints that the test skipped its oracle checks
+//! `TETRALOMA_SKIP_PYTHON=1`: then [`Oracle::find`] prints that the test skipped its oracle checks
 //! and returns `None`.
 
 use std::ffi::OsString;
@@ -14,14 +14,14 @@ use std::process::Command;
 use serde_json::Value;
 
 /// Names the interpreter.
-pub const PYTHON_VAR: &str = "GRIDCL_PYTHON";
+pub const PYTHON_VAR: &str = "TETRALOMA_PYTHON";
 
 /// `1` skips every oracle check.
-pub const SKIP_VAR: &str = "GRIDCL_SKIP_PYTHON";
+pub const SKIP_VAR: &str = "TETRALOMA_SKIP_PYTHON";
 
 /// How to install the pinned oracles.
-pub const INSTALL: &str = "python3 -m venv .venv && .venv/bin/pip install vtk==9.7.1 meshio==5.3.5 (or set GRIDCL_PYTHON; \
-     GRIDCL_SKIP_PYTHON=1 skips the oracle checks)";
+pub const INSTALL: &str = "python3 -m venv .venv && .venv/bin/pip install vtk==9.7.1 meshio==5.3.5 (or set TETRALOMA_PYTHON; \
+     TETRALOMA_SKIP_PYTHON=1 skips the oracle checks)";
 
 /// The repository root.
 ///
@@ -45,7 +45,7 @@ pub fn repo() -> PathBuf {
 /// ```no_run
 /// use tetraloma_testing::oracle::Oracle;
 ///
-/// // `None` when GRIDCL_SKIP_PYTHON=1.
+/// // `None` when TETRALOMA_SKIP_PYTHON=1.
 /// if let Some(oracle) = Oracle::find("example") {
 ///     let versions = oracle.run("versions", &[]);
 ///     assert_eq!(versions["vtk"], "9.7.1");
@@ -60,11 +60,11 @@ pub struct Oracle {
 
 impl Oracle {
     /// The oracle of `test`, or `None` (after printing that `test` skips its oracle checks) if
-    /// `GRIDCL_SKIP_PYTHON=1`.
+    /// `TETRALOMA_SKIP_PYTHON=1`.
     ///
     /// # Panics
     ///
-    /// If the interpreter is missing and `GRIDCL_SKIP_PYTHON` is not `1`.
+    /// If the interpreter is missing and `TETRALOMA_SKIP_PYTHON` is not `1`.
     pub fn find(test: &str) -> Option<Oracle> {
         if std::env::var(SKIP_VAR).is_ok_and(|v| v == "1") {
             eprintln!("{test}: {SKIP_VAR}=1: skipped the Python oracle checks");

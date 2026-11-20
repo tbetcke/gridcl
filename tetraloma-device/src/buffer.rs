@@ -556,7 +556,7 @@ mod tests {
         assert_eq!(
             stages_in_pinned_memory(&client),
             matches!(device.as_str(), "cuda" | "hip"),
-            "GRIDCL_TEST_DEVICE={device:?}, runtime {}",
+            "TETRALOMA_TEST_DEVICE={device:?}, runtime {}",
             client.name()
         );
     }

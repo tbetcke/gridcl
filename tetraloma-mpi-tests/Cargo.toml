@@ -14,7 +14,7 @@ workspace = true
 [features]
 # The direct mpi dependency initialises MPI (`mpi::initialize`) and aborts the job on a panic.
 mpi = ["tetraloma/mpi", "tetraloma-testing/mpi", "dep:mpi"]
-# The M7 partitioner targets (scripts/mpi-test.sh: GRIDCL_MPI_FEATURES), with Scotch and PT-Scotch;
+# The M7 partitioner targets (scripts/mpi-test.sh: TETRALOMA_MPI_FEATURES), with Scotch and PT-Scotch;
 # add METIS (the acceptance run) or ParMETIS, never both (ADR-0033).
 partitioners = ["tetraloma/ptscotch", "tetraloma/scotch"]
 metis = ["tetraloma/metis"]

@@ -8,7 +8,7 @@
 //! pull-back (ADR-0044); for all but X also by max(1, n / n_ref) and max(1, R) (ADR-0046).
 //!
 //! Every check runs under the degree policy and under every strategy forced
-//! ([`for_each_strategy!`]; under `GRIDCL_GEOM_STRATEGY` only that setting). The references are
+//! ([`for_each_strategy!`]; under `TETRALOMA_GEOM_STRATEGY` only that setting). The references are
 //! computed once per mesh and precision; each run uses a copy of the mesh with an empty E-vector
 //! cache, so the E-vector is built under the run's strategy too. One test per degree ([`degree_tests!`]); p ≥ 5 runs in release builds only.
 
@@ -242,7 +242,7 @@ fn open_ended<F: Real>(client: &Client, p: u32) {
         let mesh = build::<F, TD, GD>(h, client);
         let degree = rule_degree(h);
         let rule = QuadRule::for_grid(&mesh, degree).expect("rule");
-        // The scoped hook comes before `GRIDCL_GEOM_STRATEGY`, so this is the policy always.
+        // The scoped hook comes before `TETRALOMA_GEOM_STRATEGY`, so this is the policy always.
         let (fields, ran) = record_strategies(|| {
             with_every_family(StrategyOverride::Policy, || {
                 let x = mesh.physical_points(&rule).expect("X");

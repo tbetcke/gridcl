@@ -11,7 +11,7 @@
 //! Each configuration runs twice (ADR-0054): with `direct` forced on every family, bitwise on
 //! the CPU runtime; and under the degree policy, bitwise where every strategy that ran sums in
 //! node order and within the tolerances where one reorders the sums (`sumfact`, `shared`,
-//! `cooperative`). Under `GRIDCL_GEOM_STRATEGY` only the environment's setting runs.
+//! `cooperative`). Under `TETRALOMA_GEOM_STRATEGY` only the environment's setting runs.
 
 use crate::common;
 
@@ -32,7 +32,7 @@ const P: u32 = 2;
 const RULE_DEGREE: u32 = 3;
 
 /// The settings of each comparison (ADR-0054): `direct` forced and the degree policy, or the
-/// environment's alone when `GRIDCL_GEOM_STRATEGY` is set.
+/// environment's alone when `TETRALOMA_GEOM_STRATEGY` is set.
 fn runs() -> Vec<StrategyRun> {
     if std::env::var_os(GEOM_STRATEGY_VAR).is_some() {
         vec![StrategyRun::Environment]

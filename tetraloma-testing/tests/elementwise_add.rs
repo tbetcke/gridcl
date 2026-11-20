@@ -1,4 +1,4 @@
-//! M0 acceptance test: an element-wise add on the device chosen by `GRIDCL_TEST_DEVICE`.
+//! M0 acceptance test: an element-wise add on the device chosen by `TETRALOMA_TEST_DEVICE`.
 //!
 //! The kernel is test code and scalar. Its launch shape comes from
 //! `LaunchPlan::elementwise(…, KernelKind::Copy, …)` with `max_vector = 1`, and it runs the
@@ -76,9 +76,9 @@ fn add_kernel<F: Float>(
     }
 }
 
-/// The value of `GRIDCL_TEST_DEVICE`, empty when unset.
+/// The value of `TETRALOMA_TEST_DEVICE`, empty when unset.
 fn test_device() -> String {
-    std::env::var("GRIDCL_TEST_DEVICE").unwrap_or_default()
+    std::env::var("TETRALOMA_TEST_DEVICE").unwrap_or_default()
 }
 
 /// Whether the device is the CPU runtime, where results are compared bitwise.
@@ -114,7 +114,7 @@ fn device_add<F: TestFloat>(client: &Client, a: &[F], b: &[F]) -> Vec<F> {
     let len_u32 = u32::try_from(len).expect("the kernel takes its length as u32");
 
     // Three vectors live (a, b and the sum); max_vector 1 keeps the kernel scalar, whatever
-    // GRIDCL_VECTOR_SIZE asks for.
+    // TETRALOMA_VECTOR_SIZE asks for.
     let plan = LaunchPlan::elementwise(client, KernelKind::Copy, len, size_of::<F>(), 1, 3)
         .expect("no launch plan for the add");
     assert_eq!(plan.vector_size, 1, "the add kernel is scalar");
@@ -206,11 +206,13 @@ fn elementwise_add_f64() {
     if matches!(device.as_str(), "" | "cpu" | "cuda") {
         assert!(
             supported,
-            "f64 must be supported on GRIDCL_TEST_DEVICE={device:?}"
+            "f64 must be supported on TETRALOMA_TEST_DEVICE={device:?}"
         );
     }
     if !supported {
-        println!("elementwise_add_f64 skipped: GRIDCL_TEST_DEVICE={device} does not support f64");
+        println!(
+            "elementwise_add_f64 skipped: TETRALOMA_TEST_DEVICE={device} does not support f64"
+        );
         return;
     }
     check_add::<f64>(&client);

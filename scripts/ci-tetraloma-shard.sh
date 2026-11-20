@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# usage: scripts/ci-gridcl-shard.sh <k>[,<k>...] [cargo test option]...   (k: 1-11, h5-h8)
+# usage: scripts/ci-tetraloma-shard.sh <k>[,<k>...] [cargo test option]...   (k: 1-11, h5-h8)
 # Runs shards k of `cargo test -p tetraloma` in hosted CI, where the whole suite took 52-59 min in
-# one job (M8 review). Shards 1-11 together run every test of gridcl once, doc tests included;
+# one job (M8 review). Shards 1-11 together run every test of tetraloma once, doc tests included;
 # in release builds the M9h tests at p = 5-8 are in shards h5-h8 (one degree each), and are
 # ignored in debug builds. Hosted CI does not run h5-h8: on lavapipe p = 6 took 33 min and
 # p = 7 and 8 over an hour each; Metal and CUDA run p = 5-8 (maintainer, 2026-11-14).
-# gridcl's integration tests are one executable (tests/main.rs, a module per file), so its
+# tetraloma's integration tests are one executable (tests/main.rs, a module per file), so its
 # tests share a process: the CPU runtime's threads and the compiled kernels
 # (nextest's process per test made the suite five times slower). Shards select modules by name:
 # a libtest filter matches anywhere in a test's path, so `gmsh::` would also match a module

@@ -42,7 +42,7 @@ jobs:
           rustc --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # Shared with cpu-gridcl, which builds a subset and saves nothing.
+          # Shared with cpu-tetraloma, which builds a subset and saves nothing.
           shared-key: cpu
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -50,18 +50,18 @@ jobs:
       # The project's name (ADR-0066, rule 5).
       - run: scripts/check-name.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      # `cargo test --workspace` in two jobs: gridcl's suite and tetraloma-geometry's integration
-      # tests (8 min, M9's orient tests) run in cpu-gridcl.
+      # `cargo test --workspace` in two jobs: tetraloma's suite and tetraloma-geometry's integration
+      # tests (8 min, M9's orient tests) run in cpu-tetraloma.
       - run: cargo test --workspace --exclude tetraloma --exclude tetraloma-geometry
       # The serial examples (ADR-0060 item 6) in the debug build; halo_exchange runs in the mpi
       # jobs.
       - run: scripts/run-examples.sh --serial
         env:
-          GRIDCL_EXAMPLES_PROFILE: debug
+          TETRALOMA_EXAMPLES_PROFILE: debug
       - run: cargo test -p tetraloma-geometry --lib
       - run: cargo test -p tetraloma-geometry --doc
       # Partition-quality tests with vendored METIS, the design's CI default (M7 T3): only what
-      # the feature changes; the rest of gridcl's suite ran above.
+      # the feature changes; the rest of tetraloma's suite ran above.
       - name: Partitioner tests with METIS
         run: |
           cargo test -p tetraloma-partition --features metis
@@ -77,11 +77,11 @@ jobs:
           scripts/check-workspace-deps.sh --features tetraloma-mpi-tests/mpi || rc=$?
           test "$rc" -eq 3
 
-  # gridcl's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the eleven
-  # shards of scripts/ci-gridcl-shard.sh: in one job they took 52-59 min (M8 review). Shard 1,
+  # tetraloma's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the eleven
+  # shards of scripts/ci-tetraloma-shard.sh: in one job they took 52-59 min (M8 review). Shard 1,
   # the shortest (6 min), also runs tetraloma-geometry's integration tests.
-  cpu-gridcl:
-    name: cpu-gridcl-${{ matrix.shard }}
+  cpu-tetraloma:
+    name: cpu-tetraloma-${{ matrix.shard }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -104,7 +104,7 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
           .venv/bin/python scripts/oracles/vtk_oracle.py versions
-      - run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }}
+      - run: scripts/ci-tetraloma-shard.sh ${{ matrix.shard }}
       - if: matrix.shard == 1
         run: cargo test -p tetraloma-geometry --test integration
 
@@ -132,7 +132,7 @@ jobs:
       # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
       # (ibv_create_srq: Operation not supported), so MPI_Init fails.
       UCX_TLS: self,sm,tcp
-      GRIDCL_MPIRUN_FLAGS: ${{ matrix.bind }}
+      TETRALOMA_MPIRUN_FLAGS: ${{ matrix.bind }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: MPI, its parallel HDF5 (M8 VTKHDF) and libclang (rsmpi's bindgen)
@@ -165,7 +165,7 @@ jobs:
       - if: matrix.part == 'tests'
         run: scripts/run-examples.sh --mpi
         env:
-          GRIDCL_EXAMPLES_PROFILE: debug
+          TETRALOMA_EXAMPLES_PROFILE: debug
       # Feature hdf5 with Ubuntu's HDF5 1.10.10 (ADR-0035, rules 8-9): the gather path
       # (tetraloma-io, ThreadComm) and the MPI-IO path (vtkhdf_parallel), read back by VTK.
       - name: HDF5_DIR for the parallel HDF5 of this MPI
@@ -192,10 +192,10 @@ jobs:
       - if: matrix.part == 'hdf5'
         run: scripts/mpi-test.sh 1 2 3 4
         env:
-          GRIDCL_MPI_FEATURES: hdf5
-          GRIDCL_MPI_TESTS: vtkhdf_parallel
+          TETRALOMA_MPI_FEATURES: hdf5
+          TETRALOMA_MPI_TESTS: vtkhdf_parallel
 
-  # In nine jobs (33 min in one, M8 review): gridcl's shards of scripts/ci-gridcl-shard.sh, two
+  # In nine jobs (33 min in one, M8 review): tetraloma's shards of scripts/ci-tetraloma-shard.sh, two
   # or more to a job where they are short, and the other crates, whose job saves the cache.
   vulkan:
     name: vulkan-${{ matrix.shard }}
@@ -232,10 +232,10 @@ jobs:
       # Release build: the primitives' property tests are too slow on lavapipe in a debug
       # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
       - if: matrix.shard != 'other'
-        run: scripts/ci-gridcl-shard.sh ${{ matrix.shard }} --release --features tetraloma-testing/vulkan
+        run: scripts/ci-tetraloma-shard.sh ${{ matrix.shard }} --release --features tetraloma-testing/vulkan
         env:
-          GRIDCL_TEST_DEVICE: vulkan
+          TETRALOMA_TEST_DEVICE: vulkan
       - if: matrix.shard == 'other'
         run: cargo test --release --workspace --exclude tetraloma --features tetraloma-testing/vulkan
         env:
-          GRIDCL_TEST_DEVICE: vulkan
+          TETRALOMA_TEST_DEVICE: vulkan

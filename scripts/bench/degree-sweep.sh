@@ -24,9 +24,9 @@
 #   After `--`: further degree_sweep options (--sizes, --node-families, --strategies, --skip,
 #       --fallback-reason, ...), passed to every process.
 #
-# The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching tetraloma-testing
+# The backend is TETRALOMA_TEST_DEVICE (cpu by default), built with the matching tetraloma-testing
 # feature. In a scripts/hpc job on a clean tree the records carry the job's commit
-# (GRIDCL_BENCH_COMMIT from GRIDCL_HPC_COMMIT), since the remote tree has no .git. Prints
+# (TETRALOMA_BENCH_COMMIT from TETRALOMA_HPC_COMMIT), since the remote tree has no .git. Prints
 # `[k/N]` before each (cell, degree) process (shown by scripts/hpc/status.sh while the job
 # runs) and the sweep's lines; logs of stopped or failed processes stay next to FILE. Runs
 # under bash 3.2 (macOS).
@@ -72,15 +72,15 @@ done
 [[ "$time_limit" =~ ^[1-9][0-9]*$ ]] || die "--timeout '$time_limit' is not a positive integer"
 command -v timeout >/dev/null || die "timeout not found"
 
-device=${GRIDCL_TEST_DEVICE:-cpu}
+device=${TETRALOMA_TEST_DEVICE:-cpu}
 case $device in
     cpu) features=() ;;
     cuda | metal | vulkan) features=(--features "tetraloma-testing/$device") ;;
-    *) die "GRIDCL_TEST_DEVICE '$device' is not cpu, cuda, metal or vulkan" ;;
+    *) die "TETRALOMA_TEST_DEVICE '$device' is not cpu, cuda, metal or vulkan" ;;
 esac
-if [[ -n "${GRIDCL_HPC_COMMIT:-}" && -z "${GRIDCL_BENCH_COMMIT:-}" ]]; then
-    [[ "${GRIDCL_HPC_DIRTY:-}" == no ]] || die "the job's tree is dirty; record a clean commit"
-    export GRIDCL_BENCH_COMMIT=$GRIDCL_HPC_COMMIT
+if [[ -n "${TETRALOMA_HPC_COMMIT:-}" && -z "${TETRALOMA_BENCH_COMMIT:-}" ]]; then
+    [[ "${TETRALOMA_HPC_DIRTY:-}" == no ]] || die "the job's tree is dirty; record a clean commit"
+    export TETRALOMA_BENCH_COMMIT=$TETRALOMA_HPC_COMMIT
 fi
 
 cargo build --release -p tetraloma-bench --bin degree_sweep ${features[@]+"${features[@]}"}

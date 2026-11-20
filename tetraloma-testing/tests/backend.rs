@@ -1,9 +1,9 @@
 //! M0 follow-up (finding 9; docs/plans/M2.md, T10): the test client runs on the backend
-//! `GRIDCL_TEST_DEVICE` names, not on a fallback.
+//! `TETRALOMA_TEST_DEVICE` names, not on a fallback.
 //!
 //! `Client::name()` is the runtime name CubeCL 0.11 passes to `ServerUtilities::init`:
 //!
-//! | `GRIDCL_TEST_DEVICE` | `client.name()` | Source (cubecl-*-0.11.0) |
+//! | `TETRALOMA_TEST_DEVICE` | `client.name()` | Source (cubecl-*-0.11.0) |
 //! | --- | --- | --- |
 //! | unset, empty or `cpu` | `cpu` | cubecl-cpu, `src/runtime.rs` |
 //! | `cuda` | `cuda` | cubecl-cuda, `src/runtime.rs` |
@@ -20,7 +20,7 @@
 
 use tetraloma_testing::{TEST_DEVICE_VAR, test_client};
 
-/// The names `client.name()` may return for a `GRIDCL_TEST_DEVICE` value.
+/// The names `client.name()` may return for a `TETRALOMA_TEST_DEVICE` value.
 fn expected_names(device: &str) -> &'static [&'static str] {
     match device {
         "" | "cpu" => &["cpu"],

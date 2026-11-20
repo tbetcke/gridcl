@@ -1,6 +1,6 @@
 //! End-to-end throughput of mesh creation and geometry (docs/plans/M3s.md, T13, question 10;
 //! from M10 at p = 1, 4 and 8, ADR-0041 and ADR-0058) on the device named by
-//! `GRIDCL_TEST_DEVICE`, with the vector policy and with every kernel scalar, as JSON records
+//! `TETRALOMA_TEST_DEVICE`, with the vector policy and with every kernel scalar, as JSON records
 //! (`tetraloma_bench::record::ThroughputRecord`).
 //!
 //! ```text
@@ -113,7 +113,7 @@ struct Args {
 impl Args {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         let mut parsed = Args {
-            target: std::env::var("GRIDCL_HPC_TARGET")
+            target: std::env::var("TETRALOMA_HPC_TARGET")
                 .ok()
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| "local".to_owned()),

@@ -10,9 +10,9 @@
 #                        example opens the first device of Listing B8 the build links
 #
 # Environment:
-#   GRIDCL_MPIRUN_FLAGS        extra mpirun flags, split on whitespace (as in mpi-test.sh)
-#   GRIDCL_EXAMPLES_TIMEOUT    time limit of one example in seconds (default 600)
-#   GRIDCL_EXAMPLES_PROFILE    build profile: release (default) or debug (hosted CI, which has
+#   TETRALOMA_MPIRUN_FLAGS        extra mpirun flags, split on whitespace (as in mpi-test.sh)
+#   TETRALOMA_EXAMPLES_TIMEOUT    time limit of one example in seconds (default 600)
+#   TETRALOMA_EXAMPLES_PROFILE    build profile: release (default) or debug (hosted CI, which has
 #                              the debug build of the tests already)
 #   CARGO_TARGET_DIR           as for cargo (default target)
 #
@@ -66,9 +66,9 @@ if [[ -z $ranks ]]; then
 fi
 [[ "$ranks" =~ ^[1-9][0-9]*$ ]] || die "rank count '$ranks' is not a positive integer"
 
-time_limit=${GRIDCL_EXAMPLES_TIMEOUT:-600}
+time_limit=${TETRALOMA_EXAMPLES_TIMEOUT:-600}
 [[ "$time_limit" =~ ^[1-9][0-9]*$ ]] ||
-    die "GRIDCL_EXAMPLES_TIMEOUT '$time_limit' is not a positive integer"
+    die "TETRALOMA_EXAMPLES_TIMEOUT '$time_limit' is not a positive integer"
 timeout_cmd=()
 if command -v timeout >/dev/null; then
     timeout_cmd=(timeout --kill-after=10 "$time_limit")
@@ -78,11 +78,11 @@ else
     echo "run-examples.sh: no timeout command; examples have no time limit" >&2
 fi
 
-profile=${GRIDCL_EXAMPLES_PROFILE:-release}
+profile=${TETRALOMA_EXAMPLES_PROFILE:-release}
 case $profile in
     release) profile_flags=(--release) ;;
     debug) profile_flags=() ;;
-    *) die "GRIDCL_EXAMPLES_PROFILE '$profile' is not release or debug" ;;
+    *) die "TETRALOMA_EXAMPLES_PROFILE '$profile' is not release or debug" ;;
 esac
 
 failed=0
@@ -146,7 +146,7 @@ if [[ -n $run_mpi ]]; then
             mpirun_flags+=(--oversubscribe)
             if [[ -n $hwloc_workaround ]]; then
                 mpirun_flags+=(-x HWLOC_COMPONENTS)
-                [[ ${GRIDCL_MPIRUN_FLAGS:-} == *--map-by* ]] || mpirun_flags+=(--map-by slot)
+                [[ ${TETRALOMA_MPIRUN_FLAGS:-} == *--map-by* ]] || mpirun_flags+=(--map-by slot)
             fi
             ;;
         *HYDRA* | *MPICH*) flavour="MPICH" ;;
@@ -155,8 +155,8 @@ if [[ -n $run_mpi ]]; then
             echo "run-examples.sh: unknown MPI flavour, no launcher flags added" >&2
             ;;
     esac
-    if [[ -n "${GRIDCL_MPIRUN_FLAGS:-}" ]]; then
-        read -r -a extra <<<"$GRIDCL_MPIRUN_FLAGS"
+    if [[ -n "${TETRALOMA_MPIRUN_FLAGS:-}" ]]; then
+        read -r -a extra <<<"$TETRALOMA_MPIRUN_FLAGS"
         mpirun_flags+=("${extra[@]}")
     fi
 

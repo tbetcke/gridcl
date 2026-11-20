@@ -80,7 +80,7 @@ import tempfile
 
 PINS = {"vtk": "9.7.1", "meshio": "5.3.5"}
 INSTALL = ("python3 -m venv .venv && .venv/bin/pip install vtk==9.7.1 meshio==5.3.5 "
-           "(or set GRIDCL_PYTHON to an interpreter that has them)")
+           "(or set TETRALOMA_PYTHON to an interpreter that has them)")
 
 
 def die(message, status=2):

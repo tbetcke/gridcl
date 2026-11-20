@@ -90,7 +90,7 @@ impl Drop for RankPermit {
 /// that refers to the same group.
 ///
 /// The `tetraloma_device::testing::with_*` overrides are thread-local and are not propagated to
-/// the rank threads: set them inside the closure, or use `GRIDCL_VECTOR_SIZE`.
+/// the rank threads: set them inside the closure, or use `TETRALOMA_VECTOR_SIZE`.
 ///
 /// # Example
 ///

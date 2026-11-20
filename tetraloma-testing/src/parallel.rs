@@ -2609,7 +2609,7 @@ where
 /// and the pull-back ξ of X, per (cell origin id, point) of every local cell, owned or ghost,
 /// equal those of a one-rank build: bitwise on the CPU runtime, and within the tolerance of the
 /// precision scaled by max(1, A / A_ref) on GPUs. The factors run under the degree policy
-/// (or `GRIDCL_GEOM_STRATEGY`).
+/// (or `TETRALOMA_GEOM_STRATEGY`).
 ///
 /// # Panics
 ///

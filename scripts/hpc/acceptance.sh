@@ -16,8 +16,8 @@
 # every step met its expectation.
 #
 # Summaries and the rows: target/hpc/<target>/acceptance-<UTC time>/.
-# Environment: GRIDCL_ACCEPT_CUDA_MAJOR overrides the expected CUDA major version (empty: no
-# check); GRIDCL_ACCEPT_MAX_WAIT the --max-wait of the regular steps (default 04:00:00).
+# Environment: TETRALOMA_ACCEPT_CUDA_MAJOR overrides the expected CUDA major version (empty: no
+# check); TETRALOMA_ACCEPT_MAX_WAIT the --max-wait of the regular steps (default 04:00:00).
 # shellcheck source-path=SCRIPTDIR
 set -u
 set -o pipefail
@@ -67,7 +67,7 @@ target_settings() {
             ;;
         *) return 1 ;;
     esac
-    CUDA_MAJOR=${GRIDCL_ACCEPT_CUDA_MAJOR-$CUDA_MAJOR}
+    CUDA_MAJOR=${TETRALOMA_ACCEPT_CUDA_MAJOR-$CUDA_MAJOR}
     EXPECT="${SM:+--expect-sm $SM}${CUDA_MAJOR:+ --expect-cuda-major $CUDA_MAJOR}"
 }
 
@@ -317,7 +317,7 @@ main() {
                 ;;
         esac
     done
-    MAX_WAIT=${GRIDCL_ACCEPT_MAX_WAIT:-04:00:00}
+    MAX_WAIT=${TETRALOMA_ACCEPT_MAX_WAIT:-04:00:00}
     OUT=$HPC_ROOT/target/hpc/$TARGET/acceptance-$(date -u +%Y%m%dT%H%M%SZ)
     mkdir -p "$OUT" || return 125
     msg "target $TARGET, steps: $steps; summaries in ${OUT#"$HPC_ROOT"/}/"

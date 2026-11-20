@@ -3,9 +3,9 @@
 # targets"): sync the working tree, fetch on the login node, submit the job, wait, report.
 # See usage() below; the steps live in lib/{config,sync,submit,direct,report}.sh.
 #
-# Environment: GRIDCL_TARGETS_ENV overrides the settings file (default
-# scripts/hpc/targets.env); GRIDCL_HPC_POLL sets the polling interval in seconds (default 30),
-# GRIDCL_HPC_POLL_LIMIT how long a poll, the collect step or the copy of the results may go
+# Environment: TETRALOMA_TARGETS_ENV overrides the settings file (default
+# scripts/hpc/targets.env); TETRALOMA_HPC_POLL sets the polling interval in seconds (default 30),
+# TETRALOMA_HPC_POLL_LIMIT how long a poll, the collect step or the copy of the results may go
 # without an answer (default 120 s; five failed polls in a row end the runner with status 125).
 # shellcheck source-path=SCRIPTDIR
 set -u
@@ -38,7 +38,7 @@ usage: scripts/hpc/remote-test.sh <target> [--gpus N] [--ranks N] [--cores N] [-
 targets: myriad-v100 | myriad-a100 | myriad-cpu | locust | a4000 | kathleen
 
 Syncs the working tree to the target, fetches crates on its login node, runs <command> in
-a job from the root of the remote tree (offline, GRIDCL_TEST_DEVICE=cuda; =cpu on
+a job from the root of the remote tree (offline, TETRALOMA_TEST_DEVICE=cuda; =cpu on
 myriad-cpu and kathleen) and prints a summary of at most 40 lines. The words after -- are joined with
 spaces and run by bash.
 On SGE targets (Myriad) the job is queued; on direct targets (Locust, a4000: no scheduler) it starts
@@ -50,7 +50,7 @@ two nodes up to 1 h, small for two nodes beyond that (ADR-0016).
 
   --gpus N           GPUs of the job (default 1; at most 2 on myriad-v100, 4 on myriad-a100;
                      not accepted on myriad-cpu and kathleen)
-  --ranks N          reserve N slots and export GRIDCL_RANKS=N; the command starts mpirun
+  --ranks N          reserve N slots and export TETRALOMA_RANKS=N; the command starts mpirun
                      (kathleen: at most 40 per node; on two nodes mpirun maps by node)
   --cores N          CPU cores of the job (36: a whole Myriad node, for CPU benchmarks and
                      every CPU-runtime run on myriad-cpu, whose threads follow the slots);
@@ -64,7 +64,7 @@ two nodes up to 1 h, small for two nodes beyond that (ADR-0016).
 Results: target/hpc/<target>/<job id>/. Exit status: the command's; 124 after --max-wait;
 125 when the runner fails (settings, ssh, sync, fetch, submission) or the job ends without
 an exit status (cancelled, stopped at --time); 2 on usage errors.
-Settings: scripts/hpc/targets.env (from targets.example.env), or \$GRIDCL_TARGETS_ENV.
+Settings: scripts/hpc/targets.env (from targets.example.env), or \$TETRALOMA_TARGETS_ENV.
 EOF
 }
 
@@ -239,10 +239,10 @@ run_job() {
 
 main() {
     parse_args "$@"
-    HPC_POLL=${GRIDCL_HPC_POLL:-30}
+    HPC_POLL=${TETRALOMA_HPC_POLL:-30}
     printf '%s\n' "$HPC_POLL" | grep -Eq '^[0-9]+([.][0-9]+)?$' || HPC_POLL=30
     # Seconds a poll, the collect step or the copy of the results may go without an answer.
-    HPC_POLL_LIMIT=${GRIDCL_HPC_POLL_LIMIT:-120}
+    HPC_POLL_LIMIT=${TETRALOMA_HPC_POLL_LIMIT:-120}
     printf '%s\n' "$HPC_POLL_LIMIT" | grep -Eqx '[1-9][0-9]*' || HPC_POLL_LIMIT=120
     config_load "$TARGET"
     if [ "$CFG_SCHEDULER" = direct ]; then

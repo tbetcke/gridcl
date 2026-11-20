@@ -3,10 +3,10 @@
 //!
 //! The types are `pub` in this private module and reach users only through the hidden
 //! [`testing`](crate::testing) module (feature `testing`). The policy itself
-//! (`degree-policy.toml`, `GRIDCL_GEOM_STRATEGY`, the scoped hook) is crate-private.
+//! (`degree-policy.toml`, `TETRALOMA_GEOM_STRATEGY`, the scoped hook) is crate-private.
 //!
 //! Every launcher of a degree-dependent family asks [`choose`] for its strategy: the scoped
-//! hook, then `GRIDCL_GEOM_STRATEGY`, then `degree-policy.toml` for the client's device class;
+//! hook, then `TETRALOMA_GEOM_STRATEGY`, then `degree-policy.toml` for the client's device class;
 //! a strategy that does not apply to the launch (the cell, the point set, a table beyond the
 //! shared-memory limit, a shared memory too small for one component per unit of a cooperative
 //! cube) falls back to `Loops`.
@@ -43,7 +43,7 @@ impl Strategy {
         Strategy::Cooperative,
     ];
 
-    /// The name in `GRIDCL_GEOM_STRATEGY` and `degree-policy.toml`: `direct`, `loops`,
+    /// The name in `TETRALOMA_GEOM_STRATEGY` and `degree-policy.toml`: `direct`, `loops`,
     /// `sumfact`, `shared` or `cooperative`.
     pub fn name(self) -> &'static str {
         match self {
@@ -113,7 +113,7 @@ impl StrategyFamily {
         StrategyFamily::PullBack,
     ];
 
-    /// The key in `degree-policy.toml` (`EVector`, `Points`, ...); `GRIDCL_GEOM_STRATEGY`
+    /// The key in `degree-policy.toml` (`EVector`, `Points`, ...); `TETRALOMA_GEOM_STRATEGY`
     /// accepts it in any case.
     pub fn name(self) -> &'static str {
         match self {
@@ -136,7 +136,7 @@ impl StrategyFamily {
     }
 }
 
-/// The value of `GRIDCL_GEOM_STRATEGY` for one family, and of the scoped hook.
+/// The value of `TETRALOMA_GEOM_STRATEGY` for one family, and of the scoped hook.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StrategyOverride {
     /// The degree policy of `degree-policy.toml`.
@@ -173,7 +173,7 @@ const CLASSES: [(DeviceClass, &str); 2] = [(DeviceClass::Cpu, "Cpu"), (DeviceCla
 const SCALAR_SIZES: [usize; 2] = [4, 8];
 
 /// The environment variable that overrides the policy (ADR-0042, item 3).
-pub(crate) const STRATEGY_VAR: &str = "GRIDCL_GEOM_STRATEGY";
+pub(crate) const STRATEGY_VAR: &str = "TETRALOMA_GEOM_STRATEGY";
 
 /// The degree policy: per (family, cell type, device class, scalar size), the first degree and
 /// strategy of each degree range, ascending from 1; the last range is open-ended.
@@ -306,7 +306,7 @@ fn parse_ranges(value: &toml::Value) -> std::result::Result<Vec<(u32, Strategy)>
     Ok(ranges)
 }
 
-/// The overrides of a `GRIDCL_GEOM_STRATEGY` value: `policy` or a strategy for every family,
+/// The overrides of a `TETRALOMA_GEOM_STRATEGY` value: `policy` or a strategy for every family,
 /// or a comma list of `<family>=<policy or strategy>` with the family in any case.
 fn parse_env(
     value: &str,
@@ -336,7 +336,7 @@ fn parse_env(
     Ok(out)
 }
 
-/// The override of `family` in `GRIDCL_GEOM_STRATEGY`, read once per process; `None` when the
+/// The override of `family` in `TETRALOMA_GEOM_STRATEGY`, read once per process; `None` when the
 /// variable is unset or empty or does not name the family.
 ///
 /// # Panics
@@ -353,7 +353,7 @@ fn env_override(family: StrategyFamily) -> Option<StrategyOverride> {
 }
 
 /// The strategy a launch of `family` on a block of `cell` at `degree` with `elem_bytes`-byte
-/// scalars runs on `client`'s device: the scoped hook, then `GRIDCL_GEOM_STRATEGY`, then
+/// scalars runs on `client`'s device: the scoped hook, then `TETRALOMA_GEOM_STRATEGY`, then
 /// `degree-policy.toml`; `Loops` where that strategy does not apply (`tensor`: whether the
 /// launch's points are a tensor point set, see `Strategy::applies`). `table` gives the
 /// entries of the table the `shared` variant of the launch stages (`None` where it has
@@ -368,7 +368,7 @@ fn env_override(family: StrategyFamily) -> Option<StrategyOverride> {
 ///
 /// # Panics
 ///
-/// If `GRIDCL_GEOM_STRATEGY` is invalid, or the policy has no entry for the family, cell type
+/// If `TETRALOMA_GEOM_STRATEGY` is invalid, or the policy has no entry for the family, cell type
 /// and scalar size (it has one for every family, its cell types and both float sizes).
 pub(crate) fn choose(
     client: &Client,

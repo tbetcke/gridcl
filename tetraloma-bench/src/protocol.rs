@@ -94,10 +94,10 @@ pub fn bandwidth_ratio(bytes: usize, median_s: f64, copy_bytes: usize, copy_medi
     (bytes as f64 / median_s) / (copy_bytes as f64 / copy_median_s)
 }
 
-/// The commit the binary was run from: `GRIDCL_BENCH_COMMIT`, else `GITHUB_SHA`, else
+/// The commit the binary was run from: `TETRALOMA_BENCH_COMMIT`, else `GITHUB_SHA`, else
 /// `git rev-parse HEAD` (with `-dirty` when the tree has changes), else `unknown`.
 pub fn commit() -> String {
-    for var in ["GRIDCL_BENCH_COMMIT", "GITHUB_SHA"] {
+    for var in ["TETRALOMA_BENCH_COMMIT", "GITHUB_SHA"] {
         if let Ok(value) = std::env::var(var)
             && !value.is_empty()
         {
@@ -121,7 +121,7 @@ pub fn commit() -> String {
     }
 }
 
-/// The backend as `GRIDCL_TEST_DEVICE` names it (`cpu` when unset), not the client's name
+/// The backend as `TETRALOMA_TEST_DEVICE` names it (`cpu` when unset), not the client's name
 /// (`wgpu<msl>` on Metal).
 pub fn backend() -> String {
     std::env::var(tetraloma_testing::TEST_DEVICE_VAR)

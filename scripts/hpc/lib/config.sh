@@ -1,11 +1,11 @@
 # shellcheck shell=bash disable=SC2034,SC2153 # globals are shared between remote-test.sh and the libs
 # Configuration and shared helpers of scripts/hpc, sourced by remote-test.sh.
 #
-# Settings come from scripts/hpc/targets.env (git-ignored; GRIDCL_TARGETS_ENV overrides the
+# Settings come from scripts/hpc/targets.env (git-ignored; TETRALOMA_TARGETS_ENV overrides the
 # path), created from targets.example.env. The file is sourced by bash; the keys of target
 # <t> carry the prefix <t> in upper case with '-' replaced by '_' (myriad-v100 ->
 # MYRIAD_V100_HOST, ...). myriad-cpu and kathleen are the targets without GPUs: their jobs run
-# with GRIDCL_TEST_DEVICE=cpu, on Myriad's CPU-only D nodes (ADR-0014) or on whole Kathleen
+# with TETRALOMA_TEST_DEVICE=cpu, on Myriad's CPU-only D nodes (ADR-0014) or on whole Kathleen
 # nodes, at most two per job (Slurm; ADR-0016).
 # Scheduler kinds: sge (Myriad), slurm (Kathleen) and direct (Locust and a4000, no scheduler).
 #
@@ -39,7 +39,7 @@ hpc_known_target() { # hpc_known_target <name>
     return 1
 }
 
-hpc_target_device() { # hpc_target_device <target>: the GRIDCL_TEST_DEVICE of its jobs
+hpc_target_device() { # hpc_target_device <target>: the TETRALOMA_TEST_DEVICE of its jobs
     case $1 in
         myriad-cpu | kathleen) printf 'cpu' ;;
         *) printf 'cuda' ;;
@@ -80,7 +80,7 @@ config_value() { # config_value <key>: the value of a settings key, empty when u
 
 # config_source: reads the settings file into the shell; sets CFG_FILE.
 config_source() {
-    CFG_FILE=${GRIDCL_TARGETS_ENV:-$HPC_DIR/targets.env}
+    CFG_FILE=${TETRALOMA_TARGETS_ENV:-$HPC_DIR/targets.env}
     if [ ! -f "$CFG_FILE" ]; then
         hpc_die 125 "no settings file $CFG_FILE: copy scripts/hpc/targets.example.env to" \
             "scripts/hpc/targets.env and fill in the values (docs/dev-environment.md)"

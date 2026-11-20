@@ -349,7 +349,7 @@ pub fn flat_f64<F: Real, S: FieldShape>(fields: &BlockFields<F, S>) -> Vec<Vec<f
 /// Asserts `got` equals `want` bitwise up to the sign of zero on the CPU runtime, and within
 /// the tolerance of `F` (relative to the largest |want|) elsewhere. A separately written
 /// reference kernel may fuse multiply-adds differently, which can flip the sign of a zero
-/// (ADR-0013); every nonzero value must match in every bit. Under a `GRIDCL_GEOM_STRATEGY`
+/// (ADR-0013); every nonzero value must match in every bit. Under a `TETRALOMA_GEOM_STRATEGY`
 /// that reorders the sums of the node-order references ([`environment_reorders_sums`]), the
 /// CPU runtime is held to the tolerance too.
 pub fn assert_matches<F: Real>(got: &[F], want: &[F], what: &str) {
@@ -532,7 +532,7 @@ pub fn permutations(n: usize) -> Vec<Vec<i64>> {
 pub use tetraloma_geometry::testing::{Strategy, StrategyFamily, StrategyOverride};
 
 /// The environment variable of the degree policy's override (ADR-0042, item 3).
-pub const GEOM_STRATEGY_VAR: &str = "GRIDCL_GEOM_STRATEGY";
+pub const GEOM_STRATEGY_VAR: &str = "TETRALOMA_GEOM_STRATEGY";
 
 /// Whether strategy `s` sums in another order than the scalar node-order references:
 /// `sumfact` (one direction at a time), `shared` (`sumfact`'s kernels on tensor rules, T9) or
@@ -545,7 +545,7 @@ pub fn reorders_sums(s: Strategy) -> bool {
     )
 }
 
-/// Whether `GRIDCL_GEOM_STRATEGY` forces, for some family, a strategy that [`reorders_sums`].
+/// Whether `TETRALOMA_GEOM_STRATEGY` forces, for some family, a strategy that [`reorders_sums`].
 /// The degree policy may select one too; tests that compare with a reference under the policy
 /// record what ran ([`assert_matches_ran`], ADR-0054).
 pub fn environment_reorders_sums() -> bool {
@@ -563,7 +563,7 @@ pub fn environment_reorders_sums() -> bool {
 /// One setting an M9h test runs under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StrategyRun {
-    /// No scoped hook: `GRIDCL_GEOM_STRATEGY` as set for the whole run (the kernel-task check
+    /// No scoped hook: `TETRALOMA_GEOM_STRATEGY` as set for the whole run (the kernel-task check
     /// set of docs/plans/M9h.md).
     Environment,
     /// Every family overridden by the scoped hook.
@@ -580,7 +580,7 @@ impl std::fmt::Display for StrategyRun {
     }
 }
 
-/// The settings of [`for_each_strategy!`]: the environment's alone if `GRIDCL_GEOM_STRATEGY`
+/// The settings of [`for_each_strategy!`]: the environment's alone if `TETRALOMA_GEOM_STRATEGY`
 /// is set, else the policy and then every strategy forced.
 pub fn strategy_runs() -> Vec<StrategyRun> {
     if std::env::var_os(GEOM_STRATEGY_VAR).is_some() {

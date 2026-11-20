@@ -52,7 +52,7 @@ jobs:
           nproc
           lscpu | sed -n 's/^Model name: *//p'
         env:
-          GRIDCL_TEST_DEVICE: vulkan
+          TETRALOMA_TEST_DEVICE: vulkan
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: m2-primitives-vulkan-lavapipe

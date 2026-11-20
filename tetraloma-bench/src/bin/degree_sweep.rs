@@ -1,5 +1,5 @@
 //! The M9h degree sweep (docs/plans/M9h.md, T1; ADR-0042, items 1, 6, 7 and 12) on the device
-//! named by `GRIDCL_TEST_DEVICE`, as JSON records (`tetraloma_bench::record::DegreeRecord`).
+//! named by `TETRALOMA_TEST_DEVICE`, as JSON records (`tetraloma_bench::record::DegreeRecord`).
 //!
 //! ```text
 //! cargo run --release -p tetraloma-bench --bin degree_sweep -- [--target NAME] [--run-id ID]
@@ -15,9 +15,9 @@
 //! ```
 //!
 //! - `--target`: the machine, `macmini` (the local Mac) or a target of
-//!   scripts/hpc/remote-test.sh; default `GRIDCL_HPC_TARGET` (set in runner jobs), else `local`.
+//!   scripts/hpc/remote-test.sh; default `TETRALOMA_HPC_TARGET` (set in runner jobs), else `local`.
 //! - `--run-id`: the job the records belong to (rule 11's paired runs share it); default
-//!   `GRIDCL_BENCH_RUN_ID`, else the runner's `JOB_ID`, else `local-<unix time>`.
+//!   `TETRALOMA_BENCH_RUN_ID`, else the runner's `JOB_ID`, else `local-<unix time>`.
 //! - `--families`, `--cells`, `--degrees`, `--node-families`, `--types`, `--sizes`: filters,
 //!   so a run can be split by family; by default every family, cell type, degree 1–8
 //!   (pyramids to 3), node family where offered, f32 and f64, and 10^5, 10^6 and 10^7 points.
@@ -168,8 +168,8 @@ fn env(vars: &[&str]) -> Option<String> {
 impl Args {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, Failure> {
         let mut parsed = Args {
-            target: env(&["GRIDCL_HPC_TARGET"]).unwrap_or_else(|| "local".to_owned()),
-            run_id: env(&["GRIDCL_BENCH_RUN_ID", "JOB_ID"]).unwrap_or_else(|| {
+            target: env(&["TETRALOMA_HPC_TARGET"]).unwrap_or_else(|| "local".to_owned()),
+            run_id: env(&["TETRALOMA_BENCH_RUN_ID", "JOB_ID"]).unwrap_or_else(|| {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0, |d| d.as_secs());

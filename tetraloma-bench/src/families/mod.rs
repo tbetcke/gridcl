@@ -92,7 +92,7 @@ pub struct SweepOptions {
 /// What every record of a run shares.
 #[derive(Clone, Debug)]
 pub struct Machine {
-    /// CubeCL runtime as `GRIDCL_TEST_DEVICE` names it.
+    /// CubeCL runtime as `TETRALOMA_TEST_DEVICE` names it.
     pub backend: String,
     /// Device name as the client reports it.
     pub device: String,

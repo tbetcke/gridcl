@@ -4,7 +4,7 @@
 //!
 //! A check panics with the case, the rank and what differs; under MPI the panic aborts the job.
 //! Files go to a directory every rank sees ([`shared_dir`]). The Python oracle runs on rank 0
-//! only, unless `GRIDCL_SKIP_PYTHON=1`.
+//! only, unless `TETRALOMA_SKIP_PYTHON=1`.
 //!
 //! - [`global_mesh_identical`] (bullet 1, rule 11): the mesh read on the communicator, gathered
 //!   to rank 0 by cell origin id, equals the one-rank read.
@@ -204,10 +204,10 @@ fn precision_name<F: Real>() -> &'static str {
 }
 
 /// A directory that every rank of `comm` sees, empty, named after `name`, the rank count and
-/// rank 0's process id: `$GRIDCL_M8_TMP`, else `<repo>/target/m8-tmp` (on a shared file system,
+/// rank 0's process id: `$TETRALOMA_M8_TMP`, else `<repo>/target/m8-tmp` (on a shared file system,
 /// unlike the node-local `/tmp` of a cluster).
 pub fn shared_dir(comm: &dyn CommDyn, name: &str) -> PathBuf {
-    let base = std::env::var_os("GRIDCL_M8_TMP")
+    let base = std::env::var_os("TETRALOMA_M8_TMP")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| repo().join("target/m8-tmp"));
@@ -800,7 +800,7 @@ fn all_cell_ids(h: &HostMesh) -> Vec<i64> {
     ids
 }
 
-/// The oracle on rank 0, unless `GRIDCL_SKIP_PYTHON=1`.
+/// The oracle on rank 0, unless `TETRALOMA_SKIP_PYTHON=1`.
 fn oracle_on_root(comm: &dyn CommDyn, test: &str) -> Option<Oracle> {
     if comm.rank() == 0 {
         Oracle::find(test)

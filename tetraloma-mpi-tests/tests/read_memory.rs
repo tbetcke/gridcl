@@ -1,7 +1,7 @@
 //! M8 acceptance, memory (docs/plans/M8.md, T0b, T5a; ADR-0035, rule 10): reading a binary box
 //! keeps the peak resident memory of every rank below twice its final mesh size plus 256 MiB.
 //!
-//! The file is `GRIDCL_M8_BOX` (the 10^7-cell box written by `gen-gmsh-box 119` before the
+//! The file is `TETRALOMA_M8_BOX` (the 10^7-cell box written by `gen-gmsh-box 119` before the
 //! measured run), else a small box that rank 0 writes first (the smoke test). Peak memory is
 //! `getrusage(RUSAGE_SELF).ru_maxrss`: KiB on Linux, bytes on macOS.
 //!
@@ -153,22 +153,22 @@ fn main() -> ExitCode {
         log::set_logger(&PROFILE).expect("the only logger");
         log::set_max_level(log::LevelFilter::Debug);
         let client = tetraloma_testing::test_client();
-        match std::env::var_os("GRIDCL_M8_BOX").filter(|v| !v.is_empty()) {
+        match std::env::var_os("TETRALOMA_M8_BOX").filter(|v| !v.is_empty()) {
             Some(path) => {
                 // The measurement of bullet 2: 8 ranks, a 10^7-cell file.
                 assert_eq!(
                     comm.size(),
                     8,
-                    "GRIDCL_M8_BOX: the measurement runs on 8 ranks"
+                    "TETRALOMA_M8_BOX: the measurement runs on 8 ranks"
                 );
                 assert!(
                     tetraloma_testing::supports::<f64>(&client),
-                    "GRIDCL_M8_BOX: the measurement reads in f64"
+                    "TETRALOMA_M8_BOX: the measurement reads in f64"
                 );
                 let cells = io::read_memory(comm, &client, &PathBuf::from(path), &peak_rss);
                 assert!(
                     cells >= 10_000_000,
-                    "GRIDCL_M8_BOX: {cells} cells, the measurement needs at least 10^7"
+                    "TETRALOMA_M8_BOX: {cells} cells, the measurement needs at least 10^7"
                 );
             }
             None => {

@@ -1,5 +1,5 @@
 //! M10 bullet 6 (ADR-0060 item 6): every example's `run` on the test device
-//! (`GRIDCL_TEST_DEVICE`): the CPU runtime here and in CI, Metal and CUDA on the GPU targets.
+//! (`TETRALOMA_TEST_DEVICE`): the CPU runtime here and in CI, Metal and CUDA on the GPU targets.
 
 use std::path::PathBuf;
 

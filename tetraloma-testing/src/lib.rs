@@ -1,4 +1,4 @@
-//! Test support for tetraloma: the test device chosen by `GRIDCL_TEST_DEVICE`, test meshes,
+//! Test support for tetraloma: the test device chosen by `TETRALOMA_TEST_DEVICE`, test meshes,
 //! tolerance helpers and the Python oracles.
 //!
 //! This crate is not published. Its features forward CubeCL's runtime features; besides it,
@@ -27,11 +27,11 @@ use cubecl::device::{DeviceUnavailable, MetalDevice, WgpuDeviceKind};
 use cubecl::prelude::{Client, CubeElement};
 
 /// The environment variable that names the test device.
-pub const TEST_DEVICE_VAR: &str = "GRIDCL_TEST_DEVICE";
+pub const TEST_DEVICE_VAR: &str = "TETRALOMA_TEST_DEVICE";
 
-/// The client of the device named by the `GRIDCL_TEST_DEVICE` environment variable.
+/// The client of the device named by the `TETRALOMA_TEST_DEVICE` environment variable.
 ///
-/// | `GRIDCL_TEST_DEVICE` | Device | Feature of tetraloma-testing |
+/// | `TETRALOMA_TEST_DEVICE` | Device | Feature of tetraloma-testing |
 /// | --- | --- | --- |
 /// | unset, empty or `cpu` | `Device::cpu()` | `cpu` (default) |
 /// | `cuda` | `Device::cuda(0)` | `cuda` |
@@ -58,7 +58,7 @@ pub fn test_client() -> Client {
     client_of(|backend| backend.device())
 }
 
-/// The client of the device `open` gives for the backend `GRIDCL_TEST_DEVICE` names, or the
+/// The client of the device `open` gives for the backend `TETRALOMA_TEST_DEVICE` names, or the
 /// panic of [`test_client`].
 fn client_of(open: impl FnOnce(TestBackend) -> Result<Device, DeviceUnavailable>) -> Client {
     let value = std::env::var(TEST_DEVICE_VAR).ok();
@@ -72,7 +72,7 @@ fn client_of(open: impl FnOnce(TestBackend) -> Result<Device, DeviceUnavailable>
     }
 }
 
-/// The client of GPU `index` of the backend `GRIDCL_TEST_DEVICE` names, for a rank that opens
+/// The client of GPU `index` of the backend `TETRALOMA_TEST_DEVICE` names, for a rank that opens
 /// the GPU of [`tetraloma::local_gpu_index`] (ADR-0060 item 1): `Device::cuda(index)` and
 /// `Device::rocm(index)` on CUDA and HIP; the other backends ignore `index` and open the device
 /// of [`test_client`].
@@ -91,7 +91,7 @@ pub fn test_client_at(index: usize) -> Client {
     client_of(|backend| backend.device_at(index))
 }
 
-/// The client of the CPU runtime, whatever `GRIDCL_TEST_DEVICE` says: the f64 side of f32-vs-f64
+/// The client of the CPU runtime, whatever `TETRALOMA_TEST_DEVICE` says: the f64 side of f32-vs-f64
 /// comparisons on devices without f64 (docs/plans/M3.md, question 15).
 ///
 /// # Example
@@ -120,8 +120,8 @@ pub const TOL_F64: f64 = 1e-12;
 /// # Example
 ///
 /// ```
-/// // Unset GRIDCL_TEST_DEVICE is the CPU runtime.
-/// if std::env::var("GRIDCL_TEST_DEVICE").unwrap_or_default().is_empty() {
+/// // Unset TETRALOMA_TEST_DEVICE is the CPU runtime.
+/// if std::env::var("TETRALOMA_TEST_DEVICE").unwrap_or_default().is_empty() {
 ///     assert!(tetraloma_testing::bitwise_device());
 /// }
 /// ```
@@ -142,7 +142,7 @@ pub fn supports<T: CubeElement>(client: &Client) -> bool {
     client.properties().supports_type(T::cube_type())
 }
 
-/// A backend `GRIDCL_TEST_DEVICE` can name.
+/// A backend `TETRALOMA_TEST_DEVICE` can name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TestBackend {
     Cpu,
@@ -165,7 +165,7 @@ impl TestBackend {
         TestBackend::Wgpu,
     ];
 
-    /// The value of `GRIDCL_TEST_DEVICE`, which is also the name of the cargo feature.
+    /// The value of `TETRALOMA_TEST_DEVICE`, which is also the name of the cargo feature.
     fn name(self) -> &'static str {
         match self {
             TestBackend::Cpu => "cpu",
@@ -261,7 +261,7 @@ mod tests {
             let message = TestBackend::parse(Some(value)).expect_err(value);
             assert!(message.contains("DeviceUnavailable"), "{message}");
             assert!(
-                message.starts_with(&format!("GRIDCL_TEST_DEVICE={value}:")),
+                message.starts_with(&format!("TETRALOMA_TEST_DEVICE={value}:")),
                 "{message}"
             );
             assert!(message.contains("metal-native"), "{message}");
@@ -272,7 +272,8 @@ mod tests {
     fn not_linked_names_the_feature() {
         let message = TestBackend::Cuda.unavailable(DeviceUnavailable::NotLinked(RuntimeId::Cuda));
         assert!(
-            message.starts_with("GRIDCL_TEST_DEVICE=cuda needs --features tetraloma-testing/cuda"),
+            message
+                .starts_with("TETRALOMA_TEST_DEVICE=cuda needs --features tetraloma-testing/cuda"),
             "{message}"
         );
         assert!(message.contains("DeviceUnavailable"), "{message}");
@@ -286,7 +287,7 @@ mod tests {
         };
         let message = TestBackend::Vulkan.unavailable(error);
         assert!(
-            message.starts_with("GRIDCL_TEST_DEVICE=vulkan: DeviceUnavailable:"),
+            message.starts_with("TETRALOMA_TEST_DEVICE=vulkan: DeviceUnavailable:"),
             "{message}"
         );
     }

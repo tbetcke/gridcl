@@ -37,7 +37,7 @@ fn device_class_has_exactly_cpu_and_gpu() {
     // The CPU runtime is Cpu; Metal, CUDA, HIP and the wgpu backends are Gpu.
     let device = std::env::var(tetraloma_testing::TEST_DEVICE_VAR).unwrap_or_default();
     let want_cpu = matches!(device.as_str(), "" | "cpu");
-    assert_eq!(cpu, want_cpu, "GRIDCL_TEST_DEVICE={device:?}");
+    assert_eq!(cpu, want_cpu, "TETRALOMA_TEST_DEVICE={device:?}");
 }
 
 /// The table `key` of `table`.

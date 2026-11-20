@@ -1,5 +1,5 @@
 //! Throughput of sorting 10^7 two-word keys and of scanning 10^7 u32 values on the device named
-//! by `GRIDCL_TEST_DEVICE`, as JSON (M2 T11, docs/perf/m2-primitives.md).
+//! by `TETRALOMA_TEST_DEVICE`, as JSON (M2 T11, docs/perf/m2-primitives.md).
 //!
 //! Each operation runs once as a warm-up (JIT compilation), and its result is checked against a
 //! host reference before any time is reported. Then ten timed runs follow, each ending with
@@ -11,7 +11,7 @@
 //!
 //! The JSON is an array with one record per operation: backend, device, operation, n, words,
 //! median in seconds, items per second, commit, and the build profile, the vector-size override
-//! and every timed run. The commit is `GRIDCL_BENCH_COMMIT`, else `GITHUB_SHA`, else
+//! and every timed run. The commit is `TETRALOMA_BENCH_COMMIT`, else `GITHUB_SHA`, else
 //! `git rev-parse HEAD` (with `-dirty` when the tree has changes), else `unknown`.
 
 use std::process::{Command, ExitCode};
@@ -149,7 +149,7 @@ impl Context {
             "items_per_s": args.n as f64 / median,
             "commit": self.commit,
             "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
-            "vector_size_override": std::env::var("GRIDCL_VECTOR_SIZE").ok(),
+            "vector_size_override": std::env::var("TETRALOMA_VECTOR_SIZE").ok(),
             "times_s": measured.times,
         })
     }
@@ -157,7 +157,7 @@ impl Context {
 
 /// The commit the binary was run from (see the crate docs).
 fn commit() -> String {
-    for var in ["GRIDCL_BENCH_COMMIT", "GITHUB_SHA"] {
+    for var in ["TETRALOMA_BENCH_COMMIT", "GITHUB_SHA"] {
         if let Ok(value) = std::env::var(var)
             && !value.is_empty()
         {

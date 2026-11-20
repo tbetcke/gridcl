@@ -3,7 +3,7 @@
 //!
 //! The overrides are scoped and thread-local, because tetraloma runs one host thread per mesh.
 //! Precedence: the scoped per-kind override, then the scoped override, then the environment
-//! variable (`GRIDCL_VECTOR_SIZE`, `GRIDCL_QUAD_TILE`), then vector-policy.toml (ADR-0015).
+//! variable (`TETRALOMA_VECTOR_SIZE`, `TETRALOMA_QUAD_TILE`), then vector-policy.toml (ADR-0015).
 //! The CPU units and the performance-core count have scoped overrides only (ADR-0017).
 //!
 //! Without the feature this module is private and holds only the accessors the rest of the
@@ -184,7 +184,7 @@ pub fn with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R {
 }
 
 /// Forces the vector size of plans made inside `f`. It takes precedence over
-/// `GRIDCL_VECTOR_SIZE`; `Fixed(n)` and `Widest` stay clamped by the kernel's `max_vector`
+/// `TETRALOMA_VECTOR_SIZE`; `Fixed(n)` and `Widest` stay clamped by the kernel's `max_vector`
 /// and the device's `hardware.max_vector_size` (ADR-0011).
 ///
 /// # Example
@@ -211,7 +211,7 @@ pub fn with_vector_size<R>(v: VectorSizeOverride, f: impl FnOnce() -> R) -> R {
     scoped(&VECTOR_SIZE, v, f)
 }
 
-/// Forces `VectorPolicy::quad_tile` inside `f`. It takes precedence over `GRIDCL_QUAD_TILE`.
+/// Forces `VectorPolicy::quad_tile` inside `f`. It takes precedence over `TETRALOMA_QUAD_TILE`.
 ///
 /// # Example
 ///

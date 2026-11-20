@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Check and print the local tool versions of the local Mac (docs/design.md, E0 acceptance):
-# the pinned Python packages in ${GRIDCL_PYTHON:-.venv/bin/python} (vtk 9.7.1 and meshio 5.3.5,
+# the pinned Python packages in ${TETRALOMA_PYTHON:-.venv/bin/python} (vtk 9.7.1 and meshio 5.3.5,
 # the M5 oracles, ADR-0024; gmsh 4.15.2, the M4 fixture corpus), gmsh, claude >= 2.1.286,
 # rsync >= 3, mpirun, and a parallel HDF5 1.10.10-2.2.0 in ${HDF5_DIR:-/opt/homebrew/opt/hdf5-mpi}
 # (the M8 VTKHDF writer, ADR-0035 rule 9). Prints one line per tool; exits 1 if any check fails.
@@ -9,7 +9,7 @@
 set -u
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
-python=${GRIDCL_PYTHON:-$repo/.venv/bin/python}
+python=${TETRALOMA_PYTHON:-$repo/.venv/bin/python}
 failed=0
 
 # version_ge <have> <want>: dotted numeric comparison, ignoring non-numeric suffixes.

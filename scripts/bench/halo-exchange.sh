@@ -7,9 +7,9 @@
 #   --ranks: the rank counts, separated by commas or spaces (default 2).
 #   After `--`: further halo_exchange options (--target, --types, --fallback-reason, ...).
 #
-# The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching tetraloma-testing
+# The backend is TETRALOMA_TEST_DEVICE (cpu by default), built with the matching tetraloma-testing
 # feature and `mpi`. In a scripts/hpc job on a clean tree the records carry the job's commit
-# (GRIDCL_BENCH_COMMIT from GRIDCL_HPC_COMMIT), since the remote tree has no .git. On Apple chips
+# (TETRALOMA_BENCH_COMMIT from TETRALOMA_HPC_COMMIT), since the remote tree has no .git. On Apple chips
 # with three or more performance levels it applies mpi-test.sh's hwloc workaround (ADR-0034).
 # Runs under bash 3.2 (macOS).
 set -euo pipefail
@@ -46,14 +46,14 @@ for n in $ranks; do
     [[ "$n" =~ ^[1-9][0-9]*$ ]] || die "--ranks: '$n' is not a positive integer"
 done
 
-device=${GRIDCL_TEST_DEVICE:-cpu}
+device=${TETRALOMA_TEST_DEVICE:-cpu}
 case $device in
     cpu | cuda | metal | vulkan) features="mpi,tetraloma-testing/$device" ;;
-    *) die "GRIDCL_TEST_DEVICE '$device' is not cpu, cuda, metal or vulkan" ;;
+    *) die "TETRALOMA_TEST_DEVICE '$device' is not cpu, cuda, metal or vulkan" ;;
 esac
-if [[ -n "${GRIDCL_HPC_COMMIT:-}" && -z "${GRIDCL_BENCH_COMMIT:-}" ]]; then
-    [[ "${GRIDCL_HPC_DIRTY:-}" == no ]] || die "the job's tree is dirty; record a clean commit"
-    export GRIDCL_BENCH_COMMIT=$GRIDCL_HPC_COMMIT
+if [[ -n "${TETRALOMA_HPC_COMMIT:-}" && -z "${TETRALOMA_BENCH_COMMIT:-}" ]]; then
+    [[ "${TETRALOMA_HPC_DIRTY:-}" == no ]] || die "the job's tree is dirty; record a clean commit"
+    export TETRALOMA_BENCH_COMMIT=$TETRALOMA_HPC_COMMIT
 fi
 
 command -v mpirun >/dev/null || die "mpirun not found"
@@ -66,15 +66,15 @@ if [[ $(uname -s) == Darwin ]]; then
 fi
 case $(mpirun --version 2>&1 || true) in
     *"Open MPI"* | *"Open RTE"* | *OpenRTE*)
-        flags+=(--oversubscribe -x GRIDCL_TEST_DEVICE)
-        [[ -z "${GRIDCL_BENCH_COMMIT:-}" ]] || flags+=(-x GRIDCL_BENCH_COMMIT)
-        [[ -z "${GRIDCL_HPC_TARGET:-}" ]] || flags+=(-x GRIDCL_HPC_TARGET)
+        flags+=(--oversubscribe -x TETRALOMA_TEST_DEVICE)
+        [[ -z "${TETRALOMA_BENCH_COMMIT:-}" ]] || flags+=(-x TETRALOMA_BENCH_COMMIT)
+        [[ -z "${TETRALOMA_HPC_TARGET:-}" ]] || flags+=(-x TETRALOMA_HPC_TARGET)
         if [[ -n "${HWLOC_COMPONENTS:-}" ]]; then
             flags+=(-x HWLOC_COMPONENTS --map-by slot)
         fi
         ;;
 esac
-export GRIDCL_TEST_DEVICE=$device
+export TETRALOMA_TEST_DEVICE=$device
 
 cargo build --release -p tetraloma-bench --bin halo_exchange --features "$features"
 bin=${CARGO_TARGET_DIR:-target}/release/halo_exchange

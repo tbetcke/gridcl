@@ -4,7 +4,7 @@
 //!
 //! The overrides are scoped and thread-local, because tetraloma runs one host thread per mesh:
 //! thread-rank tests set them inside each rank thread. Precedence: the scoped hook, then
-//! `GRIDCL_GEOM_STRATEGY`, then `degree-policy.toml`.
+//! `TETRALOMA_GEOM_STRATEGY`, then `degree-policy.toml`.
 
 pub use crate::strategy::{Strategy, StrategyFamily, StrategyOverride};
 
