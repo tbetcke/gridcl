@@ -37,8 +37,10 @@ fn exchange<F: Real + ScatterNumeric, C: Comm>(client: &Client, comm: C) -> tetr
         .partitioner(Block)
         .ghosts(GhostMode::SharedFacet)
         .build_on(comm)?;
+    // ANCHOR: index_map
     let nodes = scalp.node_index_map();
     let (owned, local) = (nodes.num_owned(), nodes.num_local());
+    // ANCHOR_END: index_map
     println!(
         "rank {rank} of {size}: {owned} owned and {} ghost nodes, on {} in {}",
         nodes.num_ghosts(),
@@ -46,6 +48,7 @@ fn exchange<F: Real + ScatterNumeric, C: Comm>(client: &Client, comm: C) -> tetr
         crate::scalar_name::<F>()
     );
 
+    // ANCHOR: forward
     // Owner -> ghosts: the owned nodes' coordinates, zero on the ghosts.
     let coordinates = scalp.nodes().to_host()?; // [node][3], relative to the mesh's origin
     let mut values = coordinates.clone();
@@ -53,6 +56,7 @@ fn exchange<F: Real + ScatterNumeric, C: Comm>(client: &Client, comm: C) -> tetr
     let mut u = DeviceBuffer::from_host(scalp.client(), &values)?;
     let sc = nodes.scatterer(scalp.client(), 3)?; // block size 3: a vector per node
     sc.forward(&mut u)?; // owner -> ghosts (insert)
+    // ANCHOR_END: forward
     let tol = 10.0 * crate::tol::<F>();
     for (i, (got, want)) in u.to_host()?.iter().zip(&coordinates).enumerate() {
         assert!(
@@ -63,10 +67,12 @@ fn exchange<F: Real + ScatterNumeric, C: Comm>(client: &Client, comm: C) -> tetr
         );
     }
 
+    // ANCHOR: reverse
     // Ghosts -> owner: ones everywhere, summed. Each owned value becomes 1 plus the number of
     // ranks that ghost its node.
     let mut u = DeviceBuffer::from_host(scalp.client(), &vec![F::narrow(1.0); 3 * local])?;
     sc.reverse(&mut u, ReverseOp::Add)?; // ghosts -> owner, deterministic, no atomics
+    // ANCHOR_END: reverse
     let summed = u.to_host()?;
     let owned_sum: f64 = summed[..3 * owned].iter().map(|v| v.widen()).sum();
     assert!(

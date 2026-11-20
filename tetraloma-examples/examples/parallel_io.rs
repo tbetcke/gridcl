@@ -8,6 +8,7 @@
 //! Without an argument it writes to `target/tetraloma-examples/parallel_io` in the workspace.
 //! Without the feature `hdf5` it writes PVTU only.
 
+// ANCHOR: main
 use std::path::PathBuf;
 
 use tetraloma::prelude::*;
@@ -35,3 +36,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+// ANCHOR_END: main
