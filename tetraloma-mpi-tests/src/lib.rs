@@ -28,7 +28,10 @@ pub fn run(name: &str, f: impl FnOnce(&tetraloma::Mpi)) -> ExitCode {
     install_abort_hook();
     let comm = tetraloma::Mpi::world(&universe);
     if let Err(message) = tetraloma_testing::check_world_size(comm.size()) {
-        eprintln!("{name}: rank {}: {message}", comm.rank());
+        // One write of the whole line, so that the ranks' lines never interleave
+        // (scripts/check-rank-guard.sh looks for every rank's line).
+        let line = format!("{name}: rank {}: {message}\n", comm.rank());
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), line.as_bytes());
         return ExitCode::FAILURE;
     }
     f(&comm);

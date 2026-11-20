@@ -167,7 +167,8 @@ jobs:
         run: cargo clippy -p tetraloma-mpi-tests --features mpi --all-targets -- -D warnings
       - if: matrix.part == 'tests'
         run: scripts/mpi-test.sh 1 2 3 4
-      # A singleton launch must fail the rank-count guard (ADR-0068).
+      # A singleton launch must fail the rank-count guard, and so must every rank of an -n 2
+      # launch with TETRALOMA_EXPECT_RANKS=3 (ADR-0068).
       - if: matrix.part == 'tests'
         run: scripts/check-rank-guard.sh
       # The halo_exchange example under mpirun on 1-4 ranks (ADR-0060 item 6; ADR-0068).
