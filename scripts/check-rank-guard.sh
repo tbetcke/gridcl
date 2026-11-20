@@ -2,7 +2,7 @@
 # Checks the rank-count guard (docs/design.md, roadmap E2; ADR-0068): a run whose world size
 # differs from TETRALOMA_EXPECT_RANKS must fail at once with the guard's message.
 #
-# Usage: scripts/check-rank-guard.sh
+# Usage: scripts/check-rank-guard.sh [--ranks N]
 #
 # Builds the MPI test allreduce_smoke (tetraloma-mpi-tests, feature mpi) and the example
 # halo_exchange (tetraloma-examples, feature mpi) in the debug build and runs each under
@@ -10,9 +10,17 @@
 #   - with TETRALOMA_EXPECT_RANKS=2, a singleton world as a broken launcher gives it, the run must
 #     exit non-zero and print "rank-count guard: world size 1";
 #   - with TETRALOMA_EXPECT_RANKS=1 (the control) it must pass.
+# Then allreduce_smoke under `mpirun -n N` (default 2) with TETRALOMA_EXPECT_RANKS=N+1: the run
+# must exit non-zero and every rank 0..N-1 must print the guard's message, which shows that the
+# launcher forwards the variable to every rank (with -x under Open MPI; on every node of a
+# multi-node job, for example with TETRALOMA_MPIRUN_FLAGS="--map-by node"). A rank without it
+# would wait in the allreduce until the time limit.
 # Works under any MPI flavour; applies mpi-test.sh's launcher flags and its hwloc workaround
 # on Apple chips with three or more performance levels (ADR-0034). Runs on the CPU runtime
 # (TETRALOMA_TEST_DEVICE is unset).
+#
+# Options:
+#   --ranks N            the world size of the multi-rank check (N >= 2, default 2)
 #
 # Environment:
 #   TETRALOMA_MPIRUN_FLAGS  extra mpirun flags, split on whitespace (as in mpi-test.sh)
@@ -27,6 +35,27 @@ die() {
     echo "check-rank-guard.sh: $*" >&2
     exit 2
 }
+
+ranks=2
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --ranks)
+            [[ $# -ge 2 ]] || die "--ranks needs a value"
+            ranks=$2
+            shift 2
+            ;;
+        --ranks=*)
+            ranks=${1#--ranks=}
+            shift
+            ;;
+        -h | --help)
+            sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) die "unknown argument '$1' (see --help)" ;;
+    esac
+done
+[[ "$ranks" =~ ^[0-9]+$ ]] && ((ranks >= 2)) || die "--ranks '$ranks' is not an integer >= 2"
 
 guard_message="rank-count guard: world size 1"
 time_limit=300
@@ -94,7 +123,7 @@ halo=$(executable "$logs/build-examples.json" halo_exchange example)
 [[ -x $smoke ]] || die "allreduce_smoke was not built"
 [[ -x $halo ]] || die "halo_exchange was not built"
 
-echo "check-rank-guard.sh: $flavour, mpirun -n 1 of allreduce_smoke and halo_exchange"
+echo "check-rank-guard.sh: $flavour, mpirun -n 1 of allreduce_smoke and halo_exchange, -n $ranks of allreduce_smoke"
 [[ -z $hwloc_workaround ]] || echo "check-rank-guard.sh: HWLOC_COMPONENTS=-darwin (hwloc issue 852)"
 failed=0
 
@@ -124,12 +153,45 @@ check() {
     fi
 }
 
+# check_ranks NAME EXECUTABLE: runs EXECUTABLE under mpirun -n $ranks with
+# TETRALOMA_EXPECT_RANKS=$ranks+1; it must fail, and every rank must print
+# "NAME: rank r: rank-count guard: world size $ranks," (tetraloma_mpi_tests::run's message).
+check_ranks() {
+    local name=$1 exe=$2 expect=$((ranks + 1)) status=0 r missing=
+    local log=$logs/$name-ranks-$ranks-expect-$expect.log
+    TETRALOMA_EXPECT_RANKS=$expect ${timeout_cmd[@]+"${timeout_cmd[@]}"} \
+        mpirun ${mpirun_flags[@]+"${mpirun_flags[@]}"} -n "$ranks" "$exe" >"$log" 2>&1 </dev/null ||
+        status=$?
+    local verdict=
+    if [[ $status -eq 0 ]]; then
+        verdict="exited 0 in a world of $ranks"
+    elif [[ $status -eq 124 || $status -eq 137 ]]; then
+        verdict="time limit of $time_limit s exceeded (a rank without TETRALOMA_EXPECT_RANKS waits in the allreduce?)"
+    else
+        for ((r = 0; r < ranks; r++)); do
+            LC_ALL=C tr -d '\000' <"$log" |
+                grep -qF "$name: rank $r: rank-count guard: world size $ranks," ||
+                missing="$missing $r"
+        done
+        [[ -z $missing ]] || verdict="no guard message from rank(s)$missing"
+    fi
+    if [[ -z $verdict ]]; then
+        printf 'PASS  %s, -n %d, TETRALOMA_EXPECT_RANKS=%d: every rank failed the guard (exit status %d)\n' \
+            "$name" "$ranks" "$expect" "$status"
+    else
+        failed=$((failed + 1))
+        printf 'FAIL  %s, -n %d, TETRALOMA_EXPECT_RANKS=%d: %s (log %s)\n' "$name" "$ranks" "$expect" "$verdict" "$log"
+        LC_ALL=C tr -d '\000' <"$log" | tail -n 20 | LC_ALL=C sed 's/^/      /' || true
+    fi
+}
+
 for entry in "allreduce_smoke $smoke" "halo_exchange $halo"; do
     name=${entry%% *}
     exe=${entry#* }
     check "$name" "$exe" 2
     check "$name" "$exe" 1
 done
+check_ranks allreduce_smoke "$smoke"
 
 if [[ $failed -gt 0 ]]; then
     echo "check-rank-guard.sh: $failed check(s) failed" >&2
