@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Runs the gridcl-examples binaries (ADR-0060 item 6): the serial examples directly, and
+# Runs the tetraloma-examples binaries (ADR-0060 item 6): the serial examples directly, and
 # halo_exchange (feature mpi) under mpirun.
 #
 # Usage: scripts/run-examples.sh [--serial | --mpi] [--ranks N] [--features FEATURES]
 #   --serial             only the serial examples (hosted CI's cpu job, which has no MPI)
 #   --mpi                only halo_exchange under mpirun
 #   --ranks N            ranks of halo_exchange: default 2, and 1 with a cuda feature (one GPU)
-#   --features FEATURES  cargo features of gridcl-examples, for example metal or cuda; each
+#   --features FEATURES  cargo features of tetraloma-examples, for example metal or cuda; each
 #                        example opens the first device of Listing B8 the build links
 #
 # Environment:
@@ -60,7 +60,7 @@ done
     die "--features '$features' is not a comma-separated feature list"
 if [[ -z $ranks ]]; then
     case ",$features," in
-        *,cuda,* | *,gridcl-examples/cuda,*) ranks=1 ;;
+        *,cuda,* | *,tetraloma-examples/cuda,*) ranks=1 ;;
         *) ranks=2 ;;
     esac
 fi
@@ -114,12 +114,12 @@ if [[ -n $run_serial ]]; then
     for name in $serial_examples; do
         example_flags+=(--example "$name")
     done
-    cargo build ${profile_flags[@]+"${profile_flags[@]}"} -p gridcl-examples \
+    cargo build ${profile_flags[@]+"${profile_flags[@]}"} -p tetraloma-examples \
         ${feature_flags[@]+"${feature_flags[@]}"} "${example_flags[@]}"
     for name in $serial_examples; do
         echo "--- $name"
         run_one "$name" cargo run --quiet ${profile_flags[@]+"${profile_flags[@]}"} \
-            -p gridcl-examples ${feature_flags[@]+"${feature_flags[@]}"} --example "$name"
+            -p tetraloma-examples ${feature_flags[@]+"${feature_flags[@]}"} --example "$name"
     done
 fi
 
@@ -164,7 +164,7 @@ if [[ -n $run_mpi ]]; then
     [[ -z $features ]] || mpi_features="mpi,$features"
     echo "run-examples.sh: halo_exchange on $ranks rank(s), $flavour, features $mpi_features, profile $profile"
     [[ -z $hwloc_workaround ]] || echo "run-examples.sh: HWLOC_COMPONENTS=-darwin (hwloc issue 852)"
-    cargo build ${profile_flags[@]+"${profile_flags[@]}"} -p gridcl-examples \
+    cargo build ${profile_flags[@]+"${profile_flags[@]}"} -p tetraloma-examples \
         --features "$mpi_features" --example halo_exchange
     exe=${CARGO_TARGET_DIR:-target}/$profile/examples/halo_exchange
     [[ -x $exe ]] || die "$exe was not built"

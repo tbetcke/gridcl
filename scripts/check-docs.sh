@@ -4,9 +4,9 @@
 #
 # Usage: scripts/check-docs.sh [default|libraries]
 #   default    cargo doc at default features (CI: cpu job)
-#   libraries  with gridcl/mpi,gridcl/hdf5,gridcl/scotch,gridcl/ptscotch,gridcl/metis (CI: the
+#   libraries  with tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis (CI: the
 #              ptscotch job; needs MPI, a parallel HDF5, Scotch and PT-Scotch), and
-#              gridcl-testing/mpi: with gridcl/mpi, gridcl-testing's ThreadComm builds only with
+#              tetraloma-testing/mpi: with tetraloma/mpi, tetraloma-testing's ThreadComm builds only with
 #              it (CommDyn::raw)
 #   (none)     both
 #
@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 export RUSTDOCFLAGS="${RUSTDOCFLAGS:+$RUSTDOCFLAGS }-Dwarnings -Dmissing_docs"
 
-libraries="gridcl/mpi,gridcl/hdf5,gridcl/scotch,gridcl/ptscotch,gridcl/metis,gridcl-testing/mpi"
+libraries="tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis,tetraloma-testing/mpi"
 
 run() {
     echo "check-docs: cargo doc --workspace --no-deps $*" >&2

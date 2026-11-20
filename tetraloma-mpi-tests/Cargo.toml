@@ -1,0 +1,112 @@
+[package]
+name = "tetraloma-mpi-tests"
+description = "MPI integration tests of tetraloma, run by scripts/mpi-test.sh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# The direct mpi dependency initialises MPI (`mpi::initialize`) and aborts the job on a panic.
+mpi = ["tetraloma/mpi", "tetraloma-testing/mpi", "dep:mpi"]
+# The M7 partitioner targets (scripts/mpi-test.sh: GRIDCL_MPI_FEATURES), with Scotch and PT-Scotch;
+# add METIS (the acceptance run) or ParMETIS, never both (ADR-0033).
+partitioners = ["tetraloma/ptscotch", "tetraloma/scotch"]
+metis = ["tetraloma/metis"]
+parmetis = ["tetraloma/parmetis"]
+# The VTKHDF targets (M8): needs a parallel HDF5 with `mpi` (HDF5_DIR; ADR-0035, rule 9).
+hdf5 = ["tetraloma/hdf5"]
+
+[dependencies]
+tetraloma = { path = "../tetraloma" }
+tetraloma-testing = { path = "../tetraloma-testing" }
+log.workspace = true
+mpi = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[[test]]
+name = "allreduce_smoke"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "comm"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "parallel_invariance"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "scatter"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "determinism"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "locality"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "partition_quality"
+harness = false
+required-features = ["mpi", "partitioners"]
+
+[[test]]
+name = "partition_seed"
+harness = false
+required-features = ["mpi", "partitioners"]
+
+[[test]]
+name = "partition_build"
+harness = false
+required-features = ["mpi", "partitioners"]
+
+[[test]]
+name = "gmsh_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "vtk_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "vtkhdf_parallel"
+harness = false
+required-features = ["mpi", "hdf5"]
+
+[[test]]
+name = "read_memory"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "submesh_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "orient_parallel"
+harness = false
+required-features = ["mpi"]
+
+[[test]]
+name = "high_order_parallel"
+harness = false
+required-features = ["mpi"]

@@ -3,9 +3,9 @@
 //!
 //! "Node by node": 1e-14 absolute per coordinate (docs/plans/M1b.md, question 10).
 
-use gridcl_conformance::reference_cell_type;
-use gridcl_dims::CellType;
-use gridcl_refcell::{NodeFamily, lagrange_points, tdim};
+use tetraloma_conformance::reference_cell_type;
+use tetraloma_dims::CellType;
+use tetraloma_refcell::{NodeFamily, lagrange_points, tdim};
 use ndelement::ciarlet::{LagrangeVariant, lagrange};
 use ndelement::traits::MappedFiniteElement;
 use ndelement::types::Continuity;

@@ -1,0 +1,36 @@
+[package]
+name = "tetraloma-topology"
+description = "Entity creation, ownership, connectivity and permutation info of tetraloma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+# Benchmark support, not a library feature: the hidden `tetraloma_topology::bench` module.
+# tetraloma-bench turns it on (docs/design.md, "Cargo features"; ADR-0015).
+bench = []
+
+[dependencies]
+cubecl.workspace = true
+tetraloma-device = { path = "../tetraloma-device" }
+tetraloma-dims = { path = "../tetraloma-dims" }
+tetraloma-parallel = { path = "../tetraloma-parallel" }
+tetraloma-refcell = { path = "../tetraloma-refcell" }
+
+[dev-dependencies]
+tetraloma = { path = "../tetraloma" }
+tetraloma-testing = { path = "../tetraloma-testing" }
+proptest.workspace = true
+serde_json.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

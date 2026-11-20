@@ -1,5 +1,5 @@
 # Partitioner tests (docs/design.md, "CI matrix"; M7), on Ubuntu's Scotch, PT-Scotch, ParMETIS and
-# Open MPI, in the two feature sets of ADR-0033. Nightly, on changes to gridcl-partition/,
+# Open MPI, in the two feature sets of ADR-0033. Nightly, on changes to tetraloma-partition/,
 # ptscotch-sys/, parmetis-sys/, the pipeline's dual graph, the Gmsh reader, the M7 and M8 MPI
 # targets or their test infrastructure, and scripts/check-docs.sh, and by hand.
 name: ptscotch
@@ -9,16 +9,16 @@ on:
     - cron: "43 2 * * *"
   push:
     paths:
-      - "gridcl-partition/**"
+      - "tetraloma-partition/**"
       - "ptscotch-sys/**"
       - "parmetis-sys/**"
-      - "gridcl/src/pipeline/dual_graph.rs"
-      - "gridcl/src/builder.rs"
-      - "gridcl/src/gmsh/**"
-      - "gridcl-mpi-tests/**"
-      - "gridcl-testing/src/partition.rs"
-      - "gridcl-testing/src/meshes/boxes.rs"
-      - "gridcl-testing/src/io_parallel.rs"
+      - "tetraloma/src/pipeline/dual_graph.rs"
+      - "tetraloma/src/builder.rs"
+      - "tetraloma/src/gmsh/**"
+      - "tetraloma-mpi-tests/**"
+      - "tetraloma-testing/src/partition.rs"
+      - "tetraloma-testing/src/meshes/boxes.rs"
+      - "tetraloma-testing/src/io_parallel.rs"
       - "scripts/mpi-test.sh"
       - "scripts/check-docs.sh"
       - ".github/workflows/ptscotch.yml"
@@ -64,7 +64,7 @@ jobs:
         with:
           key: ptscotch-${{ matrix.set }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Rustdoc with the partitioner and I/O features (ADR-0060 item 7): gridcl/metis, so in the
+      # Rustdoc with the partitioner and I/O features (ADR-0060 item 7): tetraloma/metis, so in the
       # metis set only (METIS and ParMETIS exclude each other, ADR-0033).
       - name: HDF5_DIR for Open MPI's parallel HDF5
         if: matrix.set == 'metis'
@@ -87,14 +87,14 @@ jobs:
         run: |
           cargo build -p ptscotch-sys --features mpi --example threading_probe
           timeout 300 mpirun --oversubscribe -n 2 target/debug/examples/threading_probe
-      # gridcl's ptscotch and parmetis imply mpi, so ThreadComm needs gridcl-testing/mpi. Only
+      # gridcl's ptscotch and parmetis imply mpi, so ThreadComm needs tetraloma-testing/mpi. Only
       # what the features change; ci.yml's cpu job runs the rest of gridcl's suite and the VTK
       # oracles (Python).
       - name: Partitioner tests
         run: |
-          cargo test -p gridcl-partition --features "$FEATURES"
-          cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --test integration partition_threads::
-          cargo test -p gridcl --features "$FEATURES,gridcl-testing/mpi" --doc -- partitioner
+          cargo test -p tetraloma-partition --features "$FEATURES"
+          cargo test -p tetraloma --features "$FEATURES,tetraloma-testing/mpi" --test integration partition_threads::
+          cargo test -p tetraloma --features "$FEATURES,tetraloma-testing/mpi" --doc -- partitioner
         env:
           FEATURES: ${{ matrix.features }}
           GRIDCL_SKIP_PYTHON: 1

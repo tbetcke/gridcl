@@ -3,7 +3,7 @@
 docs/plans/M8.md, T0a; ADR-0035).
 
 Runs VTK's own readers and meshio on VTU, PVTU and VTKHDF files and prints JSON on stdout. The
-consumer is gridcl-testing/src/oracle.rs. The pinned versions are asserted: any other vtk or meshio
+consumer is tetraloma-testing/src/oracle.rs. The pinned versions are asserted: any other vtk or meshio
 version is refused with a non-zero exit and the install command on stderr.
 
 Usage:

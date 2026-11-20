@@ -1,0 +1,199 @@
+//! The M8 acceptance checks on `ThreadComm` (docs/plans/M8.md, T0b; ADR-0035), so that
+//! `cargo test` covers them; the MPI versions are in tetraloma-mpi-tests. The checks are in
+//! `tetraloma_testing::io_parallel`. The memory bullet needs one process per rank and runs only
+//! under MPI (`read_memory`).
+
+use tetraloma::prelude::*;
+use tetraloma_testing::ThreadComm;
+use tetraloma_testing::io_parallel::{
+    self as io, BLOCK, Choice, Coverage, VtkFormat, read_cases, remove_shared_dir, shared_dir,
+};
+
+/// Bullet 1 on `ranks` threads: every case of `coverage` with `partitioners`.
+fn global_mesh_identical_on(ranks: usize, coverage: Coverage, partitioners: &[Choice]) {
+    ThreadComm::run(ranks, |comm| {
+        let client = tetraloma_testing::test_client();
+        let dir = shared_dir(&comm, "global-mesh");
+        for case in read_cases(coverage, partitioners) {
+            io::global_mesh_identical(&comm, &client, &case, &dir);
+        }
+        remove_shared_dir(&comm, &dir);
+    });
+}
+
+/// Bullet 1 at 1–4 and 8 ranks with the default partitioner (`Block` on threads, `Metis` with
+/// feature `metis`; rule 6), one test per rank count so that hosted CI's shards can share them
+/// out. The corpus subset by default, the full corpus with `GRIDCL_IO_THREADS_FULL=1`: in both
+/// precisions the full corpus took 30 of the local CPU suite's 45 min and 55 min in hosted CI.
+/// The MPI target `gmsh_parallel` reads the full corpus at 1–4 and 8 ranks (ADR-0035, "Corpus
+/// and ranks": ranks or threads).
+mod global_mesh_identical {
+    use super::*;
+
+    fn on(ranks: usize) {
+        let coverage = if std::env::var_os("GRIDCL_IO_THREADS_FULL").is_some_and(|v| v == "1") {
+            Coverage::Full
+        } else {
+            Coverage::Subset
+        };
+        global_mesh_identical_on(ranks, coverage, &[Choice::Default]);
+    }
+
+    #[test]
+    fn ranks_1() {
+        on(1);
+    }
+
+    #[test]
+    fn ranks_2() {
+        on(2);
+    }
+
+    #[test]
+    fn ranks_3() {
+        on(3);
+    }
+
+    #[test]
+    fn ranks_4() {
+        on(4);
+    }
+
+    #[test]
+    fn ranks_8() {
+        on(8);
+    }
+}
+
+/// Bullet 1, the subset at 5–7 ranks, one test per rank count: with the default partitioner,
+/// and with `Block` as well under feature `metis`. Without it the default on threads is `Block`
+/// (rule 6), and a second read with `Block` named would repeat the first.
+mod global_mesh_identical_subset {
+    use super::*;
+
+    fn on(ranks: usize) {
+        let partitioners: &[Choice] = if cfg!(feature = "metis") {
+            &[Choice::Default, BLOCK]
+        } else {
+            &[Choice::Default]
+        };
+        global_mesh_identical_on(ranks, Coverage::Subset, partitioners);
+    }
+
+    #[test]
+    fn ranks_5() {
+        on(5);
+    }
+
+    #[test]
+    fn ranks_6() {
+        on(6);
+    }
+
+    #[test]
+    fn ranks_7() {
+        on(7);
+    }
+}
+
+/// Rule 5 at 1–4 ranks (the fixtures have 2 and 3 partitions).
+#[test]
+fn block_honours_partitions() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            io::block_honours_partitions(&comm, &tetraloma_testing::test_client());
+        });
+    }
+}
+
+/// Rule 7 at 1–4 ranks.
+#[test]
+fn partitioned_round_trip() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            let dir = shared_dir(&comm, "round-trip");
+            io::partitioned_round_trip(&comm, &tetraloma_testing::test_client(), &dir);
+            remove_shared_dir(&comm, &dir);
+        });
+    }
+}
+
+/// Bullet 4 on the PVTU at 1–4 ranks, with shared-facet and one-layer shared-vertex ghosts.
+#[test]
+fn pvtu_ghosts_once() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            let client = tetraloma_testing::test_client();
+            let dir = shared_dir(&comm, "pvtu-ghosts");
+            for ghosts in [
+                GhostMode::SharedFacet,
+                GhostMode::SharedVertex { layers: 1 },
+            ] {
+                io::ghosts_once(&comm, &client, ghosts, VtkFormat::Pvtu, &dir);
+            }
+            remove_shared_dir(&comm, &dir);
+        });
+    }
+}
+
+/// Rule 8: the gathered VTU at 1–4 ranks equals the one-rank VTU after sorting by origin id.
+#[test]
+fn vtu_gathered_equals_serial() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            let dir = shared_dir(&comm, "vtu-gathered");
+            io::vtu_gathered_equals_serial(&comm, &tetraloma_testing::test_client(), &dir);
+            remove_shared_dir(&comm, &dir);
+        });
+    }
+}
+
+/// Rules 7–8: failed writes are agreed, at 1–3 ranks.
+#[test]
+fn collective_write_errors() {
+    for n in 1..=3 {
+        ThreadComm::run(n, |comm| {
+            let dir = shared_dir(&comm, "write-errors");
+            io::collective_write_errors(&comm, &tetraloma_testing::test_client(), &dir);
+            remove_shared_dir(&comm, &dir);
+        });
+    }
+}
+
+/// `VtkWriter::vtkhdf` for the checks.
+#[cfg(feature = "hdf5")]
+fn vtkhdf(path: &std::path::Path) -> VtkWriter<'static> {
+    VtkWriter::vtkhdf(path)
+}
+
+/// Bullet 3 at 1–4 ranks (feature `hdf5`).
+#[cfg(feature = "hdf5")]
+#[test]
+fn vtkhdf_equals_pvtu() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            let dir = shared_dir(&comm, "vtkhdf");
+            io::vtkhdf_equals_pvtu(&comm, &tetraloma_testing::test_client(), vtkhdf, &dir);
+            remove_shared_dir(&comm, &dir);
+        });
+    }
+}
+
+/// Bullet 4 on the VTKHDF file at 1–4 ranks (feature `hdf5`).
+#[cfg(feature = "hdf5")]
+#[test]
+fn vtkhdf_ghosts_once() {
+    for n in 1..=4 {
+        ThreadComm::run(n, |comm| {
+            let client = tetraloma_testing::test_client();
+            let dir = shared_dir(&comm, "vtkhdf-ghosts");
+            for ghosts in [
+                GhostMode::SharedFacet,
+                GhostMode::SharedVertex { layers: 1 },
+            ] {
+                io::ghosts_once(&comm, &client, ghosts, VtkFormat::Vtkhdf(vtkhdf), &dir);
+            }
+            remove_shared_dir(&comm, &dir);
+        });
+    }
+}

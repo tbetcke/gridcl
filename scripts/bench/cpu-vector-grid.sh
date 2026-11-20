@@ -39,7 +39,7 @@ if [[ ${1:-} == annotate ]]; then
     shopt -s nullglob
     files=("$3"/m10c-vector-cpu-"$4"-s*.json)
     [[ ${#files[@]} -gt 0 ]] || die "no m10c-vector-cpu-$4-s*.json in $3"
-    cargo build --release -p gridcl-bench --bin vector_sweep
+    cargo build --release -p tetraloma-bench --bin vector_sweep
     exec "$bin" annotate --node-load "$2" "${files[@]}"
 fi
 
@@ -112,7 +112,7 @@ wait_for_load() {
     done
 }
 
-cargo build --release -p gridcl-bench --bin vector_sweep
+cargo build --release -p tetraloma-bench --bin vector_sweep
 [[ -x "$bin" ]] || die "$bin not built"
 mkdir -p "$out_dir"
 echo "== $(uname -a); out-dir $out_dir; bind '${bind}'"

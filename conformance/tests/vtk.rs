@@ -1,12 +1,12 @@
-//! M1b T9 conformance (not an acceptance test): gridcl's VTK node maps equal ndelement's
+//! M1b T9 conformance (not an acceptance test): tetraloma's VTK node maps equal ndelement's
 //! `vtk_ordering` for the six cells ndelement supports, p ≤ 4.
 //!
 //! Same direction: ndelement's VTK-ordered values are `[dof_values[perm[0]], ...]`, so
 //! `perm[k]` is the internal index of VTK node k, as in `vtk_to_internal` (A.9).
 
-use gridcl_conformance::{CELLS, reference_cell_type};
-use gridcl_dims::CellType;
-use gridcl_refcell::{num_lagrange_nodes, vtk_to_internal};
+use tetraloma_conformance::{CELLS, reference_cell_type};
+use tetraloma_dims::CellType;
+use tetraloma_refcell::{num_lagrange_nodes, vtk_to_internal};
 use ndelement::reorderings::vtk_ordering;
 
 #[test]

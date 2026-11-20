@@ -1,6 +1,6 @@
 # M2 primitive throughput
 
-The throughput of gridcl-device's radix sort and scans, per backend: the record that
+The throughput of tetraloma-device's radix sort and scans, per backend: the record that
 docs/design.md asks of M2 ("the throughput of sorting 10^7 two-word keys is recorded per
 backend"; Risks, sort and scan row: "benchmark in M2"). It is a baseline, not a tuning study:
 every kernel runs at the vector sizes of the scalar-default `vector-policy.toml`, and M3s
@@ -8,10 +8,10 @@ decides where vectors help.
 
 ## Protocol
 
-- **Binary:** `gridcl-bench/src/bin/primitive_throughput.rs`, release build:
+- **Binary:** `tetraloma-bench/src/bin/primitive_throughput.rs`, release build:
 
   ```sh
-  GRIDCL_TEST_DEVICE=<backend> cargo run --release -p gridcl-bench --features <backend> \
+  GRIDCL_TEST_DEVICE=<backend> cargo run --release -p tetraloma-bench --features <backend> \
       --bin primitive_throughput -- --out <file>.json
   ```
 

@@ -2,7 +2,7 @@
 """Generates the Gmsh fixture corpus of M4 (docs/plans/M4.md, T1; ADR-0022) and the partitioned
 files of M8 (docs/plans/M8.md, T0b).
 
-Writes gridcl-io/tests/fixtures/gmsh/*.msh and manifest.json with the pinned Gmsh Python wheel
+Writes tetraloma-io/tests/fixtures/gmsh/*.msh and manifest.json with the pinned Gmsh Python wheel
 (PyPI gmsh==4.15.2, installed in .venv). The manifest records Gmsh's own view of every file, as
 Gmsh reads it back: the node count, the distinct nodes of the D_TOP elements, the element counts
 per type, the expected (D_TOP, D_GEO), and per physical group its size and the sorted
@@ -28,7 +28,7 @@ import gmsh
 
 PINNED = "4.15.2"
 REPO = Path(__file__).resolve().parents[3]
-OUT = REPO / "gridcl-io" / "tests" / "fixtures" / "gmsh"
+OUT = REPO / "tetraloma-io" / "tests" / "fixtures" / "gmsh"
 
 # (dimension, corners, nodes) of the Gmsh types the corpus uses (A.7). A table, since
 # gmsh.model.mesh.getElementProperties fails for some high-order types (40-node prisms).

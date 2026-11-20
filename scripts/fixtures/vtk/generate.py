@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates the VTK-written reference cells of M5 (docs/plans/M5.md, T1; ADR-0008, ADR-0024).
 
-Writes gridcl-io/tests/fixtures/vtk/<cell>_p<p>.vtu and manifest.json with the pinned VTK Python
+Writes tetraloma-io/tests/fixtures/vtk/<cell>_p<p>.vtu and manifest.json with the pinned VTK Python
 wheel (PyPI vtk==9.7.1, installed in .venv): one cell of every VTK Lagrange type 68-73 at every
 degree p = 1-6. The points of each cell are VTK's own parametric coordinates of its nodes
 (GetParametricCoords of the vtkLagrange* cell with that point count), in VTK's node order, and
@@ -43,7 +43,7 @@ except ImportError as e:
 
 PINNED = "9.7.1"
 REPO = Path(__file__).resolve().parents[3]
-OUT = REPO / "gridcl-io" / "tests" / "fixtures" / "vtk"
+OUT = REPO / "tetraloma-io" / "tests" / "fixtures" / "vtk"
 DEGREES = range(1, 7)
 
 # VTK type: (file name stem, cell class, number of nodes at degree p).

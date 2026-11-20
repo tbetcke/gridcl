@@ -1,21 +1,21 @@
 [workspace]
 resolver = "3"
 members = [
-    "gridcl-dims",
-    "gridcl-refcell",
-    "gridcl-device",
-    "gridcl-parallel",
-    "gridcl-topology",
-    "gridcl-geometry",
-    "gridcl-partition",
-    "gridcl-io",
-    "gridcl",
+    "tetraloma-dims",
+    "tetraloma-refcell",
+    "tetraloma-device",
+    "tetraloma-parallel",
+    "tetraloma-topology",
+    "tetraloma-geometry",
+    "tetraloma-partition",
+    "tetraloma-io",
+    "tetraloma",
     "ptscotch-sys",
     "parmetis-sys",
-    "gridcl-testing",
-    "gridcl-mpi-tests",
-    "gridcl-bench",
-    "gridcl-examples",
+    "tetraloma-testing",
+    "tetraloma-mpi-tests",
+    "tetraloma-bench",
+    "tetraloma-examples",
 ]
 # Outside the workspace (docs/design.md, "Workspace layout", dependency rule 6).
 exclude = ["conformance", "tools/env-check"]
@@ -25,6 +25,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/tetracl/tetraloma"
 
 # Every public item is documented, in every workspace crate, unpublished ones included; only
 # bindgen-generated modules allow missing docs (ADR-0060, item 7).
@@ -40,10 +41,10 @@ serde_json = "1"
 bytemuck = "1"
 toml = "1"
 libc = "0.2"
-# getrusage of the M8 memory test in gridcl-mpi-tests (ADR-0035, rule 9).
+# getrusage of the M8 memory test in tetraloma-mpi-tests (ADR-0035, rule 9).
 nix = { version = "=0.31.3", default-features = false, features = ["resource"] }
 trybuild = "1"
-# The test oracle of gridcl-io's Gmsh reader (ADR-0022).
+# The test oracle of tetraloma-io's Gmsh reader (ADR-0022).
 mshio = "=0.4.2"
 log = "0.4"
 # zlib for VTU output, pure Rust (ADR-0024, item 10).
@@ -83,10 +84,10 @@ opt-level = 1
 [profile.dev.package.buildid]
 overflow-checks = false
 
-# gridcl-refcell's acceptance tests factor and apply 729 x 729 Vandermonde matrices (hexahedra,
+# tetraloma-refcell's acceptance tests factor and apply 729 x 729 Vandermonde matrices (hexahedra,
 # p = 8); unoptimised they take minutes (docs/plans/M1b.md, T7). Debug assertions and overflow
 # checks stay on.
-[profile.dev.package.gridcl-refcell]
+[profile.dev.package.tetraloma-refcell]
 opt-level = 3
 
 # Dependencies (not workspace members) optimised in debug builds: the CPU runtime's kernel

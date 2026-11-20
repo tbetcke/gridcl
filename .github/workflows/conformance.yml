@@ -1,5 +1,5 @@
-# gridcl-conformance against ndelement at the pinned commit (docs/design.md, A.10).
-# Nightly, on changes to conformance/, gridcl-refcell/ or gridcl-dims/, and by hand.
+# tetraloma-conformance against ndelement at the pinned commit (docs/design.md, A.10).
+# Nightly, on changes to conformance/, tetraloma-refcell/ or tetraloma-dims/, and by hand.
 name: conformance
 
 on:
@@ -8,8 +8,8 @@ on:
   push:
     paths:
       - "conformance/**"
-      - "gridcl-refcell/**"
-      - "gridcl-dims/**"
+      - "tetraloma-refcell/**"
+      - "tetraloma-dims/**"
       - ".github/workflows/conformance.yml"
   workflow_dispatch:
 
@@ -43,4 +43,4 @@ jobs:
       - name: Fixtures match a fresh export
         run: |
           cargo run --manifest-path conformance/Cargo.toml --bin export-fixtures
-          git diff --exit-code gridcl-refcell/tests/fixtures
+          git diff --exit-code tetraloma-refcell/tests/fixtures

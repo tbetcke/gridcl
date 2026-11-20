@@ -1,4 +1,4 @@
-//! env-check: probe of a gridcl development target.
+//! env-check: probe of a tetraloma development target.
 //!
 //! For each runtime compiled in (`cpu`, `metal`, `cuda`) env-check opens the devices,
 //! records their properties, runs an element-wise add in f32 and f64 at vector size 1

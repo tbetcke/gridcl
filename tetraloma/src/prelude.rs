@@ -1,0 +1,22 @@
+//! The names most programs need: `use tetraloma::prelude::*;`.
+
+#[cfg(feature = "metis")]
+pub use crate::Metis;
+#[cfg(feature = "mpi")]
+pub use crate::Mpi;
+#[cfg(feature = "parmetis")]
+pub use crate::ParMetis;
+#[cfg(feature = "ptscotch")]
+pub use crate::PtScotch;
+#[cfg(feature = "scotch")]
+pub use crate::Scotch;
+pub use crate::{
+    AnyMesh, AnyMeshRef, Block, BlockFields, Cell1, Cell2, Cell3, CellBlock, CellOrdering,
+    CellType, Codim, Codim0, Codim1, Comm, CommDyn, CommExt, CommScalar, ConnKey, Connectivity,
+    CoordinateElement, CurveMesh, D0, D1, D2, D3, DType, DeviceBuffer, DeviceGrid, Dim, DistGraph,
+    EmbeddedIn, EntityBlock, EntityMap, FacetQuadRule, GhostMode, GmshOptions, GridError, IndexMap,
+    Mesh, MeshBuilder, MeshTags, Neighbourhood, NodeFamily, OrientationRule, Partitioner,
+    PlanarMesh, PullBack, PullBackOptions, QuadField, QuadRule, Real, Result, ReverseOp,
+    ScatterNumeric, Scatterer, Serial, SurfaceMesh, TagRegistry, TopoDim, Transport, VolumeMesh,
+    VtkWriter, gmsh, local_gpu_index, vtk, with_mesh,
+};

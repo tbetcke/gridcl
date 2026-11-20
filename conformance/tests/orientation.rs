@@ -1,8 +1,8 @@
 //! M1b acceptance: orientation bits equal `compute_orientation` for 10 000 random vertex
 //! numberings per cell type with D_TOP ≥ 2 (A.6).
 
-use gridcl_conformance::{CELLS, reference_cell_type};
-use gridcl_refcell::{orientation_bits, tdim, vertices};
+use tetraloma_conformance::{CELLS, reference_cell_type};
+use tetraloma_refcell::{orientation_bits, tdim, vertices};
 use ndelement::orientation::compute_orientation;
 
 const NUMBERINGS: usize = 10_000;
@@ -22,7 +22,7 @@ impl SplitMix64 {
 
 #[test]
 fn bits_match_compute_orientation() {
-    let mut rng = SplitMix64(0x6772_6964_636c_4d31); // "gridclM1"
+    let mut rng = SplitMix64(0x6772_6964_636c_4d31); // a fixed seed, kept from M1b
     for cell in CELLS.into_iter().filter(|&c| tdim(c) >= 2) {
         let nv = vertices(cell).len();
         for _ in 0..NUMBERINGS {

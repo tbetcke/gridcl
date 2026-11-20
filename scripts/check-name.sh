@@ -7,8 +7,9 @@
 #   (c) [workspace.package] repository is https://github.com/tetracl/tetraloma;
 #   (d) no source file (anything but Markdown) reads or sets a GRIDCL_* environment variable.
 #
-# Allowlist (ADR-0066 rules 1 and 3): recorded data (docs/perf/data/, the bench crate's
-# history/), the spack repository namespace in scripts/hpc/spack/ (its directory, `gridcl.llvm`,
+# Allowlist (ADR-0066 rules 1 and 3): recorded data in docs/perf/data/ (the bench crate's history/
+# files are generator output that ADR-0065 checks byte for byte, so they carry the new name), the
+# spack repository namespace in scripts/hpc/spack/ (its directory, `gridcl.llvm`,
 # `namespace: 'gridcl'` and the repos key), and the three files that describe the rename: this
 # script, ADR-0066 and the E1 plan.
 #
@@ -32,7 +33,6 @@ fi
 allowed_path_re='^scripts/hpc/spack/repo/spack_repo/gridcl/'
 excluded_files=(
     ':(exclude)docs/perf/data/**'
-    ':(exclude,glob)*-bench/history/**'
     ':(exclude)scripts/check-name.sh'
     ':(exclude)docs/adr/0066-the-project-is-named-tetraloma.md'
     ':(exclude)docs/plans/E1.md'

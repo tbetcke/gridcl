@@ -1,5 +1,5 @@
-//! Exports ndelement's reference data to `gridcl-refcell/tests/fixtures/` (docs/design.md, A.10),
-//! so that `cargo test --workspace` checks gridcl-refcell against it without ndelement or BLAS.
+//! Exports ndelement's reference data to `tetraloma-refcell/tests/fixtures/` (docs/design.md, A.10),
+//! so that `cargo test --workspace` checks tetraloma-refcell against it without ndelement or BLAS.
 //!
 //! Run after every ndelement pin bump, then commit the fixtures with the new pin:
 //!
@@ -20,8 +20,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gridcl_conformance::{CELLS, reference_cell_type};
-use gridcl_dims::CellType;
+use tetraloma_conformance::{CELLS, reference_cell_type};
+use tetraloma_dims::CellType;
 use ndelement::ciarlet::{LagrangeVariant, lagrange};
 use ndelement::orientation::compute_orientation;
 use ndelement::reference_cell;
@@ -87,7 +87,7 @@ fn next_permutation(p: &mut [usize]) -> bool {
 
 fn orientation() -> Value {
     let mut out = Map::new();
-    for cell in CELLS.into_iter().filter(|&c| gridcl_refcell::tdim(c) >= 2) {
+    for cell in CELLS.into_iter().filter(|&c| tetraloma_refcell::tdim(c) >= 2) {
         let nd = reference_cell_type(cell);
         let nv = reference_cell::entity_counts(nd)[0];
         let mut ids: Vec<usize> = (0..nv).collect();
@@ -127,7 +127,7 @@ fn lagrange_points() -> Value {
                     Continuity::Standard,
                     variant,
                 );
-                let td = gridcl_refcell::tdim(cell);
+                let td = tetraloma_refcell::tdim(cell);
                 let mut points = vec![];
                 for entities in element.interpolation_points() {
                     for block in entities {
@@ -189,7 +189,7 @@ fn write(dir: &Path, file: &str, value: &Value, pretty: bool) {
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let dir = manifest_dir.join("../gridcl-refcell/tests/fixtures");
+    let dir = manifest_dir.join("../tetraloma-refcell/tests/fixtures");
     fs::create_dir_all(&dir).expect("create the fixture directory");
     write(&dir, "tables.json", &tables(), true);
     // Compact: the hexahedron alone has 8! = 40 320 words.

@@ -1,0 +1,11 @@
+//! The integration tests of tetraloma-device, one module per file (Cargo.toml, [[test]]).
+
+mod buffer_limits;
+mod common;
+mod determinism;
+mod launch_plan;
+mod pack;
+mod policy;
+mod primitives_large;
+mod primitives_prop;
+mod vector_invariance;

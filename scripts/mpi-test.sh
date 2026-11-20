@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs every gridcl-mpi-tests target at each rank count (docs/design.md, "Testing and
+# Runs every tetraloma-mpi-tests target at each rank count (docs/design.md, "Testing and
 # validation"; CLAUDE.md, MPI tests).
 #
 # Usage: scripts/mpi-test.sh [RANKS...]
@@ -11,14 +11,14 @@
 #   GRIDCL_MPI_TEST_TIMEOUT  time limit of one run in seconds (default 600)
 #   GRIDCL_MPI_TESTS         comma-separated target names to run (default: every target); an
 #                            unknown name is an error
-#   GRIDCL_MPI_FEATURES      comma-separated cargo features of gridcl-mpi-tests added to the
+#   GRIDCL_MPI_FEATURES      comma-separated cargo features of tetraloma-mpi-tests added to the
 #                            build (default none): `partitioners` builds the M7 targets
 #                            with Scotch and PT-Scotch; add `metis` (the acceptance run) or
 #                            `parmetis`, not both (ADR-0033)
 #   GRIDCL_MPI_PROFILE       build profile of the test executables: debug (default) or release
 #                            (the M8 memory test, ADR-0035 rule 10)
 #   GRIDCL_TEST_DEVICE       forwarded to every rank (Open MPI: -x; MPICH forwards by default);
-#                            a backend other than cpu also builds with gridcl-testing/<backend>
+#                            a backend other than cpu also builds with tetraloma-testing/<backend>
 #                            (scripts/hpc jobs set cuda)
 #   GRIDCL_MPI_TEST_DIR      directory of the logs and of build.json (default target/mpi-test;
 #                            scripts/hpc jobs set <results>/mpi-test, so that two jobs in one
@@ -109,14 +109,14 @@ if [[ -n "${GRIDCL_MPIRUN_FLAGS:-}" ]]; then
 fi
 
 # The device every rank opens must be linked into the test executables. The backends are
-# gridcl-testing's runtime features (gridcl-testing/Cargo.toml, TestBackend::ALL).
+# tetraloma-testing's runtime features (tetraloma-testing/Cargo.toml, TestBackend::ALL).
 features=mpi
 case ${GRIDCL_TEST_DEVICE:-} in
     "" | cpu) ;;
     cuda | hip | vulkan | metal | metal-native | wgpu)
-        features+=",gridcl-testing/$GRIDCL_TEST_DEVICE"
+        features+=",tetraloma-testing/$GRIDCL_TEST_DEVICE"
         ;;
-    *) die "GRIDCL_TEST_DEVICE '$GRIDCL_TEST_DEVICE' is not a gridcl-testing backend" ;;
+    *) die "GRIDCL_TEST_DEVICE '$GRIDCL_TEST_DEVICE' is not a tetraloma-testing backend" ;;
 esac
 if [[ -n "${GRIDCL_MPI_FEATURES:-}" ]]; then
     [[ "$GRIDCL_MPI_FEATURES" =~ ^[A-Za-z0-9_/,-]+$ ]] ||
@@ -138,7 +138,7 @@ esac
 logs=${GRIDCL_MPI_TEST_DIR:-target/mpi-test}
 mkdir -p "$logs"
 build_json=$logs/build.json
-if ! cargo test -p gridcl-mpi-tests --features "$features" ${profile_flags[@]+"${profile_flags[@]}"} \
+if ! cargo test -p tetraloma-mpi-tests --features "$features" ${profile_flags[@]+"${profile_flags[@]}"} \
     --no-run --message-format=json >"$build_json"; then
     die "build failed"
 fi
@@ -149,7 +149,7 @@ done < <(grep -aF '"reason":"compiler-artifact"' "$build_json" |
     grep -aF '"kind":["test"]' |
     sed -n -E 's/.*"target":\{[^}]*"name":"([^"]*)".*"executable":"([^"]*)".*/\1 \2/p' |
     sort -u)
-[[ ${#tests[@]} -gt 0 ]] || die "no gridcl-mpi-tests targets were built"
+[[ ${#tests[@]} -gt 0 ]] || die "no tetraloma-mpi-tests targets were built"
 
 # The GRIDCL_MPI_TESTS filter.
 if [[ -n "${GRIDCL_MPI_TESTS:-}" ]]; then

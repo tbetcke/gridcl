@@ -1981,180 +1981,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gridcl"
-version = "0.1.0"
-dependencies = [
- "cubecl",
- "gridcl-device",
- "gridcl-dims",
- "gridcl-geometry",
- "gridcl-io",
- "gridcl-parallel",
- "gridcl-partition",
- "gridcl-refcell",
- "gridcl-testing",
- "gridcl-topology",
- "log",
- "mpi",
- "proptest",
- "serde_json",
- "trybuild",
-]
-
-[[package]]
-name = "gridcl-bench"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "cubecl",
- "gridcl",
- "gridcl-device",
- "gridcl-dims",
- "gridcl-geometry",
- "gridcl-refcell",
- "gridcl-testing",
- "gridcl-topology",
- "mpi",
- "proptest",
- "serde_json",
- "toml",
-]
-
-[[package]]
-name = "gridcl-device"
-version = "0.1.0"
-dependencies = [
- "cubecl",
- "gridcl-testing",
- "libc",
- "proptest",
- "toml",
-]
-
-[[package]]
-name = "gridcl-dims"
-version = "0.1.0"
-
-[[package]]
-name = "gridcl-examples"
-version = "0.1.0"
-dependencies = [
- "cubecl",
- "gridcl",
- "gridcl-testing",
- "mpi",
-]
-
-[[package]]
-name = "gridcl-geometry"
-version = "0.1.0"
-dependencies = [
- "cubecl",
- "gridcl",
- "gridcl-device",
- "gridcl-dims",
- "gridcl-parallel",
- "gridcl-refcell",
- "gridcl-testing",
- "gridcl-topology",
- "toml",
-]
-
-[[package]]
-name = "gridcl-io"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "gridcl-device",
- "gridcl-dims",
- "gridcl-geometry",
- "gridcl-parallel",
- "gridcl-partition",
- "gridcl-refcell",
- "gridcl-testing",
- "gridcl-topology",
- "hdf5-metno",
- "mshio",
- "ndarray",
- "proptest",
- "serde_json",
-]
-
-[[package]]
-name = "gridcl-mpi-tests"
-version = "0.1.0"
-dependencies = [
- "gridcl",
- "gridcl-testing",
- "log",
- "mpi",
- "nix",
-]
-
-[[package]]
-name = "gridcl-parallel"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "gridcl-device",
- "mpi",
- "proptest",
-]
-
-[[package]]
-name = "gridcl-partition"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.65.1",
- "gridcl-parallel",
- "metis",
- "parmetis-sys",
- "proptest",
- "ptscotch-sys",
- "scotch",
- "scotch-sys",
-]
-
-[[package]]
-name = "gridcl-refcell"
-version = "0.1.0"
-dependencies = [
- "gridcl-dims",
- "proptest",
- "serde_json",
-]
-
-[[package]]
-name = "gridcl-testing"
-version = "0.1.0"
-dependencies = [
- "cubecl",
- "gridcl",
- "gridcl-device",
- "gridcl-dims",
- "gridcl-geometry",
- "gridcl-refcell",
- "mpi",
- "proptest",
- "serde_json",
-]
-
-[[package]]
-name = "gridcl-topology"
-version = "0.1.0"
-dependencies = [
- "cubecl",
- "gridcl",
- "gridcl-device",
- "gridcl-dims",
- "gridcl-parallel",
- "gridcl-refcell",
- "gridcl-testing",
- "proptest",
- "serde_json",
-]
-
-[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4569,6 +4395,180 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "tetraloma"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "log",
+ "mpi",
+ "proptest",
+ "serde_json",
+ "tetraloma-device",
+ "tetraloma-dims",
+ "tetraloma-geometry",
+ "tetraloma-io",
+ "tetraloma-parallel",
+ "tetraloma-partition",
+ "tetraloma-refcell",
+ "tetraloma-testing",
+ "tetraloma-topology",
+ "trybuild",
+]
+
+[[package]]
+name = "tetraloma-bench"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cubecl",
+ "mpi",
+ "proptest",
+ "serde_json",
+ "tetraloma",
+ "tetraloma-device",
+ "tetraloma-dims",
+ "tetraloma-geometry",
+ "tetraloma-refcell",
+ "tetraloma-testing",
+ "tetraloma-topology",
+ "toml",
+]
+
+[[package]]
+name = "tetraloma-device"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "libc",
+ "proptest",
+ "tetraloma-testing",
+ "toml",
+]
+
+[[package]]
+name = "tetraloma-dims"
+version = "0.1.0"
+
+[[package]]
+name = "tetraloma-examples"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "mpi",
+ "tetraloma",
+ "tetraloma-testing",
+]
+
+[[package]]
+name = "tetraloma-geometry"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "tetraloma",
+ "tetraloma-device",
+ "tetraloma-dims",
+ "tetraloma-parallel",
+ "tetraloma-refcell",
+ "tetraloma-testing",
+ "tetraloma-topology",
+ "toml",
+]
+
+[[package]]
+name = "tetraloma-io"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "hdf5-metno",
+ "mshio",
+ "ndarray",
+ "proptest",
+ "serde_json",
+ "tetraloma-device",
+ "tetraloma-dims",
+ "tetraloma-geometry",
+ "tetraloma-parallel",
+ "tetraloma-partition",
+ "tetraloma-refcell",
+ "tetraloma-testing",
+ "tetraloma-topology",
+]
+
+[[package]]
+name = "tetraloma-mpi-tests"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "mpi",
+ "nix",
+ "tetraloma",
+ "tetraloma-testing",
+]
+
+[[package]]
+name = "tetraloma-parallel"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "mpi",
+ "proptest",
+ "tetraloma-device",
+]
+
+[[package]]
+name = "tetraloma-partition"
+version = "0.1.0"
+dependencies = [
+ "bindgen 0.65.1",
+ "metis",
+ "parmetis-sys",
+ "proptest",
+ "ptscotch-sys",
+ "scotch",
+ "scotch-sys",
+ "tetraloma-parallel",
+]
+
+[[package]]
+name = "tetraloma-refcell"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+ "tetraloma-dims",
+]
+
+[[package]]
+name = "tetraloma-testing"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "mpi",
+ "proptest",
+ "serde_json",
+ "tetraloma",
+ "tetraloma-device",
+ "tetraloma-dims",
+ "tetraloma-geometry",
+ "tetraloma-refcell",
+]
+
+[[package]]
+name = "tetraloma-topology"
+version = "0.1.0"
+dependencies = [
+ "cubecl",
+ "proptest",
+ "serde_json",
+ "tetraloma",
+ "tetraloma-device",
+ "tetraloma-dims",
+ "tetraloma-parallel",
+ "tetraloma-refcell",
+ "tetraloma-testing",
 ]
 
 [[package]]

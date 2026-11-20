@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # usage: scripts/ci-gridcl-shard.sh <k>[,<k>...] [cargo test option]...   (k: 1-11, h5-h8)
-# Runs shards k of `cargo test -p gridcl` in hosted CI, where the whole suite took 52-59 min in
+# Runs shards k of `cargo test -p tetraloma` in hosted CI, where the whole suite took 52-59 min in
 # one job (M8 review). Shards 1-11 together run every test of gridcl once, doc tests included;
 # in release builds the M9h tests at p = 5-8 are in shards h5-h8 (one degree each), and are
 # ignored in debug builds. Hosted CI does not run h5-h8: on lavapipe p = 6 took 33 min and
@@ -27,7 +27,7 @@
 #   and in shards 2, 3, 6, 9, 10 and 11 the M9h tests of $ho at p = 1-4; h5-h8 those at p = 5-8.
 # high_order::open_ended_ranges_launch (p = 9 and 10; release only, M9h review) is in no shard:
 # like p = 5-8 it runs on Metal, CUDA and the local CPU runtime, not in hosted CI.
-# The options (for example --release --features gridcl-testing/vulkan) go to every cargo test.
+# The options (for example --release --features tetraloma-testing/vulkan) go to every cargo test.
 set -eu
 set -o pipefail
 
@@ -71,8 +71,8 @@ ho=(
 # The modules of shards 4, 5, 7, 8 and 10.
 named=(io_threads gmsh parallel_threads compile submesh_threads submesh orient_threads)
 run() {
-    echo "+ cargo test -p gridcl $*"
-    cargo test -p gridcl "$@"
+    echo "+ cargo test -p tetraloma $*"
+    cargo test -p tetraloma "$@"
 }
 for k in $shards; do
     # This shard's M9h tests (bash 3.2: no empty arrays under set -u).

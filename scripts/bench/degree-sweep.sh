@@ -24,7 +24,7 @@
 #   After `--`: further degree_sweep options (--sizes, --node-families, --strategies, --skip,
 #       --fallback-reason, ...), passed to every process.
 #
-# The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching gridcl-testing
+# The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching tetraloma-testing
 # feature. In a scripts/hpc job on a clean tree the records carry the job's commit
 # (GRIDCL_BENCH_COMMIT from GRIDCL_HPC_COMMIT), since the remote tree has no .git. Prints
 # `[k/N]` before each (cell, degree) process (shown by scripts/hpc/status.sh while the job
@@ -75,7 +75,7 @@ command -v timeout >/dev/null || die "timeout not found"
 device=${GRIDCL_TEST_DEVICE:-cpu}
 case $device in
     cpu) features=() ;;
-    cuda | metal | vulkan) features=(--features "gridcl-testing/$device") ;;
+    cuda | metal | vulkan) features=(--features "tetraloma-testing/$device") ;;
     *) die "GRIDCL_TEST_DEVICE '$device' is not cpu, cuda, metal or vulkan" ;;
 esac
 if [[ -n "${GRIDCL_HPC_COMMIT:-}" && -z "${GRIDCL_BENCH_COMMIT:-}" ]]; then
@@ -83,7 +83,7 @@ if [[ -n "${GRIDCL_HPC_COMMIT:-}" && -z "${GRIDCL_BENCH_COMMIT:-}" ]]; then
     export GRIDCL_BENCH_COMMIT=$GRIDCL_HPC_COMMIT
 fi
 
-cargo build --release -p gridcl-bench --bin degree_sweep ${features[@]+"${features[@]}"}
+cargo build --release -p tetraloma-bench --bin degree_sweep ${features[@]+"${features[@]}"}
 bin=${CARGO_TARGET_DIR:-target}/release/degree_sweep
 [[ -x "$bin" ]] || die "$bin not built"
 mkdir -p "$(dirname "$out")"

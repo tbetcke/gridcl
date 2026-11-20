@@ -7,7 +7,7 @@
 #   --ranks: the rank counts, separated by commas or spaces (default 2).
 #   After `--`: further halo_exchange options (--target, --types, --fallback-reason, ...).
 #
-# The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching gridcl-testing
+# The backend is GRIDCL_TEST_DEVICE (cpu by default), built with the matching tetraloma-testing
 # feature and `mpi`. In a scripts/hpc job on a clean tree the records carry the job's commit
 # (GRIDCL_BENCH_COMMIT from GRIDCL_HPC_COMMIT), since the remote tree has no .git. On Apple chips
 # with three or more performance levels it applies mpi-test.sh's hwloc workaround (ADR-0034).
@@ -48,7 +48,7 @@ done
 
 device=${GRIDCL_TEST_DEVICE:-cpu}
 case $device in
-    cpu | cuda | metal | vulkan) features="mpi,gridcl-testing/$device" ;;
+    cpu | cuda | metal | vulkan) features="mpi,tetraloma-testing/$device" ;;
     *) die "GRIDCL_TEST_DEVICE '$device' is not cpu, cuda, metal or vulkan" ;;
 esac
 if [[ -n "${GRIDCL_HPC_COMMIT:-}" && -z "${GRIDCL_BENCH_COMMIT:-}" ]]; then
@@ -76,7 +76,7 @@ case $(mpirun --version 2>&1 || true) in
 esac
 export GRIDCL_TEST_DEVICE=$device
 
-cargo build --release -p gridcl-bench --bin halo_exchange --features "$features"
+cargo build --release -p tetraloma-bench --bin halo_exchange --features "$features"
 bin=${CARGO_TARGET_DIR:-target}/release/halo_exchange
 [[ -x "$bin" ]] || die "$bin not built"
 mkdir -p "$(dirname "$out")"

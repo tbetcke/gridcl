@@ -1,7 +1,7 @@
 //! M1b acceptance: sub-entity tables equal ndelement's for all eight cells (A.1–A.3).
 
-use gridcl_conformance::{CELLS, reference_cell_type};
-use gridcl_refcell::{num_sub_entities, sub_entities, sub_entity_types, tdim, vertices};
+use tetraloma_conformance::{CELLS, reference_cell_type};
+use tetraloma_refcell::{num_sub_entities, sub_entities, sub_entity_types, tdim, vertices};
 use ndelement::reference_cell;
 
 #[test]
@@ -10,7 +10,7 @@ fn sub_entities_match_ndelement() {
         let nd = reference_cell_type(cell);
         assert_eq!(tdim(cell), reference_cell::dim(nd), "tdim of {cell:?}");
 
-        // ndelement gives the point cell no vertex coordinates; gridcl gives it one vertex with
+        // ndelement gives the point cell no vertex coordinates; tetraloma gives it one vertex with
         // none (A.1). Both flatten to the same coordinates.
         let ours: Vec<f64> = vertices(cell)
             .iter()

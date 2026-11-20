@@ -1,18 +1,18 @@
-# Vectorization on gridcl's devices (M3s)
+# Vectorization on tetraloma's devices (M3s)
 
-This report records how M3s chose `gridcl-device/vector-policy.toml` (docs/design.md,
+This report records how M3s chose `tetraloma-device/vector-policy.toml` (docs/design.md,
 "Vectorization and CPU execution", "Benchmarks"). The tables under "Results" are written by
-`cargo run -p gridcl-bench --bin policy_report` from the JSON under `docs/perf/data/`, between
+`cargo run -p tetraloma-bench --bin policy_report` from the JSON under `docs/perf/data/`, between
 its marker comments; the rest is written by hand. CpuSimd512 is measured on one socket of a
 whole Kathleen node (ADR-0020), and CpuSimd256 copies its table.
 
 ## Protocol
 
-- **Binary:** `vector_sweep` (gridcl-bench), release build, CubeCL's persistent kernel cache
+- **Binary:** `vector_sweep` (tetraloma-bench), release build, CubeCL's persistent kernel cache
   off. One timed region per family, the smallest call whose launches all take their shape from
   the family's plan (docs/plans/M3s.md, question 13): the primitives for Fill, Copy, Reduce
   and Gather; `inclusive_scan` then `exclusive_scan` for ScanTile; `radix_sort` for SortDigits;
-  the hidden `gridcl_topology::bench` hooks for TopologyKeys and PermutationInfo, which include
+  the hidden `tetraloma_topology::bench` hooks for TopologyKeys and PermutationInfo, which include
   the cell-fastest transpose at sizes above 1; `DeviceGrid::evector` on a fresh clone for
   EVector; X, J, det J and K on P2 tetrahedra and P2 triangles in 3D for GeomFactors.
 - **Configurations:** vector sizes 1, 2, 4, 8 and 16 on every device (a device that cannot run
@@ -172,7 +172,7 @@ cause is not studied here (M10).
 
 The M3 review follow-up m6 (docs/plans/M3.md, question 20) found the test-time budgets exceeded:
 debug `cargo test --workspace` took 16:01 on the idle M3 Max (budget about 15 min) and the
-hosted cpu job 35:17 (budget about 30 min). gridcl-device's `primitives_prop` took most of it
+hosted cpu job 35:17 (budget about 30 min). tetraloma-device's `primitives_prop` took most of it
 (545 s debug). The M2 review attributed it to the `sync_cube` barriers of 16-unit CPU cubes.
 The "CPUs" rule of `LaunchPlan` sets `cube_dim` to `max_units_per_cube`, which is 16 on the M3
 Max (12 performance and 4 efficiency cores).
@@ -184,7 +184,7 @@ Max (12 performance and 4 efficiency cores).
   changes nothing else.
 - M3 Max on mains power. macOS background services (indexing, Defender, Teams) used about 1.5
   cores; no other cargo job ran. Runs were one at a time.
-- Debug `cargo test -p gridcl-device --test primitives_prop`, and debug
+- Debug `cargo test -p tetraloma-device --test primitives_prop`, and debug
   `cargo test --workspace --no-fail-fast`, at `cube_dim` 16, 12 and 4. libtest's default of
   16 test threads applies, unless stated otherwise.
 - Wall times include cargo's fingerprint check (the build was done beforehand, 33 s).
@@ -454,10 +454,10 @@ CPU blocks and units of `KernelKind::Scalar` (vector size 1), from histogram (u3
 
 ## M10: the four generic sets (ADR-0058)
 
-From M10, `gridcl-device/vector-policy.toml` holds four generic sets, `[Cpu]` and `[Gpu]` for
+From M10, `tetraloma-device/vector-policy.toml` holds four generic sets, `[Cpu]` and `[Gpu]` for
 4- and 8-byte scalars, chosen to be good enough on every benchmark platform rather than best on
 one (ADR-0058). The sections above are M3s's and stay as they were; the M3s policy is kept in
-`gridcl-bench/history/vector-policy-pre-m10.toml`.
+`tetraloma-bench/history/vector-policy-pre-m10.toml`.
 
 - **Runs (M10 T7):** the candidate protocol (ADR-0057 item 3, ADR-0060 item 2): per entry only
   the configurations of `candidates::vector_candidates`, Pack and PullBack included, at 10^6
@@ -605,7 +605,7 @@ back. On the Grace CPU a candidate's time depended on when it ran, and the candi
 configurations that suit all three CPUs (ADR-0065, Problem). M10c re-derives `[Cpu]` from records
 timed in interleaved rounds over a grid, and applies M10c's fallback to all four sets. M10's
 section above stays as M10's rule wrote it; M10's policy is kept in
-`gridcl-bench/history/vector-policy-m10.toml`.
+`tetraloma-bench/history/vector-policy-m10.toml`.
 
 - **Grid (ADR-0065 item 2):** every `[Cpu]` entry with a type (13 four-byte, 8 eight-byte) at
   vector sizes 1, 4, 8 and 16, CPU blocks of 4, 16 and 64 KiB, and both unit settings where the

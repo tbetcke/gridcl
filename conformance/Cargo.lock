@@ -382,30 +382,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
-name = "gridcl-conformance"
-version = "0.0.0"
-dependencies = [
- "blas-src",
- "gridcl-dims",
- "gridcl-refcell",
- "lapack-src",
- "ndelement",
- "openblas-src",
- "serde_json",
-]
-
-[[package]]
-name = "gridcl-dims"
-version = "0.1.0"
-
-[[package]]
-name = "gridcl-refcell"
-version = "0.1.0"
-dependencies = [
- "gridcl-dims",
-]
-
-[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1339,6 +1315,30 @@ dependencies = [
  "filetime",
  "libc",
  "xattr",
+]
+
+[[package]]
+name = "tetraloma-conformance"
+version = "0.0.0"
+dependencies = [
+ "blas-src",
+ "lapack-src",
+ "ndelement",
+ "openblas-src",
+ "serde_json",
+ "tetraloma-dims",
+ "tetraloma-refcell",
+]
+
+[[package]]
+name = "tetraloma-dims"
+version = "0.1.0"
+
+[[package]]
+name = "tetraloma-refcell"
+version = "0.1.0"
+dependencies = [
+ "tetraloma-dims",
 ]
 
 [[package]]
