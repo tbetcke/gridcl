@@ -92,7 +92,7 @@ jobs:
       # oracles (Python).
       - name: Partitioner tests
         run: |
-          cargo test -p tetraloma-partition --features "$FEATURES"
+          cargo test -p tetraloma-partition --features "$FEATURES,tetraloma-testing/mpi"
           cargo test -p tetraloma --features "$FEATURES,tetraloma-testing/mpi" --test integration partition_threads::
           cargo test -p tetraloma --features "$FEATURES,tetraloma-testing/mpi" --doc -- partitioner
         env:

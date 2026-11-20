@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The checks of the user documentation (ADR-0067, rule 7): builds the site (the book at site/, the
-# API of the nine library crates at site/api/) and runs scripts/doc_audit.py on it.
+# The checks of the user documentation (ADR-0067, rule 7): builds the site with
+# scripts/build-site.sh (the book at site/, the API of the nine library crates at site/api/), lists
+# the doctests, and runs scripts/doc_audit.py on them.
 #
 # Usage: scripts/check-user-docs.sh [--no-build] [--audit-only CRATE] [--parmetis] [--verbose]
 #   --no-build          check the site, doctest lists and logs of the last build
@@ -90,39 +91,6 @@ take_lock() {
     trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 }
 
-# The API docs of the crates of $1 (lines "CRATE FEATURES" of doc_audit.py api-plan), one
-# `cargo doc` per crate in that order into an empty target/doc, so that each crate links to the
-# docs of the crates before it; then copied to $2.
-build_api() {
-    local plan=$1 out=$2 crate feats status=0
-    rm -rf target/doc
-    while read -r crate feats; do
-        local flags=()
-        [[ $feats == - ]] || flags=(--features "$feats")
-        echo "check-user-docs.sh: cargo doc --no-deps -p $crate ${flags[*]+"${flags[*]}"}"
-        RUSTDOCFLAGS="${RUSTDOCFLAGS:+$RUSTDOCFLAGS }-Dwarnings" \
-            cargo doc --no-deps -p "$crate" ${flags[@]+"${flags[@]}"} \
-            >"$WORK/logs/rustdoc-$crate.log" 2>&1 || {
-            status=$?
-            echo "check-user-docs.sh: cargo doc of $crate failed (exit $status); see $WORK/logs/rustdoc-$crate.log" >&2
-        }
-    done <"$plan"
-    rm -rf "$out"
-    mkdir -p "$(dirname "$out")"
-    cp -R target/doc "$out"
-    # The landing page of /api/ (rustdoc's help and settings pages link to it): the crates.
-    {
-        echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
-        echo '<title>tetraloma API</title></head><body><h1>tetraloma API</h1>'
-        echo '<p>The <a href="../index.html">user book</a>, and the API of each crate:</p><ul>'
-        while read -r crate feats; do
-            echo "<li><a href=\"${crate//-/_}/index.html\">$crate</a></li>"
-        done <"$plan"
-        echo '</ul></body></html>'
-    } >"$out/index.html"
-    return $status
-}
-
 # The doctests of the crates of $1 with features $2, listed (all, and the ignored ones) into $3.
 list_doctests() {
     local crates=() c
@@ -139,10 +107,11 @@ if [[ -n $parmetis ]]; then
     mkdir -p "$pwork"
     if [[ -n $build ]]; then
         take_lock
-        "$PYTHON" scripts/doc_audit.py api-plan --features "$PARMETIS_FEATURES" \
-            --crates tetraloma-partition >"$pwork/api-order.txt"
-        build_api "$pwork/api-order.txt" "$pwork/api" || true
-        list_doctests tetraloma-partition "tetraloma-partition/parmetis,tetraloma-partition/scotch,tetraloma-partition/ptscotch" "$pwork/doctests"
+        TETRALOMA_USER_DOCS_LOCKED=1 scripts/build-site.sh --api-only --out "$pwork/api" \
+            --features "$PARMETIS_FEATURES" --crates tetraloma-partition --logs "$pwork/logs" || true
+        list_doctests tetraloma-partition \
+            "tetraloma-partition/parmetis,tetraloma-partition/scotch,tetraloma-partition/ptscotch,$DOCTEST_EXTRA" \
+            "$pwork/doctests"
     fi
     "$PYTHON" scripts/doc_audit.py check --site "$SITE" --work "$pwork" --api "$pwork/api" \
         --checks cde --crate tetraloma-partition ${verbose[@]+"${verbose[@]}"}
@@ -155,13 +124,9 @@ if [[ -n $build ]]; then
     scripts/install-doc-tools.sh --check >/dev/null ||
         die "the doc tools are not at their pinned versions: run scripts/install-doc-tools.sh"
     take_lock
-    rm -rf "$SITE"
-    echo "check-user-docs.sh: mdbook build docs/user -> $SITE"
-    mdbook build docs/user -d "$PWD/$SITE" >"$WORK/logs/mdbook.log" 2>&1 ||
-        echo "check-user-docs.sh: mdbook build failed; see $WORK/logs/mdbook.log" >&2
-    rm -f "$WORK"/logs/rustdoc-*.log
-    "$PYTHON" scripts/doc_audit.py api-plan --features "$SITE_FEATURES" >"$WORK/api-order.txt"
-    build_api "$WORK/api-order.txt" "$SITE/api" || true
+    # The site (scripts/build-site.sh); a failed build is reported by check (a).
+    TETRALOMA_USER_DOCS_LOCKED=1 scripts/build-site.sh --out "$SITE" --features "$SITE_FEATURES" \
+        --logs "$WORK/logs" || true
     list_doctests "$(cut -d' ' -f1 "$WORK/api-order.txt" | tr '\n' ' ')" \
         "$SITE_FEATURES,$DOCTEST_EXTRA" "$WORK/doctests"
 fi
