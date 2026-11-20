@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Shared part of the job scripts. remote-test.sh appends it to the rendered
 # jobs/<target>.sh, after the scheduler lines and the job settings:
-#   GRIDCL_HPC_SCHEDULER (sge | slurm | direct), GRIDCL_HPC_TREE, GRIDCL_HPC_BRANCH, GRIDCL_HPC_COMMIT, GRIDCL_HPC_DIRTY,
-#   GRIDCL_HPC_COMMAND, GRIDCL_HPC_BUILD (may be empty), GRIDCL_HPC_MODULES,
-#   GRIDCL_HPC_CUDA_PATH (may be empty), and the exported GRIDCL_HPC_TARGET, CARGO_TARGET_DIR,
-#   CARGO_NET_OFFLINE=true, GRIDCL_TEST_DEVICE (cuda; cpu on myriad-cpu and kathleen) and, for
-#   --ranks N, GRIDCL_RANKS=N (and on two Kathleen nodes GRIDCL_MPIRUN_FLAGS=--map-by node).
-# The command also sees GRIDCL_HPC_TREE, GRIDCL_HPC_COMMIT and GRIDCL_HPC_DIRTY (the remote tree
+#   TETRALOMA_HPC_SCHEDULER (sge | slurm | direct), TETRALOMA_HPC_TREE, TETRALOMA_HPC_BRANCH, TETRALOMA_HPC_COMMIT, TETRALOMA_HPC_DIRTY,
+#   TETRALOMA_HPC_COMMAND, TETRALOMA_HPC_BUILD (may be empty), TETRALOMA_HPC_MODULES,
+#   TETRALOMA_HPC_CUDA_PATH (may be empty), and the exported TETRALOMA_HPC_TARGET, CARGO_TARGET_DIR,
+#   CARGO_NET_OFFLINE=true, TETRALOMA_TEST_DEVICE (cuda; cpu on myriad-cpu and kathleen) and, for
+#   --ranks N, TETRALOMA_RANKS=N (and on two Kathleen nodes TETRALOMA_MPIRUN_FLAGS=--map-by node).
+# The command also sees TETRALOMA_HPC_TREE, TETRALOMA_HPC_COMMIT and TETRALOMA_HPC_DIRTY (the remote tree
 # has no .git; scripts/bench/degree-sweep.sh records the commit from them), and
-# GRIDCL_MPI_TEST_DIR=<results>/mpi-test: the logs of scripts/mpi-test.sh then belong to the
+# TETRALOMA_MPI_TEST_DIR=<results>/mpi-test: the logs of scripts/mpi-test.sh then belong to the
 # job, not to the tree that jobs of one branch share.
 # JOB_ID comes from the scheduler (SGE; jobs/kathleen.sh sets it from SLURM_JOB_ID), or from
 # the runner on direct targets.
 #
 # The job runs the module lines, exports CUDA_PATH, records the prologue, builds (when
-# GRIDCL_HPC_BUILD is set), runs the command in the tree with bash, and writes
+# TETRALOMA_HPC_BUILD is set), runs the command in the tree with bash, and writes
 # <tree>/results/<JOB_ID>/:
 #   prologue.txt   host, date, slots, CPUs (nproc), module lines, nvidia-smi, CUDA toolkit,
 #                  internet access, toolchain versions
@@ -23,7 +23,7 @@
 #   exit_status    the command's exit status (the build's, when the build failed)
 #   node-load-before.txt, node-load-after.txt
 #                  direct targets only (ADR-0002): node-load snapshots taken immediately
-#                  before the command and GRIDCL_HPC_LOAD_SETTLE seconds (default 15) after
+#                  before the command and TETRALOMA_HPC_LOAD_SETTLE seconds (default 15) after
 #                  it, so that the GPU utilisation no longer includes the job's own tail; the
 #                  last line is node_load=idle or node_load=busy: <reasons>
 #   mpi-test/      logs and build.json of scripts/mpi-test.sh, when the command runs it
@@ -32,7 +32,7 @@
 # The job itself always exits 0: SGE treats the exit statuses 99 (requeue) and 100 (error
 # state) specially, so the command's status is passed on only through exit_status.
 
-gridcl_job_prologue() {
+tetraloma_job_prologue() {
     echo "== nvidia-smi"
     if command -v nvidia-smi >/dev/null 2>&1; then
         nvidia-smi
@@ -69,9 +69,9 @@ gridcl_job_prologue() {
     fi
 }
 
-# gridcl_job_cpu_others: CPU cores used by other users' processes (root included), sampled
+# tetraloma_job_cpu_others: CPU cores used by other users' processes (root included), sampled
 # over 5 s from /proc on Linux (ADR-0005); elsewhere the sum of ps's %cpu. Empty when unknown.
-gridcl_job_cpu_others() {
+tetraloma_job_cpu_others() {
     local uid hz
     uid=$(id -u)
     if [ -r /proc/self/stat ]; then
@@ -106,11 +106,11 @@ gridcl_job_cpu_others() {
     fi
 }
 
-# gridcl_job_node_load <file>: a node-load snapshot (ADR-0002, ADR-0005). The node is idle if
+# tetraloma_job_node_load <file>: a node-load snapshot (ADR-0002, ADR-0005). The node is idle if
 # no other user has a GPU compute process, every GPU's utilisation is below 5% and other
 # users' processes use less than one core; a value that cannot be read counts as busy. The
 # 1-minute load average is recorded only: it includes the job's own build and command.
-gridcl_job_node_load() {
+tetraloma_job_node_load() {
     local file=$1 uid reasons="" out idx util pid rest owner load others gpus=0
     uid=$(id -u)
     : >"$file"
@@ -161,7 +161,7 @@ gridcl_job_node_load() {
             load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{ print $1 }')
         fi
         echo "== load average (1 min, recorded only): ${load:-unknown}"
-        others=$(gridcl_job_cpu_others)
+        others=$(tetraloma_job_cpu_others)
         echo "== CPU cores used by other users' processes: ${others:-unknown}"
         case $others in
             '') reasons="${reasons:+$reasons, }other users' CPU use unknown" ;;
@@ -176,26 +176,26 @@ gridcl_job_node_load() {
     } >>"$file" 2>&1 </dev/null
 }
 
-gridcl_job_main() {
+tetraloma_job_main() {
     local results times log f status=0
-    if [ -z "${JOB_ID:-}" ] || [ -z "${GRIDCL_HPC_TREE:-}" ]; then
-        echo "common.sh: JOB_ID or GRIDCL_HPC_TREE not set; submit with scripts/hpc/remote-test.sh" >&2
+    if [ -z "${JOB_ID:-}" ] || [ -z "${TETRALOMA_HPC_TREE:-}" ]; then
+        echo "common.sh: JOB_ID or TETRALOMA_HPC_TREE not set; submit with scripts/hpc/remote-test.sh" >&2
         return 1
     fi
-    results=$GRIDCL_HPC_TREE/results/$JOB_ID
+    results=$TETRALOMA_HPC_TREE/results/$JOB_ID
     times=$results/times.env
     log=$results/output.log
     mkdir -p "$results" || return 1
     echo "start=$(date +%s)" >"$times"
-    cd "$GRIDCL_HPC_TREE" || return 1
+    cd "$TETRALOMA_HPC_TREE" || return 1
 
     {
         echo "host: $(hostname)"
         echo "date: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-        echo "target: ${GRIDCL_HPC_TARGET:-}"
+        echo "target: ${TETRALOMA_HPC_TARGET:-}"
         echo "job id: $JOB_ID"
-        echo "commit: ${GRIDCL_HPC_COMMIT:-} (${GRIDCL_HPC_BRANCH:-}), dirty: ${GRIDCL_HPC_DIRTY:-}"
-        echo "slots: ${NSLOTS:-${SLURM_NTASKS:-unknown}}; ranks: ${GRIDCL_RANKS:-none}"
+        echo "commit: ${TETRALOMA_HPC_COMMIT:-} (${TETRALOMA_HPC_BRANCH:-}), dirty: ${TETRALOMA_HPC_DIRTY:-}"
+        echo "slots: ${NSLOTS:-${SLURM_NTASKS:-unknown}}; ranks: ${TETRALOMA_RANKS:-none}"
         if [ -n "${SLURM_JOB_ID:-}" ]; then
             echo "slurm: qos ${SLURM_JOB_QOS:-unknown}, ${SLURM_JOB_NUM_NODES:-?} node(s): ${SLURM_JOB_NODELIST:-unknown}," \
                 "batch shell CPUs $(taskset -cp $$ 2>/dev/null | sed 's/.*: //')"
@@ -206,7 +206,7 @@ gridcl_job_main() {
             "online $(nproc --all 2>/dev/null || echo unknown); OMP_NUM_THREADS: ${OMP_NUM_THREADS:-unset}"
         echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-}"
         echo "== module lines"
-        printf '%s\n' "${GRIDCL_HPC_MODULES:-}"
+        printf '%s\n' "${TETRALOMA_HPC_MODULES:-}"
         # SGE may start the job with -S /bin/bash and no login shell, without `module`.
         if ! type module >/dev/null 2>&1; then
             for f in "${MODULESHOME:+$MODULESHOME/init/bash}" /etc/profile.d/modules.sh; do
@@ -217,11 +217,11 @@ gridcl_job_main() {
                 fi
             done
         fi
-        eval "${GRIDCL_HPC_MODULES:-}"
+        eval "${TETRALOMA_HPC_MODULES:-}"
         echo "module lines exit status: $?"
     } >"$results/prologue.txt" 2>&1 </dev/null
-    if [ -n "${GRIDCL_HPC_CUDA_PATH:-}" ]; then
-        CUDA_PATH=$GRIDCL_HPC_CUDA_PATH
+    if [ -n "${TETRALOMA_HPC_CUDA_PATH:-}" ]; then
+        CUDA_PATH=$TETRALOMA_HPC_CUDA_PATH
         export CUDA_PATH
         if [ -d "$CUDA_PATH/bin" ]; then PATH=$CUDA_PATH/bin:$PATH; fi
     fi
@@ -232,8 +232,8 @@ gridcl_job_main() {
     # database about 3 min (E0 T7). The fallback location of CubeCL's database follows
     # XDG_CACHE_HOME.
     if [ -n "${TMPDIR:-}" ] && [ -d "$TMPDIR" ] && [ -w "$TMPDIR" ]; then
-        CUDA_CACHE_PATH=$TMPDIR/gridcl-cache/nv
-        XDG_CACHE_HOME=$TMPDIR/gridcl-cache/xdg
+        CUDA_CACHE_PATH=$TMPDIR/tetraloma-cache/nv
+        XDG_CACHE_HOME=$TMPDIR/tetraloma-cache/xdg
         export CUDA_CACHE_PATH XDG_CACHE_HOME
     fi
     # With a workspace Cargo.toml, CubeCL 0.11 keeps its database in <tree>/target/environment
@@ -244,32 +244,32 @@ gridcl_job_main() {
     # git-ignored, so the sync neither copies nor deletes it.
     # shellcheck disable=SC2016 # $XDG_CACHE_HOME is meant literally in the comment line
     printf '%s\n' '# Written by scripts/hpc/jobs/common.sh: CubeCL database in $XDG_CACHE_HOME/cubecl.' \
-        '[environment]' 'path = "global"' >"$GRIDCL_HPC_TREE/cubecl.toml"
+        '[environment]' 'path = "global"' >"$TETRALOMA_HPC_TREE/cubecl.toml"
     echo "kernel caches: CUDA_CACHE_PATH=${CUDA_CACHE_PATH:-default} XDG_CACHE_HOME=${XDG_CACHE_HOME:-default}" \
         "cubecl database=${XDG_CACHE_HOME:-$HOME/.cache}/cubecl (cubecl.toml)" >>"$results/prologue.txt"
-    gridcl_job_prologue >>"$results/prologue.txt" 2>&1 </dev/null
+    tetraloma_job_prologue >>"$results/prologue.txt" 2>&1 </dev/null
 
-    GRIDCL_MPI_TEST_DIR=$results/mpi-test
-    export GRIDCL_HPC_TREE GRIDCL_HPC_COMMIT GRIDCL_HPC_DIRTY GRIDCL_MPI_TEST_DIR
+    TETRALOMA_MPI_TEST_DIR=$results/mpi-test
+    export TETRALOMA_HPC_TREE TETRALOMA_HPC_COMMIT TETRALOMA_HPC_DIRTY TETRALOMA_MPI_TEST_DIR
     : >"$log"
-    if [ -n "${GRIDCL_HPC_BUILD:-}" ]; then
+    if [ -n "${TETRALOMA_HPC_BUILD:-}" ]; then
         echo "build_start=$(date +%s)" >>"$times"
-        bash -c "$GRIDCL_HPC_BUILD" >>"$log" 2>&1 </dev/null
+        bash -c "$TETRALOMA_HPC_BUILD" >>"$log" 2>&1 </dev/null
         status=$?
         echo "build_end=$(date +%s)" >>"$times"
         echo "build_status=$status" >>"$times"
     fi
     if [ "$status" = 0 ]; then
-        if [ "${GRIDCL_HPC_SCHEDULER:-}" = direct ]; then
-            gridcl_job_node_load "$results/node-load-before.txt"
+        if [ "${TETRALOMA_HPC_SCHEDULER:-}" = direct ]; then
+            tetraloma_job_node_load "$results/node-load-before.txt"
         fi
         echo "run_start=$(date +%s)" >>"$times"
-        bash -c "$GRIDCL_HPC_COMMAND" >>"$log" 2>&1 </dev/null
+        bash -c "$TETRALOMA_HPC_COMMAND" >>"$log" 2>&1 </dev/null
         status=$?
         echo "end=$(date +%s)" >>"$times"
-        if [ "${GRIDCL_HPC_SCHEDULER:-}" = direct ]; then
-            sleep "${GRIDCL_HPC_LOAD_SETTLE:-15}"
-            gridcl_job_node_load "$results/node-load-after.txt"
+        if [ "${TETRALOMA_HPC_SCHEDULER:-}" = direct ]; then
+            sleep "${TETRALOMA_HPC_LOAD_SETTLE:-15}"
+            tetraloma_job_node_load "$results/node-load-after.txt"
         fi
     else
         echo "end=$(date +%s)" >>"$times"
@@ -277,5 +277,5 @@ gridcl_job_main() {
     echo "$status" >"$results/exit_status"
 }
 
-gridcl_job_main || echo "common.sh: job setup failed" >&2
+tetraloma_job_main || echo "common.sh: job setup failed" >&2
 exit 0

@@ -9,7 +9,7 @@
 
 Roadmap M9h, bullet 3: "for quadrilaterals and hexahedra, the time per quadrature point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every device class (direct evaluation: about 5.8 times)". ADR-0042 item 1 reads it as: factors at most 3; the pull-back's set-up per point at most 3 (ADR-0049: the tensor pull-back's sum-factorised set-up too); a Newton step at most 1.1 · (9/5)^d (3.56 on quadrilaterals, 6.42 on hexahedra); "the ratio is that of the strategy the policy selects at p = 8, timed at p = 8 and at p = 4", at 10^6 and 10^7 points, per class by the geometric mean of the device ratios. ADR-0052 uses 10^6 points on the CPU classes.
 
-T11b's decision rule (`gridcl-bench/src/decide_degree.rs`, which agrees with the independent check `high_order_record.rs::degree_policy_follows_the_decision_rule`) applied to T11a's sweeps gives the policy, and `tensor_cost_ratio_p8_over_p4` then measures bullet 3 on it.
+T11b's decision rule (`tetraloma-bench/src/decide_degree.rs`, which agrees with the independent check `high_order_record.rs::degree_policy_follows_the_decision_rule`) applied to T11a's sweeps gives the policy, and `tensor_cost_ratio_p8_over_p4` then measures bullet 3 on it.
 
 ## Problem
 
@@ -56,7 +56,7 @@ Option 2. The strategies M9h set out to compare exist, are correct at p = 1–8 
   - M10 Hardening, acceptance: add "for quadrilaterals and hexahedra, the time per point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every device class (ADR-0042 item 1, ADR-0053), or the gap is reported with its cause".
   - "Benchmarks", **Degree sweep (M9h)**: add "`docs/perf/high-order.md` reports the p = 8 / p = 4 ratios of ADR-0042 item 1 and the speedup over M9 at p = 8 (ADR-0053)".
 - Public API changes: none.
-- Acceptance tests affected: `gridcl-bench/tests/high_order_record.rs::tensor_cost_ratio_p8_over_p4` becomes `tensor_cost_ratio_reported`: every (class, scalar type, cell type, family, part, rule size) of item 1 has a row in the generated report with the selected strategy, the ratio and the bound, and the ratios in the report equal those recomputed from the records. It no longer asserts the bound.
+- Acceptance tests affected: `tetraloma-bench/tests/high_order_record.rs::tensor_cost_ratio_p8_over_p4` becomes `tensor_cost_ratio_reported`: every (class, scalar type, cell type, family, part, rule size) of item 1 has a row in the generated report with the selected strategy, the ratio and the bound, and the ratios in the report equal those recomputed from the records. It no longer asserts the bound.
 - Plan: M9h's coverage-table row of bullet 3 names this ADR; T11b's note "if a bound fails on a class, stop and draft an ADR" is met by it. Issue #37's bullet 3 gets the same text.
 - Later milestones affected: M10 (the bound becomes its target, with option 1's GPU kernel as its first candidate).
 

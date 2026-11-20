@@ -1,0 +1,25 @@
+[package]
+name = "tetraloma-refcell"
+description = "Reference cells, sub-entity tables, Lagrange layouts and quadrature of tetraloma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+tetraloma-dims = { path = "../tetraloma-dims" }
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

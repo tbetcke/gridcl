@@ -258,16 +258,16 @@ fn report_is_valid_json() {
 #[cfg(feature = "mpi")]
 #[test]
 fn mpi_allreduce_of_rank_ids() {
-    let ranks: usize = std::env::var("GRIDCL_RANKS")
+    let ranks: usize = std::env::var("TETRALOMA_RANKS")
         .ok()
-        .map(|r| r.parse().expect("GRIDCL_RANKS is a number"))
+        .map(|r| r.parse().expect("TETRALOMA_RANKS is a number"))
         .unwrap_or(4);
     let dir = out_dir("mpi_allreduce_of_rank_ids");
     let pattern = dir.join("rank-{rank}.json");
 
     let mut command = Command::new("mpirun");
     // Extra launcher flags, for example --oversubscribe for Open MPI on small hosts.
-    if let Ok(flags) = std::env::var("GRIDCL_MPIRUN_FLAGS") {
+    if let Ok(flags) = std::env::var("TETRALOMA_MPIRUN_FLAGS") {
         command.args(flags.split_whitespace());
     }
     let output = command

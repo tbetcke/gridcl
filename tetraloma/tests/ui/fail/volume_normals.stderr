@@ -1,0 +1,13 @@
+error[E0599]: the method `normals` exists for reference `&Mesh<f64, tetraloma::D3, tetraloma::D3>`, but its trait bounds were not satisfied
+ --> tests/ui/fail/volume_normals.rs:7:20
+  |
+7 |     let _ = volume.normals(rule);
+  |                    ^^^^^^^
+  |
+ ::: $WORKSPACE/tetraloma-dims/src/dim.rs
+  |
+  | pub struct D3;
+  | ------------- doesn't satisfy `tetraloma::D3: Codim1<tetraloma::D3>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `tetraloma::D3: Codim1<tetraloma::D3>`

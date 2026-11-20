@@ -16,9 +16,9 @@ CubeCL fixed this on main in tracel-ai/cubecl#1767, "fix(opt): make simple CSE l
 ## Problem
 
 Test-suite run time. The suite forces `direct` (M9's fully unrolled kernels) at p ≤ 8 in every M9h test (`for_each_strategy!`). `vector_size_invariance` sweeps every vector size up to 16, and the server thread of a test process compiles kernels one at a time, so one slow compile holds up every other test in the process. Measured:
-- gridcl's six `high_order*` tests take 1,083 s in release under one strategy setting (M9h T7a).
-- A full debug run of gridcl-geometry and gridcl takes 50–85 min per check-set setting (M9h T6b).
-- Workspace crates at opt-level 1 gained 3.5% on gridcl-geometry's integration tests (301 → 290 s), within run-to-run spread, because kernel compilation, not host code, dominates.
+- tetraloma's six `high_order*` tests take 1,083 s in release under one strategy setting (M9h T7a).
+- A full debug run of tetraloma-geometry and tetraloma takes 50–85 min per check-set setting (M9h T6b).
+- Workspace crates at opt-level 1 gained 3.5% on tetraloma-geometry's integration tests (301 → 290 s), within run-to-run spread, because kernel compilation, not host code, dominates.
 
 The quadratic pass may also be what stops CUDA's LLVM path from emitting PTX for the direct pull-back within 900 s from p = 6 (C18, not checked).
 
@@ -26,12 +26,12 @@ The pass is equivalent before and after the fix. A key is inserted only after a 
 
 ## Options
 
-1. **Keep the design as written.** The pin stays at plain 0.11.0 and C20's compile times stay until gridcl moves to CubeCL 0.12, a minor version with announced breaking changes and a migration of its own. Every M9h check-set run (T7b to T13) and the milestone review pay the slow compiles.
+1. **Keep the design as written.** The pin stays at plain 0.11.0 and C20's compile times stay until tetraloma moves to CubeCL 0.12, a minor version with announced breaking changes and a migration of its own. Every M9h check-set run (T7b to T13) and the milestone review pay the slow compiles.
 2. **Backport #1767 into a vendored cubecl-opt 0.11.0, through `[patch.crates-io]`.**
    - `vendor/cubecl-opt/` holds cubecl-opt 0.11.0 from crates.io plus #1767's two files.
    - The workspace `Cargo.toml` gets `[patch.crates-io] cubecl-opt = { path = "vendor/cubecl-opt" }`.
    - `cubecl = "=0.11.0"` and every other crate stay as they are.
-   - Remove the patch when gridcl moves to a CubeCL release that contains the fix.
+   - Remove the patch when tetraloma moves to a CubeCL release that contains the fix.
    - Costs: 43 files (640 KB) of vendored source in the repository (licence files kept); `cargo update` and the hosted CI caches see a path dependency.
 3. **Ask upstream for a 0.11.4 with #1767, then pin `cubecl = "=0.11.4"`.** Nothing to vendor. But the pin then also takes 0.11.1–0.11.3's other changes, among them "park the idle device server and wake it when a buffer fills" (#1806, which may bear on C14). Those need their own review and full suite. It also depends on upstream's schedule, and the request is outward-facing.
 
@@ -41,7 +41,7 @@ Option 2 now, and also ask upstream for a 0.11.4 backport (option 3); with the m
 
 Acceptance of the backport:
 - the CPU runtime's bitwise tests (vector-size, tile and determinism invariance, `forced_direct_matches_the_policy_bitwise`) pass unchanged;
-- the IR that cubecl-opt emits for a sample of gridcl kernels is compared before and after the patch, with `CUBECL_DEBUG_LOG` or the compiler's dump, and is identical;
+- the IR that cubecl-opt emits for a sample of tetraloma kernels is compared before and after the patch, with `CUBECL_DEBUG_LOG` or the compiler's dump, and is identical;
 - the gain is measured on the E-vector compile at hexahedron p = 8, size 16 (C20's figure), and on the `high_order*` release run, and recorded in C20.
 
 When a 0.11.x or later release with the fix is adopted under its own ADR, the vendor directory and the patch go.
@@ -54,8 +54,8 @@ When a 0.11.x or later release with the fix is adopted under its own ADR, the ve
   - CLAUDE.md, the same line.
 - Public API changes: none.
 - Acceptance tests affected: none. Results are unchanged, and the bitwise tests guard it.
-- Later milestones affected: M10 and later inherit the patch until the CubeCL upgrade, which removes it. docs/cubecl-upstream.md C20: status "fixed upstream (#1767; 0.12.0-pre), not in 0.11.x; backported in gridcl (ADR-0048)".
+- Later milestones affected: M10 and later inherit the patch until the CubeCL upgrade, which removes it. docs/cubecl-upstream.md C20: status "fixed upstream (#1767; 0.12.0-pre), not in 0.11.x; backported in tetraloma (ADR-0048)".
 
 ## Decision record
 
-Rejected by the maintainer on 2026-11-12. The pin stays at plain `cubecl = "=0.11.0"` with no vendored or patched crate, and no 0.11.4 is requested upstream. C20's compile times stay until gridcl moves to a CubeCL release that contains #1767, under its own ADR.
+Rejected by the maintainer on 2026-11-12. The pin stays at plain `cubecl = "=0.11.0"` with no vendored or patched crate, and no 0.11.4 is requested upstream. C20's compile times stay until tetraloma moves to a CubeCL release that contains #1767, under its own ADR.

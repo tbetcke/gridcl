@@ -1,0 +1,33 @@
+[package]
+name = "tetraloma-examples"
+description = "The examples of tetraloma's API walkthrough, each over a tested run function"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["cpu"]
+# Runtime features, as in tetraloma-testing (docs/design.md, "Cargo features"; ADR-0060 item 6).
+cpu = ["cubecl/cpu", "tetraloma-testing/cpu"]
+cuda = ["cubecl/cuda", "tetraloma-testing/cuda"]
+vulkan = ["cubecl/vulkan", "tetraloma-testing/vulkan"]
+metal = ["cubecl/metal", "tetraloma-testing/metal"]
+# The halo_exchange example under mpirun.
+mpi = ["tetraloma/mpi", "tetraloma-testing/mpi", "dep:mpi"]
+
+[dependencies]
+cubecl.workspace = true
+tetraloma = { path = "../tetraloma" }
+tetraloma-testing = { path = "../tetraloma-testing", default-features = false }
+mpi = { workspace = true, optional = true }
+
+# The other examples are found by name; halo_exchange runs under mpirun.
+[[example]]
+name = "halo_exchange"
+required-features = ["mpi"]

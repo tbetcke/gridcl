@@ -9,7 +9,7 @@
 
 "Pull-back" (ADR-0042) says: "On quadrilaterals and hexahedra, the sum-factorised pull-back evaluates the 1D Lagrange bases at ξ (barycentric form) and contracts the E-vector one dimension at a time, with no expansion coefficients; prisms combine the triangle's coefficients with the 1D interval basis." ADR-0042 item 1 adds: "The tensor pull-back of item 5 has none [no set-up]". Item 5 lists its uploads: the 1D nodes and barycentric weights, and the prism's triangle coefficient factor.
 
-T8 implemented exactly that (`gridcl-geometry/src/sumfact/pull_back.rs`, uncommitted). Each Newton step evaluates the 1D Lagrange bases φ_a(ξ_d) and φ_a'(ξ_d) from the nodes and barycentric weights, as prefix and suffix products w_a Π_{b≠a}(ξ_d − t_b), so ξ on a node needs no branch. It then contracts the nodal E-vector one direction at a time. Results:
+T8 implemented exactly that (`tetraloma-geometry/src/sumfact/pull_back.rs`, uncommitted). Each Newton step evaluates the 1D Lagrange bases φ_a(ξ_d) and φ_a'(ξ_d) from the nodes and barycentric weights, as prefix and suffix products w_a Π_{b≠a}(ξ_d − t_b), so ξ on a node needs no branch. It then contracts the nodal E-vector one direction at a time. Results:
 
 - In f64 the kernel agrees with `loops` to about 10^−9 at every iterate.
 - Release builds on the CPU runtime pass every test.
@@ -18,7 +18,7 @@ T8 implemented exactly that (`gridcl-geometry/src/sumfact/pull_back.rs`, uncommi
 
 ## Problem
 
-On Metal (f32), `high_order::pull_back_recovers_reference_points` under `GRIDCL_GEOM_STRATEGY=sumfact` fails for the equispaced ball at p = 8: ξ has relative error 1.10 against the rule-2 tolerance 0.248 (scale 24,757). A diagnostic pulled back the 5,832 Gauss points of degree 16 of `ball(0, 8)`:
+On Metal (f32), `high_order::pull_back_recovers_reference_points` under `TETRALOMA_GEOM_STRATEGY=sumfact` fails for the equispaced ball at p = 8: ξ has relative error 1.10 against the rule-2 tolerance 0.248 (scale 24,757). A diagnostic pulled back the 5,832 Gauss points of degree 16 of `ball(0, 8)`:
 
 | f32 run | points off by > 10^−2 | worst ξ error |
 | --- | --- | --- |

@@ -3,7 +3,7 @@
 # (docs/design.md, "Dependency rules" 5 and 6; M0 acceptance).
 #
 # Usage: scripts/check-workspace-deps.sh [CARGO-TREE-ARGS...]
-#   Extra arguments go to `cargo tree`; for example `--features gridcl-mpi-tests/mpi` must fail.
+#   Extra arguments go to `cargo tree`; for example `--features tetraloma-mpi-tests/mpi` must fail.
 #
 # Exit status: 0 if no forbidden crate is found, 3 if one is, anything else on an error.
 set -euo pipefail

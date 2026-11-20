@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Run gridcl's pre-commit checks - formatting, clippy and the tests of the crates touched by the pending change. Use before every commit of code changes.
+description: Run tetraloma's pre-commit checks - formatting, clippy and the tests of the crates touched by the pending change. Use before every commit of code changes.
 allowed-tools: Bash(cargo fmt *) Bash(cargo clippy *) Bash(cargo test *) Bash(git diff *) Bash(git status *) Bash(bash -n *) Bash(shellcheck *)
 ---
 
@@ -17,7 +17,7 @@ allowed-tools: Bash(cargo fmt *) Bash(cargo clippy *) Bash(cargo test *) Bash(gi
        the commit.
     2. `cargo clippy -p <crate> --all-targets -- -D warnings` for each touched crate.
     3. `cargo test -p <crate>` for each touched crate, on the default CPU runtime.
-    4. If `conformance/` or `gridcl-refcell` changed: `cargo test --manifest-path conformance/Cargo.toml`
+    4. If `conformance/` or `tetraloma-refcell` changed: `cargo test --manifest-path conformance/Cargo.toml`
        when BLAS/LAPACK is available here; otherwise say it was skipped.
     5. If shell scripts under `scripts/` changed: `bash -n <script>` for each, and `shellcheck <script>`
        when shellcheck is installed.

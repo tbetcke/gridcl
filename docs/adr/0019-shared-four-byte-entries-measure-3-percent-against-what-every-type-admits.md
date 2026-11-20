@@ -35,7 +35,7 @@ Fill moves the same bytes in f32 and u32, and the two runs of Gpu Fill disagree 
 
 1. **Keep the design as written.** Every sweep can leave shared entries unresolved, each one goes to the maintainer, and bullet 3 does not hold until they are waived by hand. The M10 re-run and every re-run after a CubeCL bump face the same. Not proposed.
 2. **Admission per entry (proposed).** For a shared entry, "the configurations the 10% rule admits" are those at a size every 4-byte type measured admits. The 3% rule and the ADR-0018 backstop then measure each type against its fastest configuration among those, so a size only one type admits is no longer a reference for either. This is how item 6 already decides the size; only the reference of the 3% check follows it. No policy, API or data change.
-3. **Separate f32 and u32 entries.** `vector-policy.toml` and `VectorPolicy::vector_size` gain a key for the scalar kind, not only its size. That changes a public API of gridcl-device (Listing S2), the TOML layout and every caller of the policy, for three families whose kernels move the same bytes. Not proposed.
+3. **Separate f32 and u32 entries.** `vector-policy.toml` and `VectorPolicy::vector_size` gain a key for the scalar kind, not only its size. That changes a public API of tetraloma-device (Listing S2), the TOML layout and every caller of the policy, for three families whose kernels move the same bytes. Not proposed.
 4. **One combined time per shared entry:** the geometric mean over the 4-byte types, admitted and checked as one type. The rule stays one inequality per entry, but it contradicts "must be admitted for both" (ADR-0015), so a size could be adopted that one type does not gain from by 10%. Not proposed.
 
 ## Proposed decision
@@ -47,7 +47,7 @@ Option 2. ADR-0015 already makes admission a property of the shared entry ("admi
 - Text to change in docs/design.md (sections, listings, tables):
   - "Benchmarks", "Decision rule": "… a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015), and for such an entry the 3% rule measures each type against the fastest configuration at a size both admit (ADR-0019). …"
   - Roadmap, M3s acceptance, bullet 3: "… within 3% of the fastest one the 10% rule admits (ADR-0015; for a shared 4-byte entry, at a size every type admits, ADR-0019), or, …".
-- Public API changes: none. gridcl-bench (unpublished): `decide` computes each type's fastest over the entry's admitted sizes, and the "admitted for f32 only" note stays in the reason.
+- Public API changes: none. tetraloma-bench (unpublished): `decide` computes each type's fastest over the entry's admitted sizes, and the "admitted for f32 only" note stays in the reason.
 - Acceptance tests affected: `perf_record::policy_follows_the_decision_rule` takes the reference of the 3% and backstop checks over the sizes every type with data admits. The other `perf_record` tests are unchanged. A `decide` unit test: a shared entry where one type admits size 2 keeps size 1 and is within 3%.
 - Data: none; the committed T22 data are decided again. In the T22 trial, Gpu Fill 4-byte then keeps size 1 within the rule.
 - Later milestones affected: M10's re-run and every re-run after a CubeCL bump use the same reading.

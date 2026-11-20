@@ -15,7 +15,7 @@
 
 ## Context
 
-M2 builds gridcl-device's primitives and gridcl-parallel's communication core. M3's topology
+M2 builds tetraloma-device's primitives and tetraloma-parallel's communication core. M3's topology
 construction is the first user of both. The design fixes the containers (Listing S1), the launch
 plan (Listing S2) and the communicator traits. For the primitives it gives only a list and five
 rules ("Device primitives"):
@@ -45,7 +45,7 @@ against those signatures. The design leaves six things open.
    - the signatures of the primitives;
    - the key layout of the sort;
    - the crate that holds `GridError`, and its M2 variants;
-   - where `ReduceOp` lives: gridcl-device's reduce needs it, but the listing puts it in gridcl-parallel, which depends on gridcl-device;
+   - where `ReduceOp` lives: tetraloma-device's reduce needs it, but the listing puts it in tetraloma-parallel, which depends on tetraloma-device;
    - a constructor for `IndexMap`;
    - the type `Neighbourhood`, which `CommDyn::neighbour_all_to_all_v_bytes` names but no listing defines;
    - `DeviceClass` is "derived from `Client::properties()`" without a rule.
@@ -58,7 +58,7 @@ against those signatures. The design leaves six things open.
    host must know before it can allocate them or set `len()`. CLAUDE.md allows host copies only
    for "I/O, explicit to_host()/read_node(), and the host-staged halo exchange".
 4. **Tests within one process.**
-   - The environment variables `GRIDCL_VECTOR_SIZE` and `GRIDCL_QUAD_TILE` are read once per process, so a test cannot sweep vector sizes through them.
+   - The environment variables `TETRALOMA_VECTOR_SIZE` and `TETRALOMA_QUAD_TILE` are read once per process, so a test cannot sweep vector sizes through them.
    - A clamped size can silently replace the requested one, so a test cannot tell which size ran.
    - No live client accepts injected limits.
 5. **Phases of one primitive.**
@@ -99,9 +99,9 @@ SortDigits (the digit counting of the radix sort) and Gather are generic over `N
 on, as CLAUDE.md requires for every kernel on the candidate list, and get vector-size invariance
 tests. Their histogram and scatter phases stay scalar, as "Where vectors apply" says.
 
-### gridcl-device: errors and scalars
+### tetraloma-device: errors and scalars
 
-- **`GridError`.** `#[non_exhaustive] pub enum GridError` and `pub type Result<T, E = GridError>` live in gridcl-device, the lowest crate that returns them. gridcl-parallel and gridcl re-export both.
+- **`GridError`.** `#[non_exhaustive] pub enum GridError` and `pub type Result<T, E = GridError>` live in tetraloma-device, the lowest crate that returns them. tetraloma-parallel and tetraloma re-export both.
   - M2 variants:
     - `TooLarge`;
     - `AllocationTooLarge { bytes: usize, max: u64 }`;
@@ -110,10 +110,10 @@ tests. Their histogram and scatter phases stay scalar, as "Where vectors apply" 
     - `Server(ServerError)`.
   - It implements `Display`, `std::error::Error` and `From<ServerError>`.
   - Later milestones add their variants (`MessageTooLarge`, `DimensionMismatch`, …) when they first use them.
-- **`ReduceOp`.** `ReduceOp { Sum, Min, Max }` moves to gridcl-device with the listing's derives. gridcl-parallel re-exports it, so `gridcl_parallel::ReduceOp` stays valid.
+- **`ReduceOp`.** `ReduceOp { Sum, Min, Max }` moves to tetraloma-device with the listing's derives. tetraloma-parallel re-exports it, so `tetraloma_parallel::ReduceOp` stays valid.
 - **`DeviceScalar`.** A sealed trait `DeviceScalar: CubeElement + Numeric`, implemented for f32, f64, i32 and u32: the four types of the design's segmented reduce.
 
-### gridcl-device: the `primitives` module
+### tetraloma-device: the `primitives` module
 
 The module is re-exported at the crate root. In the signatures below, buffers are `DeviceBuffer<T>`.
 
@@ -153,7 +153,7 @@ The module is re-exported at the crate root. In the signatures below, buffers ar
   - `first` is the payload of each group's first key.
   - `group` gives the group of each input position.
 
-### gridcl-device: rules for every primitive
+### tetraloma-device: rules for every primitive
 
 - **Data-dependent sizes.** Run-length and unique-by-key read their count with one blocking 4-byte `read_one`, and return exactly sized buffers. This is an explicit read in the sense of CLAUDE.md's host-copy rule, and their rustdoc says so. Apart from the debug-build index checks of gather and scatter, no other primitive reads from the device.
 - **One partition per primitive.** A primitive with several kernels computes one `LaunchPlan`: for the `KernelKind` of its vectorized phase, or for its first phase if none is vectorized.
@@ -166,31 +166,31 @@ The module is re-exported at the crate root. In the signatures below, buffers ar
   - An empty input never launches a kernel.
   - `pad_len` rounds 0 up to one `VECTOR_PAD` block, so no handle has zero size, and `len()` stays 0. `padded_len()` is therefore at least `VECTOR_PAD`.
 
-### gridcl-device: `DeviceClass`
+### tetraloma-device: `DeviceClass`
 
 `DeviceClass::for_client(&Client) -> DeviceClass` is a public function.
 - A device with `hardware.num_cpu_cores` set is a CPU. It is classed by `hardware.load_width`: 512 bits gives CpuSimd512, 256 gives CpuSimd256, and anything else gives CpuSimd128.
 - Every other device is Gpu.
 - `load_width` alone is not enough: wgpu also reports 128 bits.
 
-### gridcl-device: test hooks
+### tetraloma-device: test hooks
 
-The module `gridcl_device::testing` holds scoped overrides. It exists only with gridcl-device's
+The module `tetraloma_device::testing` holds scoped overrides. It exists only with tetraloma-device's
 Cargo feature `testing`, which is off by default and documented as not part of the stable API.
-gridcl-testing turns it on, so it is on for every test in the workspace and invisible to
-downstream users who do not ask for it. The overrides are thread-local, because gridcl runs one
+tetraloma-testing turns it on, so it is on for every test in the workspace and invisible to
+downstream users who do not ask for it. The overrides are thread-local, because tetraloma runs one
 host thread per mesh ("Streams and threading").
 
-- **`with_properties`.** `with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R` replaces the properties that gridcl-device reads (limits, device class, vector sizes) for buffers and plans made inside `f`. Tests clone `client.properties()` and modify it.
+- **`with_properties`.** `with_properties<R>(props: DeviceProperties, f: impl FnOnce() -> R) -> R` replaces the properties that tetraloma-device reads (limits, device class, vector sizes) for buffers and plans made inside `f`. Tests clone `client.properties()` and modify it.
 - **`with_vector_size` and `with_quad_tile`.** `with_vector_size<R>(v: VectorSizeOverride, f) -> R` and `with_quad_tile<R>(tile: usize, f) -> R`.
 - **`record_plans`.** `record_plans<R>(f) -> (R, Vec<(KernelKind, LaunchPlan)>)` returns the plans made inside `f`, so that a test can assert the vector size it ran at.
-- **`VectorSizeOverride`.** `pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }` is also what `GRIDCL_VECTOR_SIZE` parses into. It lives next to `VectorPolicy`, outside the `testing` module, because the environment variable works without the feature.
+- **`VectorSizeOverride`.** `pub enum VectorSizeOverride { Scalar, Policy, Widest, Fixed(usize) }` is also what `TETRALOMA_VECTOR_SIZE` parses into. It lives next to `VectorPolicy`, outside the `testing` module, because the environment variable works without the feature.
   - `Widest` is the first entry of `io_optimized_vector_sizes(elem_bytes)`.
   - `Fixed(n)` and `Widest` skip the register budget, but stay clamped by `max_vector`, the data layout.
   - `Policy` applies the full rule of Listing S2.
-- **Precedence:** the scoped override, then the environment variable, then `vector-policy.toml`. An invalid `GRIDCL_VECTOR_SIZE` or `GRIDCL_QUAD_TILE` panics and names the variable.
+- **Precedence:** the scoped override, then the environment variable, then `vector-policy.toml`. An invalid `TETRALOMA_VECTOR_SIZE` or `TETRALOMA_QUAD_TILE` panics and names the variable.
 
-### gridcl-parallel
+### tetraloma-parallel
 
 - **`IndexMap::new`.** `IndexMap::new(comm: &dyn CommDyn, num_owned: usize) -> Result<IndexMap>` builds a map without ghosts.
   - The owned range comes from `exscan_sum` of `num_owned`, and `size_global` from `sum`.
@@ -203,12 +203,12 @@ host thread per mesh ("Streams and threading").
 
 ### Dependencies
 
-- gridcl-testing gets a dependency on gridcl-device with the feature `testing`. It enables the test hooks for the workspace's tests and gives M0's add test its `LaunchPlan`.
-- gridcl-bench gets a dependency on gridcl-device, for the throughput record.
+- tetraloma-testing gets a dependency on tetraloma-device with the feature `testing`. It enables the test hooks for the workspace's tests and gives M0's add test its `LaunchPlan`.
+- tetraloma-bench gets a dependency on tetraloma-device, for the throughput record.
 - New workspace dependencies:
-  - `proptest` (dev-dependency of gridcl-device);
-  - `bytemuck`, for `CommScalar: bytemuck::Pod` in gridcl-parallel;
-  - `toml`, which parses `vector-policy.toml` in gridcl-device.
+  - `proptest` (dev-dependency of tetraloma-device);
+  - `bytemuck`, for `CommScalar: bytemuck::Pod` in tetraloma-parallel;
+  - `toml`, which parses `vector-policy.toml` in tetraloma-device.
 - None of these brings in MPI, BLAS or a runtime feature.
 
 ### Corrections to the design text
@@ -225,9 +225,9 @@ host thread per mesh ("Streams and threading").
   - **Listing S1:**
     - the comments of `arg` and `vector_arg`;
     - `pad_len` rounds 0 up to `VECTOR_PAD`;
-    - the paragraph after the listing says `GridError` and `Result` live in gridcl-device and lists the M2 variants;
+    - the paragraph after the listing says `GridError` and `Result` live in tetraloma-device and lists the M2 variants;
     - `deep_clone` is "copy kernel" instead of "device-to-device copy".
-  - **"Device primitives":** a new Listing S1b, "primitives (gridcl-device)", with `DeviceScalar`, the signatures, `SortKeys`, `Runs` and `Unique`, and the edge-case rules above. Three more rules join the five:
+  - **"Device primitives":** a new Listing S1b, "primitives (tetraloma-device)", with `DeviceScalar`, the signatures, `SortKeys`, `Runs` and `Unique`, and the edge-case rules above. Three more rules join the five:
     - one partition per primitive;
     - no plane operations;
     - the count read of run-length and unique-by-key.
@@ -242,23 +242,23 @@ host thread per mesh ("Streams and threading").
   - **"Where vectors apply":** ScanTile's fixed-order in-vector prefix.
   - **Communicator listing:**
     - renamed Listing S2c;
-    - `ReduceOp` marked "re-exported from gridcl-device";
+    - `ReduceOp` marked "re-exported from tetraloma-device";
     - `IndexMap::new` and the three accessors;
     - `Neighbourhood`.
   - **References** at the `Mesh` field comment, `DeviceGrid::comm` and the generic-algorithm example say S2c.
-  - **"Testing and validation":** vector-size invariance is "forced with `GRIDCL_VECTOR_SIZE` or `testing::with_vector_size`".
+  - **"Testing and validation":** vector-size invariance is "forced with `TETRALOMA_VECTOR_SIZE` or `testing::with_vector_size`".
   - **Crate table:**
-    - gridcl-testing gains "gridcl-device (feature `testing`)";
-    - gridcl-device gains the feature `testing` (in "Cargo features", as a test-support feature that is not a library feature);
-    - gridcl-bench gains gridcl-device;
-    - gridcl-device gains toml, and dev proptest;
-    - gridcl-parallel gains bytemuck.
+    - tetraloma-testing gains "tetraloma-device (feature `testing`)";
+    - tetraloma-device gains the feature `testing` (in "Cargo features", as a test-support feature that is not a library feature);
+    - tetraloma-bench gains tetraloma-device;
+    - tetraloma-device gains toml, and dev proptest;
+    - tetraloma-parallel gains bytemuck.
   - **"Handing this design to Claude Code"** (the CLAUDE.md listing) and CLAUDE.md:
     - "no cross-lane operations except fixed-order reductions and fixed-order in-vector prefixes";
     - "Host<->device copies in library code only for I/O, explicit to_host()/read_node(), the count read of run-length and unique-by-key, the debug-build index checks of gather and scatter, and the host-staged halo exchange".
 - **Public API changes:**
-  - **Additions:** `GridError`'s home and M2 variants, `DeviceScalar`, the `primitives` module and its result types, `SortKeys`, `DeviceClass::for_client`, `VectorSizeOverride`, `gridcl_device::testing` (feature `testing`), `IndexMap::new` and its accessors, and `Neighbourhood`.
-  - **Relocation:** `ReduceOp` moves to gridcl-device, with a re-export at its old path.
+  - **Additions:** `GridError`'s home and M2 variants, `DeviceScalar`, the `primitives` module and its result types, `SortKeys`, `DeviceClass::for_client`, `VectorSizeOverride`, `tetraloma_device::testing` (feature `testing`), `IndexMap::new` and its accessors, and `Neighbourhood`.
+  - **Relocation:** `ReduceOp` moves to tetraloma-device, with a re-export at its old path.
   - **No changes** to existing signatures.
 - **Acceptance tests affected:** none change. The M2 tests use `testing::with_properties` for "injected" properties and limits, and `testing::with_vector_size` with `record_plans` for the vector-size sweep.
 - **Later milestones affected:**

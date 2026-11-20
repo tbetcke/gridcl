@@ -15,7 +15,7 @@
 
 M3s acceptance, bullet 3: every chosen configuration "is within 3% of the fastest one the 10% rule admits (ADR-0015)". As T0 reads it (docs/plans/M3s.md, Deviations), the 3% condition must hold at both 10^6 and 10^7 items, like the 10% condition.
 
-gridcl-bench implements this as one call per timed run: `protocol::measure` times `run()` plus `client.sync()` once, ten times, and records the median (T8). T12's `decide`, when no admitted configuration is within 3% at both sizes, takes the one with the smallest worst ratio and says so in the reason, and `perf_record::policy_follows_the_decision_rule` then fails, "and the case goes to the maintainer" (T12 deviation (b)).
+tetraloma-bench implements this as one call per timed run: `protocol::measure` times `run()` plus `client.sync()` once, ten times, and records the median (T8). T12's `decide`, when no admitted configuration is within 3% at both sizes, takes the one with the smallest worst ratio and says so in the reason, and `perf_record::policy_follows_the_decision_rule` then fails, "and the case goes to the maintainer" (T12 deviation (b)).
 
 ## Problem
 
@@ -82,7 +82,7 @@ Option 2.
   - "Benchmarks", "What it reports": "the median of ten timed runs, each repeating the call until it has lasted at least 20 ms and giving the time per call (ADR-0018), after a warm-up launch that absorbs JIT compilation, …".
   - "Benchmarks", "Decision rule": a final sentence, "If no admitted configuration is within 3% of the fastest at both sizes, the one with the smallest worst-case ratio is chosen if that ratio is at most 1.10, and the report marks it (ADR-0018)."
   - Roadmap, M3s acceptance, bullet 3: "… is within 3% of the fastest one the 10% rule admits (ADR-0015), or, where none is, the closest one, at most 10% slower and marked in the report (ADR-0018)".
-- Public API changes: none. gridcl-bench is unpublished: `protocol::measure`, `SweepRecord` and `ThroughputRecord` gain `calls_per_run`, and `decide` and `report` gain the bound and the marking.
+- Public API changes: none. tetraloma-bench is unpublished: `protocol::measure`, `SweepRecord` and `ThroughputRecord` gain `calls_per_run`, and `decide` and `report` gain the bound and the marking.
 - Acceptance tests affected:
   - `perf_record::policy_follows_the_decision_rule`: its independent check accepts a marked backstop entry whose worst ratio is at most 1.10, and only when no admitted configuration meets 3%.
   - `benchmark_data_covers_required_targets`: also checks that every record has `calls_per_run` ≥ 1, and that `calls_per_run` × median ≥ 20 ms whenever `calls_per_run` > 1.

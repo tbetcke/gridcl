@@ -1,0 +1,1229 @@
+//! Strategy dispatch (M9h T4; ADR-0042, item 3): every launcher of a degree-dependent family
+//! asks the degree policy, and `record_strategies` shows what ran. `loops` runs for every
+//! family (T6a, T6b); `sumfact` for the factors on tensor rules (T7a) and facet rules (T7b),
+//! and on prisms (T7c), and for the pull-back on quadrilaterals, hexahedra and prisms (T8);
+//! `shared` for every family with a table that fits the shared memory (T9); `cooperative` for
+//! every family but the E-vector (T10a, T10b).
+
+use tetraloma::prelude::*;
+use tetraloma::{FacetQuadRule, FieldShape, PullBackOptions, VecShape};
+use tetraloma_geometry::testing::{
+    Strategy, StrategyFamily, StrategyOverride, record_strategies, with_strategy,
+};
+
+/// Every family on `mesh` with the Gauss rule of degree 2: E-vector, the factors, `normals`
+/// (the facet normals of codimension 0 or the normals of codimension 1) and the pull-back.
+fn every_family<F, TD, GD>(
+    mesh: &Mesh<F, TD, GD>,
+    normals: impl Fn(&Mesh<F, TD, GD>, &QuadRule<F, TD>) -> Result<()>,
+) -> Result<()>
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let rule = QuadRule::for_grid(mesh, 2)?;
+    let x = mesh.physical_points(&rule)?;
+    mesh.jacobians(&rule)?;
+    mesh.detj(&rule)?;
+    normals(mesh, &rule)?;
+    mesh.pull_back(&x, &PullBackOptions::default())?;
+    Ok(())
+}
+
+/// The families that ran, each once, in order of first launch.
+fn families(ran: &[(StrategyFamily, Strategy)]) -> Vec<StrategyFamily> {
+    let mut out = Vec::new();
+    for (f, _) in ran {
+        if !out.contains(f) {
+            out.push(*f);
+        }
+    }
+    out
+}
+
+/// Runs `f` with each family overridden by the strategy `ran` recorded for it (its last
+/// launch); families without a launch keep the policy.
+fn with_recorded<R>(ran: &[(StrategyFamily, Strategy)], f: impl FnOnce() -> R) -> R {
+    StrategyFamily::ALL.into_iter().rev().fold(
+        Box::new(f) as Box<dyn FnOnce() -> R>,
+        |f, family| {
+            let s = ran
+                .iter()
+                .rev()
+                .find(|(g, _)| *g == family)
+                .map_or(StrategyOverride::Policy, |&(_, s)| {
+                    StrategyOverride::Fixed(s)
+                });
+            Box::new(move || with_strategy(family, s, f))
+        },
+    )()
+}
+
+/// The largest |entry| of `want`, which must be finite: an infinite entry would make every
+/// tolerance below infinite.
+fn finite_scale(want: &[f64]) -> f64 {
+    let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    assert!(
+        scale.is_finite() && want.iter().all(|v| v.is_finite()),
+        "reference values are not finite"
+    );
+    scale
+}
+
+/// Runs `f` in f32 and, where the device supports it, in f64 (the policy's entries differ per
+/// scalar size).
+fn each_precision(
+    f32_run: impl FnOnce(&cubecl::prelude::Client),
+    f64_run: impl FnOnce(&cubecl::prelude::Client),
+) {
+    let client = tetraloma_testing::test_client();
+    f32_run(&client);
+    if tetraloma_testing::supports::<f64>(&client) {
+        f64_run(&client);
+    }
+}
+
+/// Under the policy every family's launches are recorded, the E-vector once per mesh (cached);
+/// forcing each family's recorded strategy records the same launches (the policy dispatches
+/// to the strategy it names, or its fallback).
+#[test]
+fn record_strategies_shows_the_policy() {
+    each_precision(shows_the_policy::<f32>, shows_the_policy::<f64>);
+}
+
+fn shows_the_policy<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    let square = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 3)
+        .build::<F, D2, D2>(client)
+        .unwrap();
+    let sphere = tetraloma_testing::sphere(0, 2)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    let on_square = |m: &Mesh<F, D2, D2>| {
+        every_family(m, |m, _| {
+            m.facet_normals(&FacetQuadRule::for_grid(m, 2)?).map(drop)
+        })
+        .unwrap()
+    };
+    let on_sphere =
+        |m: &Mesh<F, D2, D3>| every_family(m, |m, rule| m.normals(rule).map(drop)).unwrap();
+    let ((ran_square, ran_sphere), ran) = record_strategies(|| {
+        with_every(StrategyOverride::Policy, || {
+            let (((), a), ((), b)) = (
+                record_strategies(|| on_square(&square)),
+                record_strategies(|| on_sphere(&sphere)),
+            );
+            (a, b)
+        })
+    });
+    // The E-vector is built at the first factor.
+    assert_eq!(
+        families(&ran),
+        [Points, EVector, Jacobian, FacetNormals, PullBack, Normals]
+    );
+    // The E-vector is cached: one build per mesh.
+    assert_eq!(ran.iter().filter(|(f, _)| *f == EVector).count(), 2);
+    // Fresh meshes (empty E-vector caches) under each mesh's recorded strategies.
+    let square2 = square.try_clone().unwrap();
+    let ((), forced) = record_strategies(|| with_recorded(&ran_square, || on_square(&square2)));
+    assert_eq!(forced, ran_square);
+    let sphere2 = sphere.try_clone().unwrap();
+    let ((), forced) = record_strategies(|| with_recorded(&ran_sphere, || on_sphere(&sphere2)));
+    assert_eq!(forced, ran_sphere);
+}
+
+/// The policy's J equals, bitwise, J with the strategy the policy chose forced.
+#[test]
+fn policy_matches_its_forced_choice_bitwise() {
+    each_precision(
+        policy_matches_its_forced_choice::<f32>,
+        policy_matches_its_forced_choice::<f64>,
+    );
+}
+
+fn policy_matches_its_forced_choice<F: Real>(client: &cubecl::prelude::Client) {
+    let run = |s| {
+        let mesh = tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 2)
+            .perturbed(0.05)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 4).unwrap();
+        record_strategies(|| {
+            with_every(s, || {
+                let j = mesh.jacobians(&rule).unwrap();
+                j.blocks[0].to_host_cell_major().unwrap()
+            })
+        })
+    };
+    let (policy, ran) = run(StrategyOverride::Policy);
+    let chosen = ran
+        .iter()
+        .find(|(f, _)| *f == StrategyFamily::Jacobian)
+        .map(|&(_, s)| s)
+        .expect("a Jacobian launch");
+    let (forced, _) = run(StrategyOverride::Fixed(chosen));
+    // Widening to f64 is exact, so equal bits there are equal bits in `F`.
+    let bits = |v: &Vec<[[F; 3]; 3]>| -> Vec<u64> {
+        v.iter()
+            .flatten()
+            .flatten()
+            .map(|x| x.widen().to_bits())
+            .collect()
+    };
+    assert_eq!(
+        bits(&policy),
+        bits(&forced),
+        "{} {}",
+        std::any::type_name::<F>(),
+        chosen.name()
+    );
+}
+
+#[test]
+fn forced_loops_runs_loops() {
+    each_precision(forced_loops::<f32>, forced_loops::<f64>);
+}
+
+fn forced_loops<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    let triangle = tetraloma_testing::square_box(Cell2::Triangle, 2, 2)
+        .build::<F, D2, D2>(client)
+        .unwrap();
+    // Sum factorisation does not apply to a triangle: its fallback `loops` runs.
+    for s in [Strategy::Loops, Strategy::SumFactorised] {
+        let mesh = triangle.try_clone().unwrap();
+        let rule = QuadRule::for_grid(&mesh, 2).unwrap();
+        let ((), ran) = record_strategies(|| {
+            with_strategy(EVector, StrategyOverride::Fixed(s), || {
+                with_strategy(Points, StrategyOverride::Fixed(s), || {
+                    with_strategy(Jacobian, StrategyOverride::Fixed(s), || {
+                        with_strategy(PullBack, StrategyOverride::Fixed(s), || {
+                            let x = mesh.physical_points(&rule).unwrap();
+                            mesh.jacobians(&rule).unwrap();
+                            mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+                        })
+                    })
+                })
+            })
+        });
+        assert_eq!(
+            ran,
+            [
+                (Points, Strategy::Loops),
+                (EVector, Strategy::Loops),
+                (Jacobian, Strategy::Loops),
+                (PullBack, Strategy::Loops)
+            ],
+            "{s:?}"
+        );
+    }
+}
+
+/// X and J on `mesh` with every factor family and the E-vector forced to `s`, cell-major.
+fn points_and_jacobians<F: Real>(
+    mesh: &Mesh<F, D3, D3>,
+    rule: &QuadRule<F, D3>,
+    s: Strategy,
+) -> (Vec<f64>, Vec<f64>, Vec<(StrategyFamily, Strategy)>) {
+    use StrategyFamily::*;
+    let mesh = mesh.try_clone().unwrap();
+    let s = StrategyOverride::Fixed(s);
+    let ((x, j), ran) = record_strategies(|| {
+        with_strategy(EVector, s, || {
+            with_strategy(Points, s, || {
+                with_strategy(Jacobian, s, || {
+                    let x = mesh.physical_points(rule).unwrap();
+                    let j = mesh.jacobians(rule).unwrap();
+                    (
+                        x.blocks[0].to_host_cell_major().unwrap(),
+                        j.blocks[0].to_host_cell_major().unwrap(),
+                    )
+                })
+            })
+        })
+    });
+    (
+        x.into_iter().flatten().map(F::widen).collect(),
+        j.into_iter().flatten().flatten().map(F::widen).collect(),
+        ran,
+    )
+}
+
+#[test]
+fn forced_sumfact_runs_on_tensor_rules() {
+    let client = tetraloma_testing::test_client();
+    sumfact_on_tensor_rules::<f32>(&client, 1e-5);
+    if tetraloma_testing::supports::<f64>(&client) {
+        sumfact_on_tensor_rules::<f64>(&client, 1e-13);
+    }
+}
+
+/// Sum-factorised X and J of perturbed hexahedra (both node families) and prisms at p = 3
+/// against `loops`, relative to the largest entry, within `tol`.
+fn sumfact_on_tensor_rules<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    for (cell, family) in [
+        (Cell3::Hexahedron, NodeFamily::Equispaced),
+        (Cell3::Hexahedron, NodeFamily::Gll),
+        (Cell3::Prism, NodeFamily::Equispaced),
+    ] {
+        let mesh = tetraloma_testing::cube_box(cell, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 6).unwrap();
+        let (x, j, ran) = points_and_jacobians(&mesh, &rule, Strategy::SumFactorised);
+        assert_eq!(
+            ran,
+            [
+                (Points, Strategy::SumFactorised),
+                // The E-vector is a gather: sum factorisation falls back to `loops`.
+                (EVector, Strategy::Loops),
+                (Jacobian, Strategy::SumFactorised)
+            ]
+        );
+        let (x_loops, j_loops, _) = points_and_jacobians(&mesh, &rule, Strategy::Loops);
+        for (what, got, want) in [("X", &x, &x_loops), ("J", &j, &j_loops)] {
+            let scale = finite_scale(want);
+            for (g, w) in got.iter().zip(want.iter()) {
+                assert!(
+                    (g - w).abs() <= tol * scale,
+                    "{what} {cell:?} {family:?}: {g} vs {w}"
+                );
+            }
+        }
+    }
+}
+
+/// The values of every block of `field`, concatenated.
+fn blocks_f64<F: Real, S: FieldShape>(field: &BlockFields<F, S>) -> Vec<f64> {
+    field
+        .blocks
+        .iter()
+        .flat_map(|b| tetraloma_testing::reference::field_f64(b).unwrap())
+        .collect()
+}
+
+/// Named quantities, each flattened.
+type Quantities = Vec<(&'static str, Vec<f64>)>;
+
+/// `f` on a fresh copy of `mesh` with every family forced to `s`, and what ran.
+fn forced<F, TD, GD>(
+    mesh: &Mesh<F, TD, GD>,
+    s: Strategy,
+    f: impl FnOnce(&Mesh<F, TD, GD>) -> Quantities,
+) -> (Quantities, Vec<(StrategyFamily, Strategy)>)
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let mesh = mesh.try_clone().unwrap();
+    record_strategies(|| with_every(StrategyOverride::Fixed(s), || f(&mesh)))
+}
+
+/// The quantities of `f` under `sumfact` against `loops`, relative to each quantity's largest
+/// entry, within `tol`; `sumfact` runs for each of `families`, `loops` for everything else.
+fn sumfact_against_loops<F, TD, GD>(
+    what: &str,
+    mesh: &Mesh<F, TD, GD>,
+    families: &[StrategyFamily],
+    tol: f64,
+    f: impl Fn(&Mesh<F, TD, GD>) -> Quantities,
+) where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    let (got, ran) = forced(mesh, Strategy::SumFactorised, &f);
+    for family in families {
+        assert!(
+            ran.contains(&(*family, Strategy::SumFactorised)),
+            "{what}: {family:?} not sum-factorised: {ran:?}"
+        );
+    }
+    assert!(
+        ran.iter()
+            .all(|(fam, s)| *s == Strategy::Loops || families.contains(fam)),
+        "{what}: {ran:?}"
+    );
+    let (want, _) = forced(mesh, Strategy::Loops, &f);
+    for ((name, got), (_, want)) in got.iter().zip(&want) {
+        assert_eq!(got.len(), want.len());
+        let scale = finite_scale(want);
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() <= tol * scale, "{name} of {what}: {g} vs {w}");
+        }
+    }
+}
+
+#[test]
+fn forced_sumfact_runs_for_derived_factors_and_facet_rules() {
+    let client = tetraloma_testing::test_client();
+    derived_factors_and_facets::<f32>(&client, 1e-5);
+    if tetraloma_testing::supports::<f64>(&client) {
+        derived_factors_and_facets::<f64>(&client, 1e-13);
+    }
+}
+
+/// det J, K and the facet normals of perturbed quadrilaterals, hexahedra and prisms, and det J,
+/// K and the normals of the mixed surface (its quadrilateral block), at p = 3, under `sumfact`
+/// against `loops`.
+fn derived_factors_and_facets<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    fn codim0<F: Real, TD: TopoDim + Codim0<TD>>(mesh: &Mesh<F, TD, TD>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        vec![
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            (
+                "facet normals",
+                blocks_f64(&mesh.facet_normals(&facets).unwrap()),
+            ),
+        ]
+    }
+    for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+        let square = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D2, D2>(client)
+            .unwrap();
+        let cube = tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let factors = [Jacobian, FacetNormals];
+        sumfact_against_loops(
+            &format!("square {family:?}"),
+            &square,
+            &factors,
+            tol,
+            codim0,
+        );
+        sumfact_against_loops(&format!("cube {family:?}"), &cube, &factors, tol, codim0);
+    }
+    let prisms = tetraloma_testing::cube_box(Cell3::Prism, 2, 3)
+        .perturbed(0.05)
+        .build::<F, D3, D3>(client)
+        .unwrap();
+    sumfact_against_loops("prisms", &prisms, &[Jacobian, FacetNormals], tol, codim0);
+    let surface = tetraloma_testing::mixed_surface(1, 3)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    sumfact_against_loops(
+        "mixed surface",
+        &surface,
+        &[Jacobian, Normals],
+        tol,
+        |mesh| {
+            let rule = QuadRule::for_grid(mesh, 6).unwrap();
+            vec![
+                ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+                (
+                    "K",
+                    blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+                ),
+                ("normals", blocks_f64(&mesh.normals(&rule).unwrap())),
+            ]
+        },
+    );
+}
+
+#[test]
+fn forced_sumfact_pull_back_agrees_with_loops() {
+    let client = tetraloma_testing::test_client();
+    sumfact_pull_backs::<f32>(&client, 1e-5);
+    if tetraloma_testing::supports::<f64>(&client) {
+        sumfact_pull_backs::<f64>(&client, 1e-12);
+    }
+}
+
+/// ξ and the last step of perturbed quadrilaterals, hexahedra (both node families), prisms and
+/// the mixed surface (its quadrilateral block, codimension 1) at p = 3, at the Gauss points of
+/// degree 6, under `sumfact` against `loops`; every point converges under both.
+fn sumfact_pull_backs<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    fn pull_back<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
+        mesh: &Mesh<F, TD, GD>,
+    ) -> Quantities {
+        let x = mesh
+            .physical_points(&QuadRule::for_grid(mesh, 6).unwrap())
+            .unwrap();
+        let pb = mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+        let steps = blocks_f64(&pb.last_step);
+        let converged = if size_of::<F>() == 8 { 1e-13 } else { 1e-5 };
+        assert!(steps.iter().all(|&s| s <= converged), "{steps:?}");
+        vec![("ξ", blocks_f64(&pb.reference))]
+    }
+    for family in [NodeFamily::Equispaced, NodeFamily::Gll] {
+        let square = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D2, D2>(client)
+            .unwrap();
+        let cube = tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let what = format!("square {family:?}");
+        sumfact_against_loops(&what, &square, &[Points, PullBack], tol, pull_back);
+        let what = format!("cube {family:?}");
+        sumfact_against_loops(&what, &cube, &[Points, PullBack], tol, pull_back);
+    }
+    let prisms = tetraloma_testing::cube_box(Cell3::Prism, 2, 3)
+        .perturbed(0.05)
+        .build::<F, D3, D3>(client)
+        .unwrap();
+    sumfact_against_loops("prisms", &prisms, &[Points, PullBack], tol, pull_back);
+    let surface = tetraloma_testing::mixed_surface(1, 3)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    sumfact_against_loops(
+        "mixed surface",
+        &surface,
+        &[Points, PullBack],
+        tol,
+        pull_back,
+    );
+}
+
+#[test]
+fn sumfact_falls_back_to_loops_without_tensor_points() {
+    each_precision(sumfact_fallback::<f32>, sumfact_fallback::<f64>);
+}
+
+fn sumfact_fallback<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    let mesh = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 2)
+        .with_node_family(NodeFamily::Gll)
+        .build::<F, D3, D3>(client)
+        .unwrap();
+    let sumfact = StrategyOverride::Fixed(Strategy::SumFactorised);
+    let ((), ran) = record_strategies(|| {
+        with_strategy(EVector, sumfact, || {
+            with_strategy(Points, sumfact, || {
+                // The equispaced lattice records no factors.
+                tetraloma_geometry::equispaced_nodes(&mesh).unwrap();
+            })
+        })
+    });
+    assert_eq!(ran, [(Points, Strategy::Loops), (EVector, Strategy::Loops)]);
+}
+
+#[test]
+fn overrides_nest_per_family() {
+    each_precision(overrides_nest::<f32>, overrides_nest::<f64>);
+}
+
+fn overrides_nest<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    let mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 2)
+        .build::<F, D2, D2>(client)
+        .unwrap();
+    let rule = QuadRule::for_grid(&mesh, 2).unwrap();
+    // The E-vector is built here, so the records below hold the factors alone.
+    mesh.physical_points(&rule).unwrap();
+    let ran = |f: &dyn Fn()| record_strategies(f).1;
+    let points = || {
+        mesh.physical_points(&rule).unwrap();
+    };
+    let jacobians = || {
+        mesh.jacobians(&rule).unwrap();
+    };
+    let fixed = StrategyOverride::Fixed;
+    with_strategy(Points, fixed(Strategy::Loops), || {
+        with_strategy(Jacobian, fixed(Strategy::Cooperative), || {
+            // Another family's override does not reach the points.
+            assert_eq!(ran(&points), [(Points, Strategy::Loops)]);
+            assert_eq!(ran(&jacobians), [(Jacobian, Strategy::Cooperative)]);
+            // The innermost override wins, and the outer one is back afterwards.
+            with_strategy(Jacobian, fixed(Strategy::Direct), || {
+                assert_eq!(ran(&jacobians), [(Jacobian, Strategy::Direct)]);
+            });
+            assert_eq!(ran(&jacobians), [(Jacobian, Strategy::Cooperative)]);
+        });
+        assert_eq!(ran(&points), [(Points, Strategy::Loops)]);
+    });
+}
+
+#[test]
+fn records_nest_and_survive_panics() {
+    each_precision(records_nest::<f32>, records_nest::<f64>);
+}
+
+fn records_nest<F: Real>(client: &cubecl::prelude::Client) {
+    let mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 1)
+        .build::<F, D2, D2>(client)
+        .unwrap();
+    let rule = QuadRule::for_grid(&mesh, 2).unwrap();
+    let ((inner, panicked), outer) = record_strategies(|| {
+        let ((), inner) = record_strategies(|| {
+            mesh.physical_points(&rule).unwrap();
+        });
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_strategy(
+                StrategyFamily::Jacobian,
+                StrategyOverride::Fixed(Strategy::Cooperative),
+                || {
+                    let _ = record_strategies(|| {
+                        mesh.jacobians(&rule).unwrap();
+                        panic!("inside");
+                    });
+                },
+            )
+        }))
+        .is_err();
+        (inner, panicked)
+    });
+    assert!(panicked);
+    assert_eq!(
+        families(&inner),
+        [StrategyFamily::Points, StrategyFamily::EVector]
+    );
+    // The outer record sees the inner launches, also those of the scope that panicked.
+    assert_eq!(
+        families(&outer),
+        [
+            StrategyFamily::Points,
+            StrategyFamily::EVector,
+            StrategyFamily::Jacobian
+        ]
+    );
+    assert!(outer.contains(&(StrategyFamily::Jacobian, Strategy::Cooperative)));
+    // The hook of a scope that panicked is gone: the enclosing one is back.
+    with_strategy(
+        StrategyFamily::Jacobian,
+        StrategyOverride::Fixed(Strategy::Loops),
+        || {
+            let panicked = std::panic::catch_unwind(|| {
+                with_strategy(
+                    StrategyFamily::Jacobian,
+                    StrategyOverride::Fixed(Strategy::Cooperative),
+                    || panic!("inside"),
+                )
+            });
+            assert!(panicked.is_err());
+            let ((), ran) = record_strategies(|| {
+                mesh.jacobians(&rule).unwrap();
+            });
+            assert_eq!(ran, [(StrategyFamily::Jacobian, Strategy::Loops)]);
+        },
+    );
+}
+
+#[test]
+fn forced_shared_matches_the_kernels_it_stages_for() {
+    let client = tetraloma_testing::test_client();
+    shared_against_kernels::<f32>(&client, 1e-5);
+    if tetraloma_testing::supports::<f64>(&client) {
+        shared_against_kernels::<f64>(&client, 1e-12);
+    }
+}
+
+/// X, J, det J, K, the facet normals and the pull-back's ξ under `shared` against the kernels
+/// whose table it stages: `sumfact` on perturbed hexahedra (both node families) and prisms at
+/// the Gauss points of degree 6, `loops` on perturbed tetrahedra, at p = 3. Every family but
+/// the E-vector runs `shared`. The arithmetic is theirs, so the results are bitwise equal on
+/// the CPU runtime, and within `tol` of the largest entry elsewhere.
+fn shared_against_kernels<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    use StrategyFamily::*;
+    fn quantities<F: Real>(mesh: &Mesh<F, D3, D3>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
+        let pb = mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+        vec![
+            ("X", blocks_f64(&x)),
+            ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            (
+                "facet normals",
+                blocks_f64(&mesh.facet_normals(&facets).unwrap()),
+            ),
+            ("ξ", blocks_f64(&pb.reference)),
+        ]
+    }
+    let bitwise = tetraloma_testing::bitwise_device();
+    for (cell, family, staged_for) in [
+        (
+            Cell3::Hexahedron,
+            NodeFamily::Equispaced,
+            Strategy::SumFactorised,
+        ),
+        (Cell3::Hexahedron, NodeFamily::Gll, Strategy::SumFactorised),
+        (
+            Cell3::Prism,
+            NodeFamily::Equispaced,
+            Strategy::SumFactorised,
+        ),
+        (Cell3::Tetrahedron, NodeFamily::Equispaced, Strategy::Loops),
+    ] {
+        let mesh = tetraloma_testing::cube_box(cell, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let what = format!("{} {cell:?} {family:?}", std::any::type_name::<F>());
+        let (got, ran) = forced(&mesh, Strategy::Shared, quantities);
+        for want in [Points, Jacobian, FacetNormals, PullBack] {
+            assert!(ran.contains(&(want, Strategy::Shared)), "{what}: {ran:?}");
+        }
+        assert!(
+            ran.iter()
+                .all(|r| r.1 == Strategy::Shared || *r == (EVector, Strategy::Loops)),
+            "{what}: {ran:?}"
+        );
+        let (want, _) = forced(&mesh, staged_for, quantities);
+        for ((name, got), (_, want)) in got.iter().zip(&want) {
+            assert_eq!(got.len(), want.len());
+            let scale = finite_scale(want);
+            for (g, w) in got.iter().zip(want) {
+                if bitwise {
+                    assert_eq!(g.to_bits(), w.to_bits(), "{name} of {what}: {g} vs {w}");
+                } else {
+                    assert!((g - w).abs() <= tol * scale, "{name} of {what}: {g} vs {w}");
+                }
+            }
+        }
+    }
+}
+
+/// Where the table exceeds the shared memory per cube, `shared` falls back to `loops`: every
+/// family on hexahedra (the tensor table) and tetrahedra (the full tabulation) at p = 2 with
+/// 64 bytes of shared memory, against the device's own limit, under which they run `shared`.
+#[test]
+fn shared_falls_back_to_loops_above_the_limit() {
+    each_precision(shared_fallback::<f32>, shared_fallback::<f64>);
+}
+
+fn shared_fallback<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
+        let mesh = tetraloma_testing::cube_box(cell, 1, 2)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 4).unwrap();
+        let run = |mesh: &Mesh<F, D3, D3>| {
+            let x = mesh.physical_points(&rule).unwrap();
+            mesh.jacobians(&rule).unwrap();
+            mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+            vec![]
+        };
+        let (_, ran) = forced(&mesh, Strategy::Shared, run);
+        let want = |s| {
+            vec![
+                (Points, s),
+                (EVector, Strategy::Loops),
+                (Jacobian, s),
+                (PullBack, s),
+            ]
+        };
+        assert_eq!(ran, want(Strategy::Shared), "{cell:?}");
+        let mut props = (*tetraloma_device::device_properties(client)).clone();
+        props.hardware.max_shared_memory_size = 64;
+        let (_, ran) = tetraloma_device::testing::with_properties(props, || {
+            forced(&mesh, Strategy::Shared, run)
+        });
+        assert_eq!(ran, want(Strategy::Loops), "{cell:?}");
+    }
+}
+
+/// A forced `cooperative` falls back to `loops` where the shared memory cannot hold one
+/// component per unit of a cube (ADR-0042, item 3, addendum of 2026-11-15): on a GPU class
+/// (the device's own, or injected on the CPU runtime) with 16 bytes of shared memory, and at
+/// one byte below the size of one component per unit of the largest cube; at that size it
+/// runs. A CPU class plans one unit per group and uses no shared memory, so it keeps
+/// `cooperative`.
+#[test]
+fn cooperative_falls_back_to_loops_above_the_limit() {
+    each_precision(cooperative_fallback::<f32>, cooperative_fallback::<f64>);
+}
+
+fn cooperative_fallback<F: Real>(client: &cubecl::prelude::Client) {
+    use StrategyFamily::*;
+    use tetraloma_device::testing::{record_plans, with_properties, with_vector_size};
+    use tetraloma_device::{DeviceClass, VectorSizeOverride};
+    let name = std::any::type_name::<F>();
+    for cell in [Cell3::Hexahedron, Cell3::Tetrahedron] {
+        let mesh = tetraloma_testing::cube_box(cell, 1, 2)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        let rule = QuadRule::for_grid(&mesh, 4).unwrap();
+        let run = |mesh: &Mesh<F, D3, D3>| {
+            let x = mesh.physical_points(&rule).unwrap();
+            mesh.jacobians(&rule).unwrap();
+            mesh.pull_back(&x, &PullBackOptions::default()).unwrap();
+            vec![]
+        };
+        let want = |s| {
+            vec![
+                (Points, s),
+                (EVector, Strategy::Loops),
+                (Jacobian, s),
+                (PullBack, s),
+            ]
+        };
+        let (_, ran) = forced(&mesh, Strategy::Cooperative, run);
+        assert_eq!(ran, want(Strategy::Cooperative), "{name} {cell:?}");
+        let small = || {
+            let mut props = (*tetraloma_device::device_properties(client)).clone();
+            props.hardware.max_shared_memory_size = 16;
+            props
+        };
+        if DeviceClass::for_client(client) != DeviceClass::Gpu {
+            let (_, ran) = with_properties(small(), || forced(&mesh, Strategy::Cooperative, run));
+            assert_eq!(
+                ran,
+                want(Strategy::Cooperative),
+                "{name} {cell:?}, a CPU class"
+            );
+        }
+        let mut gpu = small();
+        gpu.hardware.num_cpu_cores = None;
+        let (_, ran) = with_properties(gpu, || forced(&mesh, Strategy::Cooperative, run));
+        assert_eq!(ran, want(Strategy::Loops), "{name} {cell:?}, a GPU class");
+        // The boundary: shared memory for exactly one component per unit of the cube that
+        // `LaunchPlan::per_group` plans, at the widest vector, runs `cooperative`, and its
+        // plans succeed at every vector size; one byte less runs `loops`. The cube is read
+        // from a recorded plan, so on a GPU with at least 256 units per cube the test fails
+        // if `cooperative::fits` and `per_group` ever disagree on the cube. On the CPU
+        // runtime the injected GPU class has no more units than the device runs in one cube
+        // (C21), so the cube is that number.
+        let gpu_class = |bytes: Option<usize>| {
+            let mut props = (*tetraloma_device::device_properties(client)).clone();
+            if DeviceClass::for_client(client) != DeviceClass::Gpu {
+                let own = props
+                    .hardware
+                    .max_units_per_cube
+                    .min(props.hardware.max_cube_dim.0);
+                let own = 1 << own.ilog2();
+                props.hardware.num_cpu_cores = None;
+                props.hardware.max_units_per_cube = own;
+                props.hardware.max_cube_dim.0 = own;
+            }
+            if let Some(bytes) = bytes {
+                props.hardware.max_shared_memory_size = bytes;
+            }
+            props
+        };
+        let (_, plans) = with_properties(gpu_class(None), || {
+            record_plans(|| forced(&mesh, Strategy::Cooperative, run))
+        });
+        let cube = plans
+            .iter()
+            .filter(|(_, p)| p.units_per_group > 1)
+            .map(|(_, p)| p.cube_dim.num_elems() as usize)
+            .max()
+            .expect("a plan with several units per group");
+        let hw = &tetraloma_device::device_properties(client).hardware;
+        let widest = hw.max_vector_size.clamp(1, tetraloma_device::VECTOR_PAD);
+        let exact = cube * widest * size_of::<F>();
+        let limit = |bytes: usize| gpu_class(Some(bytes));
+        for vector in [VectorSizeOverride::Scalar, VectorSizeOverride::Widest] {
+            let at = format!("{name} {cell:?}, {exact} bytes, {vector:?}");
+            let (_, ran) = with_properties(limit(exact), || {
+                with_vector_size(vector, || forced(&mesh, Strategy::Cooperative, run))
+            });
+            assert_eq!(ran, want(Strategy::Cooperative), "{at}");
+            let (_, ran) = with_properties(limit(exact - 1), || {
+                with_vector_size(vector, || forced(&mesh, Strategy::Cooperative, run))
+            });
+            assert_eq!(ran, want(Strategy::Loops), "{at}, one byte less");
+        }
+    }
+}
+
+/// Runs `f` with every family overridden by `s`.
+fn with_every<R>(s: StrategyOverride, f: impl FnOnce() -> R) -> R {
+    StrategyFamily::ALL
+        .into_iter()
+        .rev()
+        .fold(Box::new(f) as Box<dyn FnOnce() -> R>, |f, family| {
+            Box::new(move || with_strategy(family, s, f))
+        })()
+}
+
+#[test]
+fn forced_cooperative_is_independent_of_units_per_group() {
+    let client = tetraloma_testing::test_client();
+    cooperative_units::<f32>(&client, 1e-5);
+    if tetraloma_testing::supports::<f64>(&client) {
+        cooperative_units::<f64>(&client, 1e-12);
+    }
+}
+
+/// X, J, det J, K, the facet normals and ξ of the pull-back of X of perturbed hexahedra (both
+/// node families; 64 nodes, so L = 32 leaves) and tetrahedra (20 nodes, L = 16), and the
+/// normals and ξ of the sphere (10 nodes, L = 8), at p = 3 and the Gauss points of degree 6
+/// (every point converges), under `cooperative` with 1, 2 and
+/// L units per group, L at most the device's own units per cube, through injected GPU-class
+/// properties with `units` units per cube (so the CPU runtime runs groups of several units
+/// too), at vector sizes 1 and the widest: bitwise equal to one unit at vector size 1 on the
+/// CPU runtime, and within `tol` of the largest entry elsewhere; and within `tol` of `loops`
+/// everywhere (another summation order). Every family but the E-vector runs `cooperative`, the
+/// E-vector `loops`.
+fn cooperative_units<F: Real>(client: &cubecl::prelude::Client, tol: f64) {
+    fn reference<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim>(
+        mesh: &Mesh<F, TD, GD>,
+        x: &BlockFields<F, VecShape<GD>>,
+    ) -> Vec<f64> {
+        let pb = mesh.pull_back(x, &PullBackOptions::default()).unwrap();
+        let steps = blocks_f64(&pb.last_step);
+        let converged = if size_of::<F>() == 8 { 1e-13 } else { 1e-5 };
+        assert!(steps.iter().all(|&s| s <= converged), "{steps:?}");
+        blocks_f64(&pb.reference)
+    }
+    fn volume<F: Real>(mesh: &Mesh<F, D3, D3>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let facets = FacetQuadRule::for_grid(mesh, 6).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
+        vec![
+            ("X", blocks_f64(&x)),
+            ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            (
+                "facet normals",
+                blocks_f64(&mesh.facet_normals(&facets).unwrap()),
+            ),
+            ("ξ", reference(mesh, &x)),
+        ]
+    }
+    fn surface<F: Real>(mesh: &Mesh<F, D2, D3>) -> Quantities {
+        let rule = QuadRule::for_grid(mesh, 6).unwrap();
+        let x = mesh.physical_points(&rule).unwrap();
+        vec![
+            ("X", blocks_f64(&x)),
+            ("J", blocks_f64(&mesh.jacobians(&rule).unwrap())),
+            ("det J", blocks_f64(&mesh.detj(&rule).unwrap())),
+            (
+                "K",
+                blocks_f64(&mesh.pseudo_inverse_jacobians(&rule).unwrap()),
+            ),
+            ("normals", blocks_f64(&mesh.normals(&rule).unwrap())),
+            ("ξ", reference(mesh, &x)),
+        ]
+    }
+    let volume_mesh = |cell, family| {
+        tetraloma_testing::cube_box(cell, 2, 3)
+            .perturbed(0.05)
+            .with_node_family(family)
+            .build::<F, D3, D3>(client)
+            .unwrap()
+    };
+    let name = std::any::type_name::<F>();
+    for (cell, family, leaves) in [
+        (Cell3::Hexahedron, NodeFamily::Equispaced, 32),
+        (Cell3::Hexahedron, NodeFamily::Gll, 32),
+        (Cell3::Tetrahedron, NodeFamily::Equispaced, 16),
+    ] {
+        let what = format!("{name} {cell:?} {family:?}");
+        let mesh = volume_mesh(cell, family);
+        units_against_one(client, &what, &mesh, leaves, tol, volume);
+    }
+    let sphere = tetraloma_testing::sphere(1, 3)
+        .build::<F, D2, D3>(client)
+        .unwrap();
+    units_against_one(client, &format!("{name} sphere"), &sphere, 8, tol, surface);
+}
+
+/// The quantities of `f` under `cooperative` with 1, 2 and `leaves` units per group (at most
+/// the device's own) at vector sizes 1 and the widest against one unit at vector size 1, and
+/// against `loops` (see [`cooperative_units`]).
+fn units_against_one<F, TD, GD>(
+    client: &cubecl::prelude::Client,
+    what: &str,
+    mesh: &Mesh<F, TD, GD>,
+    leaves: u32,
+    tol: f64,
+    f: impl Fn(&Mesh<F, TD, GD>) -> Quantities,
+) where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    use StrategyFamily::*;
+    use tetraloma_device::testing::{record_plans, with_properties, with_vector_size};
+    use tetraloma_device::{KernelKind, VectorSizeOverride};
+    let run = |units: u32, vector: VectorSizeOverride| {
+        let mut props = (*tetraloma_device::device_properties(client)).clone();
+        // A GPU class, whose cooperative launches ask for L units per group (CPUs ask for
+        // one), and cubes of `units` units.
+        props.hardware.num_cpu_cores = None;
+        props.hardware.max_units_per_cube = units;
+        props.hardware.max_cube_dim.0 = units;
+        let ((got, ran), plans) = with_properties(props, || {
+            with_vector_size(vector, || {
+                record_plans(|| forced(mesh, Strategy::Cooperative, &f))
+            })
+        });
+        assert!(
+            ran.iter()
+                .all(|r| *r == (EVector, Strategy::Loops) || r.1 == Strategy::Cooperative),
+            "{what}: {ran:?}"
+        );
+        let upg = |kind| -> Vec<u32> {
+            plans
+                .iter()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, p)| p.units_per_group)
+                .collect()
+        };
+        let want = units.min(leaves);
+        let factors = upg(KernelKind::GeomFactors);
+        assert!(!factors.is_empty(), "{what}: no factor plan");
+        assert!(
+            factors.iter().all(|&u| u == want),
+            "{what}, {units} units: {factors:?}"
+        );
+        // The pull-back's set-up is `loops`' (one unit per group), its Newton steps cooperate.
+        let pull_back = upg(KernelKind::PullBack);
+        assert!(
+            pull_back.contains(&want) && pull_back.iter().all(|&u| u == 1 || u == want),
+            "{what}, {units} units: pull-back {pull_back:?}"
+        );
+        got
+    };
+    let bitwise = tetraloma_testing::bitwise_device();
+    let compare = |at: &str, got: &Quantities, want: &Quantities, exact: bool| {
+        for ((name, got), (_, want)) in got.iter().zip(want) {
+            assert_eq!(got.len(), want.len(), "{name} of {at}");
+            let scale = finite_scale(want);
+            for (g, w) in got.iter().zip(want) {
+                if exact {
+                    assert_eq!(g.to_bits(), w.to_bits(), "{name} of {at}: {g} vs {w}");
+                } else {
+                    assert!((g - w).abs() <= tol * scale, "{name} of {at}: {g} vs {w}");
+                }
+            }
+        }
+    };
+    // At most the units the device runs in one cube (a power of two): on the CPU runtime a cube of more units
+    // than cores spins at each `sync_cube` until the OS schedules all of them (C21).
+    let own = {
+        let hw = &tetraloma_device::device_properties(client).hardware;
+        1 << hw.max_units_per_cube.min(hw.max_cube_dim.0).ilog2()
+    };
+    let one = run(1, VectorSizeOverride::Scalar);
+    for units in [1, 2, leaves.min(own)] {
+        for vector in [VectorSizeOverride::Scalar, VectorSizeOverride::Widest] {
+            let at = format!("{what}, {units} units per group, {vector:?}");
+            compare(&at, &run(units, vector), &one, bitwise);
+        }
+    }
+    let (loops, _) = forced(mesh, Strategy::Loops, &f);
+    compare(&format!("{what} against loops"), &one, &loops, false);
+}
+
+/// M10 bullet 5 (ADR-0058 item 2): `degree-policy.toml` holds exactly four sets: `[Cpu.<family>]`
+/// and `[Gpu.<family>]` for every policy family, each cell type with entries for 4- and 8-byte
+/// scalars and nothing else.
+#[test]
+fn degree_policy_has_four_sets() {
+    let text = include_str!("../degree-policy.toml");
+    let table: toml::Table = text.parse().expect("degree-policy.toml parses");
+    let sorted = |t: &toml::Table| {
+        let mut keys: Vec<String> = t.keys().cloned().collect();
+        keys.sort_unstable();
+        keys
+    };
+    assert_eq!(
+        sorted(&table),
+        ["Cpu", "Gpu"],
+        "degree-policy.toml: classes"
+    );
+    let mut families = vec![
+        "EVector",
+        "FacetNormals",
+        "Jacobian",
+        "Normals",
+        "Points",
+        "PullBack",
+    ];
+    families.sort_unstable();
+    for class in ["Cpu", "Gpu"] {
+        let section = table[class].as_table().expect("a class is a table");
+        assert_eq!(sorted(section), families, "[{class}]: families");
+        for family in &families {
+            let cells = section[*family].as_table().expect("a family is a table");
+            let mut want = if *family == "Normals" {
+                vec!["Interval", "Quadrilateral", "Triangle"]
+            } else {
+                vec![
+                    "Hexahedron",
+                    "Interval",
+                    "Prism",
+                    "Pyramid",
+                    "Quadrilateral",
+                    "Tetrahedron",
+                    "Triangle",
+                ]
+            };
+            want.sort_unstable();
+            assert_eq!(sorted(cells), want, "[{class}.{family}]: cell types");
+            for (cell, sizes) in cells {
+                let sizes = sizes.as_table().expect("a cell entry is a table");
+                assert_eq!(
+                    sorted(sizes),
+                    ["4", "8"],
+                    "[{class}.{family}] {cell}: sizes"
+                );
+            }
+        }
+    }
+}
+
+/// Factor launches plan with their strategy's own `live` (docs/plans/M10.md, T3): J at p = 2
+/// on quadrilaterals, tetrahedra, hexahedra and prisms under each forced strategy, with
+/// injected CPU-class properties of one scalar per register and 4 · (2·T·G + 2) registers, so
+/// that `direct` and `loops` keep four lanes and the larger counts of `sumfact`, `shared` (with
+/// the tensor table) and `cooperative` fewer. The counts are restated here: `direct` and
+/// `loops` 2·T·G + 2 (J, K, a coordinate and a weight); `sumfact` the partial sums of its
+/// contractions (2·G·n on quadrilaterals, 2·G·n² + 3·G·n on hexahedra, 3·G·n on prisms, n =
+/// p + 1), J's T running sums and `direct`'s count; `shared` that of the kernel it stages for;
+/// `cooperative` `loops`' and (log₂ 32 + 2) · T·G + 6 for its tree. Every recorded
+/// GeomFactors plan has the vector size of its strategy's count. Other classes state no
+/// register budget (GPUs), so the test runs on the CPU runtime only.
+#[test]
+fn factor_plans_use_each_strategys_live() {
+    each_precision(factor_live::<f32>, factor_live::<f64>);
+}
+
+fn factor_live<F: Real>(client: &cubecl::prelude::Client) {
+    use tetraloma_device::DeviceClass;
+    if DeviceClass::for_client(client) != DeviceClass::Cpu {
+        eprintln!("factor_plans_use_each_strategys_live: not a CPU class; skipped");
+        return;
+    }
+    let mut narrowed = false;
+    let square = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 2)
+        .build::<F, D2, D2>(client)
+        .unwrap();
+    narrowed |= factor_live_on(client, &square, tetraloma::CellType::Quadrilateral);
+    for (cell, ty) in [
+        (Cell3::Tetrahedron, tetraloma::CellType::Tetrahedron),
+        (Cell3::Hexahedron, tetraloma::CellType::Hexahedron),
+        (Cell3::Prism, tetraloma::CellType::Prism),
+    ] {
+        let mesh = tetraloma_testing::cube_box(cell, 1, 2)
+            .build::<F, D3, D3>(client)
+            .unwrap();
+        narrowed |= factor_live_on(client, &mesh, ty);
+    }
+    assert!(narrowed, "no strategy planned fewer lanes than `direct`");
+}
+
+/// Checks the GeomFactors plans of J on `mesh` (p = 2) under each forced strategy; true if a
+/// strategy's plan has fewer lanes than `direct`'s.
+fn factor_live_on<F, TD, GD>(
+    client: &cubecl::prelude::Client,
+    mesh: &Mesh<F, TD, GD>,
+    cell: tetraloma::CellType,
+) -> bool
+where
+    F: Real,
+    TD: TopoDim + EmbeddedIn<GD>,
+    GD: Dim,
+{
+    use tetraloma_device::testing::{
+        record_plans, with_properties, with_quad_tile, with_vector_size,
+    };
+    use tetraloma_device::{KernelKind, VectorPolicy, VectorSizeOverride};
+    let (td, gd, n) = (TD::N, GD::N, 3);
+    let size = size_of::<F>();
+    let direct = 2 * td * gd + 2;
+    let tensor = || {
+        let partials = match (cell, td) {
+            (tetraloma::CellType::Prism, _) => 3 * gd * n,
+            (_, 2) => 2 * gd * n,
+            _ => 2 * gd * n * n + 3 * gd * n,
+        };
+        partials + td + direct
+    };
+    let tensor_cell = matches!(
+        cell,
+        tetraloma::CellType::Quadrilateral
+            | tetraloma::CellType::Hexahedron
+            | tetraloma::CellType::Prism
+    );
+    let live = |s: Strategy| match s {
+        Strategy::Direct | Strategy::Loops => direct,
+        Strategy::SumFactorised => tensor(),
+        Strategy::Shared if tensor_cell => tensor(),
+        Strategy::Shared => direct,
+        Strategy::Cooperative => direct + 7 * td * gd + 6,
+    };
+    let registers = 4 * direct;
+    let mut props = (*tetraloma_device::device_properties(client)).clone();
+    props.hardware.load_width = (8 * size) as u32;
+    props.hardware.vector_register_count = Some(registers as u32);
+    let (policy, max_vector) = with_properties(props.clone(), || {
+        (
+            VectorPolicy::for_client(client).vector_size(KernelKind::GeomFactors, size),
+            props.hardware.max_vector_size,
+        )
+    });
+    let tile = 16;
+    let lanes = |live: usize| {
+        let wanted = (registers / live).max(1);
+        let n = (1 << wanted.ilog2())
+            .min(policy)
+            .min(tile)
+            .min(max_vector)
+            .max(1);
+        1 << n.ilog2()
+    };
+    let rule = QuadRule::for_grid(mesh, 4).unwrap();
+    let mut narrowed = false;
+    for s in Strategy::ALL {
+        let ((_, ran), plans) = record_plans(|| {
+            with_properties(props.clone(), || {
+                with_vector_size(VectorSizeOverride::Policy, || {
+                    with_quad_tile(tile, || {
+                        forced(mesh, s, |m| {
+                            m.jacobians(&rule).unwrap();
+                            vec![]
+                        })
+                    })
+                })
+            })
+        });
+        let ran = ran
+            .iter()
+            .rev()
+            .find(|(f, _)| *f == StrategyFamily::Jacobian)
+            .map(|&(_, s)| s)
+            .expect("a Jacobian launch");
+        let want = lanes(live(ran));
+        let factors: Vec<_> = plans
+            .iter()
+            .filter(|(k, _)| *k == KernelKind::GeomFactors)
+            .collect();
+        assert!(!factors.is_empty(), "{cell:?} {s:?}: no GeomFactors plan");
+        for (_, plan) in factors {
+            assert_eq!(
+                plan.vector_size,
+                want,
+                "{cell:?} {s:?} (ran {ran:?}, live {}, {size} bytes)",
+                live(ran)
+            );
+        }
+        narrowed |= want < lanes(direct);
+    }
+    narrowed
+}

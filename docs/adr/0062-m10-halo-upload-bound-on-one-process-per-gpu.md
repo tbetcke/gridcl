@@ -11,7 +11,7 @@ M10's acceptance bullet 1 (as amended by ADR-0059 and ADR-0061) reads:
 
 > the host-staged halo exchange (`forward` and `reverse`, halos of 10^3, 10^4 and 10^5 nodes with block 3) is recorded on the local Mac (CPU runtime, Metal) and Locust (CUDA, 1 and 2 ranks); for 10^5 nodes, its host-to-device copy takes at most 1.5 times its device-to-host copy on Metal and CUDA (…; ADR-0061), and `reverse` at most twice `forward` on each, …
 
-`gridcl-bench/tests/perf_record.rs::halo_exchange_recorded` checks the upload bound on every Metal and CUDA record set, so on Locust at 1 and at 2 ranks. Locust has one GH200, so its 2-rank run puts both MPI processes on the same GPU. The design's deployment is one GPU per rank on a node (`local_gpu_index`, Listing B8; ADR-0026 item 17, ADR-0060 item 1).
+`tetraloma-bench/tests/perf_record.rs::halo_exchange_recorded` checks the upload bound on every Metal and CUDA record set, so on Locust at 1 and at 2 ranks. Locust has one GH200, so its 2-rank run puts both MPI processes on the same GPU. The design's deployment is one GPU per rank on a node (`local_gpu_index`, Listing B8; ADR-0026 item 17, ADR-0060 item 1).
 
 ## Problem
 
@@ -49,12 +49,12 @@ So the 2-rank figure measures how two processes share one GPU, which the design'
    - Locust's 2-rank shared-GPU figures would still be recorded for `forward` and `reverse`.
 4. **Investigate the upload under contention first.**
    - A probe splits H2D at 2 ranks into staging, write and sync, and checks whether dropping a sync keeps the 1-rank gain.
-   - About one task. It may need a CubeCL change (C23) and may find nothing gridcl can change.
+   - About one task. It may need a CubeCL change (C23) and may find nothing tetraloma can change.
    - It can follow option 2 as a follow-up, outside M10.
 
 ## Proposed decision
 
-Option 2. The bound exists to keep the upload as fast as the download where the copy crosses a bus (ADR-0059, ADR-0061). On Locust with one process on its GPU it holds (1.21). The 2-rank run on the same GPU adds GPU time-slicing between two processes, which the design's one-GPU-per-rank deployment does not have, and which shows on every kernel (17 → 315 µs), not only on the upload. Reporting that ratio with its cause keeps the information without making M10 depend on a configuration gridcl does not target. Option 3 would measure the right configuration, but on a different architecture and at the cost of a Myriad job. Option 4 is worth doing as a follow-up if shared-GPU runs become a target.
+Option 2. The bound exists to keep the upload as fast as the download where the copy crosses a bus (ADR-0059, ADR-0061). On Locust with one process on its GPU it holds (1.21). The 2-rank run on the same GPU adds GPU time-slicing between two processes, which the design's one-GPU-per-rank deployment does not have, and which shows on every kernel (17 → 315 µs), not only on the upload. Reporting that ratio with its cause keeps the information without making M10 depend on a configuration tetraloma does not target. Option 3 would measure the right configuration, but on a different architecture and at the cost of a Myriad job. Option 4 is worth doing as a follow-up if shared-GPU runs become a target.
 
 ## Consequences
 
@@ -63,7 +63,7 @@ Option 2. The bound exists to keep the upload as fast as the download where the 
   - becomes "its host-to-device copy takes at most 1.5 times its device-to-host copy on Metal and on CUDA with one process per GPU (on the CPU runtime, whose read returns a view of the runtime's storage, and on CUDA with two ranks sharing one GPU, both are recorded and docs/perf/halo-exchange.md reports the ratio with its cause; ADR-0061, ADR-0062)".
 - **Public API changes:** none.
 - **Acceptance tests affected:**
-  - `gridcl-bench/tests/perf_record.rs::halo_exchange_recorded` applies the upload bound to Metal records and to CUDA records at 1 rank.
+  - `tetraloma-bench/tests/perf_record.rs::halo_exchange_recorded` applies the upload bound to Metal records and to CUDA records at 1 rank.
   - For CUDA records at more than one rank (Locust's one GPU), it checks that docs/perf/halo-exchange.md has the row with the 10^5-node ratio and a cause, as for the CPU runtime.
   - `reverse` ≤ 2 × `forward` is unchanged.
   - The test changes in M10 T6, with a Deviations-log row.

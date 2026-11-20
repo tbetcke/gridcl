@@ -35,7 +35,7 @@ Checked from the M3 Max at 18:40 on 2026-10-24 (`ssh kathleen`, login node only)
 ## Problem
 
 - **CPU-only runs wait on Myriad's queue.** The D nodes queue shorter than Myriad's GPU nodes, but job 10224 has still waited about two hours for one whole node. M3s needs many CPU sweep parts on CpuSimd512 (T16) and throughput runs (T17). It then reruns the whole suite there (T18), and M10 repeats the study. Kathleen offers the same CPU microarchitecture and starts single-node jobs within seconds to minutes.
-- **No multi-node MPI testing.** gridcl's MPI layer (M6 onwards: halo exchange, ownership, partitioners, parallel I/O) is tested only within one machine. Faults that appear only between nodes are never exercised: the transport, rank placement across nodes, and launch through a scheduler. One example is the PSM2 corruption fmm found at 4 nodes.
+- **No multi-node MPI testing.** tetraloma's MPI layer (M6 onwards: halo exchange, ownership, partitioners, parallel I/O) is tested only within one machine. Faults that appear only between nodes are never exercised: the transport, rank placement across nodes, and launch through a scheduler. One example is the PSM2 corruption fmm found at 4 nodes.
 - **The design names Myriad for these runs.** M3s acceptance bullets 1 and 6 and the M7 and M8 acceptance runs name Myriad. Using Kathleen instead changes the targets of acceptance tests, which CLAUDE.md allows only through an ADR.
 - **The runner has no Slurm support.** `scripts/hpc/remote-test.sh` knows the scheduler kinds `sge` (Myriad) and `direct` (Locust).
 
@@ -52,7 +52,7 @@ Checked from the M3 Max at 18:40 on 2026-10-24 (`ssh kathleen`, login node only)
 
 ## Proposed decision
 
-Option 2. Kathleen gives the same Cascade Lake AVX-512 class as the D nodes, with a much shorter queue, an x86-64 RHEL 9 environment proven by the fmm project, and the only multi-node MPI coverage gridcl would have. Myriad D nodes stay available through `myriad-cpu` for the cases Kathleen cannot serve.
+Option 2. Kathleen gives the same Cascade Lake AVX-512 class as the D nodes, with a much shorter queue, an x86-64 RHEL 9 environment proven by the fmm project, and the only multi-node MPI coverage tetraloma would have. Myriad D nodes stay available through `myriad-cpu` for the cases Kathleen cannot serve.
 
 The rules:
 
@@ -67,7 +67,7 @@ The runner follows `scripts/hpc` and the facts above:
 - **Configuration:** the remote base under the user's Scratch, set in `targets.env` (no user ids or paths in committed files).
 - **Sync and fetch:** the same rsync, and `cargo fetch` on the login node, so that jobs stay offline as on Myriad.
 - **Submission:** `sbatch --parsable` with `--nodes`, `--qos` and `--time`, polled with `squeue` and finished with `sacct`. `--ranks N` spreads the ranks evenly over the nodes. `--gpus` is rejected.
-- **Job environment:** temporary files and Open MPI's session directory on `/dev/shm`, `PSM2_TID=0`, `SLURM_STEP_ID` unset in the batch step, the gcc runtime first on `LD_LIBRARY_PATH`, and `GRIDCL_TEST_DEVICE=cpu`.
+- **Job environment:** temporary files and Open MPI's session directory on `/dev/shm`, `PSM2_TID=0`, `SLURM_STEP_ID` unset in the batch step, the gcc runtime first on `LD_LIBRARY_PATH`, and `TETRALOMA_TEST_DEVICE=cpu`.
 - **Status and cancel:** `status.sh` and `cancel.sh` learn `squeue` and `scancel`.
 
 ## Consequences
@@ -105,13 +105,13 @@ The runner follows `scripts/hpc` and the facts above:
     - the data file `m3s-sweep-cpu-myriad-d.json` becomes `m3s-sweep-cpu-kathleen.json`, and the throughput file `m3s-throughput-cpu-kathleen.json`.
 - **Public API changes:** none.
 - **Acceptance tests affected:**
-  - `gridcl-bench/tests/perf_record.rs::{benchmark_data_covers_required_targets, throughput_recorded_with_policy_and_scalar}`: which target supplies the CpuSimd512 and throughput records. The checks themselves are unchanged.
+  - `tetraloma-bench/tests/perf_record.rs::{benchmark_data_covers_required_targets, throughput_recorded_with_policy_and_scalar}`: which target supplies the CpuSimd512 and throughput records. The checks themselves are unchanged.
   - The M7 and M8 8-rank runs: target only.
 - **Later milestones affected:**
   - from M6, a two-node MPI run at every review;
   - M7 and M8: their 8-rank runs;
   - M10: CpuSimd512 data for the re-run from Kathleen. Its GPU-aware MPI tests stay on Myriad, since Kathleen has no GPUs.
-  - Kathleen's quota (250 GiB, of which 159 GiB were in use on 2026-10-24) limits gridcl to one tree with its `target/` and a shared toolchain, about 30 GB in all.
+  - Kathleen's quota (250 GiB, of which 159 GiB were in use on 2026-10-24) limits tetraloma to one tree with its `target/` and a shared toolchain, about 30 GB in all.
 
 ## Decision record
 

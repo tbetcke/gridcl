@@ -24,7 +24,7 @@ Most of the configurations measured were never close to being chosen. In ADR-005
 
 1. **Keep the design as written.** The M10 re-run repeats the full M3s and M9h protocols on every platform: many hours per platform, then the same again after a CubeCL pin bump.
 2. **Minimum runs (chosen by the maintainer).** The standing correctness matrix stays. Beyond it, a plan runs only what shows that the code works and what gives the timings a decision needs. Benchmarks measure a candidate set rather than the full parameter space.
-3. **Also thin the standing matrix.** For example, Locust only for the kernels a task changes, and two-node Kathleen MPI only for milestones that touch gridcl-parallel. Not chosen: the maintainer keeps the matrix.
+3. **Also thin the standing matrix.** For example, Locust only for the kernels a task changes, and two-node Kathleen MPI only for milestones that touch tetraloma-parallel. Not chosen: the maintainer keeps the matrix.
 
 ## Proposed decision
 
@@ -33,7 +33,7 @@ Option 2.
 1. **Standing matrix unchanged.** The following stay as they are:
    - the targets and triggers of "Testing and validation" and "Development environment and test targets";
    - f32 and f64;
-   - kernel tests at `GRIDCL_VECTOR_SIZE=scalar` and `widest`;
+   - kernel tests at `TETRALOMA_VECTOR_SIZE=scalar` and `widest`;
    - MPI on 1–4 ranks under MPICH and Open MPI;
    - the review targets.
 2. **Minimum beyond it.** Each extra test or benchmark run in a plan needs a reason: it shows that the code works on a backend, or it gives a timing that a decision or an acceptance bullet needs. A plan does not:
@@ -67,7 +67,7 @@ Option 2.
   - Listing H1: the new run-plan bullet.
 - CLAUDE.md: a new run-plan bullet in the working agreement. IMPLEMENTATION.md: the M10 note. Skills: plan-milestone (plans name their runs), review-milestone (the standing matrix once; reduced re-runs after fixes), hpc-test (no sweeps or confirmation repeats).
 - Public API changes: none.
-- Acceptance tests affected: gridcl-bench's protocol checks (`check_protocol` and the coverage tests in `perf_record.rs` and `high_order_record.rs`) accept the candidate protocol for M10 records. This is done in M10.
+- Acceptance tests affected: tetraloma-bench's protocol checks (`check_protocol` and the coverage tests in `perf_record.rs` and `high_order_record.rs`) accept the candidate protocol for M10 records. This is done in M10.
 - Later milestones affected: M10 and every later benchmark or CubeCL pin bump.
 
 ## Decision record

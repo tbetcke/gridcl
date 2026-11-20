@@ -1,0 +1,14 @@
+[package]
+name = "tetraloma-dims"
+description = "Dimension markers, cell families and the TopoDim trait of tetraloma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+

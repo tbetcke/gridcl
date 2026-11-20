@@ -14,7 +14,7 @@
     - "Parallel creation pipeline": the stage table and the sentence before it;
   - "Partitioning": Listing S3 (`Block`);
   - "Tags, regions and submeshes" (the MeshTags bullet);
-  - "Workspace layout": the crate table (gridcl-device, gridcl, gridcl-testing);
+  - "Workspace layout": the crate table (tetraloma-device, tetraloma, tetraloma-testing);
   - "Implementation roadmap": M6 (first acceptance bullet), M7 (scope), M10 (scope);
   - "Handing this design to Claude Code": Listing H1, the host↔device copy rule. CLAUDE.md changes the same way.
 
@@ -39,30 +39,30 @@ The public items are Listing S2c (`CommDyn`, `IndexMap`, `Scatterer`), Listing S
 Planning read these against the code after M5:
 
 - **Builder.**
-  - `MeshBuilder` (`gridcl/src/builder.rs:118`) builds only `Serial` meshes. Its generic path `build_with_comm` (l.185) is crate-private and numbers serially.
+  - `MeshBuilder` (`tetraloma/src/builder.rs:118`) builds only `Serial` meshes. Its generic path `build_with_comm` (l.185) is crate-private and numbers serially.
   - `cell_block` takes u32 indices into the builder's own node array (l.150–157).
   - The origin is the centre of the local bounding box (l.259–270).
   - There is no tag input; only the serial Gmsh reader fills `TagRegistry`.
-- **gridcl-parallel.**
+- **tetraloma-parallel.**
   - `IndexMap` has only `new` (`index_map.rs:58`).
   - `Neighbourhood` holds two rank lists and nothing else (`comm.rs:276`).
   - The crate does not depend on cubecl, so it cannot name `Client` or `CubeElement`.
   - `CommExt` has `sum`, `max` and `exscan_sum` only.
-- **gridcl-device.**
+- **tetraloma-device.**
   - No pack or unpack kernel exists. `KernelKind::Pack` exists, at vector size 1 for every class.
   - `DeviceBuffer` cannot upload into an existing buffer, and nothing calls `Client::write`.
   - `MessageTooLarge` is absent.
-- **gridcl-topology.**
+- **tetraloma-topology.**
   - Entity creation has no ownership step: `renumber` (`renumber.rs:125`) treats every entity as owned, and every map comes from `IndexMap::new`.
   - `try_clone` asserts ghost-free maps (`topology.rs:15`, `geometry.rs:157`).
-- **gridcl-partition** is an empty stub.
+- **tetraloma-partition** is an empty stub.
 
 The maintainer answered four scoping questions on 2026-10-28:
 
 - tags for cells and lower dimensions, keyed by corner origin ids;
 - M6 builds the full facet dual graph;
 - `build()` goes through the same pipeline with `Serial`;
-- gridcl-testing gets an in-process, thread-backed communicator (`ThreadComm`), which needs no ADR.
+- tetraloma-testing gets an in-process, thread-backed communicator (`ThreadComm`), which needs no ADR.
 
 The design-reviewer's critique of the draft plan found problems 1 and 4.
 
@@ -80,12 +80,12 @@ Each problem has the number of the item that answers it.
 5. **Constructors are missing.** The listings give no constructor for `IndexMap` with ghosts, `Neighbourhood` or `Mpi` (Listing B8 calls `Mpi::world(&universe)`). `IndexMap` is not `Clone`, and the M3 follow-up on copying ghosted maps is open.
 6. **Stage 7 conflicts with the serial cell order.** Stage 7 orders owned cells "along a Hilbert curve", and "Locality ordering happens before any numbering". `build()` must keep the input order, because ADR-0012 numbers serial meshes "by first touching cell, blocks in call order", ADR-0022 keeps "cells in file order within a block", and M3–M5 tests compare per-cell results in input order. Routing `build()` through stage 7 as written would reorder every serial mesh.
 7. **Stage 6 has no well-defined source.** It fetches coordinates "from the stage-1 chunk owners". With arbitrary builder chunks, the chunk owner of a node id cannot be computed.
-8. **No type carries the sharer sets.** Entity ownership needs per-vertex sharer sets (stage 8), and gridcl-topology's public API has no way to receive them.
+8. **No type carries the sharer sets.** Entity ownership needs per-vertex sharer sets (stage 8), and tetraloma-topology's public API has no way to receive them.
 9. **The hash is unspecified.** "hash(origin id) mod (number of candidates)" and "hash(key)" name no function. The owners must be identical on every platform and in M7 and M8.
 10. **Ghost tag consistency.** The MeshTags bullet says "Ghost values are made consistent by a forward scatter". `MeshTags` is sparse: an index may repeat with distinct values. A forward scatter of a dense array cannot carry several values per index.
 11. **"Total volume identical to one rank" cannot be bitwise.** `measure` sums owned cells per block in a fixed order, and the partition changes which cells each rank sums.
-12. **gridcl-parallel needs cubecl types.** `Scatterer::forward<T: CubeElement>` and `IndexMap::scatterer(&Client, …)` need them, but the crate table gives gridcl-parallel no cubecl dependency. Dependency rule 1 allows cubecl only in crates that define or launch kernels.
-13. **No upload into an existing buffer.** HostStaged "uploads the receive buffer" with `Client::write`, and `DeviceBuffer` has no method for that. Listing S1b names no pack or unpack primitive, although the crate table places "pack/unpack kernels" in gridcl-device.
+12. **tetraloma-parallel needs cubecl types.** `Scatterer::forward<T: CubeElement>` and `IndexMap::scatterer(&Client, …)` need them, but the crate table gives tetraloma-parallel no cubecl dependency. Dependency rule 1 allows cubecl only in crates that define or launch kernels.
+13. **No upload into an existing buffer.** HostStaged "uploads the receive buffer" with `Client::write`, and `DeviceBuffer` has no method for that. Listing S1b names no pack or unpack primitive, although the crate table places "pack/unpack kernels" in tetraloma-device.
 14. **The copy rule does not cover entity ownership.** "Ownership of vertices and entities" runs the boundary-entity exchange "on the host". CLAUDE.md's list of allowed host↔device copies (Listing H1) does not name it.
 15. **Errors inside collectives can deadlock.** If one rank finds an input error, such as a duplicate origin id, and returns, the others wait forever in the next collective. No `GridError` variant covers an error raised on another rank.
 16. **Smaller gaps:**
@@ -102,7 +102,7 @@ Each problem has the number of the item that answers it.
    - Several M6 pieces cannot be built:
      - problem 1: the builder cannot express distributed input;
      - problem 4: the scatterer has nothing to exchange through;
-     - problem 12: gridcl-parallel cannot name its own argument types;
+     - problem 12: tetraloma-parallel cannot name its own argument types;
      - problem 15: collective errors deadlock.
    - Routing `build()` through stage 7 breaks the M3–M5 suites (problem 6).
    - The volume bullet fails (problem 11).
@@ -117,7 +117,7 @@ Each problem has the number of the item that answers it.
 
 Option 2. Each item answers the problem of the same number. The maintainer chose items 1–3 and the single pipeline on 2026-10-28.
 
-1. **Distributed builder (gridcl).**
+1. **Distributed builder (tetraloma).**
    - `MeshBuilder<F, TD, GD>` gains these methods:
      - `cell_block_by_ids(self, element: CoordinateElement<TD>, node_ids: &[i64], origin_ids: Option<&[i64]>) -> Self`, whose cells reference nodes by node origin id;
      - `ghosts(self, mode: GhostMode) -> Self`, default `GhostMode::None`;
@@ -126,7 +126,7 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
      - `physical_tags` and `tag_names` (item 3);
      - `build_on<C: Comm>(self, comm: C) -> Result<Mesh<F, TD, GD, C>>`, which is collective.
    - `build()` is `build_on(Serial)`, and `build_with_comm` becomes the pipeline. The Gmsh reader keeps its vertex map.
-   - `pub enum GhostMode { None, SharedFacet, SharedVertex { layers: usize } }` and `CellOrdering` live in gridcl. Both are `Clone, Copy, Debug, PartialEq, Eq`, and both are in the prelude.
+   - `pub enum GhostMode { None, SharedFacet, SharedVertex { layers: usize } }` and `CellOrdering` live in tetraloma. Both are `Clone, Copy, Debug, PartialEq, Eq`, and both are in the prelude.
    - **Input contract of `build_on`:**
      - Each rank passes a chunk of nodes, and every node appears on exactly one rank. A duplicate gives `DuplicateOriginId`.
      - Each rank passes a chunk of cells. With `cell_block` the u32 indices refer to the rank's own nodes and are translated to ids on that rank; this is always valid on one rank. With `cell_block_by_ids` a cell may reference any rank's nodes.
@@ -136,7 +136,7 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 2. **Stage 2 in M6.**
    - M6 builds the full facet dual graph: facet keys (sorted vertex origin ids) are hashed to ranks by `owner_hash` and matched, which gives `DistGraph { vtxdist, xadj, adjncy, vwgt: None }`.
    - Ghost detection and reverse Cuthill–McKee use the same rendezvous.
-   - `pub struct Block;` (gridcl-partition; `Clone, Copy, Debug, Default`) implements `Partitioner`. It sends global graph vertex i to rank ⌊i · nparts / N⌋, where N = `vtxdist[nranks]`.
+   - `pub struct Block;` (tetraloma-partition; `Clone, Copy, Debug, Default`) implements `Partitioner`. It sends global graph vertex i to rank ⌊i · nparts / N⌋, where N = `vtxdist[nranks]`.
    - M7 keeps the vertex weights, the external partitioners and the partition-quality acceptance.
 3. **Tags from host arrays.**
    - `MeshBuilder::physical_tags(self, entity: CellType, corners: &[i64], values: &[i32]) -> Self` gives one entry per entity, with `entity.num_vertices()` corner origin ids per entry. This is Gmsh's key, so a tag of any dimension, cells included, is matched by its sorted corner ids.
@@ -167,7 +167,7 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
      - `all_gather<T: CommScalar>(&self, x: T) -> Vec<T>`;
      - `all_to_all_v<T: CommScalar>(&self, send: &[T], send_counts: &[usize]) -> Result<(Vec<T>, Vec<usize>)>`, which exchanges the counts first;
      - `neighbour_all_to_all_v<T: CommScalar>(&self, nb: &Neighbourhood, send: &[T], send_counts: &[usize]) -> Result<(Vec<T>, Vec<usize>)>`.
-   - gridcl re-exports `Mpi` (feature `mpi`), `Neighbourhood`, `DType` and `CommScalar`.
+   - tetraloma re-exports `Mpi` (feature `mpi`), `Neighbourhood`, `DType` and `CommScalar`.
 6. **Cell ordering.**
    - `pub enum CellOrdering { Input, Hilbert, ReverseCuthillMcKee }`, with default `Input`. Stage 7 applies the chosen order to owned cells:
      - `Input`: source rank, then input position;
@@ -179,13 +179,13 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
    - Every node (origin id, coordinates, vertex or non-vertex role) is posted to rank `owner_hash(&[id]) mod P`. Ranks fetch the nodes of their owned and ghost cells from there.
    - The directory also finds duplicate node ids and role mismatches. The global origin is agreed from `CommExt::min` and `CommExt::max` of the bounding box.
 8. **Sharer sets.**
-   - `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (gridcl-topology) is a host CSR over local vertices:
+   - `pub struct VertexSharers { pub offsets: Vec<usize>, pub ranks: Vec<i32>, pub owned_cell: Vec<bool> }` (tetraloma-topology) is a host CSR over local vertices:
      - row v lists every rank that holds vertex v, this one included, in ascending order;
      - `owned_cell` says whether that rank holds v in an owned cell.
    - `Topology::set_vertex_sharers(&mut self, s: VertexSharers)` stores it, uploads one shared flag per vertex, and derives the sharing neighbourhood: every rank that shares a vertex with this one.
    - A topology without sharers, which is every serial mesh, treats every vertex as unshared.
 9. **`owner_hash`.**
-   - `pub fn owner_hash(key: &[i64]) -> u64` (gridcl-parallel) starts at h = 0x6772_6964_636C_0006 and, for each word w, sets h = mix(h ^ (w as u64)).
+   - `pub fn owner_hash(key: &[i64]) -> u64` (tetraloma-parallel) starts at h = 0x6772_6964_636C_0006 and, for each word w, sets h = mix(h ^ (w as u64)).
    - mix is SplitMix64's finaliser: z += 0x9E37_79B9_7F4A_7C15; z = (z ^ (z >> 30)) · 0xBF58_476D_1CE4_E5B9; z = (z ^ (z >> 27)) · 0x94D0_49BB_1331_11EB; z ^ (z >> 31), with wrapping arithmetic.
    - It is used as follows:
      - the vertex and node owner is the candidate at position `owner_hash(&[origin id]) mod n`;
@@ -194,10 +194,10 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
    - Golden values are tested. M7 and M8 use the same function.
 10. **Ghost tags by construction.** Every rank that holds an entity, owner or ghost, receives the tag entries of its key (item 3), so ghost values equal the owner's values without a forward scatter. A multi-rank test checks this. ADR-0022's consequence "M6 makes ghost tag values consistent by forward scatter" is replaced.
 11. **Volume to tolerance.** The first M6 bullet compares total volume to the precision tolerances, 10^−12 relative in f64 and 10^−5 in f32. Every other quantity in that bullet is compared exactly.
-12. **cubecl types through gridcl-device.**
-    - gridcl-device re-exports `cubecl::prelude::{Client, CubeElement}`, and gridcl-parallel uses them from there. The crate graph does not change.
-    - gridcl-parallel defines no kernel. Every device step of `Scatterer` is a gridcl-device primitive (item 13).
-13. **Upload and pack primitives (gridcl-device).**
+12. **cubecl types through tetraloma-device.**
+    - tetraloma-device re-exports `cubecl::prelude::{Client, CubeElement}`, and tetraloma-parallel uses them from there. The crate graph does not change.
+    - tetraloma-parallel defines no kernel. Every device step of `Scatterer` is a tetraloma-device primitive (item 13).
+13. **Upload and pack primitives (tetraloma-device).**
     - `DeviceBuffer::write_host(&mut self, data: &[T]) -> Result<()>` overwrites the buffer through `Client::write`. A length different from `len()` gives `LengthMismatch`.
     - Listing S1b gains:
       ```rust
@@ -246,12 +246,12 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 ## Consequences
 
 - **Text to change in docs/design.md:**
-  - **Listing B3:** the sentence after it reads "… `Mesh` is deliberately not `Send` (its index maps hold the communicator, ADR-0026): gridcl runs one host thread per rank …".
+  - **Listing B3:** the sentence after it reads "… `Mesh` is deliberately not `Send` (its index maps hold the communicator, ADR-0026): tetraloma runs one host thread per rank …".
   - **Listing B8:** add the comment "`local_gpu_index` arrives with M10 (ADR-0026)".
   - **The `GridError` paragraph:** add "M6 adds `MessageTooLarge { count: usize }` and `RemoteFailure { rank: usize }`; collective operations agree on errors, and ranks without a local error return `RemoteFailure` with the lowest failing rank (ADR-0026)."
   - **Listing S1:** add `write_host`.
   - **Listing S1b:** add `pack` and `unpack` as in item 13.
-  - **The paragraph after S1b:** add "gridcl-device re-exports `Client` and `CubeElement` for gridcl-parallel".
+  - **The paragraph after S1b:** add "tetraloma-device re-exports `Client` and `CubeElement` for tetraloma-parallel".
   - **"Ownership of vertices and entities":**
     - name `owner_hash` and its definition (item 9);
     - add the ghost order of item 16;
@@ -276,16 +276,16 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
   - **Listing S3:** add `pub struct Block;`.
   - **"Tags, regions and submeshes":** "Ghost values are made consistent by a forward scatter" becomes "Every holder of an entity, owner or ghost, receives its tags by key matching, so ghost values equal the owner's (ADR-0026). `MeshBuilder::physical_tags` and `tag_names` give tags with host arrays."
   - **Crate table:**
-    - gridcl-device purpose adds "re-exports of `Client` and `CubeElement`";
-    - gridcl purpose adds "distributed builder (`build_on`, `GhostMode`, `CellOrdering`)";
-    - gridcl-testing purpose adds "`ThreadComm`, an in-process multi-rank communicator".
+    - tetraloma-device purpose adds "re-exports of `Client` and `CubeElement`";
+    - tetraloma purpose adds "distributed builder (`build_on`, `GhostMode`, `CellOrdering`)";
+    - tetraloma-testing purpose adds "`ThreadComm`, an in-process multi-rank communicator".
   - **Roadmap:**
     - M6's first bullet reads "global entity counts and tag counts are identical to one rank, and total volume agrees to 10^−12 (f64) and 10^−5 (f32) relative (ADR-0026)";
     - M7's scope reads "vertex weights on M6's distributed dual graph, ptscotch-sys …";
     - M10's scope adds "`local_gpu_index`".
   - **Listing H1:** the host↔device copy rule adds the three items of item 14.
 - **CLAUDE.md:** the same change to the host↔device copy rule.
-- **Public API changes:** the items above, in gridcl-device, gridcl-parallel, gridcl-partition, gridcl-topology and gridcl. The only existing signatures that change are these:
+- **Public API changes:** the items above, in tetraloma-device, tetraloma-parallel, tetraloma-partition, tetraloma-topology and tetraloma. The only existing signatures that change are these:
   - `CommDyn` gains a required method, so every implementor changes: `Serial`, the test fakes and `TwoRanks`;
   - `IndexMap`, `Topology`, `Geometry` and `Mesh` lose `Send`.
 - **Acceptance tests affected:**

@@ -12,10 +12,10 @@
 #   local/        a git repository holding a copy of scripts/hpc: the working tree to sync
 #   remote/       the fake remote file system: the base directories of the targets
 #   state/        the fake schedulers (state/sge/, state/slurm/) and the logs of the shims
-#   targets.env   personal settings, passed to the runner through GRIDCL_TARGETS_ENV
+#   targets.env   personal settings, passed to the runner through TETRALOMA_TARGETS_ENV
 # fake-bin/ stands in for ssh (runs the remote command locally), rsync (drops the host
 # part), qsub, qstat, qdel, sbatch, squeue and scancel; fake-bin/remote/ holds the commands of the remote nodes
-# (cargo, rustup, rustc, nvidia-smi, curl), which log to state/. GRIDCL_HPC_POLL sets the
+# (cargo, rustup, rustc, nvidia-smi, curl), which log to state/. TETRALOMA_HPC_POLL sets the
 # runner's polling interval in seconds.
 #
 # Conventions the cases rely on (docs/design.md, "Development environment and test
@@ -30,7 +30,7 @@
 #     line node_load=idle or node_load=busy: <reasons>, and its summary has a line
 #     "node load: before ...; after ..." (ADR-0002);
 #   - status.sh prints nothing when no job is queued or running.
-# GRIDCL_HPC_LOAD_SETTLE=0 reaches the direct jobs through the fake ssh, so that their
+# TETRALOMA_HPC_LOAD_SETTLE=0 reaches the direct jobs through the fake ssh, so that their
 # after-run node-load snapshot does not wait.
 set -u
 
@@ -155,10 +155,10 @@ setup() {
     g checkout -q -b dev/e0-test
     TREE=$REMOTE/myriad/dev_e0-test
     write_targets_env
-    export FAKE_STATE GRIDCL_TARGETS_ENV=$T/targets.env GRIDCL_HPC_POLL=0.2 GRIDCL_HPC_LOAD_SETTLE=0
+    export FAKE_STATE TETRALOMA_TARGETS_ENV=$T/targets.env TETRALOMA_HPC_POLL=0.2 TETRALOMA_HPC_LOAD_SETTLE=0
     export PATH="$here/fake-bin:$orig_path"
     unset FAKE_SGE_HOLD FAKE_SGE_QUEUE_DELAY FAKE_SSH_UNREACHABLE FAKE_SSH_HANG_ON FAKE_SLURM_HOLD \
-        FAKE_SLURM_QUEUE_DELAY GRIDCL_HPC_POLL_LIMIT
+        FAKE_SLURM_QUEUE_DELAY TETRALOMA_HPC_POLL_LIMIT
     RT=$LOCAL/scripts/hpc/remote-test.sh
     STATUS=$LOCAL/scripts/hpc/status.sh
     CANCEL=$LOCAL/scripts/hpc/cancel.sh
@@ -291,11 +291,11 @@ case_usage() {
 }
 
 case_missing_targets_env() {
-    GRIDCL_TARGETS_ENV=$T/none.env rt myriad-v100 -- true
+    TETRALOMA_TARGETS_ENV=$T/none.env rt myriad-v100 -- true
     expect_nonzero "missing targets.env"
     expect_grep "$T/stderr" 'targets\.example\.env' "message points at targets.example.env"
     grep -v '^MYRIAD_A100_' "$T/targets.env" >"$T/partial.env"
-    GRIDCL_TARGETS_ENV=$T/partial.env rt myriad-a100 -- true
+    TETRALOMA_TARGETS_ENV=$T/partial.env rt myriad-a100 -- true
     expect_nonzero "target without settings"
     expect_grep "$T/stderr" 'MYRIAD_A100_HOST' "message names the missing key"
     expect_absent "$FAKE_STATE/ssh.log" "nothing contacted without settings"
@@ -312,9 +312,9 @@ case_job_script_sge_lines() {
     expect_line "$s" '#$ -l h_rt=01:30:00' "wall-clock request"
     expect_line "$s" '#$ -pe smp 36' "cores request from CORES_REQUEST"
     expect_line "$s" '#$ -l mem=4G' "memory request from MEM_REQUEST"
-    expect_grep "$s" 'GRIDCL_RANKS=2' "GRIDCL_RANKS for --ranks"
+    expect_grep "$s" 'TETRALOMA_RANKS=2' "TETRALOMA_RANKS for --ranks"
     expect_grep "$s" 'CARGO_NET_OFFLINE=true' "offline cargo"
-    expect_grep "$s" 'GRIDCL_TEST_DEVICE=cuda' "test device"
+    expect_grep "$s" 'TETRALOMA_TEST_DEVICE=cuda' "test device"
     expect_grep "$s" 'CARGO_TARGET_DIR=' "per-target CARGO_TARGET_DIR"
     expect_grep "$s" "$REMOTE/cuda-12" "CUDA_PATH from targets.env"
     bash -n "$s" || fail "rendered script is not valid bash"
@@ -352,7 +352,7 @@ case_job_script_sge_lines() {
 
 case_myriad_cpu_job_script() {
     # shellcheck disable=SC2016 # expanded by the job, not here
-    rt myriad-cpu --cores 36 --time 00:30:00 -- 'echo "device=$GRIDCL_TEST_DEVICE"'
+    rt myriad-cpu --cores 36 --time 00:30:00 -- 'echo "device=$TETRALOMA_TEST_DEVICE"'
     expect_status 0 "myriad-cpu run"
     local s id
     id=$(job_id)
@@ -364,10 +364,10 @@ case_myriad_cpu_job_script() {
     expect_line "$s" '#$ -pe smp 36' "whole node from CORES_REQUEST"
     expect_line "$s" '#$ -l mem=4G' "memory request from MEM_REQUEST"
     expect_line "$s" '#$ -l h_rt=00:30:00' "wall-clock request"
-    expect_line "$s" 'export GRIDCL_TEST_DEVICE=cpu' "CPU test device"
-    expect_no_grep "$s" 'GRIDCL_TEST_DEVICE=cuda' "no CUDA test device"
-    expect_line "$s" "GRIDCL_HPC_CUDA_PATH=''" "no CUDA_PATH"
-    expect_line "$s" 'export GRIDCL_HPC_TARGET=myriad-cpu' "target exported for gridcl-bench"
+    expect_line "$s" 'export TETRALOMA_TEST_DEVICE=cpu' "CPU test device"
+    expect_no_grep "$s" 'TETRALOMA_TEST_DEVICE=cuda' "no CUDA test device"
+    expect_line "$s" "TETRALOMA_HPC_CUDA_PATH=''" "no CUDA_PATH"
+    expect_line "$s" 'export TETRALOMA_HPC_TARGET=myriad-cpu' "target exported for tetraloma-bench"
     expect_grep "$s" "CARGO_TARGET_DIR=$TREE/target/myriad-cpu" "own CARGO_TARGET_DIR in the shared tree"
     bash -n "$s" || fail "rendered script is not valid bash"
     awk '/^#\$/ { if (cmd) bad = 1 } /^[^#]/ && NF { cmd = 1 } END { exit bad }' "$s" ||
@@ -375,7 +375,7 @@ case_myriad_cpu_job_script() {
     expect_grep "$T/stdout" '^target: myriad-cpu$' "summary target"
     expect_no_grep "$T/stdout" '^node load:' "no node-load line on SGE targets"
     local dir=$LOCAL/target/hpc/myriad-cpu/$id
-    grep -q 'device=cpu' "$dir/output.log" 2>/dev/null || fail "the command did not see GRIDCL_TEST_DEVICE=cpu"
+    grep -q 'device=cpu' "$dir/output.log" 2>/dev/null || fail "the command did not see TETRALOMA_TEST_DEVICE=cpu"
     expect_grep "$dir/prologue.txt" '^slots: 36;' "prologue records the slots"
     expect_grep "$dir/prologue.txt" '^cpus: nproc ' "prologue records the CPUs"
 
@@ -506,7 +506,7 @@ case_cubecl_toml_written() {
     expect_line "$TREE/cubecl.toml" '[environment]' "cubecl.toml written by the job"
     expect_line "$TREE/cubecl.toml" 'path = "global"' "database path follows XDG_CACHE_HOME"
     expect_no_grep "$TREE/cubecl.toml" 'not synced' "local cubecl.toml not synced"
-    expect_grep "$TREE/results/$id/prologue.txt" '^kernel caches: .*XDG_CACHE_HOME=.*/gridcl-cache/xdg .*cubecl database=.*/gridcl-cache/xdg/cubecl' \
+    expect_grep "$TREE/results/$id/prologue.txt" '^kernel caches: .*XDG_CACHE_HOME=.*/tetraloma-cache/xdg .*cubecl database=.*/tetraloma-cache/xdg/cubecl' \
         "prologue records the database location"
     commit_file second.txt second
     rt myriad-v100 -- 'test -f cubecl.toml && echo still-there'
@@ -633,7 +633,7 @@ case_kathleen_job_script() {
     local ktree=$REMOTE/kathleen/dev_e0-test
     # shellcheck disable=SC2016 # expanded by the job, not here
     rt kathleen --cores 36 --time 00:30:00 -- \
-        'echo "device=$GRIDCL_TEST_DEVICE step=${SLURM_STEP_ID:-unset} tid=$PSM2_TID flags=${GRIDCL_MPIRUN_FLAGS:-none} job=${JOB_ID:-unset}"'
+        'echo "device=$TETRALOMA_TEST_DEVICE step=${SLURM_STEP_ID:-unset} tid=$PSM2_TID flags=${TETRALOMA_MPIRUN_FLAGS:-none} job=${JOB_ID:-unset}"'
     expect_status 0 "kathleen run"
     expect_grep "$T/stderr" '--cores ignored' "--cores is ignored on whole nodes"
     local s id dir
@@ -645,9 +645,9 @@ case_kathleen_job_script() {
     expect_line "$s" '#SBATCH --time=00:30:00' "wall-clock request"
     expect_line "$s" '#SBATCH --ntasks-per-node=40' "a slot per core for mpirun"
     expect_line "$s" "#SBATCH --chdir=$ktree" "job starts in the tree"
-    expect_line "$s" 'export GRIDCL_TEST_DEVICE=cpu' "CPU test device"
+    expect_line "$s" 'export TETRALOMA_TEST_DEVICE=cpu' "CPU test device"
     expect_no_grep "$s" '^#\$' "no SGE lines"
-    expect_no_grep "$s" 'GRIDCL_MPIRUN_FLAGS="' "no mapping flags on one node"
+    expect_no_grep "$s" 'TETRALOMA_MPIRUN_FLAGS="' "no mapping flags on one node"
     expect_no_grep "$s" '@[A-Z_]+@' "every placeholder replaced"
     bash -n "$s" || fail "rendered script is not valid bash"
     awk '/^#SBATCH/ { if (cmd) bad = 1 } /^[^#]/ && NF { cmd = 1 } END { exit bad }' "$s" ||
@@ -665,7 +665,7 @@ case_kathleen_job_script() {
 
 case_kathleen_two_nodes() {
     # shellcheck disable=SC2016 # expanded by the job, not here
-    rt kathleen --nodes 2 --ranks 4 -- 'echo "flags=$GRIDCL_MPIRUN_FLAGS ranks=$GRIDCL_RANKS"'
+    rt kathleen --nodes 2 --ranks 4 -- 'echo "flags=$TETRALOMA_MPIRUN_FLAGS ranks=$TETRALOMA_RANKS"'
     expect_status 0 "two-node run"
     local s id
     id=$(job_id)
@@ -716,7 +716,7 @@ case_kathleen_status_and_cancel() {
     RC=$?
     expect_status 0 "status with a pending Slurm job"
     expect_grep "$T/status" '^== kathleen \(fake-kathleen, slurm\)$' "status names the Slurm host"
-    expect_grep "$T/status" "^$id singlenode gridcl-kathleen PENDING" "status lists the job"
+    expect_grep "$T/status" "^$id singlenode tetraloma-kathleen PENDING" "status lists the job"
     "$CANCEL" "$id" >"$T/cancel" 2>&1
     RC=$?
     expect_status 0 "cancel Slurm job"
@@ -783,20 +783,20 @@ case_direct_remote_timeout() {
     no_process 'sleep 59' || fail "timed-out direct job still running"
 }
 
-# The command sees GRIDCL_HPC_TREE and the job's own GRIDCL_MPI_TEST_DIR (M8 review).
+# The command sees TETRALOMA_HPC_TREE and the job's own TETRALOMA_MPI_TEST_DIR (M8 review).
 case_job_environment() {
-    rt locust -- 'echo "tree=$GRIDCL_HPC_TREE"; echo "mpi=$GRIDCL_MPI_TEST_DIR"
-        echo "commit=$GRIDCL_HPC_COMMIT"; echo "dirty=$GRIDCL_HPC_DIRTY"'
+    rt locust -- 'echo "tree=$TETRALOMA_HPC_TREE"; echo "mpi=$TETRALOMA_MPI_TEST_DIR"
+        echo "commit=$TETRALOMA_HPC_COMMIT"; echo "dirty=$TETRALOMA_HPC_DIRTY"'
     expect_status 0 "direct run"
     local id tree=$REMOTE/locust/dev_e0-test
     id=$(job_id)
-    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "tree=$tree" "GRIDCL_HPC_TREE"
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "tree=$tree" "TETRALOMA_HPC_TREE"
     expect_line "$LOCAL/target/hpc/locust/$id/output.log" "mpi=$tree/results/$id/mpi-test" \
-        "GRIDCL_MPI_TEST_DIR in the job's results"
+        "TETRALOMA_MPI_TEST_DIR in the job's results"
     # M9h T3: the degree sweep records the commit from these; the remote tree has no .git.
     expect_line "$LOCAL/target/hpc/locust/$id/output.log" "commit=$(g rev-parse HEAD)" \
-        "GRIDCL_HPC_COMMIT"
-    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "dirty=no" "GRIDCL_HPC_DIRTY"
+        "TETRALOMA_HPC_COMMIT"
+    expect_line "$LOCAL/target/hpc/locust/$id/output.log" "dirty=no" "TETRALOMA_HPC_DIRTY"
 }
 
 # The ssh that starts a direct job returns at once, not when the job ends (M9h T3: a
@@ -838,14 +838,14 @@ case_direct_job_group_ended() {
 # review: the runner did not return after its Locust job had ended).
 case_no_answer_ends_runner() {
     local start=$SECONDS
-    FAKE_SSH_HANG_ON=r_poll GRIDCL_HPC_POLL_LIMIT=1 rt locust -- true
+    FAKE_SSH_HANG_ON=r_poll TETRALOMA_HPC_POLL_LIMIT=1 rt locust -- true
     expect_status 125 "polls without an answer"
     [ $((SECONDS - start)) -lt 40 ] || fail "runner took $((SECONDS - start)) s with a 1 s poll limit"
     expect_grep "$T/stderr" 'no answer from fake-locust within 1 s \(r_poll\)' "message per failed poll"
     expect_grep "$T/stderr" 'lost contact with fake-locust' "lost-contact message"
 
     start=$SECONDS
-    FAKE_SSH_HANG_ON=r_collect GRIDCL_HPC_POLL_LIMIT=1 rt locust -- true
+    FAKE_SSH_HANG_ON=r_collect TETRALOMA_HPC_POLL_LIMIT=1 rt locust -- true
     expect_status 125 "collect step without an answer"
     [ $((SECONDS - start)) -lt 30 ] || fail "runner took $((SECONDS - start)) s to give up collecting"
     no_process 'sleep 300' || fail "hung ssh still running"

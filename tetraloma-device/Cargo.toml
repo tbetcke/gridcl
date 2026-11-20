@@ -1,0 +1,38 @@
+[package]
+name = "tetraloma-device"
+description = "Device buffers, limits, launch plans and primitives of tetraloma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+# Reserved for GPU-aware MPI on CUDA (device pointers of CUDA buffers); enables nothing while
+# the transport is deferred (docs/design.md, "Dependency rules" 4; ADR-0059).
+gpu-aware-cuda = []
+# Test support, not part of the stable API: the scoped overrides of `tetraloma_device::testing`.
+# tetraloma-testing turns it on for every workspace test (docs/design.md, "Cargo features").
+testing = []
+
+[dependencies]
+cubecl.workspace = true
+toml.workspace = true
+
+# The macOS performance-core count (`sysctlbyname`, ADR-0017).
+[target.'cfg(target_os = "macos")'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+tetraloma-testing = { path = "../tetraloma-testing" }
+proptest.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

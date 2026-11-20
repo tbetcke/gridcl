@@ -13,7 +13,7 @@
 //! - `MPI_Comm` and `MPI_Datatype` in the signatures are mpi-sys's types (`mpi::ffi`), so a
 //!   communicator's `as_raw()` passes straight to `SCOTCH_dgraphInit`.
 //! - `FILE` is opaque: only the functions that load or save files take it.
-//! - gridcl supports PT-Scotch builds without `SCOTCH_PTHREAD_MPI`, which work with MPI
+//! - tetraloma supports PT-Scotch builds without `SCOTCH_PTHREAD_MPI`, which work with MPI
 //!   initialised as `Threading::Single` (ADR-0029, item 13; the example `threading_probe`).
 
 #[cfg(feature = "mpi")]

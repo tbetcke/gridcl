@@ -14,7 +14,7 @@
 A.5 repeats it ("VTK orders triangle interiors recursively instead; the I/O maps handle this"), and the "Checks" list and A.9 ask for "VTK P3 prisms against VTK-written fixtures".
 
 M1b T9 ported VTK v9.7.1's index functions to generate `vtk_to_internal`
-(gridcl-refcell/src/node_maps/vtk.rs). VTK triangle cells (`vtkHigherOrderTriangle::Index`) and tetrahedron faces and interiors (`vtkHigherOrderTetra::Index`) are recursive, as the design says. The wedge is not: `vtkHigherOrderWedge::PointIndexFromIJK` places the interior nodes of its two triangular faces and of every interior triangle layer with `triangleDOFOffset`, which is lexicographic (x fastest, then y).
+(tetraloma-refcell/src/node_maps/vtk.rs). VTK triangle cells (`vtkHigherOrderTriangle::Index`) and tetrahedron faces and interiors (`vtkHigherOrderTetra::Index`) are recursive, as the design says. The wedge is not: `vtkHigherOrderWedge::PointIndexFromIJK` places the interior nodes of its two triangular faces and of every interior triangle layer with `triangleDOFOffset`, which is lexicographic (x fastest, then y).
 
 ## Problem
 
@@ -45,7 +45,7 @@ Option 2. The code follows VTK and is already correct. The design should say so,
   - A.9, last paragraph: "VTK P3 prisms are checked against VTK-written fixtures" → "VTK prisms of degrees 3, 5 and 6 are checked against VTK-written fixtures".
 - Public API changes: none.
 - Acceptance tests affected: none in M1b. The M5 (VTK output) fixture corpus gains VTK-written p = 5 and p = 6 wedges.
-- Later milestones affected: M5, which must accept this ADR before its plan is approved. gridcl-refcell's `node_maps/vtk.rs` module docs already describe the VTK order this way.
+- Later milestones affected: M5, which must accept this ADR before its plan is approved. tetraloma-refcell's `node_maps/vtk.rs` module docs already describe the VTK order this way.
 
 ## Decision record
 

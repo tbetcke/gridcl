@@ -66,7 +66,7 @@ Option 2. The outliers come from thread placement across two sockets, which the 
   - "Development environment and test targets", the Kathleen paragraph: "CPU-only runs, such as the CPU benchmarks on x86-64 with AVX-512 (CpuSimd512), use one whole Kathleen node; benchmarks bind to one socket (ADR-0020)."
   - Roadmap, M3s acceptance, bullet 1: "… and one socket of a whole Kathleen node (CPU runtime on its AVX-512 Xeon; ADR-0020) …"; bullet 6: "… on the M3 Max CPU runtime and one socket of a Kathleen node (ADR-0016, ADR-0020) …".
   - Roadmap, M10, benchmark bullet: "… and one socket of a whole Kathleen node (AVX-512; ADR-0020) …".
-- Public API changes: none. gridcl-bench records already carry the thread count (`cores.threads`, 20 under the binding) and the units (`units`).
+- Public API changes: none. tetraloma-bench records already carry the thread count (`cores.threads`, 20 under the binding) and the units (`units`).
 - Acceptance tests affected: none change their code. `benchmark_data_covers_required_targets` and `throughput_recorded_with_policy_and_scalar` read the new Kathleen records; `policy_follows_the_decision_rule` must then pass for CpuSimd512 and CpuSimd256.
 - Data: `docs/perf/data/m3s-sweep-cpu-kathleen.json` is replaced by the bound sweep (T16); the Kathleen throughput (T17) runs bound. docs/perf/vectorization.md records the binding in its conditions, and the two-socket evidence above under observations.
 - Later milestones affected: M10's re-run uses the binding on Kathleen (and on any Myriad D-node fallback, also two sockets), and investigates thread pinning in the CPU runtime. MPI milestones are unaffected.

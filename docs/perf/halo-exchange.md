@@ -2,13 +2,13 @@
 
 This report records the host-staged halo exchange of `Scatterer` before and after M10's
 hardening (docs/design.md, "Distributed mesh model", "Transports"; ADR-0059, ADR-0061). The
-tables under "M10 records" are written by `cargo run -p gridcl-bench --bin halo_exchange --
+tables under "M10 records" are written by `cargo run -p tetraloma-bench --bin halo_exchange --
 report` from `docs/perf/data/m10-halo-*.json`, between its marker comments; the rest is written
 by hand.
 
 ## Protocol
 
-- **Binary:** `halo_exchange` (gridcl-bench), release build, with the feature `mpi` for more
+- **Binary:** `halo_exchange` (tetraloma-bench), release build, with the feature `mpi` for more
   than one rank.
 - **Set-up:** each rank owns 10^6 nodes of 3 values and ghosts h = 10^3, 10^4 and 10^5 nodes
   of the next rank, spread evenly over its owned nodes; on two ranks each rank sends and

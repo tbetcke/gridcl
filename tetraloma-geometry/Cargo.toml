@@ -1,0 +1,39 @@
+[package]
+name = "tetraloma-geometry"
+description = "Coordinate elements, quadrature and geometric factors of tetraloma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+# Test support, not part of the stable API: the hidden `tetraloma_geometry::testing` (strategy
+# overrides; ADR-0042, item 3). tetraloma-testing turns it on for every workspace test.
+testing = []
+# Benchmark hooks, not part of the stable API: the hidden `tetraloma_geometry::bench` (the device
+# basis evaluator on its own; ADR-0038, ADR-0042). tetraloma-bench turns it on.
+bench = []
+
+[dependencies]
+cubecl.workspace = true
+tetraloma-device = { path = "../tetraloma-device" }
+tetraloma-dims = { path = "../tetraloma-dims" }
+tetraloma-parallel = { path = "../tetraloma-parallel" }
+tetraloma-refcell = { path = "../tetraloma-refcell" }
+tetraloma-topology = { path = "../tetraloma-topology" }
+toml.workspace = true
+
+[dev-dependencies]
+tetraloma = { path = "../tetraloma" }
+tetraloma-testing = { path = "../tetraloma-testing" }
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

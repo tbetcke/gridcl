@@ -8,7 +8,7 @@
   - "Reference cells and conventions" (the node-families bullet);
   - "Import and export / VTK" (VTU, high-order pyramids, PVTU, VTU reading, test oracles);
   - "Testing and validation" (the I/O bullets);
-  - "Workspace layout": the crate table (gridcl-io, gridcl, gridcl-geometry);
+  - "Workspace layout": the crate table (tetraloma-io, tetraloma, tetraloma-geometry);
   - "Implementation roadmap": M5 (scope and the second acceptance bullet);
   - Appendix A.8 (the pyramid row's writer column).
 
@@ -19,7 +19,7 @@ M5 adds VTK output. The roadmap gives its scope and acceptance:
 > **Scope:** VTU (version 2.2) with linear and Lagrange cells, cell and point data, the PVTU skeleton and the pyramid fallback.
 >
 > - VTK's Python reader (pinned, ≥ 9.2) reads every fixture;
-> - the integrated volume or area of P2 and P3 meshes (`vtkIntegrateAttributes`) equals gridcl's `measure` to 10^−10 (f64);
+> - the integrated volume or area of P2 and P3 meshes (`vtkIntegrateAttributes`) equals tetraloma's `measure` to 10^−10 (f64);
 > - meshio reads identical raw arrays;
 > - a P2 pyramid mesh is written as linear cells with one warning.
 
@@ -34,11 +34,11 @@ The only API is Listing B13:
 
 Planning read these sections against the code after M4. The relevant facts:
 
-- **Crate graph.** `Mesh` and `AnyMesh` live in gridcl, which depends on gridcl-io. ADR-0022 resolved the same cycle for Gmsh by putting the host model in `gridcl_io::gmsh` and the mesh-level entry points in `gridcl::gmsh`.
+- **Crate graph.** `Mesh` and `AnyMesh` live in tetraloma, which depends on tetraloma-io. ADR-0022 resolved the same cycle for Gmsh by putting the host model in `tetraloma_io::gmsh` and the mesh-level entry points in `tetraloma::gmsh`.
 - **No node-family conversion exists.**
-  - `GmshWriter` returns `UnsupportedNodeFamily` for GLL geometry (`gridcl/src/gmsh.rs:333`).
-  - `physical_points_block` (`gridcl-geometry/src/points_jac.rs:31`, the GeomFactors kernel) evaluates geometry at a `PointSet`.
-  - `PointSet::new` is crate-private to gridcl-geometry.
+  - `GmshWriter` returns `UnsupportedNodeFamily` for GLL geometry (`tetraloma/src/gmsh.rs:333`).
+  - `physical_points_block` (`tetraloma-geometry/src/points_jac.rs:31`, the GeomFactors kernel) evaluates geometry at a `PointSet`.
+  - `PointSet::new` is crate-private to tetraloma-geometry.
 - **No cell or point data concept** exists in the code or in any listing.
 - **No compression or base64 code** is in the workspace. `flate2` is not in Cargo.lock.
 - **Python oracles.**
@@ -50,7 +50,7 @@ Planning read these sections against the code after M4. The relevant facts:
 
 ## Problem
 
-1. **`VtkWriter` cannot live in gridcl-io.** It must copy a `Mesh` to the host and accept `AnyMeshRef`; gridcl-io cannot see either type.
+1. **`VtkWriter` cannot live in tetraloma-io.** It must copy a `Mesh` to the host and accept `AnyMeshRef`; tetraloma-io cannot see either type.
 2. **Listing B13 leaves the writer's options open.** It does not say:
    - whether `lagrange` defaults to true or false, or what false means;
    - how appended or base64 data and zlib are selected;
@@ -88,15 +88,15 @@ Planning read these sections against the code after M4. The relevant facts:
 ## Options
 
 1. **Keep the design as written.**
-   - A `VtkWriter` in gridcl-io cannot compile (problem 1).
+   - A `VtkWriter` in tetraloma-io cannot compile (problem 1).
    - The integration test fails on every curved P2 or P3 mesh (problem 6).
    - The rest leaves T0's stubs without signatures to target.
 
    Not chosen.
-2. **Fix the items below; keep the file level in gridcl-io and the mesh level in gridcl, as for Gmsh (ADR-0022); amend the integration bullet to affine meshes and add a curved check through `EvaluateLocation`** (proposed).
+2. **Fix the items below; keep the file level in tetraloma-io and the mesh level in tetraloma, as for Gmsh (ADR-0022); amend the integration bullet to affine meshes and add a curved check through `EvaluateLocation`** (proposed).
 3. **Keep curved meshes in the integration bullet, but compare with the piecewise-linear interpolant.**
    - The test would compute the measure of the sub-cell subdivision VTK uses, which re-implements VTK's `Triangulate` for every Lagrange cell type and degree.
-   - It tests VTK's subdivision rather than gridcl's output.
+   - It tests VTK's subdivision rather than tetraloma's output.
 
    Not chosen.
 4. **Pyramids as a subdivided output mesh** (problem 5).
@@ -114,7 +114,7 @@ Planning read these sections against the code after M4. The relevant facts:
 Option 2. Each item answers the problem of the same number. The maintainer chose items 5 and 6 during M5 planning (2026-10-27).
 
 1. **Crate split.**
-   - `gridcl_io::vtk` holds the host side:
+   - `tetraloma_io::vtk` holds the host side:
      - the cell-type table of A.8: `vtk_cell_type(cell: CellType, degree: u32, lagrange: bool) -> u8`, where p ≥ 2 pyramids give 14;
      - the host mesh description `VtkMesh { gdim: usize, nodes: Vec<f64> /* [node][gdim], origin added */, blocks: Vec<VtkCellBlock> }`, with `VtkCellBlock { cell: CellType, degree: u32, nodes: Vec<u32> /* A.5 order */ }`;
      - the file model:
@@ -126,7 +126,7 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
      - `enum Binary { Appended, Base64 }` and `VtuFile::write_to(&self, w: &mut dyn Write, binary: Binary, zlib: bool) -> Result<()>`, which writes `type="UnstructuredGrid" version="2.2" byte_order="LittleEndian" header_type="UInt64"`;
      - `write_pvtu(w: &mut dyn Write, pieces: &[String], like: &VtuFile) -> Result<()>`;
      - `parse_vtu(bytes: &[u8]) -> Result<VtuFile>` (item 9).
-   - `gridcl::vtk` holds `VtkWriter` (items 2–4, 8), which downloads a `Mesh`.
+   - `tetraloma::vtk` holds `VtkWriter` (items 2–4, 8), which downloads a `Mesh`.
    - The prelude exports `VtkWriter` (Listing B13 uses it unqualified) and the module `vtk`.
 2. **`VtkWriter<'a>`.**
    - `vtu(path: impl AsRef<Path>) -> Self` appends `.vtu` if the path has no extension.
@@ -162,9 +162,9 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
      - planar triangle and quadrilateral meshes in 2D, and in 3D on a tilted plane.
 
      On these, VTK's piecewise-linear subdivision is exact, and the 10^−10 tolerance stands.
-   - A new bullet checks curved geometry: on curved P2 and P3 meshes (sphere, mixed surface, ball, perturbed tetrahedron and prism boxes), VTK's `EvaluateLocation` at the Gauss points of each cell equals gridcl's `physical_points` to 10^−10 (f64). VTK's parametric coordinates coincide with the reference cells of A.1 for every cell VTK writes as a Lagrange cell.
+   - A new bullet checks curved geometry: on curved P2 and P3 meshes (sphere, mixed surface, ball, perturbed tetrahedron and prism boxes), VTK's `EvaluateLocation` at the Gauss points of each cell equals tetraloma's `physical_points` to 10^−10 (f64). VTK's parametric coordinates coincide with the reference cells of A.1 for every cell VTK writes as a Lagrange cell.
 7. **GLL → equispaced.**
-   - `gridcl_geometry::equispaced_nodes<G: DeviceGrid>(grid: &G) -> Result<DeviceBuffer<G::F>>` returns an L-vector with the numbering, length and origin of `grid.nodes()`. Every node of a GLL block holds the equispaced interpolant; equispaced blocks are copied unchanged.
+   - `tetraloma_geometry::equispaced_nodes<G: DeviceGrid>(grid: &G) -> Result<DeviceBuffer<G::F>>` returns an L-vector with the numbering, length and origin of `grid.nodes()`. Every node of a GLL block holds the equispaced interpolant; equispaced blocks are copied unchanged.
    - Per GLL block, the existing physical-points path evaluates the geometry at `lagrange_points(cell, p, Equispaced)`. A crate-private `PointSet` is built from those points, so no new kernel family is added.
    - A node shared by several cells takes the value from its first occurrence in flat (block, cell, local node) order. This is found by a stable radix sort of node indices, `unique_by_key` (its allowed count read) and a gather. The result is bitwise deterministic and uses no atomics.
    - Both writers use it. `GmshWriter` no longer returns `UnsupportedNodeFamily`.
@@ -174,21 +174,21 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
    - In M5 it requires one rank; more give `NotYetImplemented("parallel PVTU write (M8)")`.
    - M8 lifts the limit and adds `vtkGhostType`.
 9. **VTU reading.**
-   - `gridcl_io::vtk::parse_vtu` reads `UnstructuredGrid` files with ASCII, inline base64 or appended (raw or base64) data, with or without zlib, and UInt32 or UInt64 headers.
+   - `tetraloma_io::vtk::parse_vtu` reads `UnstructuredGrid` files with ASCII, inline base64 or appended (raw or base64) data, with or without zlib, and UInt32 or UInt64 headers.
    - It returns the file model only. There is no mesh-level `vtk::read` in M5.
    - Errors are `GridError::Parse { format: "VTU", offset, message }`.
    - Header counts and lengths use checked arithmetic, and no allocation is sized from a count before the data is there.
 10. **Dependencies.**
-    - gridcl-io depends on `flate2` with `default-features = false, features = ["rust_backend"]`, a workspace dependency, so no C library is needed.
+    - tetraloma-io depends on `flate2` with `default-features = false, features = ["rust_backend"]`, a workspace dependency, so no C library is needed.
     - base64 is a crate-private encoder and decoder of about 50 lines, tested against RFC 4648's vectors.
-    - The pyramid warning is logged in gridcl, which already depends on `log`. gridcl-io gains no `log` dependency.
+    - The pyramid warning is logged in tetraloma, which already depends on `log`. tetraloma-io gains no `log` dependency.
 11. **Python oracles.**
     - The pins are `vtk==9.7.1` and `meshio==5.3.5` in `.venv`. `scripts/check-local-tools.sh` checks them, and the oracle script `scripts/oracles/vtk_oracle.py` refuses other versions.
-    - Tests find the interpreter through `GRIDCL_PYTHON`, else `<repo>/.venv/bin/python`.
-    - If it is missing or lacks the pins, the test fails with the install command, unless `GRIDCL_SKIP_PYTHON=1` is set; the test then prints that it skipped.
+    - Tests find the interpreter through `TETRALOMA_PYTHON`, else `<repo>/.venv/bin/python`.
+    - If it is missing or lacks the pins, the test fails with the install command, unless `TETRALOMA_SKIP_PYTHON=1` is set; the test then prints that it skipped.
     - Where the oracles run:
       - CI's cpu and vulkan jobs install the pins;
-      - remote CUDA runs set `GRIDCL_SKIP_PYTHON=1`, because the oracles check host-side file content, and Rust tests cover the device paths (download, item 7).
+      - remote CUDA runs set `TETRALOMA_SKIP_PYTHON=1`, because the oracles check host-side file content, and Rust tests cover the device paths (download, item 7).
 12. **Fixtures.**
     - "Every fixture" means:
       - every file of the M5 output corpus, written by the test into a temporary directory and not committed. The corpus covers:
@@ -206,34 +206,34 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 ## Consequences
 
 - **Text to change in docs/design.md:**
-  - **Listing B13:** unchanged. A sentence after it reads: "`VtkWriter` (gridcl) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. `vtu` and `pvtu` require one rank until M8 (ADR-0024)."
-  - **"Reference cells and conventions", node families:** replace "(Until M5, `GmshWriter` rejects GLL geometry with `UnsupportedNodeFamily`; ADR-0022.)" with "Both writers call `gridcl_geometry::equispaced_nodes`; a node shared by several cells takes its value from its first cell in flat order, so the result is deterministic (ADR-0024)."
+  - **Listing B13:** unchanged. A sentence after it reads: "`VtkWriter` (tetraloma) writes Lagrange cells by default (`.lagrange(false)` writes linear cells), appended raw data unless `.base64(true)`, and zlib with `.zlib(true)`; `.point_data(name, &buffer, components)` and `.cell_data(…)` attach device buffers of f32, f64, i32 or u32, indexed by geometry node and by flat cell index in block order. `vtu` and `pvtu` require one rank until M8 (ADR-0024)."
+  - **"Reference cells and conventions", node families:** replace "(Until M5, `GmshWriter` rejects GLL geometry with `UnsupportedNodeFamily`; ADR-0022.)" with "Both writers call `tetraloma_geometry::equispaced_nodes`; a node shared by several cells takes its value from its first cell in flat order, so the result is deterministic (ADR-0024)."
   - **"Import and export / VTK":**
-    - the VTU bullet adds: "gridcl-io holds the file model (`VtuFile`), the cell-type table, the writer and `parse_vtu`; `gridcl::vtk::VtkWriter` downloads meshes. Points are all geometry nodes (Float64, or Float32 for f32 meshes), also for linear output. zlib through `flate2` (`rust_backend`) (ADR-0024).";
+    - the VTU bullet adds: "tetraloma-io holds the file model (`VtuFile`), the cell-type table, the writer and `parse_vtu`; `tetraloma::vtk::VtkWriter` downloads meshes. Points are all geometry nodes (Float64, or Float32 for f32 meshes), also for linear output. zlib through `flate2` (`rust_backend`) (ADR-0024).";
     - the high-order-pyramids bullet reads: "… are written as vertices only (VTK type 14) with one warning per file (`log::warn!`). A subdivided output mesh is a possible later option (ADR-0024). …";
     - the PVTU bullet adds: "M5 writes the header and one piece on one rank; M8 adds more ranks and `vtkGhostType`.";
     - the VTU-reading bullet reads: "**VTU reading** (`parse_vtu`, file level; linear and Lagrange) has lower priority and is used for round-trip tests and the VTK-written fixtures; no mesh is built from a VTU (ADR-0024).";
-    - the test-oracles bullet adds: "Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `GRIDCL_SKIP_PYTHON=1` (ADR-0024)."
+    - the test-oracles bullet adds: "Pinned at `vtk==9.7.1` and `meshio==5.3.5`. `vtkIntegrateAttributes` integrates Lagrange cells piecewise linearly (VTK 9.7, both strategies), so it is exact only on affine cells; curved cells are checked through `EvaluateLocation`. A missing interpreter fails the test unless `TETRALOMA_SKIP_PYTHON=1` (ADR-0024)."
   - **"Testing and validation", I/O:** "every VTU fixture read back by VTK's Python reader" adds "(the files the M5 tests write, and the committed VTK-written reference cells)".
   - **"Workspace layout":**
-    - gridcl-io row: purpose "Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF"; dependencies add `flate2`;
-    - gridcl row: purpose adds "`VtkWriter`";
-    - gridcl-geometry row: purpose adds "GLL → equispaced conversion (`equispaced_nodes`)".
+    - tetraloma-io row: purpose "Gmsh reader and writer (file model and host mesh description), VTU/PVTU (file model, writer, `parse_vtu`), VTKHDF"; dependencies add `flate2`;
+    - tetraloma row: purpose adds "`VtkWriter`";
+    - tetraloma-geometry row: purpose adds "GLL → equispaced conversion (`equispaced_nodes`)".
   - **Roadmap M5:**
-    - the second acceptance bullet reads "the integrated volume or area of affine P2 and P3 meshes (`vtkIntegrateAttributes`) equals gridcl's `measure` to 10^−10 (f64); on curved P2 and P3 meshes, VTK's `EvaluateLocation` at Gauss points equals `physical_points` to 10^−10 (f64) (ADR-0024)";
+    - the second acceptance bullet reads "the integrated volume or area of affine P2 and P3 meshes (`vtkIntegrateAttributes`) equals tetraloma's `measure` to 10^−10 (f64); on curved P2 and P3 meshes, VTK's `EvaluateLocation` at Gauss points equals `physical_points` to 10^−10 (f64) (ADR-0024)";
     - the scope adds "and the device GLL → equispaced conversion for both writers".
   - **A.8:** the pyramid row's writer column reads "14 for p = 1; for p ≥ 2 vertices only (14) with one warning per file (ADR-0024)".
 - **Public API changes:**
-  - gridcl-io: the `vtk` module of item 1.
-  - gridcl-geometry: `equispaced_nodes`.
-  - gridcl:
+  - tetraloma-io: the `vtk` module of item 1.
+  - tetraloma-geometry: `equispaced_nodes`.
+  - tetraloma:
     - the `vtk` module (`VtkWriter`, `VtkScalar`);
     - prelude exports `VtkWriter` and `vtk`;
     - `GmshWriter::write` no longer returns `UnsupportedNodeFamily` (documented errors only).
-  - gridcl-testing (unpublished): `HostMesh::mapped`.
+  - tetraloma-testing (unpublished): `HostMesh::mapped`.
   - No existing signature changes.
 - **Acceptance tests affected:**
-  - M5 bullet 2 is split into `vtk_integrated_measure_equals_measure` (affine meshes) and `vtk_evaluates_curved_cells_like_gridcl` (curved meshes).
+  - M5 bullet 2 is split into `vtk_integrated_measure_equals_measure` (affine meshes) and `vtk_evaluates_curved_cells_like_tetraloma` (curved meshes).
   - Bullet 1 covers the corpus of item 12.
   - Bullet 3 compares meshio's arrays bitwise with `parse_vtu` and with the uploaded data.
   - Bullet 4 runs on the P2 pyramid box and the P2 mixed box.

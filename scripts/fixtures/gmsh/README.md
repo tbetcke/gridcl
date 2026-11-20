@@ -1,6 +1,6 @@
 # Gmsh fixture corpus (M4)
 
-`generate.py` writes the committed corpus in `gridcl-io/tests/fixtures/gmsh/` with the pinned
+`generate.py` writes the committed corpus in `tetraloma-io/tests/fixtures/gmsh/` with the pinned
 Gmsh Python wheel, `gmsh==4.15.2` from PyPI (docs/plans/M4.md, T1 and question 13). It refuses
 to run with any other Gmsh version.
 
@@ -33,7 +33,7 @@ Every file is written with `Mesh.SaveAll = 1`, so elements outside physical grou
 ## Manifest
 
 `manifest.json` records Gmsh's view of every file, as Gmsh reads it back
-(`gridcl-io/tests/common/mod.rs` loads it):
+(`tetraloma-io/tests/common/mod.rs` loads it):
 
 - `num_nodes`: the file's node count;
 - `num_mesh_nodes`: the distinct nodes of the D_TOP elements (for serendipity files, those of

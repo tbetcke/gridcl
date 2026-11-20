@@ -15,7 +15,7 @@ M3s and M9h chose each class's entries from the platforms measured for that clas
 
 ## Problem
 
-A deployed gridcl runs on CPUs and GPUs that none of the test platforms represent. A table tuned to one platform can be far from the best on another:
+A deployed tetraloma runs on CPUs and GPUs that none of the test platforms represent. A table tuned to one platform can be far from the best on another:
 - the Gpu class already combines Metal and the H100, which disagree on vector sizes (docs/perf/vectorization.md: "Wide vectors hurt geometry on GPUs");
 - the CPU degree policies of CpuSimd128 and CpuSimd512 differ in many ranges (`degree-policy.toml`).
 
@@ -65,7 +65,7 @@ Option 2, implemented in M10.
    - the reason.
 
    They keep the per-platform data, so a deployment can see what tuning to its platform would gain.
-7. **Overrides.** `GRIDCL_VECTOR_SIZE`, `GRIDCL_QUAD_TILE`, `GRIDCL_GEOM_STRATEGY` and the `testing` hooks keep their meaning. No new public tuning API is added.
+7. **Overrides.** `TETRALOMA_VECTOR_SIZE`, `TETRALOMA_QUAD_TILE`, `TETRALOMA_GEOM_STRATEGY` and the `testing` hooks keep their meaning. No new public tuning API is added.
 
 ## Consequences
 
@@ -77,10 +77,10 @@ Option 2, implemented in M10.
   - "Benchmarks", **Where** (the platforms of each class; CpuSimd256 note removed), **Decision rule** (a paragraph on the generic rule from M10), **Record** and **Degree sweep (M9h)** (M10's check of the ranges).
   - Roadmap M10: scope and acceptance.
   - The M3s and M9h roadmap sections are not changed: they record what those milestones measured and chose.
-- Public API changes: `DeviceClass` loses `CpuSimd128`, `CpuSimd256` and `CpuSimd512` and gains `Cpu`. This is a breaking change before 1.0; within the workspace it reaches gridcl-device (`policy.rs`, `plan.rs`), gridcl-geometry (`strategy.rs`) and gridcl-bench (decision, record and report code and their tests).
+- Public API changes: `DeviceClass` loses `CpuSimd128`, `CpuSimd256` and `CpuSimd512` and gains `Cpu`. This is a breaking change before 1.0; within the workspace it reaches tetraloma-device (`policy.rs`, `plan.rs`), tetraloma-geometry (`strategy.rs`) and tetraloma-bench (decision, record and report code and their tests).
 - Acceptance tests affected:
   - M3s's coverage test for `vector-policy.toml` checks the two classes;
-  - gridcl-bench's policy-rule tests (`perf_record.rs`, `high_order_record.rs`) check the generic rule for the M10 records. The M3s and M9h records stay readable, with their old class names, for the reports.
+  - tetraloma-bench's policy-rule tests (`perf_record.rs`, `high_order_record.rs`) check the generic rule for the M10 records. The M3s and M9h records stay readable, with their old class names, for the reports.
 - Later milestones affected: M10 implements this. A CubeCL pin bump re-chooses the four sets with ADR-0057's candidate protocol.
 
 ## Decision record

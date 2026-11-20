@@ -128,7 +128,7 @@ They bring 8 of the 10 probed entries within the bound. Waiving the gate in the 
 
 M10c's scope:
 
-- **Implementation, in gridcl-bench:** items 1–4, as follows.
+- **Implementation, in tetraloma-bench:** items 1–4, as follows.
   - `vector_sweep` gains the interleaved protocol for `[Cpu]` entries, with the process seed in each record.
   - The candidate list for `[Cpu]` vector entries becomes the grid, with the memory omission.
   - `decide_generic::generic_rule` gets the new fallback, and the rule handles missing cells.
@@ -165,7 +165,7 @@ M10c's scope:
       > - the standing matrix passes with the new sets.
 - **ADR notes:** closing notes in ADR-0057 (item 3: the `[Cpu]` vector entries use the grid and the interleaved protocol from M10c), ADR-0058 (item 4: the fallback) and ADR-0060 (item 2: replaced for `[Cpu]` vector entries).
 - **CLAUDE.md:** none; the vector bullet already requires benchmark data in docs/perf/vectorization.md.
-- **Public API changes:** none. gridcl-bench is unpublished: its record format gains the process seed, and `vector_sweep` gains the interleaved mode.
+- **Public API changes:** none. tetraloma-bench is unpublished: its record format gains the process seed, and `vector_sweep` gains the interleaved mode.
 - **Acceptance tests affected:**
   - `vector_policy_follows_the_generic_rule` and `degree_policy_follows_the_generic_rule` check against the new rule. The degree test's expected file changes in 26 per-degree choices.
   - `decide_generic`'s unit tests gain the waiver case and missing cells.

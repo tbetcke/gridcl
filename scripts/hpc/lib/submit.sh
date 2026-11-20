@@ -84,9 +84,9 @@ submit_build_command() {
 
 # submit_render: the job script of this submission on stdout: jobs/<target>.sh with its
 # placeholders replaced and the requests of targets.env added (SGE), the job settings, and
-# jobs/common.sh. GRIDCL_TEST_DEVICE is cuda, or cpu on myriad-cpu and kathleen
+# jobs/common.sh. TETRALOMA_TEST_DEVICE is cuda, or cpu on myriad-cpu and kathleen
 # (hpc_target_device). Slurm jobs get @NODES@ and @QOS@; on two nodes mpirun maps the ranks
-# by node (GRIDCL_MPIRUN_FLAGS), so that a two-node run spreads over both nodes.
+# by node (TETRALOMA_MPIRUN_FLAGS), so that a two-node run spreads over both nodes.
 submit_render() {
     local template=$HPC_DIR/jobs/$TARGET.sh requests="" rendered
     [ -f "$template" ] || hpc_die 125 "no job script $template"
@@ -97,7 +97,7 @@ submit_render() {
         requests="${requests:+$requests$'\n'}#\$ $CFG_MEM_REQUEST"
     fi
     rendered=$(
-        R_NAME="gridcl-$TARGET" R_GPUS=$OPT_GPUS R_TIME=$OPT_TIME R_TREE=$TREE \
+        R_NAME="tetraloma-$TARGET" R_GPUS=$OPT_GPUS R_TIME=$OPT_TIME R_TREE=$TREE \
             R_NODES=${OPT_NODES:-1} R_QOS=${JOB_QOS:-} R_REQUESTS=$requests awk '
             function rep(s, key, val,    out, i) {
                 out = ""
@@ -127,26 +127,26 @@ submit_render() {
     printf '%s\n' "$rendered"
     echo
     echo "# --- job settings, rendered by scripts/hpc/remote-test.sh ---"
-    # Exported: gridcl-bench's binaries name their records after it.
-    printf 'export GRIDCL_HPC_TARGET=%q\n' "$TARGET"
-    printf 'GRIDCL_HPC_SCHEDULER=%q\n' "$CFG_SCHEDULER"
-    printf 'GRIDCL_HPC_TREE=%q\n' "$TREE"
-    printf 'GRIDCL_HPC_BRANCH=%q\n' "$GIT_BRANCH"
-    printf 'GRIDCL_HPC_COMMIT=%q\n' "$GIT_COMMIT"
-    printf 'GRIDCL_HPC_DIRTY=%q\n' "$GIT_DIRTY"
-    printf 'GRIDCL_HPC_COMMAND=%q\n' "$CMD"
-    printf 'GRIDCL_HPC_BUILD=%q\n' "$BUILD_CMD"
-    printf 'GRIDCL_HPC_MODULES=%q\n' "$CFG_MODULES"
-    printf 'GRIDCL_HPC_CUDA_PATH=%q\n' "$CFG_CUDA_PATH"
+    # Exported: tetraloma-bench's binaries name their records after it.
+    printf 'export TETRALOMA_HPC_TARGET=%q\n' "$TARGET"
+    printf 'TETRALOMA_HPC_SCHEDULER=%q\n' "$CFG_SCHEDULER"
+    printf 'TETRALOMA_HPC_TREE=%q\n' "$TREE"
+    printf 'TETRALOMA_HPC_BRANCH=%q\n' "$GIT_BRANCH"
+    printf 'TETRALOMA_HPC_COMMIT=%q\n' "$GIT_COMMIT"
+    printf 'TETRALOMA_HPC_DIRTY=%q\n' "$GIT_DIRTY"
+    printf 'TETRALOMA_HPC_COMMAND=%q\n' "$CMD"
+    printf 'TETRALOMA_HPC_BUILD=%q\n' "$BUILD_CMD"
+    printf 'TETRALOMA_HPC_MODULES=%q\n' "$CFG_MODULES"
+    printf 'TETRALOMA_HPC_CUDA_PATH=%q\n' "$CFG_CUDA_PATH"
     printf 'export CARGO_TARGET_DIR=%q\n' "$TREE/target/$TARGET"
     echo "export CARGO_NET_OFFLINE=true"
-    echo "export GRIDCL_TEST_DEVICE=$(hpc_target_device "$TARGET")"
+    echo "export TETRALOMA_TEST_DEVICE=$(hpc_target_device "$TARGET")"
     if [ -n "$OPT_RANKS" ]; then
-        echo "export GRIDCL_RANKS=$OPT_RANKS"
+        echo "export TETRALOMA_RANKS=$OPT_RANKS"
     fi
     if [ "${OPT_NODES:-1}" -gt 1 ]; then
         # shellcheck disable=SC2016 # expanded by the job, not here
-        echo 'export GRIDCL_MPIRUN_FLAGS="${GRIDCL_MPIRUN_FLAGS:+$GRIDCL_MPIRUN_FLAGS }--map-by node"'
+        echo 'export TETRALOMA_MPIRUN_FLAGS="${TETRALOMA_MPIRUN_FLAGS:+$TETRALOMA_MPIRUN_FLAGS }--map-by node"'
     fi
     echo
     echo "# --- scripts/hpc/jobs/common.sh ---"
@@ -157,7 +157,7 @@ submit_render() {
 submit_fetch() {
     local manifests
     manifests=$(submit_manifests "$CMD")
-    hpc_msg "fetching on $CFG_HOST (log: $TREE/.gridcl-hpc/fetch-$TARGET.log)"
+    hpc_msg "fetching on $CFG_HOST (log: $TREE/.tetraloma-hpc/fetch-$TARGET.log)"
     # shellcheck disable=SC2086 # one word per manifest
     hpc_remote r_fetch "$CFG_SCHEDULER" "$TREE" "$TARGET" "$CFG_LOGIN_MODULES" \
         "$(submit_cargo_features "$CMD")" $manifests
@@ -297,12 +297,12 @@ r_fetch_steps() { # r_fetch_steps <tree> <target> <login modules> <features> [ma
     done
 }
 
-r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> <features> [manifest...]: log in .gridcl-hpc/
+r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> <features> [manifest...]: log in .tetraloma-hpc/
     local log rc
     r_env "$1"
     shift
-    log=$1/.gridcl-hpc/fetch-$2.log
-    mkdir -p "$1/.gridcl-hpc" || return 1
+    log=$1/.tetraloma-hpc/fetch-$2.log
+    mkdir -p "$1/.tetraloma-hpc" || return 1
     (
         eval "$3"
         r_fetch_steps "$@"
@@ -321,8 +321,8 @@ r_fetch() { # r_fetch <scheduler> <tree> <target> <login modules> <features> [ma
 r_submit() {
     local tree=$1 scheduler=${5:-sge} file out id now rc tool
     r_env "$scheduler"
-    mkdir -p "$tree/results" "$tree/.gridcl-hpc/jobs" || return 1
-    file=$tree/.gridcl-hpc/submit-$$.sh
+    mkdir -p "$tree/results" "$tree/.tetraloma-hpc/jobs" || return 1
+    file=$tree/.tetraloma-hpc/submit-$$.sh
     printf '%s\n' "$2" >"$file" || return 1
     if [ "$scheduler" = slurm ]; then
         tool="sbatch --parsable"
@@ -343,7 +343,7 @@ r_submit() {
         return 1
     fi
     now=$(date +%s)
-    printf '%s\nsubmitted=%s\n' "$3" "$now" >"$tree/.gridcl-hpc/jobs/$id"
+    printf '%s\nsubmitted=%s\n' "$3" "$now" >"$tree/.tetraloma-hpc/jobs/$id"
     mkdir -p "$tree/results/$id"
     printf '%s\n%s\nsubmitted=%s\n' "$3" "$4" "$now" >"$tree/results/$id/submit.env"
     echo "job_id=$id"
@@ -405,9 +405,9 @@ r_cancel_sge() {
     qstat -u "${USER:-$(id -un)}" </dev/null 2>/dev/null |
         awk -v id="$id" '$1 == id { found = 1 } END { exit !found }' || return 4
     for b in "$@"; do
-        for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
+        for f in "$b"/*/.tetraloma-hpc/jobs/"$id"; do
             [ -f "$f" ] || continue
-            tree=${f%/.gridcl-hpc/*}
+            tree=${f%/.tetraloma-hpc/*}
             mkdir -p "$tree/results/$id" && echo "$marker" >"$tree/results/$id/cancelled"
         done
     done
@@ -421,9 +421,9 @@ r_cancel_slurm() {
     r_env slurm
     [ -n "$(squeue -h -u "${USER:-$(id -un)}" -j "$id" -o %i 2>/dev/null </dev/null)" ] || return 4
     for b in "$@"; do
-        for f in "$b"/*/.gridcl-hpc/jobs/"$id"; do
+        for f in "$b"/*/.tetraloma-hpc/jobs/"$id"; do
             [ -f "$f" ] || continue
-            tree=${f%/.gridcl-hpc/*}
+            tree=${f%/.tetraloma-hpc/*}
             mkdir -p "$tree/results/$id" && echo "$marker" >"$tree/results/$id/cancelled"
         done
     done

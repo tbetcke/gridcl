@@ -6,14 +6,14 @@
 #     results/<job id>/                     job results (never deleted by a sync)
 #     target/<target>/                      CARGO_TARGET_DIR of the jobs of <target>
 #     target/<target>-login/                CARGO_TARGET_DIR of the login-node fetch step
-#     .gridcl-hpc/tree.env                  marker and state of the last sync (below)
-#     .gridcl-hpc/jobs/<job id>             one file per job not yet collected (below)
-#     .gridcl-hpc/run/<job id>.{pid,wrap}   pid file and wrapper of a direct job (lib/direct.sh)
-#     .gridcl-hpc/fetch-<target>.log        log of the last fetch step
+#     .tetraloma-hpc/tree.env                  marker and state of the last sync (below)
+#     .tetraloma-hpc/jobs/<job id>             one file per job not yet collected (below)
+#     .tetraloma-hpc/run/<job id>.{pid,wrap}   pid file and wrapper of a direct job (lib/direct.sh)
+#     .tetraloma-hpc/fetch-<target>.log        log of the last fetch step
 # tree.env and the job files are bash-sourceable key=value lines, values quoted with
-# printf %q. tree.env: gridcl_hpc_tree=1, branch, commit, dirty (yes|no), dirty_hash (empty
+# printf %q. tree.env: tetraloma_hpc_tree=1, branch, commit, dirty (yes|no), dirty_hash (empty
 # when clean), synced (epoch seconds). A job file: target, scheduler, branch, commit,
-# dirty, dirty_hash, submitted. A tree without .gridcl-hpc/tree.env is not a runner tree.
+# dirty, dirty_hash, submitted. A tree without .tetraloma-hpc/tree.env is not a runner tree.
 
 # sync_git_state: sets GIT_BRANCH, GIT_COMMIT, GIT_DIRTY (yes|no), GIT_DIRTY_HASH (empty
 # when clean) and TREE_NAME for the working tree at $HPC_ROOT.
@@ -87,13 +87,13 @@ sync_prepare() {
 }
 
 # sync_tree: copies the working tree to the remote tree. .gitignore rules apply on both
-# sides, so ignored files are neither sent nor deleted; results/ and .gridcl-hpc/ are
+# sides, so ignored files are neither sent nor deleted; results/ and .tetraloma-hpc/ are
 # protected explicitly.
 sync_tree() {
     hpc_msg "syncing $HPC_ROOT to $CFG_HOST:$TREE"
     rsync -az --delete \
         --filter='P /results/' --filter='- /results/' \
-        --filter='P /.gridcl-hpc/' --filter='- /.gridcl-hpc/' \
+        --filter='P /.tetraloma-hpc/' --filter='- /.tetraloma-hpc/' \
         --filter='- /.git' \
         --filter=':- .gitignore' \
         -e "ssh $HPC_SSH_OPTS" \
@@ -105,7 +105,7 @@ sync_tree() {
 }
 
 # sync_prune: removes the trees of merged branches below $CFG_BASE; called after every
-# sync. A tree is removed only if it is a runner tree (.gridcl-hpc/tree.env) other than the
+# sync. A tree is removed only if it is a runner tree (.tetraloma-hpc/tree.env) other than the
 # current one, its branch is not main, its recorded commit is a proper ancestor of the local
 # main (origin/main when there is no local main), and no job of it is pending. Merged
 # means: the commit is known locally, is an ancestor of main and is not main's tip, so the
@@ -172,12 +172,12 @@ r_job_alive() { # r_job_alive <tree> <job id> <scheduler>: the job is queued or 
 r_job_pending() { # r_job_pending <job file>: the job is queued or running
     local scheduler
     scheduler=$(sed -n 's/^scheduler=//p' "$1" | head -n 1)
-    r_job_alive "${1%/.gridcl-hpc/jobs/*}" "${1##*/}" "$scheduler"
+    r_job_alive "${1%/.tetraloma-hpc/jobs/*}" "${1##*/}" "$scheduler"
 }
 
 r_pending_jobs() { # r_pending_jobs <tree>: ids of pending jobs; drops files of ended jobs
     local f
-    for f in "$1"/.gridcl-hpc/jobs/*; do
+    for f in "$1"/.tetraloma-hpc/jobs/*; do
         [ -f "$f" ] || continue
         if r_job_pending "$f"; then
             echo "${f##*/}"
@@ -190,14 +190,14 @@ r_pending_jobs() { # r_pending_jobs <tree>: ids of pending jobs; drops files of 
 r_prepare() { # r_prepare <tree> <scheduler> <commit> <dirty hash>: status 3 = busy
     local tree=$1 ids
     r_env "$2"
-    mkdir -p "$tree/.gridcl-hpc/jobs" "$tree/results" || return 1
+    mkdir -p "$tree/.tetraloma-hpc/jobs" "$tree/results" || return 1
     ids=$(r_pending_jobs "$tree")
     [ -n "$ids" ] || return 0
-    if [ -f "$tree/.gridcl-hpc/tree.env" ] &&
+    if [ -f "$tree/.tetraloma-hpc/tree.env" ] &&
         (
             commit="" dirty_hash=""
             # shellcheck source=/dev/null
-            . "$tree/.gridcl-hpc/tree.env"
+            . "$tree/.tetraloma-hpc/tree.env"
             [ "$commit" = "$3" ] && [ "$dirty_hash" = "$4" ]
         ); then
         echo "pending job(s) $(echo "$ids" | tr '\n' ' ')use $tree; its sources are unchanged" >&2
@@ -210,22 +210,22 @@ r_prepare() { # r_prepare <tree> <scheduler> <commit> <dirty hash>: status 3 = b
 r_record_tree() { # r_record_tree <tree> <state lines>
     local tree=$1
     {
-        echo "gridcl_hpc_tree=1"
+        echo "tetraloma_hpc_tree=1"
         printf '%s\n' "$2"
         echo "synced=$(date +%s)"
-    } >"$tree/.gridcl-hpc/tree.env.tmp" &&
-        mv -f "$tree/.gridcl-hpc/tree.env.tmp" "$tree/.gridcl-hpc/tree.env"
+    } >"$tree/.tetraloma-hpc/tree.env.tmp" &&
+        mv -f "$tree/.tetraloma-hpc/tree.env.tmp" "$tree/.tetraloma-hpc/tree.env"
 }
 
 r_list_trees() { # r_list_trees <base>: "<name> <commit> <branch>" for every runner tree
     local d
     for d in "$1"/*/; do
         d=${d%/}
-        [ -f "$d/.gridcl-hpc/tree.env" ] && [ ! -L "$d" ] || continue
+        [ -f "$d/.tetraloma-hpc/tree.env" ] && [ ! -L "$d" ] || continue
         (
             commit="" branch=""
             # shellcheck source=/dev/null
-            . "$d/.gridcl-hpc/tree.env"
+            . "$d/.tetraloma-hpc/tree.env"
             printf '%s %s %s\n' "${d##*/}" "$commit" "$branch"
         )
     done
@@ -244,7 +244,7 @@ r_prune() { # r_prune <scheduler> <base> <current tree name> <tree name>...: rem
             '' | . | .. | */* | "$current") continue ;;
         esac
         tree=$base/$name
-        [ -d "$tree" ] && [ ! -L "$tree" ] && [ -f "$tree/.gridcl-hpc/tree.env" ] || continue
+        [ -d "$tree" ] && [ ! -L "$tree" ] && [ -f "$tree/.tetraloma-hpc/tree.env" ] || continue
         ids=$(r_pending_jobs "$tree")
         if [ -n "$ids" ]; then
             echo "kept $tree: pending job(s) $(echo "$ids" | tr '\n' ' ')"

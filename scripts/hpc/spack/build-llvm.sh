@@ -5,7 +5,7 @@
 # install into home over myriadfs is slow (2 h 34 min in all on 2026-10-18), hence h_rt=6:00:00.
 # Progress: @ROOT@/progress-<job id>.txt (ninja's [n/N] every 5 min).
 #$ -S /bin/bash
-#$ -N gridcl-llvm
+#$ -N tetraloma-llvm
 #$ -pe smp 36
 #$ -l h_rt=6:00:00
 #$ -l mem=4G

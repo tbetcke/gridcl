@@ -11,7 +11,7 @@ The last M6 acceptance bullet, checked on 1–4 ranks (docs/design.md, "Implemen
 
 > on a randomly permuted structured box, locality ordering at least halves the mean over cells of (max − min local node index in the cell).
 
-The acceptance test is `gridcl_testing::parallel::locality`, called by the MPI target `gridcl-mpi-tests::locality` and by `gridcl/tests/parallel_threads.rs`. It shuffles the cells and nodes of a hexahedral or tetrahedral box at p = 1 and 2. It splits the box into even input chunks, builds it with `CellOrdering::Input` and with `CellOrdering::Hilbert` (block partitioner, `GhostMode::None`), and compares `mean_spread`: the mean over owned cells of all ranks of (max − min local node index). T0 chose the smallest box with at least 64 cells per rank.
+The acceptance test is `tetraloma_testing::parallel::locality`, called by the MPI target `tetraloma-mpi-tests::locality` and by `tetraloma/tests/parallel_threads.rs`. It shuffles the cells and nodes of a hexahedral or tetrahedral box at p = 1 and 2. It splits the box into even input chunks, builds it with `CellOrdering::Input` and with `CellOrdering::Hilbert` (block partitioner, `GhostMode::None`), and compares `mean_spread`: the mean over owned cells of all ranks of (max − min local node index). T0 chose the smallest box with at least 64 cells per rank.
 
 Two rules fix the local node layout:
 
@@ -65,8 +65,8 @@ Option 2. Ghost nodes come after the owned nodes in an order that ADR-0009 and A
   > on a randomly permuted structured box, locality ordering at least halves the mean over owned cells of (max − min local index of the cell's owned nodes); ghost nodes, ordered by (owner rank, global index), are excluded (ADR-0027).
 - **Public API:** none.
 - **Acceptance tests affected:**
-  - `gridcl_testing::parallel::{mean_spread, locality}`: `mean_spread` skips ghost node indices, and `locality` uses n ≥ 8 with at least 64 cells per rank;
-  - `gridcl-mpi-tests::locality` and `gridcl/tests/parallel_threads.rs::locality` call these helpers unchanged.
+  - `tetraloma_testing::parallel::{mean_spread, locality}`: `mean_spread` skips ghost node indices, and `locality` uses n ≥ 8 with at least 64 cells per rank;
+  - `tetraloma-mpi-tests::locality` and `tetraloma/tests/parallel_threads.rs::locality` call these helpers unchanged.
 
   The plan's acceptance-coverage row and a Deviations-log row record the change.
 - **Later milestones affected:** none directly. M7 may add a partition-quality check of its own. M8's parallel reader, which chooses the default ordering, inherits this metric for any locality test it adds.

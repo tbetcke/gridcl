@@ -15,12 +15,12 @@ ADR-0042, item 2 scales the tolerances of the high-order tests: 10^−5 · max(1
 
 A_ref is "the same factor for the p = 4 equispaced element of that cell type at the same points". docs/design.md, "Tolerances", says the same, and adds: "The factor is at most 1.01 for p ≤ 4".
 
-The implementation is in `gridcl_testing::reference`:
+The implementation is in `tetraloma_testing::reference`:
 
 - `tolerance_scale` gives K the factor of J.
 - `pull_back_scale` computes κ(J) on the mesh under test. It multiplies κ(J) into both A and A_ref, so κ cancels from the ratio.
 
-The kernel-task check set of T4 ran gridcl's tests with `GRIDCL_GEOM_STRATEGY=direct`. That setting runs only `direct`, so it reached checks of `high_order.rs` (T0b) that had never run before:
+The kernel-task check set of T4 ran tetraloma's tests with `TETRALOMA_GEOM_STRATEGY=direct`. That setting runs only `direct`, so it reached checks of `high_order.rs` (T0b) that had never run before:
 
 - **K:** `factors_match_host_reference` fails in f32 on the ball at p = 3: K has relative error 1.30e-5 against 10^−5, at scale 1.
 - **Pull-back:** `pull_back_recovers_reference_points` fails in f32 on the ball at p = 4: ξ has 1.52e-5 against 10^−5, at scale 1.
@@ -29,7 +29,7 @@ Without the variable, both tests fail earlier, at their forced `loops` runs (`No
 
 ## Problem
 
-The test mesh `gridcl_testing::ball(0, p)` maps the cube [−1, 1]³ onto the unit ball by a smooth map. As its documentation says, det J of that map "vanishes only on the cube's edges, as for every C¹ map of the cube onto the ball". As p grows, the Gauss points of degree 2p approach the cells' outer edges, so J's conditioning worsens without bound. The table gives the Frobenius condition number κ_F(J) = ‖J‖_F ‖K‖_F, maximised over cells and points, computed on the host in f64:
+The test mesh `tetraloma_testing::ball(0, p)` maps the cube [−1, 1]³ onto the unit ball by a smooth map. As its documentation says, det J of that map "vanishes only on the cube's edges, as for every C¹ map of the cube onto the ball". As p grows, the Gauss points of degree 2p approach the cells' outer edges, so J's conditioning worsens without bound. The table gives the Frobenius condition number κ_F(J) = ‖J‖_F ‖K‖_F, maximised over cells and points, computed on the host in f64:
 
 | p | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -65,7 +65,7 @@ The f32 errors on `ball(0, p)` on the CPU runtime are relative to the f64 refere
    - **Ball, p = 3:** K's tolerance becomes 1.2e-4 (measured 1.3e-5).
    - **Ball, p = 4:** it becomes 2.7e-4 (measured 6.2e-5).
    - **Why κ_F rather than κ₂:** κ_F comes from J and K alone, with no singular values. Because κ₂ ≤ κ_F ≤ TD · κ₂, κ_F / TD can underestimate κ₂ by up to a factor of TD. The measured margins above are 4–9.
-3. **Option 2 with κ₂(J) instead of κ_F(J) / TD.** κ₂ is exactly the factor of the bound. It needs the singular values of each J on the host: a symmetric eigenproblem of JᵀJ, at most 3 × 3. It costs more code in `gridcl_testing::reference` and gains at most a factor of TD in tightness. Not proposed, but it is the alternative if option 2's slack proves too large.
+3. **Option 2 with κ₂(J) instead of κ_F(J) / TD.** κ₂ is exactly the factor of the bound. It needs the singular values of each J on the host: a symmetric eigenproblem of JᵀJ, at most 3 × 3. It costs more code in `tetraloma_testing::reference` and gains at most a factor of TD in tightness. Not proposed, but it is the alternative if option 2's slack proves too large.
 4. **Change the meshes, not the tolerance.**
    - **Ways to do it:** check K and ξ only on meshes with bounded κ, or replace the ball with a curved mesh whose map has no singular edges, for example a perturbed box with smooth curvature.
    - **Cost:** this changes bullet 1's test inputs (T0a), and the ball would then test only X, J and det J.
@@ -84,13 +84,13 @@ Option 2. The K and ξ errors are J's rounding error amplified by J's conditioni
   - "The factor is at most 1.01 for p ≤ 4" gains "on cells with κ_F(J) = TD".
   - In ADR-0042's decision record, a line "Amended by ADR-0044 (the tolerances of K and the pull-back scale with κ_F(J) / TD)".
 - **Public API changes:** none. Only test support changes:
-  - **`gridcl_testing::reference`:** a K-specific scale, so `tolerance_scale` with `Amplification::Derivatives` plus a pointwise κ_F / TD over a block, and `pull_back_scale` without κ in A_ref. `Amplification`'s documentation is updated.
+  - **`tetraloma_testing::reference`:** a K-specific scale, so `tolerance_scale` with `Amplification::Derivatives` plus a pointwise κ_F / TD over a block, and `pull_back_scale` without κ in A_ref. `Amplification`'s documentation is updated.
   - **The callers:**
-    - `gridcl/tests/common/mod.rs` (`block_scale`);
-    - `gridcl/tests/high_order.rs` (K's scale);
-    - `gridcl/tests/high_order_invariance.rs` (`Scales`: the K and ξ comparisons of ADR-0042, item 8);
-    - `gridcl-testing/src/{parallel.rs, meshes/family.rs}`, `gridcl-testing/tests/reference.rs`;
-    - gridcl-bench's degree-sweep checks (`families/degree.rs`: `scale_derivatives` for Pinv; `pull_back_scale`).
+    - `tetraloma/tests/common/mod.rs` (`block_scale`);
+    - `tetraloma/tests/high_order.rs` (K's scale);
+    - `tetraloma/tests/high_order_invariance.rs` (`Scales`: the K and ξ comparisons of ADR-0042, item 8);
+    - `tetraloma-testing/src/{parallel.rs, meshes/family.rs}`, `tetraloma-testing/tests/reference.rs`;
+    - tetraloma-bench's degree-sweep checks (`families/degree.rs`: `scale_derivatives` for Pinv; `pull_back_scale`).
 - **Acceptance tests affected:**
   - **Changed tolerance:** `high_order::{factors_match_host_reference, pull_back_recovers_reference_points}` (K and ξ only) and the K and ξ comparisons of `high_order_invariance` and of the parallel-invariance tests.
   - **Unchanged:** X, J, det J, normals and facet normals keep their factors.
@@ -104,7 +104,7 @@ Option 2. The K and ξ errors are J's rounding error amplified by J's conditioni
 
 ## Decision record
 
-Accepted by the maintainer on 2026-11-10, as proposed (option 2, κ_F(J) / TD). Applied in `adr: 0044 apply`: docs/design.md, "Tolerances", and ADR-0042's decision record. The test-support changes in `gridcl_testing::reference` and its callers follow with T6a, the next task that runs the affected tests.
+Accepted by the maintainer on 2026-11-10, as proposed (option 2, κ_F(J) / TD). Applied in `adr: 0044 apply`: docs/design.md, "Tolerances", and ADR-0042's decision record. The test-support changes in `tetraloma_testing::reference` and its callers follow with T6a, the next task that runs the affected tests.
 
 Amended by the maintainer on 2026-11-10, when the test support was written: the two maxima are taken separately, so the factor is max(1, A / A_ref) times the largest κ_F(J) / TD over the block's cells and points. The pointwise product of option 2 undershoots where the element's factor is small but κ is large. On the GLL ball at p = 4 it gives 11.3, though κ_F / TD reaches 27.2, and K's f32 error, 1.40e-4, exceeds that tolerance 1.24 times. The error comes from J's rounding error measured against the block's largest J, not from the factor at the same point. Measured ratios under separate maxima, f32 on the CPU runtime:
 

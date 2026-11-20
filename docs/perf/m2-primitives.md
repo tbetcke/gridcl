@@ -1,6 +1,6 @@
 # M2 primitive throughput
 
-The throughput of gridcl-device's radix sort and scans, per backend: the record that
+The throughput of tetraloma-device's radix sort and scans, per backend: the record that
 docs/design.md asks of M2 ("the throughput of sorting 10^7 two-word keys is recorded per
 backend"; Risks, sort and scan row: "benchmark in M2"). It is a baseline, not a tuning study:
 every kernel runs at the vector sizes of the scalar-default `vector-policy.toml`, and M3s
@@ -8,10 +8,10 @@ decides where vectors help.
 
 ## Protocol
 
-- **Binary:** `gridcl-bench/src/bin/primitive_throughput.rs`, release build:
+- **Binary:** `tetraloma-bench/src/bin/primitive_throughput.rs`, release build:
 
   ```sh
-  GRIDCL_TEST_DEVICE=<backend> cargo run --release -p gridcl-bench --features <backend> \
+  TETRALOMA_TEST_DEVICE=<backend> cargo run --release -p tetraloma-bench --features <backend> \
       --bin primitive_throughput -- --out <file>.json
   ```
 
@@ -24,7 +24,7 @@ decides where vectors help.
   reference (sorted keys, stable permutation; exact prefix sums) before any time is reported;
   then the median of ten timed runs, each ending with `client.sync()`.
 - **JSON:** one record per operation under `data/`: backend, device, operation, n, words,
-  `median_s`, `items_per_s`, commit, and also the build profile, the `GRIDCL_VECTOR_SIZE`
+  `median_s`, `items_per_s`, commit, and also the build profile, the `TETRALOMA_VECTOR_SIZE`
   override (none in every run below) and the ten times (`times_s`).
 
 ## Results
@@ -69,10 +69,10 @@ commits).
 - **Myriad V100:** job 9996274 on node-e00a-018 (E node) with `--cores 36`, the whole node:
   Xeon Gold 6240, Tesla V100-PCIE-32GB; clean tree at 20982b2. The remote tree has no `.git`,
   so the binary wrote `"commit": "unknown"`; the commit in the JSON was filled in from the
-  runner's job record (`submit.env`). Later remote runs pass `GRIDCL_BENCH_COMMIT`. Earlier the
+  runner's job record (`submit.env`). Later remote runs pass `TETRALOMA_BENCH_COMMIT`. Earlier the
   same day, three `qsub` calls failed while Myriad's scheduler was down.
 - **Myriad A100:** job 9998337 on node-l00a-002 (L node), NVIDIA A100-PCIE-40GB, clean tree at
-  c99c7f2 (commit passed as `GRIDCL_BENCH_COMMIT`). CUDA only, with `--cores 8` for the build: a
+  c99c7f2 (commit passed as `TETRALOMA_BENCH_COMMIT`). CUDA only, with `--cores 8` for the build: a
   whole-node request waited 2 h 25 min in the queue and was cancelled, and a one-core job spent
   its hour building. The Myriad CPU-runtime row comes from the V100 node.
 

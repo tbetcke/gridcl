@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn library_links_and_is_version_4() {
         // Taking the address makes the linker resolve the symbol in libparmetis; a call needs
-        // MPI (the gridcl-partition and gridcl-mpi-tests tests make one).
+        // MPI (the tetraloma-partition and tetraloma-mpi-tests tests make one).
         let part_kway: unsafe extern "C" fn(
             *mut idx_t,
             *mut idx_t,

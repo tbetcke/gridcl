@@ -37,7 +37,7 @@ not in git. It then ran the full local verification (that note's part D), on 202
 on main at d015c2e:
 - env-check;
 - fmt and clippy;
-- the workspace on the CPU runtime and on Metal, and at `GRIDCL_VECTOR_SIZE` = `scalar` and
+- the workspace on the CPU runtime and on Metal, and at `TETRALOMA_VECTOR_SIZE` = `scalar` and
   `widest`;
 - the dependency check;
 - `scripts/mpi-test.sh` on Metal (1–4 ranks) and on the CPU runtime (1 rank);
@@ -56,13 +56,13 @@ Scotch 7 build"; the design's backend table says "Scotch 7.x (context API)".
    the sections above is now wrong about where Claude runs and tests.
 2. **The performance-core rule reads the wrong level on the M6.** On the M6, perflevel0 is
    "Super" with 2 cores, perflevel1 "Performance" with 4, and perflevel2 "Efficiency" with 6.
-   - `gridcl-device/src/cores.rs` returns 2, not 6. A kernel family whose `cpu_units` is
+   - `tetraloma-device/src/cores.rs` returns 2, not 6. A kernel family whose `cpu_units` is
      `performance` therefore launches with `cube_dim` 2 on a 12-core machine. Results stay
      correct, because launch shapes never change them, but those families run on 2 of 12 cores.
    - The host records have the same fault:
      - env-check reported `performance_cores: 2, efficiency_cores: 4`. The 4 Performance cores
        are recorded as efficiency cores, and the 6 Efficiency cores are missing.
-     - gridcl-bench's `protocol::cores()` reads the same two sysctls.
+     - tetraloma-bench's `protocol::cores()` reads the same two sysctls.
    - The "Benchmarks" conditions name `sysctl hw.perflevel0.physicalcpu hw.perflevel1.physicalcpu`.
 3. **Homebrew's Scotch 7.0.18 is not deterministic, even in ADR-0031's context.** Homebrew now
    installs Scotch 7.0.18; the M3 Max and the M7 numbers had 7.0.14.
@@ -89,7 +89,7 @@ Scotch 7 build"; the design's backend table says "Scotch 7.x (context API)".
    So 7.0.18 changed both the deterministic mode and the partitions. Whether this is Scotch's
    change or Homebrew's build of it is not known yet.
 
-   There is also a lookup problem: gridcl cannot choose 7.0.14 while Homebrew's is installed.
+   There is also a lookup problem: tetraloma cannot choose 7.0.14 while Homebrew's is installed.
    - cubecl-llvm's build script emits `-L /opt/homebrew/lib`, ahead of ptscotch-sys's
      `SCOTCH_DIR`.
    - scotch-sys 0.2.1 emits no search path at all.
@@ -108,7 +108,7 @@ Scotch 7 build"; the design's backend table says "Scotch 7.x (context API)".
      without it (env-check).
    - With these, everything MPI passes:
      - the 4-rank allreduce;
-     - `gridcl-parallel --features mpi` (60 tests);
+     - `tetraloma-parallel --features mpi` (60 tests);
      - `mpi-test.sh`: 24 of 24 runs on Metal and 6 of 6 on the CPU runtime.
    - The maintainer decided against a global setting (`~/.zshenv`). For now each local MPI
      command sets both by hand.
@@ -175,7 +175,7 @@ What does not need a change:
        first.
      - Runs set `DYLD_LIBRARY_PATH=<prefix>/scotch-7.0.14/lib`, so dyld loads 7.0.14 by its
        leaf name (same 7.0 ABI; that directory holds only Scotch's libraries). MPI runs add
-       `-x DYLD_LIBRARY_PATH=…` to `GRIDCL_MPIRUN_FLAGS`, because SIP strips `DYLD_*` when a
+       `-x DYLD_LIBRARY_PATH=…` to `TETRALOMA_MPIRUN_FLAGS`, because SIP strips `DYLD_*` when a
        script starts through `/usr/bin/env bash`.
      - A command without these settings runs 7.0.18. `partition_threads`, `partition_seed` and
        `partition_build` then fail, so the mistake shows, not silently.
@@ -265,10 +265,10 @@ What does not need a change:
   `.claude/skills/plan-milestone/SKILL.md` say "the local Mac" (outside the sandbox, as for
   ADR-0016); `scripts/check-local-tools.sh`'s header the same.
 - **Code (its own small task after the apply, verified on the Mac mini; not part of M8):**
-  - `gridcl-device/src/cores.rs`: rule B3 (reads `hw.nperflevels`, then the levels).
+  - `tetraloma-device/src/cores.rs`: rule B3 (reads `hw.nperflevels`, then the levels).
   - A unit test of the summation on fixed level lists, and the existing
     `performance_cores_match_the_os`.
-  - `tools/env-check` (`report.rs`, `probe.rs`) and `gridcl-bench/src/protocol.rs`: the host
+  - `tools/env-check` (`report.rs`, `probe.rs`) and `tetraloma-bench/src/protocol.rs`: the host
     record keeps `performance` (rule B3) and `efficiency` (the last level) for comparison with
     old records, and gains `levels: [{name, physical, logical}]`. env-check's report schema
     version goes up.

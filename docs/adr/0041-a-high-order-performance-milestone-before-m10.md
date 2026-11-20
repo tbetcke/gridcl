@@ -26,12 +26,12 @@ There is no evidence that the device kernels work, or perform acceptably, above 
 - **Cost:** direct evaluation at p = 8 costs about (9/5)^6 ≈ 34 times as much per cell as at p = 4, and about (9/5)^3 ≈ 5.8 times as much per quadrature point. Sum factorisation, the standard technique for tensor-product cells (MFEM, libCEED, deal.II), reduces the per-point growth to about linear in p per dimension.
 - **No milestone owns it:** M10 is hardening (GPU-aware transport, benchmarks, the vectorization re-run, documentation). Its benchmarks would record whatever the kernels do, and changing kernel structure there would mix risky algorithmic work into the last milestone.
 
-The maintainer has decided that gridcl's device kernels are to be optimised up to geometry degree p = 8 (2026-11-08).
+The maintainer has decided that tetraloma's device kernels are to be optimised up to geometry degree p = 8 (2026-11-08).
 
 ## Options
 
 1. **Keep the design as written.** "Arbitrary geometry degree" stays unverified on the device above p = 4, and M10 benchmarks the current kernels. This is cheap now, but C18-like failures and the (p + 1)^6 cost would surface in users' meshes rather than in tests. It does not meet the maintainer's decision.
-2. **Fold the work into M10.** Same content as option 4, but M10 grows by an open-ended study that changes kernels in gridcl-geometry, gridcl-device and gridcl. M10's own benchmarks and vectorization re-run would chase kernels that change in the same milestone.
+2. **Fold the work into M10.** Same content as option 4, but M10 grows by an open-ended study that changes kernels in tetraloma-geometry, tetraloma-device and tetraloma. M10's own benchmarks and vectorization re-run would chase kernels that change in the same milestone.
 3. **Narrow the scope instead.** Declare the device kernels optimised for p ≤ 4 and best-effort above. Contrary to the maintainer's decision.
 4. **A new milestone, M9h High-order performance, between M9 and M10.** It measures every degree-dependent kernel family up to p = 8, studies the strategies, chooses one per family, degree range and device class from data, and adds acceptance tests at p = 1–8. M10 then benchmarks and re-studies the final kernels.
 
@@ -43,14 +43,14 @@ Option 4. A separate milestone keeps the algorithmic work, with its own plan, ac
 >
 > **Scope:**
 >
-> - degree sweeps (p = 1–8) in gridcl-bench, with the protocol of "Vectorization and CPU execution", for every degree-dependent kernel family: EVector, GeomFactors (points, Jacobian, det J, pseudo-inverse, normals, facet normals), PullBack and the device basis evaluator; with, per kernel and device, the time per cell and per quadrature point, the first-use compile and load time, and on CUDA the registers and local memory per thread;
+> - degree sweeps (p = 1–8) in tetraloma-bench, with the protocol of "Vectorization and CPU execution", for every degree-dependent kernel family: EVector, GeomFactors (points, Jacobian, det J, pseudo-inverse, normals, facet normals), PullBack and the device basis evaluator; with, per kernel and device, the time per cell and per quadrature point, the first-use compile and load time, and on CUDA the registers and local memory per thread;
 > - strategies, each compared with M9's direct evaluation: runtime loops instead of full unrolling (bounding code size and JIT time); sum factorisation for quadrilaterals, hexahedra and prisms; tabulations or coefficients in shared memory; a workgroup cooperating on one cell only where these fall short, with fixed-order reductions that do not depend on the plane size;
-> - a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `GRIDCL_VECTOR_SIZE` is for vector sizes);
+> - a degree policy: the strategy of each family chosen per degree range and device class from the measurements, recorded in `docs/perf/high-order.md`, with an override for tests (as `TETRALOMA_VECTOR_SIZE` is for vector sizes);
 > - C18 closed: its cause isolated with the CUDA kernel attributes, and reported upstream if it is CubeCL's.
 >
 > **Acceptance:**
 >
-> - every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (gridcl-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
+> - every cell type except pyramids, at p = 1–8 and with both node families where offered: physical points, Jacobians, det J, pseudo-inverses, normals and facet normals from the device match the host reference (tetraloma-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; on the CPU runtime, Metal (f32) and CUDA (Locust); pyramids as before (p ≤ 3, experimental above 2);
 > - every kernel variant up to p = 8 compiles, loads and launches on each backend, and the first-use compile and load time of each is at most 30 s on Locust;
 > - for quadrilaterals and hexahedra, the time per quadrature point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every device class (direct evaluation: about 5.8 times);
 > - no family is more than 5% slower than in M9 at p ≤ 4 on any device class;

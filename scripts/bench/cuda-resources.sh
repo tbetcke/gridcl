@@ -2,7 +2,7 @@
 # Registers, spill and local memory per thread of the M9h degree-sweep kernels on CUDA
 # (docs/plans/M9h.md, T2; ADR-0042, item 6), from `ptxas -v` on the PTX that cubecl-cuda
 # writes under CUBECL_CUDA_DUMP_PTX, as `m9h-cuda-resources-<target>.json`
-# (gridcl_bench::record::CudaResources).
+# (tetraloma_bench::record::CudaResources).
 #
 # Usage: scripts/bench/cuda-resources.sh [--families LIST] [--cells LIST] [--degrees LIST]
 #            [--types LIST] [--strategies LIST] [--timeout SECONDS] [--scalar-only] [--sanitize]
@@ -95,7 +95,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$time_limit" =~ ^[1-9][0-9]*$ ]] || die "--timeout '$time_limit' is not a positive integer"
 
-target=${GRIDCL_HPC_TARGET:-local}
+target=${TETRALOMA_HPC_TARGET:-local}
 if [[ -z "$out" ]]; then
     if [[ -n "${JOB_ID:-}" ]]; then
         out=results/$JOB_ID/m9h-cuda-resources-$target.json
@@ -126,7 +126,7 @@ fi
 
 bin=${CARGO_TARGET_DIR:-target}/release/degree_sweep
 if [[ -z "$reuse" ]]; then
-    cargo build --release -p gridcl-bench --bin degree_sweep --features gridcl-testing/cuda
+    cargo build --release -p tetraloma-bench --bin degree_sweep --features tetraloma-testing/cuda
     [[ -x "$bin" ]] || die "$bin not built"
 fi
 

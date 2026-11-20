@@ -3,7 +3,7 @@
 docs/plans/M8.md, T0a; ADR-0035).
 
 Runs VTK's own readers and meshio on VTU, PVTU and VTKHDF files and prints JSON on stdout. The
-consumer is gridcl-testing/src/oracle.rs. The pinned versions are asserted: any other vtk or meshio
+consumer is tetraloma-testing/src/oracle.rs. The pinned versions are asserted: any other vtk or meshio
 version is refused with a non-zero exit and the install command on stderr.
 
 Usage:
@@ -80,7 +80,7 @@ import tempfile
 
 PINS = {"vtk": "9.7.1", "meshio": "5.3.5"}
 INSTALL = ("python3 -m venv .venv && .venv/bin/pip install vtk==9.7.1 meshio==5.3.5 "
-           "(or set GRIDCL_PYTHON to an interpreter that has them)")
+           "(or set TETRALOMA_PYTHON to an interpreter that has them)")
 
 
 def die(message, status=2):

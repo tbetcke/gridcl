@@ -19,7 +19,7 @@ docs/design.md, "M7 Partitioners":
 ADR-0029, item 11, reads "within 10%" as one-sided: cut(PtScotch) ≤ 1.10 · cut(Scotch) and
 cut(Metis) ≤ 1.10 · cut(Scotch), with nparts equal to the number of ranks.
 
-M7 T0 implemented this in `gridcl-mpi-tests::partition_quality`. The test asserts both ratios on
+M7 T0 implemented this in `tetraloma-mpi-tests::partition_quality`. The test asserts both ratios on
 every rank count it runs: 1–4 on the M3 Max and in CI (`scripts/mpi-test.sh 1 2 3 4`), and 4
 and 8 on Kathleen. It uses seed 0. M7 T6 (`PtScotch`) is the first task in which the test can
 run, because it calls all three partitioners.
@@ -115,7 +115,7 @@ Option 4.
   25%)" to its decision record. In item 11, the cut condition becomes cut(Metis) ≤ 1.25 · cut(Scotch).
 - **Public API changes:** none.
 - **Acceptance tests affected:**
-  - `gridcl-mpi-tests::partition_quality`:
+  - `tetraloma-mpi-tests::partition_quality`:
     - the ratio assertions run only when nparts is 4 or 8, and the METIS factor is 1.25;
     - every ratio is still printed on rank 0 at every rank count;
     - imbalance and twice the slab bound stay asserted everywhere.

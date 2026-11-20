@@ -1,0 +1,52 @@
+[package]
+name = "tetraloma-testing"
+description = "Test support for tetraloma: the test device, test meshes, tolerances and the Python oracles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["cpu"]
+# Runtime features, each the cubecl feature of the same name (docs/design.md, "Cargo features").
+cpu = ["cubecl/cpu"]
+cuda = ["cubecl/cuda"]
+hip = ["cubecl/hip"]
+vulkan = ["cubecl/vulkan"]
+metal = ["cubecl/metal"]
+metal-native = ["cubecl/metal-native"]
+wgpu = ["cubecl/wgpu"]
+# ThreadComm implements `CommDyn::raw`, which exists only under tetraloma-parallel's `mpi`: turn
+# this on whenever tetraloma's `mpi` is on (tetraloma-mpi-tests does).
+mpi = ["tetraloma/mpi", "dep:mpi"]
+
+[dependencies]
+cubecl.workspace = true
+tetraloma = { path = "../tetraloma" }
+tetraloma-device = { path = "../tetraloma-device", features = ["testing"] }
+tetraloma-dims = { path = "../tetraloma-dims" }
+tetraloma-geometry = { path = "../tetraloma-geometry", features = ["testing"] }
+tetraloma-refcell = { path = "../tetraloma-refcell" }
+mpi = { workspace = true, optional = true }
+# Exact float parsing: the oracles print f32 values that must compare bitwise.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[[bin]]
+# The binary box file of the M8 memory test (ADR-0035, rule 10):
+# gen-gmsh-box N PATH writes cube_box(Tetrahedron, N, 1).
+name = "gen-gmsh-box"
+
+[dev-dependencies]
+proptest.workspace = true
+
+# The test files are modules of one test executable (tests/main.rs): one link of the
+# dependencies instead of one per file (disk space and link time).
+[[test]]
+name = "integration"
+path = "tests/main.rs"

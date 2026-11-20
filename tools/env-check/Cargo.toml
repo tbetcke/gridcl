@@ -3,10 +3,10 @@ name = "env-check"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Probe of a gridcl development target: devices, properties, sample kernels, MPI; JSON report"
+description = "Probe of a tetraloma development target: devices, properties, sample kernels, MPI; JSON report"
 license = "MIT OR Apache-2.0"
 
-# Outside the gridcl workspace (docs/design.md, "Workspace layout", dependency rule 6).
+# Outside the tetraloma workspace (docs/design.md, "Workspace layout", dependency rule 6).
 [workspace]
 
 [features]

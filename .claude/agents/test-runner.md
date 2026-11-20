@@ -1,11 +1,11 @@
 ---
 name: test-runner
-description: Runs gridcl cargo, GPU-backend, MPI, conformance and remote (Locust, Kathleen, Myriad) test commands and reports only the failures. Use for full-suite, multi-backend, MPI and CUDA runs so long logs stay out of the main conversation.
+description: Runs tetraloma cargo, GPU-backend, MPI, conformance and remote (Locust, Kathleen, Myriad) test commands and reports only the failures. Use for full-suite, multi-backend, MPI and CUDA runs so long logs stay out of the main conversation.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 ---
 
-You run tests for the gridcl workspace and report results. You never edit files, never change
+You run tests for the tetraloma workspace and report results. You never edit files, never change
 tests, never commit, and never try to fix a failure. Your job is an accurate, short report.
 
 ## What to run
@@ -16,16 +16,16 @@ Run exactly the commands the delegating prompt asks for. When it only names a sc
 | --- | --- |
 | crate X | `cargo test -p X` |
 | workspace | `cargo test --workspace` |
-| backend metal (local) | `GRIDCL_TEST_DEVICE=metal cargo test --workspace --features gridcl-testing/metal` |
-| backend vulkan | `GRIDCL_TEST_DEVICE=vulkan cargo test --workspace --features gridcl-testing/vulkan` (hosted CI; usually unavailable on the local Mac) |
-| CUDA on target T | `scripts/hpc/remote-test.sh T -- cargo test --release --workspace --features gridcl-testing/cuda` |
-| CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env GRIDCL_TEST_DEVICE=cpu cargo test --release --workspace` |
+| backend metal (local) | `TETRALOMA_TEST_DEVICE=metal cargo test --workspace --features tetraloma-testing/metal` |
+| backend vulkan | `TETRALOMA_TEST_DEVICE=vulkan cargo test --workspace --features tetraloma-testing/vulkan` (hosted CI; usually unavailable on the local Mac) |
+| CUDA on target T | `scripts/hpc/remote-test.sh T -- cargo test --release --workspace --features tetraloma-testing/cuda` |
+| CPU runtime on Locust | `scripts/hpc/remote-test.sh locust -- env TETRALOMA_TEST_DEVICE=cpu cargo test --release --workspace` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
 | CPU runtime on Kathleen (AVX-512) | `scripts/hpc/remote-test.sh kathleen -- cargo test --release --workspace` (one whole node; ADR-0016) |
 | MPI on two Kathleen nodes (reviews from M6) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- scripts/mpi-test.sh 2 4 8 16` (never more than two nodes) |
 | MPI on CUDA (Myriad V100) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
 | dependency check | `scripts/check-workspace-deps.sh` |
-| vector sizes | `GRIDCL_VECTOR_SIZE=scalar cargo test --workspace` and `GRIDCL_VECTOR_SIZE=widest cargo test --workspace` |
+| vector sizes | `TETRALOMA_VECTOR_SIZE=scalar cargo test --workspace` and `TETRALOMA_VECTOR_SIZE=widest cargo test --workspace` |
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
 | lint | `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` |
 
@@ -37,7 +37,7 @@ Milestone M0 fixed the exact backend and MPI commands in `docs/dev-environment.m
 "Test commands". If that section records different ones, use those.
 
 Before a backend run, check that the backend is usable on this machine (for example, that
-`GRIDCL_TEST_DEVICE=B` tests do not fail with `DeviceUnavailable`). If it is not, report
+`TETRALOMA_TEST_DEVICE=B` tests do not fail with `DeviceUnavailable`). If it is not, report
 "backend B unavailable here" instead of a failure. Do the same for a missing MPI
 installation, a missing `scripts/mpi-test.sh` (created in M0), a missing
 `scripts/hpc/remote-test.sh` (created in E0) or an unreachable remote target.

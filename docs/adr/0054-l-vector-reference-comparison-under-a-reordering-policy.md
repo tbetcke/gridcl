@@ -7,9 +7,9 @@
 
 ## Context
 
-M3's acceptance: "factor kernels on E-vectors agree with a scalar L-vector reference kernel at every vector size from 1 up to 16 that the device offers and the tile holds, and at tile widths 1 and 16, bitwise on the CPU runtime, with +0 and −0 equal (ADR-0013), and within the tolerances on GPUs." `gridcl/tests/factor_invariance.rs` checks this at p = 2 (Gauss rule of degree 3) on every cell type. The reference sums over nodes in node order, as M9's `direct` kernels and T6a's `loops` do.
+M3's acceptance: "factor kernels on E-vectors agree with a scalar L-vector reference kernel at every vector size from 1 up to 16 that the device offers and the tile holds, and at tile widths 1 and 16, bitwise on the CPU runtime, with +0 and −0 equal (ADR-0013), and within the tolerances on GPUs." `tetraloma/tests/factor_invariance.rs` checks this at p = 2 (Gauss rule of degree 3) on every cell type. The reference sums over nodes in node order, as M9's `direct` kernels and T6a's `loops` do.
 
-T7a's sum factorisation contracts one direction at a time, so its sums run in another order and are not bitwise equal to the reference. At T7b (Deviations log, 2026-11-12) the maintainer ruled: compare within the tolerances where `GRIDCL_GEOM_STRATEGY` forces a strategy that reorders sums (`common::environment_reorders_sums`), and "if T11b's policy selects such a strategy for a family at M3's p = 2 on the CPU, the default run meets the same comparison: an ADR then."
+T7a's sum factorisation contracts one direction at a time, so its sums run in another order and are not bitwise equal to the reference. At T7b (Deviations log, 2026-11-12) the maintainer ruled: compare within the tolerances where `TETRALOMA_GEOM_STRATEGY` forces a strategy that reorders sums (`common::environment_reorders_sums`), and "if T11b's policy selects such a strategy for a family at M3's p = 2 on the CPU, the default run meets the same comparison: an ADR then."
 
 ## Problem
 
@@ -39,7 +39,7 @@ Option 2. M3's bitwise check keeps its purpose, catching vector-size and tile de
   - Roadmap M3 acceptance, the factor-kernel bullet: after "bitwise on the CPU runtime, with +0 and −0 equal (ADR-0013)," add "for the direct kernels and for strategies that sum over nodes in node order; within the tolerances for sum-factorised and cooperative kernels (ADR-0054)".
   - "Testing and validation", vector-size invariance, "A separately written reference kernel may fuse multiply-adds differently; comparisons with one are bitwise up to the sign of zero on the CPU runtime (ADR-0013)": add "where the kernel sums in the reference's order; sum-factorised and cooperative kernels are compared within the tolerances (ADR-0054)".
 - Public API changes: none (`testing::with_strategy` and `record_strategies` exist, ADR-0042 item 3).
-- Acceptance tests affected: `gridcl/tests/factor_invariance.rs` (the two passes); `gridcl/tests/common/mod.rs` (`assert_matches` decides from the recorded strategies; `environment_reorders_sums` becomes a special case of it). `pull_back::*`, which also uses `assert_matches`, follows the same rule.
+- Acceptance tests affected: `tetraloma/tests/factor_invariance.rs` (the two passes); `tetraloma/tests/common/mod.rs` (`assert_matches` decides from the recorded strategies; `environment_reorders_sums` becomes a special case of it). `pull_back::*`, which also uses `assert_matches`, follows the same rule.
 - Plan: M9h T11b (with the policy) or T12 makes the change; a Deviations-log row cites this ADR.
 - Later milestones affected: none.
 

@@ -28,7 +28,7 @@ The paragraph after Listing B5 says "`LaunchPlan` takes the cube count from
 each dimension". "Device limits" says the cube count is "computed by
 `calculate_cube_count_elemwise`, which respects `hardware.max_cube_count`".
 
-ADR-0009 added `testing::with_properties`, which "replaces the properties that gridcl-device
+ADR-0009 added `testing::with_properties`, which "replaces the properties that tetraloma-device
 reads (limits, device class, vector sizes) for buffers and plans made inside `f`". The M2
 acceptance test `launch_plan::prop_plan_respects_injected_limits` relies on it: "with injected
 device properties, no plan exceeds `max_units_per_cube`, `max_cube_dim` or `max_cube_count`".
@@ -68,8 +68,8 @@ While writing T0's stubs, the CubeCL 0.11.0 sources were read
    - `#[derive(Clone, Debug)] pub struct LaunchPlan`, fields unchanged. Listing B5 still compiles:
      moving `plan.cube_count` out of the plan is a partial move, and the `Copy` fields
      (`num_vectors`, `items_per_unit`, …) stay usable after it. `record_plans` stores clones.
-   - The cube count comes from a crate-private function of gridcl-device over the properties
-     gridcl-device reads (the client's, or the injected ones): for `n` cubes and limits
+   - The cube count comes from a crate-private function of tetraloma-device over the properties
+     tetraloma-device reads (the client's, or the injected ones): for `n` cubes and limits
      `(mx, my, mz)`, `x = min(n, mx)`, `y = min(⌈n / x⌉, my)`, `z = ⌈n / (x·y)⌉`, and
      `GridError::TooLarge` if `z > mz`. The result is always `CubeCount::Static`, never exceeds
      any limit, and fits whenever `n ≤ mx·my·mz`. In usize arithmetic with overflow checks.
@@ -83,15 +83,15 @@ While writing T0's stubs, the CubeCL 0.11.0 sources were read
 Option 3. It is the smallest change that compiles, keeps every public field and Listing B5's
 launch code, and makes the injected-limit acceptance test meaningful. The cube count stays
 the plan's job, as the design intends; only its source changes from a CubeCL helper that sees
-the live client to gridcl-device's own function over the properties it reads.
+the live client to tetraloma-device's own function over the properties it reads.
 
 ## Consequences
 
 - **Text to change in docs/design.md:**
   - **Listing S2:** `#[derive(Clone, Debug)]` on `LaunchPlan`, with the comment "not `Copy`:
     `CubeCount` is not `Copy` in CubeCL 0.11".
-  - **Listing S2, the "GPUs" bullet:** "the cube count comes from gridcl-device's spread over
-    `max_cube_count` (x first, then y, then z), computed from the properties gridcl-device
+  - **Listing S2, the "GPUs" bullet:** "the cube count comes from tetraloma-device's spread over
+    `max_cube_count` (x first, then y, then z), computed from the properties tetraloma-device
     reads, so injected limits apply"; the "One kernel source" bullet keeps "Every plan is
     checked against `max_cube_dim`, `max_units_per_cube` and `max_cube_count`".
   - **Paragraph after Listing B5:** "`LaunchPlan` computes the cube count itself: it fills x up

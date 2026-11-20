@@ -10,7 +10,7 @@
 The design makes Myriad V100 the main CUDA platform, with builds on the cluster's own operating system:
 
 > 3. **Fetch.** It fetches crates on the login node, and the CPU runtime's LLVM bundle when needed, because compute nodes may have no internet access. …
-> 4. **Submit.** … The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `GRIDCL_TEST_DEVICE=cuda`.
+> 4. **Submit.** … The job loads the modules, records `nvidia-smi` and the toolkit version, builds, and runs the command with `TETRALOMA_TEST_DEVICE=cuda`.
 
 ("Development environment and test targets"). The risks table has "the CPU runtime downloads an LLVM bundle from github.com at build time | Fetch crates and the bundle on the login node".
 

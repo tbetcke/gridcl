@@ -3,27 +3,27 @@
 #
 # Prepares the Spack build of CubeCL's LLVM on Myriad (ADR-0004): RHEL 7.9 has glibc 2.17, too
 # old for the LLVM bundle tracel-llvm-bundler downloads, so the same LLVM version is built here
-# and laid out where the bundler looks for it. In $GRIDCL_LLVM_ROOT (default $HOME/gridcl-llvm)
+# and laid out where the bundler looks for it. In $TETRALOMA_LLVM_ROOT (default $HOME/tetraloma-llvm)
 # this script
-#   - installs Spack $GRIDCL_SPACK_VERSION into $GRIDCL_SPACK (default $HOME/spack) if missing,
+#   - installs Spack $TETRALOMA_SPACK_VERSION into $TETRALOMA_SPACK (default $HOME/spack) if missing,
 #   - copies the overlay repo and renders env/spack.yaml and build-llvm.sh,
 #   - writes lld-bin/gcc, GCC 10 linking with LLD (RHEL 7's GNU ld 2.27 resolves archives in
 #     one pass and misses LLVM symbols that only pliron-llvm uses),
 #   - registers GCC 10.2 with Spack, concretizes, and fetches every source (compute nodes have
 #     no internet).
-# Then submit the build, a CPU-only job: cd "$GRIDCL_LLVM_ROOT" && qsub build-llvm.sh
+# Then submit the build, a CPU-only job: cd "$TETRALOMA_LLVM_ROOT" && qsub build-llvm.sh
 # The job installs LLVM, creates xdg/tracel/tracel-llvm-<version>/ with the bundler's sentinel
 # file, and links lld-bin/ld.lld. targets.env then exports, in LOGIN_MODULES and MODULES:
 #   XDG_DATA_HOME=<root>/xdg PATH=<root>/lld-bin:$PATH
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-root=${GRIDCL_LLVM_ROOT:-$HOME/gridcl-llvm}
-spack_root=${GRIDCL_SPACK:-$HOME/spack}
-spack_version=${GRIDCL_SPACK_VERSION:-v1.2.2}
+root=${TETRALOMA_LLVM_ROOT:-$HOME/tetraloma-llvm}
+spack_root=${TETRALOMA_SPACK:-$HOME/spack}
+spack_version=${TETRALOMA_SPACK_VERSION:-v1.2.2}
 case $root in
     /*) ;;
-    *) echo "setup.sh: GRIDCL_LLVM_ROOT must be an absolute path" >&2; exit 2 ;;
+    *) echo "setup.sh: TETRALOMA_LLVM_ROOT must be an absolute path" >&2; exit 2 ;;
 esac
 
 if ! type module >/dev/null 2>&1; then

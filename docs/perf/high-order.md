@@ -1,15 +1,15 @@
-# High-order geometry kernels on gridcl's devices (M9h)
+# High-order geometry kernels on tetraloma's devices (M9h)
 
 This report records the degree sweeps of M9h (docs/design.md, "Benchmarks"; ADR-0041,
-ADR-0042, ADR-0043, ADR-0050 to ADR-0053) and how `gridcl-geometry/degree-policy.toml` was
+ADR-0042, ADR-0043, ADR-0050 to ADR-0053) and how `tetraloma-geometry/degree-policy.toml` was
 chosen. The tables under "Results" are written by
-`cargo run -p gridcl-bench --bin high_order_report` from the JSON under
+`cargo run -p tetraloma-bench --bin high_order_report` from the JSON under
 `docs/perf/data/m9h-*.json`, between its marker comments (`--check` verifies them and the
 policy); the rest is written by hand. Times are UTC.
 
 ## Protocol
 
-- **Binary:** `degree_sweep` (gridcl-bench), release build, CubeCL's persistent kernel cache
+- **Binary:** `degree_sweep` (tetraloma-bench), release build, CubeCL's persistent kernel cache
   off, CUDA's driver cache off (`CUDA_CACHE_DISABLE=1`, ADR-0042 item 6), run by
   `scripts/bench/degree-sweep.sh` under a time limit per configuration (600 s on GPUs, 3600 s on
   CPUs), all processes of a run writing one JSON file with `--resume`. The baseline ran one
@@ -21,7 +21,7 @@ policy); the rest is written by hand. Times are UTC.
 - **Families:** EVector; Points (X), Jacobian (J), DetJ, Pinv (K) and FacetNormals on every
   cell type; Normals on intervals, triangles and quadrilaterals one dimension up; PullBack at 1
   and 9 Newton iterations (rule 1: step = (t(9) − t(1)) / 8, set-up = t(1) − step); BasisEval,
-  the device basis evaluator on its own (`gridcl_geometry::bench`).
+  the device basis evaluator on its own (`tetraloma_geometry::bench`).
 - **Configurations:** p = 1–8 (pyramids 1–3); f32 and f64 (f32 only on Metal); the Gauss rule
   of degree 2p (the facet rule of degree 2p for facet normals) on unperturbed unit boxes with
   about 10^5, 10^6 and 10^7 quadrature points; equispaced nodes; vector size, QuadField tile and
@@ -113,7 +113,7 @@ The largest ratio per degree, over every family and cell type: 0.03 (p = 1), 0.0
 ### Observations
 
 - **Host time dominates the sweep.** Most of a configuration's time is building its meshes on
-  the host: the single-threaded numbering of the mesh pipeline (`gridcl::pipeline::number`) at
+  the host: the single-threaded numbering of the mesh pipeline (`tetraloma::pipeline::number`) at
   10^7 points. Locust's Grace cores do this 2.5 times slower than the M6 (7,811 s against
   3,097 s on the configurations both ran), so Locust's CUDA run takes as long as Kathleen's CPU
   run. One process per (cell type, degree) saves about 25% (Metal, seven families at interval
@@ -134,7 +134,7 @@ The largest ratio per degree, over every family and cell type: 0.03 (p = 1), 0.0
 ## Strategy sweeps (T11a)
 
 Every strategy at p = 1–8 (pyramids 1–3) on equispaced nodes, at f1c32de and later sweep-tool
-commits (`GRIDCL_BENCH_COMMIT` and the runner's commit in each record), launch-only records
+commits (`TETRALOMA_BENCH_COMMIT` and the runner's commit in each record), launch-only records
 first:
 
 - **Mac mini**, CPU (CpuSimd128) and Metal (Gpu), locally;
@@ -154,7 +154,7 @@ p = 6–8, f32, 10^7 points, where J rounds to 0); they are not selectable.
 
 ## Decision rule (T11b)
 
-`gridcl-bench/src/decide_degree.rs`, per policy family, cell type, measured class (CpuSimd128:
+`tetraloma-bench/src/decide_degree.rs`, per policy family, cell type, measured class (CpuSimd128:
 the Mac mini's CPU; CpuSimd512: Kathleen; Gpu: Metal and the H100), scalar type and degree:
 
 - a family's time per point is the sum of its bench families' (J + det J + K for `Jacobian`, the
@@ -195,7 +195,7 @@ the tolerances where a strategy that reorders the sums ran.
 
 ### Degree policy
 
-One row per entry of `gridcl-geometry/degree-policy.toml` and degree range. Ratio: the class time of the chosen strategy over the baseline's (`direct`, or `loops` where `direct` is not selectable), over the range's degrees and rule sizes. The last range is open-ended; after a `direct` choice at the highest measured degree it is `loops`, which compiles at every degree (ADR-0042, item 3). CpuSimd256 has CpuSimd512's table.
+One row per entry of `tetraloma-geometry/degree-policy.toml` and degree range. Ratio: the class time of the chosen strategy over the baseline's (`direct`, or `loops` where `direct` is not selectable), over the range's degrees and rule sizes. The last range is open-ended; after a `direct` choice at the highest measured degree it is `loops`, which compiles at every degree (ADR-0042, item 3). CpuSimd256 has CpuSimd512's table.
 
 | Family | Cell | Class | Type | Degrees | Strategy | Ratio | Reason |
 | --- | --- | --- | --- | --- | --- | ---: | --- |
@@ -2895,7 +2895,7 @@ candidate protocol of docs/design.md, "Benchmarks" (ADR-0057 item 3, ADR-0060 it
 baseline, M9h's choices for the old classes of each class and the live policy's, at 10^6 and
 10^7 points (FacetNormals on intervals in f32 at sizes f32 can resolve, ADR-0063), five timed
 runs, interleaved on CPUs (ADR-0055), on the Mac mini's CPU runtime and Metal, Locust's Grace
-CPU and GH200, and one Kathleen socket. `gridcl-geometry/degree-policy.toml` holds `[Cpu]` and
+CPU and GH200, and one Kathleen socket. `tetraloma-geometry/degree-policy.toml` holds `[Cpu]` and
 `[Gpu]` only, chosen by the generic rule of ADR-0058 item 4: per entry and degree, a strategy
 is admitted if it is at least 10% faster than the baseline (`direct`, or `loops` where `direct`
 is not selectable) by the geometric mean over the class's platforms at each size; among the
@@ -4177,7 +4177,7 @@ Per entry, measured degree and platform of its class: the platform's best select
 
 ### Degree ranges
 
-The ranges of `gridcl-geometry/degree-policy.toml`; the source of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h elsewhere.
+The ranges of `tetraloma-geometry/degree-policy.toml`; the source of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h elsewhere.
 
 | class | family | cell | bytes | ranges | M9h degrees |
 | --- | --- | --- | ---: | --- | --- |
@@ -5039,13 +5039,13 @@ No range needs re-measurement.
 
 ## M10c: the degree sets under M10c's fallback (ADR-0065)
 
-M10c applies ADR-0065's fallback to `gridcl-geometry/degree-policy.toml` and re-derives it from
+M10c applies ADR-0065's fallback to `tetraloma-geometry/degree-policy.toml` and re-derives it from
 the records already committed: M10's at p = 1, 4 and 8 and the re-measured degrees, M9h's in
 between. There are no new degree runs (docs/plans/M10c.md, question 6). If no admitted strategy
 meets the bound r ≤ 1.25, the bound and the choice apply to all selectable strategies. Only if
 none meets it is the admitted one with the smallest worst case taken, marked with its worst case
 and cause. M10's section above stays as M10's rule wrote it; M10's policy is kept in
-`gridcl-bench/history/degree-policy-m10.toml`.
+`tetraloma-bench/history/degree-policy-m10.toml`.
 
 - **Fallbacks.** Among the choices from M10's records, 7 of 530 fall back (29 under M10's
   rule). In 22 choices no admitted strategy meets the bound but another selectable one does. The
@@ -5060,7 +5060,7 @@ and cause. M10's section above stays as M10's rule wrote it; M10's policy is kep
   class and 5 on the Gpu class. Mostly, M10's fallback to `direct` gives way to `loops` or
   `sumfact`, which meet the bound but were not admitted. The Gpu changes are EVector on hexahedra and prisms
   and PullBack on hexahedra at p = 7 in f32, and Points and Jacobian on hexahedra at p = 2 in f64.
-  The changes at p ≥ 5 reach the CUDA high-order tests under `GRIDCL_GEOM_STRATEGY=policy`
+  The changes at p ≥ 5 reach the CUDA high-order tests under `TETRALOMA_GEOM_STRATEGY=policy`
   (M10c T7).
 - **The vector set beneath the records.** M10's degree records ran under M10's vector policy.
   M10c's `[Cpu]` set changes what the CPU degree kernels run: EVector 4B goes from n = 1 to
@@ -6378,7 +6378,7 @@ The degrees between the M10 degrees take their choice from M9h's records, on M9h
 
 ### Degree ranges
 
-The ranges of `gridcl-geometry/degree-policy.toml`; the source of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h elsewhere.
+The ranges of `tetraloma-geometry/degree-policy.toml`; the source of each degree's choice is M10 at p = 1, 4 and 8 and re-measured degrees, M9h elsewhere.
 
 | class | family | cell | bytes | ranges | M9h degrees |
 | --- | --- | --- | ---: | --- | --- |
@@ -6537,7 +6537,7 @@ The ranges of `gridcl-geometry/degree-policy.toml`; the source of each degree's 
 
 ### Changes against M10
 
-Per entry and degree p = 1–10: the strategy of M10's policy (M10's rule; `gridcl-bench/history/degree-policy-m10.toml`) and of M10c's, with the source and reason of M10c's pick at that degree. 26 of 1520 per-degree choices change.
+Per entry and degree p = 1–10: the strategy of M10's policy (M10's rule; `tetraloma-bench/history/degree-policy-m10.toml`) and of M10c's, with the source and reason of M10c's pick at that degree. 26 of 1520 per-degree choices change.
 
 | class | family | cell | bytes | p | source | M10 | M10c | reason |
 | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |

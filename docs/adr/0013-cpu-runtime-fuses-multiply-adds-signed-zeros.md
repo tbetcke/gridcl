@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-22
-- **Raised in:** M3 T14–T15 (`gridcl::factor_invariance::factor_kernels_match_lvector_reference`)
+- **Raised in:** M3 T14–T15 (`tetraloma::factor_invariance::factor_kernels_match_lvector_reference`)
 - **Design sections affected:**
   - "Vectorization and CPU execution": "How the CPU runtime runs a kernel" and "Determinism across vector sizes";
   - "Testing and validation": "Vector-size invariance";
@@ -21,7 +21,7 @@ L-vector reference kernel at every vector size … bitwise on the CPU runtime".
 
 M3 implemented the factor kernels (X, J, det J, K, facet normals, normals) as one vector-generic
 kernel, and the acceptance test's reference as a separate scalar `#[cube]` kernel that performs
-the same operation sequence (gridcl/tests/common/reference.rs).
+the same operation sequence (tetraloma/tests/common/reference.rs).
 
 ## Problem
 
@@ -72,7 +72,7 @@ No nonzero value differs in any bit.
 ## Proposed decision
 
 Option 2. The test keeps its full strength for every nonzero value, the only difference observed
-is an IEEE-equal one, and no gridcl code depends on the sign of a zero factor. The design text
+is an IEEE-equal one, and no tetraloma code depends on the sign of a zero factor. The design text
 is corrected to describe CubeCL 0.11 as it is: multiply-adds may be fused on every target, the
 fusion is a property of the kernel source and so identical for every vector size, and two
 different kernels computing the same formula agree bitwise only up to fusion. M3 confirms that
@@ -87,7 +87,7 @@ this is limited to signed zeros for the factor kernels.
   - Roadmap M3, last acceptance bullet: "bitwise on the CPU runtime" becomes "bitwise on the CPU runtime, with +0 and −0 equal (ADR-0013)".
 - **Public API changes:** none.
 - **Acceptance tests affected:**
-  - `gridcl::factor_invariance::factor_kernels_match_lvector_reference`: `assert_matches` in gridcl/tests/common/mod.rs accepts equal bits or two zeros on the CPU runtime.
+  - `tetraloma::factor_invariance::factor_kernels_match_lvector_reference`: `assert_matches` in tetraloma/tests/common/mod.rs accepts equal bits or two zeros on the CPU runtime.
   - The tests that compare one kernel source across vector sizes and tile widths stay strictly bitwise.
 - **Later milestones affected:**
   - **M3s** (benchmarks): none.

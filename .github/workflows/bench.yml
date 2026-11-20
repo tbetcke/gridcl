@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - gridcl-bench/**
+      - tetraloma-bench/**
       - .github/workflows/bench.yml
 
 permissions:
@@ -47,12 +47,12 @@ jobs:
           cache-directories: ~/.local/share/tracel
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: |
-          cargo run --release -p gridcl-bench --features vulkan --bin primitive_throughput -- \
+          cargo run --release -p tetraloma-bench --features vulkan --bin primitive_throughput -- \
             --out m2-primitives-vulkan-lavapipe.json
           nproc
           lscpu | sed -n 's/^Model name: *//p'
         env:
-          GRIDCL_TEST_DEVICE: vulkan
+          TETRALOMA_TEST_DEVICE: vulkan
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: m2-primitives-vulkan-lavapipe

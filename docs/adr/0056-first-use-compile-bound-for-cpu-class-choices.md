@@ -7,13 +7,13 @@
 
 ## Context
 
-"Benchmarks", **Degree sweep (M9h)**: "A strategy is adopted over the baseline (`direct`, or `loops` where `direct` is not selectable) only if it is at least 10% faster at 10^6 and 10^7 points … A strategy that fails or takes over 30 s to compile and load on Locust is not selectable for the Gpu class." ADR-0042 item 7 limits the 30 s bound to the Gpu class, and `gridcl-bench/src/decide_degree.rs` (`selectable`) follows it: on the CPU classes a strategy is selectable whenever it has a time.
+"Benchmarks", **Degree sweep (M9h)**: "A strategy is adopted over the baseline (`direct`, or `loops` where `direct` is not selectable) only if it is at least 10% faster at 10^6 and 10^7 points … A strategy that fails or takes over 30 s to compile and load on Locust is not selectable for the Gpu class." ADR-0042 item 7 limits the 30 s bound to the Gpu class, and `tetraloma-bench/src/decide_degree.rs` (`selectable`) follows it: on the CPU classes a strategy is selectable whenever it has a time.
 
 M9h's scope (Roadmap M9h, ADR-0041) names "runtime loops instead of full unrolling (bounding code size and JIT time)" as the first strategy, and C20 records that CubeCL 0.11.0's common-subexpression pass is quadratic in a region's operations, so fully unrolled kernels compile slowly on every backend, the CPU runtime included.
 
 ## Problem
 
-Since `direct` is the baseline and another strategy replaces it only when it is at least 10% faster, the CPU policy keeps `direct` wherever nothing beats it by that margin, whatever its compile time. Crossing `gridcl-geometry/degree-policy.toml` with the first-use compile and load times of the committed records (`docs/perf/data/m9h-{launch,degree,baseline}-cpu-{macmini,kathleen}*.json`, the largest over the vector sizes that ran) gives, for the choices at p = 1–8:
+Since `direct` is the baseline and another strategy replaces it only when it is at least 10% faster, the CPU policy keeps `direct` wherever nothing beats it by that margin, whatever its compile time. Crossing `tetraloma-geometry/degree-policy.toml` with the first-use compile and load times of the committed records (`docs/perf/data/m9h-{launch,degree,baseline}-cpu-{macmini,kathleen}*.json`, the largest over the vector sizes that ran) gives, for the choices at p = 1–8:
 
 | Class (device) | Family, cell | Type | p | Choice | First use | `loops` first use | Time per call at 10^6 points, `direct` / `loops` |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -44,8 +44,8 @@ Option 2. It is the Gpu rule the design already has, applied where the same caus
   - "Geometric factors" (degree policy): no change.
 - ADR-0042: item 7's "a strategy over 30 s on Locust cannot be selected for the Gpu class" and item 12's selectability gain "on the class's sweep devices, every class (ADR-0056)".
 - Public API changes: none.
-- Code: `gridcl-bench/src/decide_degree.rs` (`selectable` asks the class's launch records, not only Locust's); `high_order_report` regenerates `gridcl-geometry/degree-policy.toml` (two entries) and the tables and the "CPU compile time" sentence of `docs/perf/high-order.md`.
-- Acceptance tests affected: `gridcl-bench/tests/high_order_record.rs::degree_policy_follows_the_decision_rule` recomputes the rule with the bound on every class; `compile_and_load_within_30_s_on_locust` is unchanged. A new assertion (same file) that no selected variant of any class exceeds 30 s on that class's sweep devices. The M9h tests under the policy at hexahedron p = 5 and p = 7 run the `loops` E-vector on CpuSimd128 devices: re-run on the Mac mini's CPU runtime in release (results bitwise as before).
+- Code: `tetraloma-bench/src/decide_degree.rs` (`selectable` asks the class's launch records, not only Locust's); `high_order_report` regenerates `tetraloma-geometry/degree-policy.toml` (two entries) and the tables and the "CPU compile time" sentence of `docs/perf/high-order.md`.
+- Acceptance tests affected: `tetraloma-bench/tests/high_order_record.rs::degree_policy_follows_the_decision_rule` recomputes the rule with the bound on every class; `compile_and_load_within_30_s_on_locust` is unchanged. A new assertion (same file) that no selected variant of any class exceeds 30 s on that class's sweep devices. The M9h tests under the policy at hexahedron p = 5 and p = 7 run the `loops` E-vector on CpuSimd128 devices: re-run on the Mac mini's CPU runtime in release (results bitwise as before).
 - Later milestones affected: M10's re-study inherits the rule for every class.
 
 ## Decision record

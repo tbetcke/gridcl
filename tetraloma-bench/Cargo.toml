@@ -1,0 +1,44 @@
+[package]
+name = "tetraloma-bench"
+description = "Benchmarks of tetraloma kernels and end-to-end throughput"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["cpu"]
+# Runtime features, as in tetraloma-testing.
+cpu = ["cubecl/cpu", "tetraloma-testing/cpu"]
+cuda = ["cubecl/cuda", "tetraloma-testing/cuda"]
+hip = ["cubecl/hip", "tetraloma-testing/hip"]
+vulkan = ["cubecl/vulkan", "tetraloma-testing/vulkan"]
+metal = ["cubecl/metal", "tetraloma-testing/metal"]
+metal-native = ["cubecl/metal-native", "tetraloma-testing/metal-native"]
+wgpu = ["cubecl/wgpu", "tetraloma-testing/wgpu"]
+# `halo_exchange` on MPI's world communicator (M10 T6); without it the binary runs on one rank.
+mpi = ["tetraloma/mpi", "tetraloma-testing/mpi", "dep:mpi"]
+
+[dependencies]
+bytemuck.workspace = true
+cubecl.workspace = true
+tetraloma = { path = "../tetraloma" }
+tetraloma-device = { path = "../tetraloma-device", features = ["testing"] }
+# The hidden bench hooks of the degree sweep (ADR-0038, ADR-0042).
+tetraloma-geometry = { path = "../tetraloma-geometry", features = ["bench", "testing"] }
+tetraloma-dims = { path = "../tetraloma-dims" }
+tetraloma-refcell = { path = "../tetraloma-refcell" }
+tetraloma-testing = { path = "../tetraloma-testing", default-features = false }
+# The hidden bench hooks of TopologyKeys and PermutationInfo (ADR-0015, item 4).
+tetraloma-topology = { path = "../tetraloma-topology", features = ["bench"] }
+mpi = { workspace = true, optional = true }
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

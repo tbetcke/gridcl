@@ -15,7 +15,7 @@ Release builds run the M9h acceptance tests at p = 5–8 (T0b). Until T6a, every
   - CPU: the pull-back fails with `AllocationTooLarge { bytes: 470656, max: 196800 }`.
   - Metal: ξ of the quadrilateral box at p = 3 differs by 3.65e-5 between vector sizes 1 and 2, against 1.02e-5.
 
-`GRIDCL_GEOM_STRATEGY=direct` fails the same three with the same errors (J bitwise equal), so none comes from T6a: the M9 kernels and the test rules meet at p ≥ 5 for the first time.
+`TETRALOMA_GEOM_STRATEGY=direct` fails the same three with the same errors (J bitwise equal), so none comes from T6a: the M9 kernels and the test rules meet at p ≥ 5 for the first time.
 
 Three different causes lie behind them, one per section below. Each touches an accepted rule, so they are proposed together.
 
@@ -114,8 +114,8 @@ Option 2.
   - ADR-0042's and ADR-0044's decision records: "Amended by ADR-0046".
 - **Public API changes:** none. `PullBackOptions` is unchanged. The `PullBack` documentation gains the clamp, and `last_step` keeps its meaning.
 - **Code:**
-  - **Pull-back clamp:** `gridcl-geometry/src/pull_back.rs` (`direct`), and every pull-back strategy after it (T6b's `loops`, T7b–T8's `sumfact`, T9–T10's `shared` and `cooperative`).
-  - **`gridcl_testing::reference`:** the scales gain n / n_ref, and R from the block's nodes and J. The callers are the same as ADR-0044's (`gridcl/tests/{common/mod.rs, high_order.rs, high_order_invariance.rs}`, `gridcl-testing/src/{parallel.rs, meshes/family.rs}`, `gridcl-testing/tests/reference.rs`, `gridcl-bench/src/families/degree.rs`).
+  - **Pull-back clamp:** `tetraloma-geometry/src/pull_back.rs` (`direct`), and every pull-back strategy after it (T6b's `loops`, T7b–T8's `sumfact`, T9–T10's `shared` and `cooperative`).
+  - **`tetraloma_testing::reference`:** the scales gain n / n_ref, and R from the block's nodes and J. The callers are the same as ADR-0044's (`tetraloma/tests/{common/mod.rs, high_order.rs, high_order_invariance.rs}`, `tetraloma-testing/src/{parallel.rs, meshes/family.rs}`, `tetraloma-testing/tests/reference.rs`, `tetraloma-bench/src/families/degree.rs`).
   - **`high_order_invariance.rs`, the large case:** `max_page_size` is at least `EVector::coefficients_bytes` and the other per-block tables. The E-vector must span three chunks at every degree. The J assertion holds where the limit allows, with the exceptions named in the test.
 - **Acceptance tests affected:**
   - `high_order::{factors_match_host_reference, pull_back_recovers_reference_points}`: J, det J, K, normals, facet normals and ξ get the new factors.
@@ -130,4 +130,4 @@ Option 2.
 
 Accepted by the maintainer on 2026-11-11, as proposed (option 2: the clamp with m = 0.1, the product (A / A_ref) · (n / n_ref) with max(1, R), and the page limit above the per-block tables). Applied in `adr: 0046 apply`: docs/design.md, "Pull-back" and "Tolerances", and the decision records of ADR-0042 and ADR-0044. The kernel clamp and the test-support changes follow as T6b's first step.
 
-Addendum at the M9h review (maintainer, 2026-11-15): the apply left "Testing and validation" saying that "the E-vector and fields span at least three chunks". The sentence now states the decision above: the E-vector at every degree, J wherever the page limit (at least the largest per-block table) allows, which excludes hexahedra from p = 6 (`gridcl/tests/high_order_invariance.rs`).
+Addendum at the M9h review (maintainer, 2026-11-15): the apply left "Testing and validation" saying that "the E-vector and fields span at least three chunks". The sentence now states the decision above: the E-vector at every degree, J wherever the page limit (at least the largest per-block table) allows, which excludes hexahedra from p = 6 (`tetraloma/tests/high_order_invariance.rs`).

@@ -34,23 +34,23 @@ The design-reviewer then critiqued the draft plan; its findings are folded in he
 
 The following facts from the existing code matter:
 
-- **gridcl-device depends only on cubecl and toml.** It cannot name gridcl-dims, gridcl-refcell or gridcl-topology types, but `GridError` lives there (ADR-0009).
-- **The test overrides are crate-private.** `testing::properties` is `pub(crate)` in gridcl-device. A kernel launcher in gridcl-topology or gridcl-geometry that reads `client.properties()` does not see `testing::with_properties`. M3's acceptance test "with an injected limit, `QuadField` results are identical with 1 and 7 chunks" depends on these overrides.
+- **tetraloma-device depends only on cubecl and toml.** It cannot name tetraloma-dims, tetraloma-refcell or tetraloma-topology types, but `GridError` lives there (ADR-0009).
+- **The test overrides are crate-private.** `testing::properties` is `pub(crate)` in tetraloma-device. A kernel launcher in tetraloma-topology or tetraloma-geometry that reads `client.properties()` does not see `testing::with_properties`. M3's acceptance test "with an injected limit, `QuadField` results are identical with 1 and 7 chunks" depends on these overrides.
 - **Helpers other crates need are crate-private too.** `pad_len`, which gives the `SortKeys` plane stride, and `debug_assert_bindings` are `pub(crate)`.
-- **gridcl-refcell lacks three host items M3 needs:** reference facet normals, facet-to-cell point maps and the A.6 storage slots. M1b deferred them to M3 (docs/plans/M1b.md, question 8).
+- **tetraloma-refcell lacks three host items M3 needs:** reference facet normals, facet-to-cell point maps and the A.6 storage slots. M1b deferred them to M3 (docs/plans/M1b.md, question 8).
 
 ## Problem
 
 1. **Crate placement of `DeviceGrid`.**
-   - The crate table and Listing B7 put `DeviceGrid` in gridcl.
-   - Listing B4b's `QuadRule::for_grid<G: DeviceGrid<…>>` and Listing B5's `jacobians_block<…, G: DeviceGrid<…>>` are in gridcl-geometry.
-   - gridcl depends on gridcl-geometry, so gridcl-geometry cannot name a trait defined in gridcl.
+   - The crate table and Listing B7 put `DeviceGrid` in tetraloma.
+   - Listing B4b's `QuadRule::for_grid<G: DeviceGrid<…>>` and Listing B5's `jacobians_block<…, G: DeviceGrid<…>>` are in tetraloma-geometry.
+   - tetraloma depends on tetraloma-geometry, so tetraloma-geometry cannot name a trait defined in tetraloma.
 2. **The E-vector cache and the origin.**
    - **No place for the cache.** Listing B5 calls `let xe = gb.evector()?; // cached` on a `GeometryBlock<TD>`, which Listing B3 defines without a scalar parameter. It cannot hold a `DeviceBuffer<F>` cache.
    - **The cache contradicts B7's rule.** The paragraph after Listing B7 says "Accessors never create data". A lazy cache does create data, yet the M3 scope requires E-vectors "built on demand and cached per geometry block".
    - **No way to read the origin.** `physical_points` must add back the per-mesh origin ("Coordinates relative to an origin"), but `DeviceGrid` has no method that returns it. Generic block functions therefore cannot compute X.
-3. **`ConnectivityNotCreated(key)`.** Listing B7 documents `Err(GridError::ConnectivityNotCreated(key))`, and Listing T1 places `ConnKey` in gridcl-topology. `GridError` lives in gridcl-device, which does not depend on gridcl-topology.
-4. **Error variants and helpers.** "Later milestones add their variants when they first use them". Their names, payloads, and the cell and family types in them are not given, and the cell and family types cannot be named in gridcl-device. M3 also needs `pad_len`, a properties accessor that honours the test overrides, and `debug_assert_bindings`, all from outside gridcl-device.
+3. **`ConnectivityNotCreated(key)`.** Listing B7 documents `Err(GridError::ConnectivityNotCreated(key))`, and Listing T1 places `ConnKey` in tetraloma-topology. `GridError` lives in tetraloma-device, which does not depend on tetraloma-topology.
+4. **Error variants and helpers.** "Later milestones add their variants when they first use them". Their names, payloads, and the cell and family types in them are not given, and the cell and family types cannot be named in tetraloma-device. M3 also needs `pad_len`, a properties accessor that honours the test overrides, and `debug_assert_bindings`, all from outside tetraloma-device.
 5. **Origin-id encoding.** On the device, origin ids are "interleaved (hi, lo) u32 pairs, with a comptime fast path when every id fits in u32". The design specifies no encoding, so the following are undefined:
    - how a signed i64 compares as an unsigned pair;
    - what "fits in u32" means for negative ids.
@@ -85,13 +85,13 @@ The following facts from the existing code matter:
 ## Options
 
 1. **Keep the design as written.**
-   - **Does not compile or contradicts itself:** `DeviceGrid` in gridcl (problem 1), `gb.evector()` on `GeometryBlock<TD>` (problem 2), and `ConnectivityNotCreated(ConnKey)` in gridcl-device (problem 3).
+   - **Does not compile or contradicts itself:** `DeviceGrid` in tetraloma (problem 1), `gb.evector()` on `GeometryBlock<TD>` (problem 2), and `ConnectivityNotCreated(ConnKey)` in tetraloma-device (problem 3).
    - **Cannot pass:** the 1-versus-7-chunks test, because injected limits do not reach other crates (problem 4).
    - **Settled ad hoc:** the remaining items would be decided during M3 and recorded only in the plan's Deviations log, although M4–M9 build on them.
 
    Not chosen.
 2. **Decide every item in one ADR and apply it to the design** (detailed below). The public API grows by the items listed under Consequences, and three items move between crates: `DeviceGrid`, `CoordinateElement`/`GeometryBlock` and `ConnKey`. CLAUDE.md's host-copy rule gains three cases.
-3. **Option 2, but with a wider crate graph:** gridcl-device depends on gridcl-dims and gridcl-refcell, so `GridError` can carry `CellType`, `NodeFamily` and `WrongCellDim` directly. Both crates are host-only and free of other dependencies.
+3. **Option 2, but with a wider crate graph:** tetraloma-device depends on tetraloma-dims and tetraloma-refcell, so `GridError` can carry `CellType`, `NodeFamily` and `WrongCellDim` directly. Both crates are host-only and free of other dependencies.
    - It changes dependency rule text and the crate table, for one error type.
    - Not chosen: `&'static str` names follow `UnsupportedPrecision`, the precedent of ADR-0009.
 
@@ -109,15 +109,15 @@ Option 2. Each item is decided as follows.
 
 ### Crate placement (problems 1 and 3)
 
-- **gridcl-geometry:** `DeviceGrid` (Listing B7), `CoordinateElement<TD>` and `GeometryBlock<TD>` (Listing B3), and a `Geometry<F, TD, GD>` container (geometry blocks, nodes, node `IndexMap`, origin, E-vector cache). gridcl re-exports them.
-- **gridcl-topology:** `CellBlock<TD>` (Listing B3), `EntityBlock` and `Connectivity` (Listing T1), and a `Topology<TD>` container (cell blocks, vertex `IndexMap` and origin ids, entity blocks, connectivity, permutation info).
-- **gridcl-device:** `ConnKey` moves here (Listing T1's definition, unchanged), so that `GridError::ConnectivityNotCreated(ConnKey)` stays as Listing B7 writes it. gridcl-topology and gridcl re-export it.
-- **gridcl:** `Mesh`, its aliases, `MeshBuilder`, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `EntityMap` and the prelude.
+- **tetraloma-geometry:** `DeviceGrid` (Listing B7), `CoordinateElement<TD>` and `GeometryBlock<TD>` (Listing B3), and a `Geometry<F, TD, GD>` container (geometry blocks, nodes, node `IndexMap`, origin, E-vector cache). tetraloma re-exports them.
+- **tetraloma-topology:** `CellBlock<TD>` (Listing B3), `EntityBlock` and `Connectivity` (Listing T1), and a `Topology<TD>` container (cell blocks, vertex `IndexMap` and origin ids, entity blocks, connectivity, permutation info).
+- **tetraloma-device:** `ConnKey` moves here (Listing T1's definition, unchanged), so that `GridError::ConnectivityNotCreated(ConnKey)` stays as Listing B7 writes it. tetraloma-topology and tetraloma re-export it.
+- **tetraloma:** `Mesh`, its aliases, `MeshBuilder`, `AnyMesh`, `AnyMeshRef`, `with_mesh!`, `EntityMap` and the prelude.
 
-### gridcl-device (problem 4)
+### tetraloma-device (problem 4)
 
 - **New `GridError` variants.** Cell types and node families are named by `&'static str` (`"Tetrahedron"`, `"Gll"`).
-  - `UnsupportedNodeFamily { cell: &'static str, family: &'static str }` and `UnsupportedDegree { cell: &'static str, degree: u32 }`. gridcl-geometry maps `gridcl_refcell::RefCellError` onto them.
+  - `UnsupportedNodeFamily { cell: &'static str, family: &'static str }` and `UnsupportedDegree { cell: &'static str, degree: u32 }`. tetraloma-geometry maps `tetraloma_refcell::RefCellError` onto them.
   - `WrongCellDim { found: &'static str, expected_tdim: usize }`.
   - `DimensionMismatch { expected: (usize, usize), found: (usize, usize) }` (Listing B6).
   - `EntitiesNotCreated(usize)`, `ConnectivityNotCreated(ConnKey)` and `UnsupportedConnectivity(ConnKey)`.
@@ -126,10 +126,10 @@ Option 2. Each item is decided as follows.
   - `NotYetImplemented(&'static str)`: a method declared before the milestone that implements it (problem 10).
 - **Made public:**
   - `pad_len(len) -> Result<usize>`;
-  - `device_properties(&Client) -> Arc<DeviceProperties>`: the properties gridcl-device itself reads, honouring `testing::with_properties`. Kernel launchers in every crate read limits through it;
+  - `device_properties(&Client) -> Arc<DeviceProperties>`: the properties tetraloma-device itself reads, honouring `testing::with_properties`. Kernel launchers in every crate read limits through it;
   - `debug_assert_bindings(&Client, n)`.
 
-### gridcl-refcell (host, f64)
+### tetraloma-refcell (host, f64)
 
 - `reference_facet_normals(cell: CellType) -> Vec<f64>`: the outward unit normal of every facet, in facet order, with `tdim(cell)` entries per facet.
 - `facet_points_to_cell(cell, facet: usize, points: &[f64]) -> Vec<f64>`: maps points on the reference facet into cell coordinates through the facet's vertex list, with A.5's affine rule (v0 + Σ t_k (v_k − v0)).
@@ -140,7 +140,7 @@ Option 2. Each item is decided as follows.
 - **Encoding.** Each id is stored as the u32 pair `(hi ^ 0x8000_0000, lo)`, where hi and lo are the high and low words of the i64. Unsigned lexicographic pair order then equals i64 order, so negative ids stay valid.
 - **Fast path.** It applies when every hi word equals `0x8000_0000`, that is, when 0 ≤ id < 2^32. The mesh records this as a flag at creation, and kernels compare only the lo words.
 
-### gridcl-topology (problems 6 and 7)
+### tetraloma-topology (problems 6 and 7)
 
 - **`CellBlock::new`.** `CellBlock::new(cell: TD::Cell, index_map, vertices, origin_ids, flags) -> CellBlock<TD>`, so that Listing B10's `CellBlock::<D2>::new(Cell3::Tetrahedron, …)` exists.
 - **Dimensions.**
@@ -158,7 +158,7 @@ Option 2. Each item is decided as follows.
 - **Steps 4–5** use `unique_by_key`: its `group` is the provisional id, and its count read is the one CLAUDE.md allows.
 - **Step 9** fills each row of entity → cells in cell order with a stable radix sort, with offsets from `histogram` and `exclusive_scan`. The result is deterministic without atomics.
 
-### gridcl-geometry (problems 2 and 8)
+### tetraloma-geometry (problems 2 and 8)
 
 - **`PointSet<F, TD>`.**
   - Host data in reference coordinates: `cell()`, `len()`, `points() -> &[f64]` and `weights() -> &[f64]`.
@@ -179,7 +179,7 @@ Option 2. Each item is decided as follows.
 - **B7's rule** becomes: "Accessors create no topology: entities and connectivity are built only by the `&mut self` methods `create_entities` and `create_connectivity`. Derived geometry data (E-vectors) is built on first use and cached."
 - **Block functions** are generic over `G: DeviceGrid`, as in Listing B5: `physical_points_block`, `jacobians_block`, `detj_block`, `pseudo_inverse_block`, `facet_normals_block`, `normals_block` and `measure_block` (Listing B11).
 
-### gridcl (problems 9 and 10)
+### tetraloma (problems 9 and 10)
 
 - **`MeshBuilder<F, TD, GD>`.**
   - `new(client)`.
@@ -217,7 +217,7 @@ Option 2. Each item is decided as follows.
   - **Listing B3:**
     - `CellBlock::new`;
     - the `origin_ids` comment states the sign-flipped encoding;
-    - `CoordinateElement` and `GeometryBlock` are marked "(gridcl-geometry, re-exported by gridcl)";
+    - `CoordinateElement` and `GeometryBlock` are marked "(tetraloma-geometry, re-exported by tetraloma)";
     - a note that `TagRegistry` arrives in M4.
   - **Listing B4:** a doc line on `boundary`, "returns `NotYetImplemented` until M9".
   - **Listing B4b:**
@@ -226,10 +226,10 @@ Option 2. Each item is decided as follows.
     - chunk sizing through `device_properties`.
   - **Listing B5:** `g.evector(b)?`.
   - **Listing B7:**
-    - "(gridcl-geometry, re-exported by gridcl)";
+    - "(tetraloma-geometry, re-exported by tetraloma)";
     - `evector` and `origin`;
     - the reworded rule in the paragraph after it.
-  - **Listing T1:** `ConnKey` is marked "(gridcl-device, re-exported)".
+  - **Listing T1:** `ConnKey` is marked "(tetraloma-device, re-exported)".
   - **The paragraph after Listing S1:**
     - the M3 variants;
     - `pad_len`, `device_properties` and `debug_assert_bindings` are public.
@@ -248,21 +248,21 @@ Option 2. Each item is decided as follows.
     - M3's last acceptance bullet reads "at every vector size from 1 up to 16 that the device offers and the tile holds";
     - M9 scope reads "boundary, facet and edge submeshes … ; the manifold tests of normals, pseudo-inverse and facet normals".
   - **Crate table:**
-    - gridcl-geometry gains `DeviceGrid`;
-    - gridcl-device gains `ConnKey`;
-    - gridcl-refcell gains "reference facet normals, facet point maps, A.6 storage slots";
-    - gridcl-testing gains gridcl-dims and gridcl-refcell;
-    - gridcl-topology and gridcl-geometry gain the dev-dependency gridcl-testing.
+    - tetraloma-geometry gains `DeviceGrid`;
+    - tetraloma-device gains `ConnKey`;
+    - tetraloma-refcell gains "reference facet normals, facet point maps, A.6 storage slots";
+    - tetraloma-testing gains tetraloma-dims and tetraloma-refcell;
+    - tetraloma-topology and tetraloma-geometry gain the dev-dependency tetraloma-testing.
   - **Listing H1:** the host-copy line, as above.
 - **CLAUDE.md:** the same host-copy line.
 - **Public API changes:**
   - **Additions:**
-    - gridcl-device: `ConnKey` (moved), the variants, and the three helpers;
-    - gridcl-refcell: three functions;
-    - gridcl-topology: `CellBlock::new` and `Topology`;
-    - gridcl-geometry: `PointSet`, `FacetPointSet`, `FacetQuadRule`, `EVector`, `Geometry`, the `QuadField` accessors, `DeviceGrid::{evector, origin}` and the block functions;
-    - gridcl: `MeshBuilder` and `EntityMap`.
-  - **Relocations:** `DeviceGrid`, `CoordinateElement` and `GeometryBlock` to gridcl-geometry, and `ConnKey` to gridcl-device, all re-exported where the design lists them.
+    - tetraloma-device: `ConnKey` (moved), the variants, and the three helpers;
+    - tetraloma-refcell: three functions;
+    - tetraloma-topology: `CellBlock::new` and `Topology`;
+    - tetraloma-geometry: `PointSet`, `FacetPointSet`, `FacetQuadRule`, `EVector`, `Geometry`, the `QuadField` accessors, `DeviceGrid::{evector, origin}` and the block functions;
+    - tetraloma: `MeshBuilder` and `EntityMap`.
+  - **Relocations:** `DeviceGrid`, `CoordinateElement` and `GeometryBlock` to tetraloma-geometry, and `ConnKey` to tetraloma-device, all re-exported where the design lists them.
   - **No existing signature changes.**
 - **Acceptance tests affected:**
   - M3's last bullet is clarified for tile width 1 and for devices with fewer than 16 lanes, without weakening it: every size the device offers is still tested at tile width 16.

@@ -1,13 +1,13 @@
-# gridcl - working agreement
+# tetraloma - working agreement
 
-- Design reference: docs/design.md (gridcl Design B, revised design, October 2026).
+- Design reference: docs/design.md (tetraloma Design B, revised design, October 2026).
   Public types in "Architecture" and "API walkthrough" change only via an ADR in docs/adr/.
 - Toolchain: stable Rust 1.99, pinned in rust-toolchain.toml.
 - CubeCL: cubecl = "=0.11.0" in [workspace.dependencies].
   - Crates that define or launch kernels may depend on cubecl without runtime features.
-  - Runtime types (runtime structs, get_resource, cubecl-runtime) only in gridcl-device.
+  - Runtime types (runtime structs, get_resource, cubecl-runtime) only in tetraloma-device.
   - Never add a Runtime type parameter to a public type; use cubecl::prelude::Client.
-  - Runtime features only in gridcl-testing, examples, benches and binaries
+  - Runtime features only in tetraloma-testing, examples, benches and binaries
     (`gpu-aware-cuda` is reserved; ADR-0059).
 - Kernels:
   - launch shape (cube count, cube dim, vector size, items per unit) only from LaunchPlan;
@@ -31,8 +31,8 @@
 - Host maths generic over F: Real uses widen()/narrow() or f64, never F's own methods.
 - Orientation always uses origin ids, never local or post-partition global ids.
 - Tests: cargo test --workspace must pass on the CPU runtime.
-  GPU runs: GRIDCL_TEST_DEVICE=vulkan | metal | cuda.
-- MPI tests: crate gridcl-mpi-tests ([[test]] targets, harness = false),
+  GPU runs: TETRALOMA_TEST_DEVICE=vulkan | metal | cuda.
+- MPI tests: crate tetraloma-mpi-tests ([[test]] targets, harness = false),
   run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI.
 - Run plans: only the runs that show the code works and the timings a decision needs
   (ADR-0057). The standing matrix stays (CPU runtime and Metal on every change, Locust after
@@ -66,8 +66,8 @@
   expansion coefficients, or of the coefficient factors and node permutation of a
   sum-factorised pull-back, when the pull-back first uses it (ADR-0039, ADR-0040,
   ADR-0042, ADR-0049).
-- FFI declarations only in *-sys crates. FFI calls only in gridcl-parallel (MPI),
-  gridcl-device (GPU-aware; the macOS performance-core count, ADR-0017) and gridcl-partition
+- FFI declarations only in *-sys crates. FFI calls only in tetraloma-parallel (MPI),
+  tetraloma-device (GPU-aware; the macOS performance-core count, ADR-0017) and tetraloma-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
   and examples may call its declarations (ADR-0039). Every unsafe block needs a SAFETY comment.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
@@ -92,7 +92,7 @@ The full procedure for humans is in IMPLEMENTATION.md. Rules for Claude:
   the design is updated only after the maintainer accepts the ADR.
 - CubeCL or CubeK bugs, surprising behaviour, missing settings and documentation gaps go into
   docs/cubecl-upstream.md as a `C<n>` entry (version, observation with source location,
-  evidence, gridcl workaround, suggestion, status), in the same commit as the work that found
+  evidence, tetraloma workaround, suggestion, status), in the same commit as the work that found
   them. Check claims against the crate source first; update the status when reported or fixed.
 - Delegated work (subagents): include the task text, the design sections it depends on and
   this rule: "If the design is ambiguous or an API must change, stop and return an ADR draft
@@ -117,7 +117,7 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
 
 - This machine is the local Mac (currently the M6 Mac mini, docs/dev-environment.md; ADR-0034).
   Run tests here on the CubeCL CPU runtime (the default) and on Metal
-  (`GRIDCL_TEST_DEVICE=metal`) on every change.
+  (`TETRALOMA_TEST_DEVICE=metal`) on every change.
 - CUDA runs go through `scripts/hpc/remote-test.sh` only (skill: hpc-test). Never run GPU work
   on a login node, and never submit jobs with hand-written `qsub` or `ssh` commands. The
   exception is milestone E0, while the runner is being built: then each such command needs the
@@ -128,7 +128,7 @@ Targets and site details are in docs/dev-environment.md; the policy is in docs/d
   when Locust is unreachable or a run fails because another user occupies its GPU, and to
   compare architecture-dependent results. Never CPU benchmarks there (its CPU is shared), GPU
   timings only if its `node load:` line is `idle` before and after, and no MPI (one GPU). All
-  software for gridcl on it lives under `~/local_disk`, never in its network home. Say why when
+  software for tetraloma on it lives under `~/local_disk`, never in its network home. Say why when
   you schedule it.
 - Myriad V100 (`myriad-v100`) and A100 (`myriad-a100`) only: as the fallback when the A4000
   workstation is unavailable too, or a benchmark cannot get an idle node; for multi-GPU tests (`--gpus 2`; the GPU-aware transport is deferred, ADR-0059); to compare
