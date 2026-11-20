@@ -1902,7 +1902,7 @@ Each milestone is one Claude Code work package. Every acceptance test is automat
 | M10 Hardening | all |
 | M10c CPU vector policy | M10 |
 | E1 Rename to tetraloma | M10c |
-| D1 User documentation | E1 |
+| D1 User documentation | E1; E2 for its MPICH acceptance item (ADR-0068) |
 
 ### E0 Development environment
 
