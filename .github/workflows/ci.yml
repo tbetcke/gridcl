@@ -93,3 +93,30 @@ jobs:
           C
           mpicc hello.c -o hello
           mpirun -n 4 ./hello
+
+  # Option 3: Ubuntu 26.04's own MPICH (4.3.2).
+  ubuntu-26:
+    runs-on: ubuntu-26.04
+    steps:
+      - run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends mpich libmpich-dev
+          mpichversion | head -20
+          apt-cache depends libmpich12 2>/dev/null | grep -i pmix || echo "no pmix dependency"
+      - name: C program, plain
+        run: |
+          cat > hello.c <<'C'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(void) {
+            MPI_Init(NULL, NULL);
+            int r, s;
+            MPI_Comm_rank(MPI_COMM_WORLD, &r);
+            MPI_Comm_size(MPI_COMM_WORLD, &s);
+            printf("rank %d of %d\n", r, s);
+            MPI_Finalize();
+            return 0;
+          }
+          C
+          mpicc hello.c -o hello
+          mpirun -n 4 ./hello
