@@ -836,8 +836,9 @@ fn cells_array<'e, 'a>(cells: &'e Element<'a>, name: &str) -> Result<&'e Element
 /// to 1. The only `compressor` read is `vtkZLibDataCompressor`, with any block size.
 /// `InformationKey` children of a `DataArray` and other unknown elements are skipped.
 ///
-/// The result always fits together as [`VtuFile::write_to`] requires, and every connectivity
-/// entry is a point index.
+/// The result always fits together as [`VtuFile::write_to`] requires, and every connectivity entry
+/// is a point index. tetraloma writes VTK files but does not build meshes from them; use this
+/// function to read a VTU file back and inspect its arrays. See [Writing VTU].
 ///
 /// # Errors
 ///
@@ -882,6 +883,8 @@ fn cells_array<'e, 'a>(cells: &'e Element<'a>, name: &str) -> Result<&'e Element
 /// assert!(parse_vtu(&bytes[..bytes.len() / 2]).is_err());
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 pub fn parse_vtu(bytes: &[u8]) -> Result<VtuFile> {
     let doc = read_xml(bytes)?;
     let root = &doc.root;

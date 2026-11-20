@@ -29,7 +29,8 @@ const BLOCK_SIZE: usize = 32768;
 /// The size of a header word (`header_type="UInt64"`).
 const WORD: usize = 8;
 
-/// Where the binary data of a written file goes.
+/// Where the binary data of a written file goes: raw bytes appended after the XML, or base64 text
+/// inside each array. See [Writing VTU].
 ///
 /// # Example
 ///
@@ -53,6 +54,8 @@ const WORD: usize = 8;
 /// }
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Binary {
     /// Raw bytes in one `AppendedData` section after the XML.
@@ -316,8 +319,8 @@ impl VtuFile {
     /// The one `Piece` holds `PointData`, `CellData`, `Points` (`Name="Points"`) and `Cells`
     /// (`connectivity` and `offsets` as Int64, `types` as UInt8). Every `DataArray` names its
     /// `type`, `Name`, `NumberOfComponents` and `format`. Names are escaped as XML. zlib uses
-    /// blocks of 32768 bytes and a fixed compression level, so the same file always gives
-    /// the same bytes.
+    /// blocks of 32768 bytes and a fixed compression level, so the same file always gives the same
+    /// bytes. See [Writing VTU].
     ///
     /// # Errors
     ///
@@ -370,6 +373,8 @@ impl VtuFile {
     /// assert!(bytes.is_empty());
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Writing VTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-vtu
     pub fn write_to(&self, w: &mut dyn Write, binary: Binary, zlib: bool) -> Result<()> {
         let points = self.check()?;
         let mut o = Out {
@@ -434,12 +439,14 @@ impl VtuFile {
     }
 }
 
-/// Writes the `PUnstructuredGrid` header naming `pieces`, with the point, point data and cell
-/// data arrays declared as in `like`.
+// ADR-0035 (the ghost level of distributed meshes).
+/// Writes the `PUnstructuredGrid` header naming `pieces`, with the point, point data and cell data
+/// arrays declared as in `like`. ParaView opens the header and loads the pieces; see
+/// [Writing PVTU].
 ///
 /// The file is `type="PUnstructuredGrid" version="2.2" byte_order="LittleEndian"
-/// header_type="UInt64"` with `GhostLevel` = `ghost_level` (ADR-0035): `PPointData` and `PCellData` with a
-/// `PDataArray` (`type`, `Name`, `NumberOfComponents`) for each array of `like`, `PPoints`,
+/// header_type="UInt64"` with `GhostLevel` = `ghost_level`: `PPointData` and `PCellData` with
+/// a `PDataArray` (`type`, `Name`, `NumberOfComponents`) for each array of `like`, `PPoints`,
 /// then one `<Piece Source="…"/>` per entry of `pieces`, a path relative to the PVTU file.
 /// Names and paths are escaped as XML.
 ///
@@ -468,6 +475,8 @@ impl VtuFile {
 /// assert!(text.contains("<Piece Source=\"out_0.vtu\"/>"));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing PVTU]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-pvtu
 pub fn write_pvtu(
     w: &mut dyn Write,
     pieces: &[String],

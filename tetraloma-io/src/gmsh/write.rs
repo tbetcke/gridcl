@@ -7,7 +7,9 @@ use tetraloma_device::{GridError, Result};
 
 use super::{Entity, FORMAT, MshFile, PartitionedEntity};
 
-/// The encoding of a written file. Binary files are little-endian with an 8-byte `size_t`.
+/// The encoding of a written file: ASCII text or binary. Binary files are little-endian with an
+/// 8-byte `size_t`. tetraloma's parallel reader reads a binary file in pieces on every rank, and an
+/// ASCII file on rank 0. See [Writing Gmsh].
 ///
 /// # Example
 ///
@@ -21,6 +23,8 @@ use super::{Entity, FORMAT, MshFile, PartitionedEntity};
 /// }
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Writing Gmsh]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-gmsh
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Encoding {
     /// Text, with shortest round-trip floats.
@@ -180,10 +184,11 @@ impl MshFile {
         Ok(())
     }
 
-    /// Writes the file as MSH 4.1 in `encoding`: `$MeshFormat`, then `$PhysicalNames`,
-    /// `$Entities` and `$PartitionedEntities` when present, `$Nodes`, `$Elements`, and
-    /// `$Periodic` when present. The header counts and tag ranges of `$Nodes` and `$Elements`
-    /// are computed from the blocks; node blocks are written without parametric coordinates.
+    /// Writes the file as MSH 4.1 in `encoding`: `$MeshFormat`, then `$PhysicalNames`, `$Entities`
+    /// and `$PartitionedEntities` when present, `$Nodes`, `$Elements`, and `$Periodic` when
+    /// present. The header counts and tag ranges of `$Nodes` and `$Elements` are computed from the
+    /// blocks; node blocks are written without parametric coordinates. ASCII files hold the
+    /// shortest decimal form of each coordinate that reads back exactly. See [Writing Gmsh].
     ///
     /// # Errors
     ///
@@ -223,6 +228,8 @@ impl MshFile {
     /// }
     /// # Ok::<(), tetraloma_device::GridError>(())
     /// ```
+    ///
+    /// [Writing Gmsh]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-gmsh
     pub fn write_to(&self, w: &mut dyn Write, encoding: Encoding) -> Result<()> {
         self.check_writable()?;
         let binary = encoding == Encoding::Binary;

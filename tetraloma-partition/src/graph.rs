@@ -5,8 +5,32 @@ use std::borrow::Cow;
 
 use tetraloma_parallel::{CommDyn, CommExt, GridError, Result};
 
-/// A distributed CSR graph in the ParMETIS and PT-Scotch convention: rank r holds the global
-/// vertices `vtxdist[r]..vtxdist[r + 1]`.
+// Design: "Partitioning", Listing S3.
+/// A graph in compressed sparse row (CSR) form, distributed over the ranks in the convention of
+/// ParMETIS and PT-Scotch: rank r holds the global vertices `vtxdist[r]..vtxdist[r + 1]`.
+///
+/// The neighbours of this rank's local vertex k (global vertex `vtxdist[rank] + k`) are the global
+/// vertices `adjncy[xadj[k]..xadj[k + 1]]`. Every edge appears in the rows of both its ends, and
+/// `vtxdist` is the same on every rank. In tetraloma the graph is the dual graph of a mesh: one
+/// vertex per cell, an edge between cells that share a facet. The tutorial [Distributed meshes]
+/// explains how the mesh builder makes it.
+///
+/// # Example
+///
+/// ```
+/// use tetraloma_partition::DistGraph;
+///
+/// // Three cells in a row, 0 - 1 - 2, all on one rank: cell 1 has two neighbours.
+/// let g = DistGraph {
+///     vtxdist: vec![0, 3],
+///     xadj: vec![0, 1, 3, 4],
+///     adjncy: vec![1, 0, 2, 1],
+///     vwgt: Some(vec![1, 2, 1]),
+/// };
+/// assert_eq!(&g.adjncy[g.xadj[1] as usize..g.xadj[2] as usize], [0, 2]);
+/// ```
+///
+/// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DistGraph {
     /// The first global vertex of every rank, and the total; `nranks + 1` entries.
@@ -15,15 +39,91 @@ pub struct DistGraph {
     pub xadj: Vec<i64>,
     /// Global ids of the neighbours (global cell ids).
     pub adjncy: Vec<i64>,
-    /// Vertex weights, from the cost model per (cell type, degree); `None` for unit weights.
+    /// Vertex weights, one per local vertex; `None` for unit weights. tetraloma's mesh builder
+    /// sets them from the cell type and degree.
     pub vwgt: Option<Vec<i64>>,
 }
 
-/// A graph partitioner.
+// Design: "Partitioning", Listing S3.
+/// A graph partitioner: it gives every vertex of a [`DistGraph`] a part, the rank that will own
+/// the cell.
+///
+/// tetraloma's mesh builder and Gmsh reader call [`partition`](Partitioner::partition) with
+/// `nparts` equal to the number of ranks. You can implement the trait yourself to place cells your
+/// own way; the tutorial [Distributed meshes] shows a round-robin partitioner.
+///
+/// # Example
+///
+/// ```
+/// use tetraloma_parallel::{CommDyn, Result, Serial};
+/// use tetraloma_partition::{DistGraph, Partitioner};
+///
+/// /// Vertex i goes to part i mod nparts.
+/// struct RoundRobin;
+///
+/// impl Partitioner for RoundRobin {
+///     fn name(&self) -> &str {
+///         "round-robin"
+///     }
+///     fn partition(&self, comm: &dyn CommDyn, g: &DistGraph, nparts: usize) -> Result<Vec<i32>> {
+///         let first = g.vtxdist[comm.rank()];
+///         let n = g.xadj.len() - 1;
+///         Ok((0..n as i64).map(|k| ((first + k) % nparts as i64) as i32).collect())
+///     }
+/// }
+///
+/// // Four isolated vertices on one rank.
+/// let g = DistGraph { vtxdist: vec![0, 4], xadj: vec![0; 5], adjncy: vec![], vwgt: None };
+/// assert_eq!(RoundRobin.partition(&Serial, &g, 3)?, [0, 1, 2, 0]);
+/// # Ok::<(), tetraloma_parallel::GridError>(())
+/// ```
+///
+/// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
 pub trait Partitioner {
-    /// The partitioner's name, for logs.
+    /// The partitioner's name, for logs and error messages: `"block"`, `"metis"`, `"scotch"`,
+    /// `"ptscotch"` or `"parmetis"` for tetraloma's partitioners. The tutorial [Distributed meshes]
+    /// introduces them.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_partition::{Block, Partitioner};
+    ///
+    /// assert_eq!(Block.name(), "block");
+    /// ```
+    ///
+    /// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
     fn name(&self) -> &str;
-    /// Destination rank of every local graph vertex (cell). Collective.
+    /// The destination part, in `0..nparts`, of every local vertex of `g`, in local order.
+    /// Collective: every rank of `comm` calls it with its own rows of the same graph and the same
+    /// `nparts`. The tutorial [Distributed meshes] shows the partitioners at work.
+    ///
+    /// # Errors
+    ///
+    /// Each partitioner documents its own. tetraloma's partitioners check the graph first
+    /// (`LengthMismatch` for inconsistent arrays, `TooLarge` for counts beyond the library's
+    /// integer type), agree on the result over the ranks, and return `RemoteFailure` with the
+    /// lowest failing rank on the ranks without a local error.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::Serial;
+    /// use tetraloma_partition::{Block, DistGraph, Partitioner};
+    ///
+    /// // Six cells in a row on one rank, cut into three parts.
+    /// let g = DistGraph {
+    ///     vtxdist: vec![0, 6],
+    ///     xadj: vec![0, 1, 3, 5, 7, 9, 10],
+    ///     adjncy: vec![1, 0, 2, 1, 3, 2, 4, 3, 5, 4],
+    ///     vwgt: None,
+    /// };
+    /// let parts = Block.partition(&Serial, &g, 3)?;
+    /// assert_eq!(parts, [0, 0, 1, 1, 2, 2]);
+    /// # Ok::<(), tetraloma_parallel::GridError>(())
+    /// ```
+    ///
+    /// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
     fn partition(&self, comm: &dyn CommDyn, g: &DistGraph, nparts: usize) -> Result<Vec<i32>>;
 }
 

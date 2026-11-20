@@ -537,16 +537,19 @@ pub(super) fn small_section(
     Ok(())
 }
 
-/// Parses an MSH 4.1 file.
+/// Parses the bytes of an MSH 4.1 file, ASCII or binary, in either byte order and with either
+/// `size_t` width, into its sections.
 ///
 /// Header counts are checked with checked arithmetic, and no allocation is sized from a count
-/// before the data it describes is there. Unknown sections are skipped.
+/// before the data it describes is there, so a damaged file gives an error, never a panic or a huge
+/// allocation. Unknown sections are skipped. tetraloma's reader `gmsh::read` builds a device mesh
+/// from a file; see [Reading Gmsh].
 ///
 /// # Errors
 ///
-/// `Parse` for a malformed or truncated file, a version other than 4.1, or a node or element
-/// tag ≤ 0; the offset is the byte where the error was found. `UnsupportedElementType` for an
-/// element type not in A.7.
+/// `Parse` for a malformed or truncated file, a version other than 4.1, or a node or element tag ≤
+/// 0; the offset is the byte where the error was found. `UnsupportedElementType` for an element
+/// type that tetraloma does not read (the chapter [File formats] lists those it reads).
 ///
 /// # Example
 ///
@@ -562,6 +565,9 @@ pub(super) fn small_section(
 /// assert_eq!((file.element_blocks[0].element_type, &file.element_blocks[0].nodes[..]), (2, &[1, 2, 3][..]));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [Reading Gmsh]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#reading-gmsh
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 pub fn parse(bytes: &[u8]) -> Result<MshFile> {
     let mut c = Cursor::new(bytes);
     let (at, first) = c.token()?;
@@ -595,7 +601,7 @@ pub fn parse(bytes: &[u8]) -> Result<MshFile> {
     Ok(file)
 }
 
-/// Reads and parses the file at `path`.
+/// Reads and parses the file at `path`, as [`parse`] does. See [Reading Gmsh].
 ///
 /// # Errors
 ///
@@ -610,6 +616,8 @@ pub fn parse(bytes: &[u8]) -> Result<MshFile> {
 /// let missing = std::path::Path::new("no-such-file.msh");
 /// assert!(matches!(read_file(missing), Err(GridError::Io(_))));
 /// ```
+///
+/// [Reading Gmsh]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#reading-gmsh
 pub fn read_file(path: &Path) -> Result<MshFile> {
     let bytes =
         std::fs::read(path).map_err(|e| GridError::Io(format!("{}: {e}", path.display())))?;

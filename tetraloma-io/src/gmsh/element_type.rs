@@ -6,7 +6,10 @@ use tetraloma_dims::CellType;
 
 use super::FORMAT;
 
-/// A Gmsh element type of A.7.
+// Design: Appendix A.7 (the Gmsh element table).
+/// A Gmsh element type that tetraloma reads: a complete Lagrange element of degree 1 to 10 (1 to 9
+/// for hexahedra, prisms and pyramids, 1 for the point), or one of the serendipity elements 16–19.
+/// The chapter [File formats] lists them all.
 ///
 /// # Example
 ///
@@ -18,6 +21,8 @@ use super::FORMAT;
 /// assert_eq!((ty.cell, ty.degree, ty.num_nodes, ty.serendipity), (CellType::Pyramid, 3, 30, false));
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ElementType {
     /// The Gmsh type id.
@@ -87,12 +92,15 @@ fn lagrange(cell: CellType, ids: &[i32], degree: u32) -> Option<ElementType> {
     })
 }
 
-/// The element type of Gmsh type id `id`.
+// Design: Appendix A.7.
+/// The element type of Gmsh type id `id`: its cell type, degree and node count. The chapter
+/// [File formats] lists the ids.
 ///
 /// # Errors
 ///
-/// `UnsupportedElementType` for every id not in A.7, among them Gmsh's incomplete triangles,
-/// tetrahedra, quadrilaterals, hexahedra and prisms and the incomplete pyramids 125–131.
+/// `UnsupportedElementType` for every id that tetraloma does not read, among them Gmsh's
+/// incomplete triangles, tetrahedra, quadrilaterals, hexahedra and prisms, and the incomplete
+/// pyramids 125–131.
 ///
 /// # Example
 ///
@@ -106,6 +114,8 @@ fn lagrange(cell: CellType, ids: &[i32], degree: u32) -> Option<ElementType> {
 /// assert!(matches!(element_type(125), Err(GridError::UnsupportedElementType { type_id: 125, .. })));
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 pub fn element_type(id: i32) -> Result<ElementType> {
     for (cell, ids) in LAGRANGE {
         if let Some(k) = ids.iter().position(|&x| x == id) {
@@ -129,7 +139,10 @@ pub fn element_type(id: i32) -> Result<ElementType> {
         })
 }
 
-/// The complete Lagrange element type of `cell` and `degree`. The point has degree 1 only.
+// Design: Appendix A.7.
+/// The complete Lagrange element type of `cell` and `degree`: the type that
+/// [`from_gmsh_mesh`](super::from_gmsh_mesh) writes for such cells. The point has degree 1 only.
+/// The chapter [File formats] lists the types.
 ///
 /// # Errors
 ///
@@ -146,6 +159,8 @@ pub fn element_type(id: i32) -> Result<ElementType> {
 /// assert!(lagrange_element_type(CellType::Hexahedron, 10).is_err());
 /// # Ok::<(), tetraloma_device::GridError>(())
 /// ```
+///
+/// [File formats]: https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh
 pub fn lagrange_element_type(cell: CellType, degree: u32) -> Result<ElementType> {
     let (_, ids) = LAGRANGE
         .iter()
