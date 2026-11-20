@@ -21,8 +21,9 @@ fn centroid(cell: CellType, list: &[usize]) -> Vec<f64> {
 /// The outward unit normal of every facet of `cell`, in facet order: `tdim(cell)` entries per
 /// facet, in reference coordinates.
 ///
-/// The facets are the sub-entities of dimension `tdim − 1` (A.2, A.3); an interval's facets
-/// are its two vertices.
+/// The facets are the sub-entities of dimension `tdim − 1`, numbered as in
+/// [Reference cell definitions]; an interval's facets are its two vertices. The chapter
+/// [Facet normals] shows how the physical normals follow from them.
 ///
 /// # Example
 ///
@@ -39,6 +40,9 @@ fn centroid(cell: CellType, list: &[usize]) -> Vec<f64> {
 /// # Panics
 ///
 /// If `cell` is the point cell, which has no facets.
+///
+/// [Reference cell definitions]: https://tetracl.github.io/tetraloma/elements/reference-cells.html
+/// [Facet normals]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#facet-normals
 pub fn reference_facet_normals(cell: CellType) -> Vec<f64> {
     let td = tdim(cell);
     assert!(
@@ -82,8 +86,12 @@ pub fn reference_facet_normals(cell: CellType) -> Vec<f64> {
     out
 }
 
+// Design: Appendix A, A.5 (the affine facet rule).
 /// Maps `points` on the reference cell of facet `facet` of `cell` into cell coordinates, with
-/// A.5's affine rule v0 + Σ t_k (v_k − v0) over the facet's vertex list.
+/// the affine rule ξ = v₀ + Σₖ tₖ (vₖ − v₀) over the facet's vertex list v₀, v₁, ….
+///
+/// Facet quadrature rules use it to place a rule of the facet's cell type on each facet; see
+/// [Facet rules].
 ///
 /// `points` are flat with `tdim(cell) − 1` coordinates per point; the result has `tdim(cell)`
 /// per point. For an interval, whose facets are points, `points` is empty and stands for the
@@ -103,6 +111,8 @@ pub fn reference_facet_normals(cell: CellType) -> Vec<f64> {
 ///
 /// If `facet` is not a facet of `cell`, or `points.len()` is not a multiple of the facet's
 /// dimension.
+///
+/// [Facet rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#facet-rules
 pub fn facet_points_to_cell(cell: CellType, facet: usize, points: &[f64]) -> Vec<f64> {
     let td = tdim(cell);
     assert!(

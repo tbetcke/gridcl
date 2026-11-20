@@ -4,8 +4,12 @@ use tetraloma_dims::CellType;
 
 use crate::{sub_entities, sub_entity_types, tdim, vertices};
 
-/// The permutation info of a cell (A.6): one bit per edge, then three bits per face, with
+// Design: Appendix A, A.6 (including its worked example).
+/// The permutation info of a cell: one bit per edge, then three bits per face, with
 /// ndelement's layout (`compute_orientation`).
+///
+/// The chapter [Orientation bits] gives the layout of every cell, and [Permutation bits] says what
+/// they are for.
 ///
 /// `vertex_ids` are the origin ids of the cell's vertices in local order; never local or
 /// post-partition global ids. Only their order matters. From the least significant bit:
@@ -21,7 +25,7 @@ use crate::{sub_entities, sub_entity_types, tdim, vertices};
 ///
 /// # Example
 ///
-/// The worked example of A.6: a hexahedron whose face 0 carries origin ids 17, 4, 9, 12 in its
+/// The book's worked example: a hexahedron whose face 0 carries origin ids 17, 4, 9, 12 in its
 /// tensor slots has rotation 1 and no reflection on that face (bits 12–14 are `0b001`).
 ///
 /// ```
@@ -38,6 +42,9 @@ use crate::{sub_entities, sub_entity_types, tdim, vertices};
 /// # Panics
 ///
 /// If `vertex_ids.len()` is not the cell's vertex count.
+///
+/// [Orientation bits]: https://tetracl.github.io/tetraloma/elements/orientation-bits.html
+/// [Permutation bits]: https://tetracl.github.io/tetraloma/concepts/orientation.html#permutation-bits
 pub fn orientation_bits(cell: CellType, vertex_ids: &[i64]) -> u32 {
     assert_eq!(
         vertex_ids.len(),
@@ -82,8 +89,11 @@ pub fn orientation_bits(cell: CellType, vertex_ids: &[i64]) -> u32 {
     bits
 }
 
-/// The A.6 storage slots of an entity: the local positions of its vertices in canonical
+// Design: Appendix A, A.6 (including its worked example).
+/// The storage slots of an entity: the local positions of its vertices in canonical
 /// orientation, so the stored entity is `[local[slots[0]], local[slots[1]], …]`.
+///
+/// See [Face bits], which states the rule with a worked example.
 ///
 /// `ids` are the origin ids of the entity's vertices in their local order (the order of the
 /// cell's sub-entity table). Points keep their one vertex; an edge is stored (lower, higher); a
@@ -93,7 +103,7 @@ pub fn orientation_bits(cell: CellType, vertex_ids: &[i64]) -> u32 {
 ///
 /// # Example
 ///
-/// The worked example of A.6: a quadrilateral with origin ids 17, 4, 9, 12 in its tensor slots
+/// The book's worked example: a quadrilateral with origin ids 17, 4, 9, 12 in its tensor slots
 /// is stored as [4, 12, 17, 9].
 ///
 /// ```
@@ -111,6 +121,8 @@ pub fn orientation_bits(cell: CellType, vertex_ids: &[i64]) -> u32 {
 ///
 /// If `entity` is not a point, interval, triangle or quadrilateral, or `ids.len()` is not its
 /// vertex count.
+///
+/// [Face bits]: https://tetracl.github.io/tetraloma/elements/orientation-bits.html#face-bits
 pub fn canonical_order(entity: CellType, ids: &[i64]) -> Vec<usize> {
     let nv = match entity {
         CellType::Point => 1,

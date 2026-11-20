@@ -6,7 +6,22 @@ use crate::jacobi::gauss_jacobi;
 
 /// A quadrature rule on a reference cell, in f64.
 ///
-/// tetraloma-geometry's `QuadRule<F, TD>` builds on it.
+/// The device rules of tetraloma (`QuadRule<F, TD>`) build on it. See [Quadrature rules].
+///
+/// # Example
+///
+/// ```
+/// use tetraloma_dims::CellType;
+/// use tetraloma_refcell::gauss_rule;
+///
+/// // Degree 3 on the quadrilateral: 2 × 2 tensor Gauss points of weight 1/4 each.
+/// let rule = gauss_rule(CellType::Quadrilateral, 3);
+/// assert_eq!((rule.cell, rule.degree), (CellType::Quadrilateral, 3));
+/// assert_eq!(rule.weights.len(), 4);
+/// assert!(rule.weights.iter().all(|w| (w - 0.25).abs() < 1e-14));
+/// ```
+///
+/// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
 #[derive(Clone, Debug, PartialEq)]
 pub struct QuadratureRule {
     /// The cell type.
@@ -21,10 +36,10 @@ pub struct QuadratureRule {
 
 /// A Gauss rule on `cell` that is exact for polynomials of degree `degree`.
 ///
-/// Collapsed Gauss–Jacobi on triangles, tetrahedra and pyramids; tensor Gauss on
-/// quadrilaterals and hexahedra; triangle times interval on prisms. On pyramids the rule is
-/// exact for the rationomials of degree `degree` of A.5's pyramid space
-/// (docs/plans/M1b.md, question 11). The point cell gets one point of weight 1.
+/// Collapsed Gauss–Jacobi on triangles, tetrahedra and pyramids; tensor Gauss on quadrilaterals and
+/// hexahedra; triangle times interval on prisms. On pyramids the rule is exact for the rationomials
+/// of degree `degree` of the pyramid's Lagrange space. The point cell gets one point of weight 1.
+/// See [Quadrature rules].
 ///
 /// Exactness by cell: x^a y^b z^c with every exponent at most `degree` on intervals,
 /// quadrilaterals and hexahedra; total degree at most `degree` on triangles and tetrahedra;
@@ -57,6 +72,8 @@ pub struct QuadratureRule {
 ///
 /// If the Newton iteration for a Gauss–Jacobi node does not converge (tested for up to 60
 /// points per direction, `degree` ≤ 119).
+///
+/// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
 pub fn gauss_rule(cell: CellType, degree: u32) -> QuadratureRule {
     // m points are exact to degree 2m − 1 ≥ degree in every collapsed direction.
     let m = degree as usize / 2 + 1;

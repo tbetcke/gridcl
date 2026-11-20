@@ -6,10 +6,12 @@ use tetraloma_dims::CellType;
 
 use crate::NodeFamily;
 
+// tetraloma-refcell depends only on tetraloma-dims, so it cannot return `GridError`;
+// tetraloma-geometry maps these errors onto `GridError` (docs/plans/M1b.md, question 3).
 /// An error from a reference-cell layout, element, tabulation or node map.
 ///
-/// tetraloma-refcell depends only on tetraloma-dims, so it cannot return `GridError`; tetraloma-geometry
-/// maps these errors onto `GridError` (docs/plans/M1b.md, question 3).
+/// The mesh functions of the facade crate `tetraloma` report the matching `GridError` variants
+/// instead. The chapter [Lagrange nodes] says which node families each cell supports.
 ///
 /// # Example
 ///
@@ -20,6 +22,8 @@ use crate::NodeFamily;
 /// let err = RefCellError::UnsupportedNodeFamily { cell: CellType::Triangle, family: NodeFamily::Gll };
 /// assert_eq!(err.to_string(), "node family Gll is not supported on Triangle cells");
 /// ```
+///
+/// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-families
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefCellError {
     /// The node family is not offered on this cell: GLL exists on intervals, quadrilaterals and

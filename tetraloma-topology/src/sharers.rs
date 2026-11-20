@@ -4,7 +4,9 @@
 /// that holds vertex v, this one included, in ascending order; `owned_cell` says, per entry,
 /// whether that rank holds v in an owned cell.
 ///
-/// Pipeline stage 8 fills it; a topology without sharers treats every vertex as unshared.
+/// Mesh creation fills it on every rank; a topology without sharers treats every vertex as
+/// unshared. Entity creation uses it to find the owners of shared edges and faces; see
+/// [Ownership and ghosts].
 ///
 /// # Example
 ///
@@ -20,6 +22,8 @@
 /// let row = s.offsets[1]..s.offsets[2];
 /// assert_eq!((&s.ranks[row.clone()], &s.owned_cell[row]), (&[1, 3][..], &[true, false][..]));
 /// ```
+///
+/// [Ownership and ghosts]: https://tetracl.github.io/tetraloma/concepts/meshes.html#ownership-and-ghosts
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct VertexSharers {
     /// Row offsets; one more than the local vertex count.
