@@ -1,5 +1,6 @@
 //! Test support for tetraloma: the test device chosen by `TETRALOMA_TEST_DEVICE`, test meshes,
-//! tolerance helpers and the Python oracles.
+//! tolerance helpers, the Python oracles and the rank-count guard of the MPI runs
+//! ([`check_world_size`]).
 //!
 //! This crate is not published. Its features forward CubeCL's runtime features; besides it,
 //! only tetraloma-bench and tetraloma-examples enable them. tetraloma-device's `gpu-aware-cuda` is an

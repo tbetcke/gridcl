@@ -24,6 +24,10 @@
 #                            scripts/hpc jobs set <results>/mpi-test, so that two jobs in one
 #                            tree keep theirs apart)
 #
+# Every run gets TETRALOMA_EXPECT_RANKS=<ranks> (Open MPI: -x; MPICH forwards by default), and
+# tetraloma_mpi_tests::run fails at once if its world size differs: a launcher that starts each
+# process as its own world fails instead of passing on one rank (ADR-0068).
+#
 # Prints one line per (ranks, target) and exits non-zero if any run failed. The output of each
 # run is kept in <TETRALOMA_MPI_TEST_DIR>/<target>-<ranks>.log.
 set -euo pipefail
@@ -85,7 +89,7 @@ mpirun_flags=()
 case $version in
     *"Open MPI"* | *"Open RTE"* | *OpenRTE*)
         flavour="Open MPI"
-        mpirun_flags+=(--oversubscribe)
+        mpirun_flags+=(--oversubscribe -x TETRALOMA_EXPECT_RANKS)
         if [[ -n "${TETRALOMA_TEST_DEVICE+set}" ]]; then
             mpirun_flags+=(-x TETRALOMA_TEST_DEVICE)
         fi
@@ -178,6 +182,7 @@ for n in "${ranks[@]}"; do
         log=$logs/$name-$n.log
         start=$SECONDS
         status=0
+        export TETRALOMA_EXPECT_RANKS=$n
         ${timeout_cmd[@]+"${timeout_cmd[@]}"} mpirun ${mpirun_flags[@]+"${mpirun_flags[@]}"} -n "$n" "$exe" >"$log" 2>&1 </dev/null ||
             status=$?
         elapsed=$((SECONDS - start))

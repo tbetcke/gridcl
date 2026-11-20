@@ -123,6 +123,9 @@ fn with_world(f: impl FnOnce(&dyn CommDyn) -> Result<(), Failure>) -> Result<(),
         mpi::topology::SimpleCommunicator::world().abort(1);
     }));
     let comm = tetraloma::Mpi::world(&universe);
+    // A world of another size than scripts/bench/halo-exchange.sh requested would record
+    // wrong timings silently (ADR-0068); every rank sees the same mismatch, so none waits.
+    tetraloma_testing::check_world_size(comm.size()).map_err(Failure::Run)?;
     let result = f(&comm);
     if let Err(Failure::Run(message)) = &result {
         // A failure on one rank would leave the others waiting in the next collective.

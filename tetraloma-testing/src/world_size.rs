@@ -25,8 +25,9 @@ pub const EXPECT_RANKS_VAR: &str = "TETRALOMA_EXPECT_RANKS";
 /// # }
 /// ```
 pub fn check_world_size(size: usize) -> Result<(), String> {
-    let _ = size;
-    todo!()
+    let value = std::env::var_os(EXPECT_RANKS_VAR);
+    let value = value.as_ref().map(|v| v.to_string_lossy());
+    check_world_size_against(size, value.as_deref())
 }
 
 /// Checks the world size `size` against `expected`, the value of [`EXPECT_RANKS_VAR`]
@@ -48,8 +49,28 @@ pub fn check_world_size(size: usize) -> Result<(), String> {
 /// assert!(message.contains("world size 1") && message.contains("TETRALOMA_EXPECT_RANKS=2"));
 /// ```
 pub fn check_world_size_against(size: usize, expected: Option<&str>) -> Result<(), String> {
-    let _ = (size, expected);
-    todo!()
+    let Some(value) = expected else {
+        return Ok(());
+    };
+    match value.parse::<usize>() {
+        Ok(n) if n == size => Ok(()),
+        Ok(n) if n > 0 => {
+            let hint = if size == 1 {
+                " (each process is its own world: is mpirun from the MPI the program links? \
+                 Ubuntu 24.04's MPICH does this, Launchpad bug 2072338)"
+            } else {
+                ""
+            };
+            Err(format!(
+                "rank-count guard: world size {size}, but {EXPECT_RANKS_VAR}={value} ranks were \
+                 requested{hint}"
+            ))
+        }
+        _ => Err(format!(
+            "rank-count guard: world size {size}, but {EXPECT_RANKS_VAR}={value} is not a \
+             positive integer"
+        )),
+    }
 }
 
 #[cfg(test)]
