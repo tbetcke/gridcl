@@ -22,7 +22,8 @@ If the milestone is empty, ask the user which milestone to review.
 
 - Ask the **design-reviewer** subagent to review the range `main...HEAD` for this milestone.
   Pass it the milestone id, the plan path and the plan's design sections.
-- Ask the **test-runner** subagent for the full run: lint, `cargo test --workspace`, Metal,
+- Ask the **test-runner** subagent for the full run: lint, `scripts/check-user-docs.sh`
+  (ADR-0067 rule 8; local flags in docs/dev-environment.md), `cargo test --workspace`, Metal,
   CUDA on Locust (Myriad V100 as the fallback when Locust is unavailable, ADR-0014), every other
   target in the plan's acceptance-coverage table (Myriad for multi-GPU tests where
   docs/design.md requires them for this milestone), MPI if the milestone touches
@@ -30,6 +31,10 @@ If the milestone is empty, ask the user which milestone to review.
   This is the standing matrix, run once. Add no sweeps or repeats beyond it (ADR-0057).
 
 ## 3. Check acceptance coverage yourself
+
+Also check that every public item the milestone adds or changes in the nine published library
+crates is documented by ADR-0067 rule 6 (CLAUDE.md) and described in the book in `docs/user/`;
+`scripts/check-user-docs.sh` must pass.
 
 For each row of the plan's acceptance-coverage table, confirm that the named tests exist,
 that they assert what the design's acceptance bullet requires (numbers, tolerances,

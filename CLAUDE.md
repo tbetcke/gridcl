@@ -70,6 +70,19 @@
   tetraloma-device (GPU-aware; the macOS performance-core count, ADR-0017) and tetraloma-partition
   (Scotch, PT-Scotch, ParMETIS; ADR-0029), behind safe wrappers; a -sys crate's own tests
   and examples may call its declarations (ADR-0039). Every unsafe block needs a SAFETY comment.
+- User documentation (ADR-0067): the book lives in docs/user/ (docs/README.md says which
+  documents are for users and which for developers). Public items of the nine published
+  library crates are documented for users:
+  - no developer citations (docs/ paths, ADR numbers, plan questions, milestone ids) in
+    `///` or `//!`; the provenance goes in a `//` comment directly above the doc comment;
+  - a link to a book section (absolute URL under the site) on each crate root, public
+    module, type, trait, constant, static, function and macro, inherent method and method
+    of a trait defined in these crates;
+  - a running `# Example` doctest (not ignore, not no_run) on each such function and method,
+    or an entry with a reason in docs/user/doc-audit-allow.toml;
+  - maths in Unicode with the book's symbols, linking to the book for derivations.
+- A milestone that adds or changes public items documents them so and updates the book in
+  the same task; scripts/check-user-docs.sh passes at the review.
 - Each milestone: acceptance tests first (failing), then implementation, unit tests,
   property tests and rustdoc examples.
 - If an API deviation is unavoidable, stop and draft an ADR.

@@ -9,6 +9,8 @@ Each milestone of `docs/design.md` goes through the same loop: plan, implement, 
 | `IMPLEMENTATION.md` | This guide |
 | `CLAUDE.md` | Working agreement (Listing H1 of the design) plus workflow rules; loaded into every session and subagent |
 | `docs/design.md` | The revised Design B, the source of truth |
+| `docs/README.md` | Which documents in `docs/` are for users (the book in `docs/user/`) and which for developers |
+| `docs/user/` | The user book (mdBook), published with the API docs at https://tetracl.github.io/tetraloma/ (ADR-0067); milestone D1 creates it |
 | `docs/dev-environment.md` | Development and test targets (M3 Max, Myriad V100 and A100, Locust), one-time setup, site reference; milestone E0 completes it |
 | `docs/plans/TEMPLATE.md` | Template for milestone plans; plans are saved as `docs/plans/<milestone>.md` |
 | `docs/adr/README.md`, `docs/adr/TEMPLATE.md` | How design changes are proposed and decided |
@@ -60,6 +62,7 @@ The development tooling and the Rust workspace do not exist yet. Milestone E0 cr
    | E0 (used from M5) | Python with `vtk` ≥ 9.2 and `meshio` | VTU read-back tests |
    | M7 | PT-Scotch; optionally ParMETIS | partitioner tests |
    | M8 | HDF5 built with MPI | VTKHDF output |
+   | D1 | mdBook and mdbook-katex at their pins (`scripts/install-doc-tools.sh`) | the user book and `scripts/check-user-docs.sh` |
 
 ## The loop for each milestone
 
@@ -105,13 +108,13 @@ $ claude
 > /implement-milestone M3
 ```
 
-Claude writes the failing acceptance tests first (T0), then implements one task per commit. It runs the `verify` checks before each commit, ticks tasks in the plan, logs deviations, and delegates only the tasks the plan marks as parallel.
+Claude writes the failing acceptance tests first (T0), then implements one task per commit. It runs the `verify` checks before each commit, ticks tasks in the plan, logs deviations, and delegates only the tasks the plan marks as parallel. From D1 on, a task that adds or changes public items of the nine published library crates documents them for users (ADR-0067 rule 6, summarised in `CLAUDE.md`: no developer citations in `///` or `//!`, a book link, a running `# Example` or an entry in `docs/user/doc-audit-allow.toml`) and updates the book in `docs/user/` in the same commit.
 
 - When Claude suggests clearing the context, run `/clear` and then `/implement-milestone M3`. It resumes at the first unticked task. To start at a specific task, use `/implement-milestone M3 T5`.
 - If the design does not fit, Claude drafts an ADR and stops. Decide as in step 3, then run `/implement-milestone M3` again.
 - **Permission mode:** use the default mode (you approve each edit) for M0 and M1a while you get a feel for the work. Later, `claude --permission-mode acceptEdits` saves prompts. Routine cargo and git commands are pre-approved in `.claude/settings.json`; `git rebase`, `git reset --hard` and `cargo publish` are denied. Claude may push and merge.
 
-At the end, Claude runs the full acceptance suite through the test-runner and sets `Status: implemented`.
+At the end, Claude runs the full acceptance suite through the test-runner, together with `scripts/check-user-docs.sh` (local flags in `docs/dev-environment.md`), and sets `Status: implemented`.
 
 ### 5. Review (fresh session)
 
@@ -120,7 +123,7 @@ $ claude
 > /review-milestone M3
 ```
 
-Claude runs the design-reviewer on `main...HEAD` and the test-runner on every required backend. It checks each acceptance criterion against a passing test, fixes Blockers and Majors, lists Minors for you, fills the plan's Review section and prints a PR description.
+Claude runs the design-reviewer on `main...HEAD`, the test-runner on every required backend and `scripts/check-user-docs.sh` (ADR-0067 rule 8). It checks each acceptance criterion against a passing test, fixes Blockers and Majors, lists Minors for you, fills the plan's Review section and prints a PR description.
 
 ### 6. Merge (you or Claude)
 
