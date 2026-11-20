@@ -263,6 +263,9 @@ jobs:
       DOCTEST_FEATURES: tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis,tetraloma-testing/mpi
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Check (h) compares the library sources with D1's base commit.
+          fetch-depth: 0
       - name: Scotch, PT-Scotch, METIS, ParMETIS, Open MPI, its parallel HDF5 and libclang (bindgen)
         uses: ./.github/actions/apt-install
         with:
