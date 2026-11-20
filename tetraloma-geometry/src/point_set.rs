@@ -26,9 +26,16 @@ enum Table {
 /// The uploaded tables of a point set, per element and table.
 type TableCache<F, TD> = HashMap<(CoordinateElement<TD>, Table), DeviceBuffer<F>>;
 
-/// Points and weights on one reference cell (host, f64), with device tabulations of coordinate
-/// elements: computed in f64, narrowed to `F`, uploaded on first use and cached per element.
-/// The tabulate calls return `share()`s of the cached buffers.
+// Design: "Geometry", "Tabulation and quadrature", Listing B4b; ADR-0012.
+/// Points and weights on one reference cell, with the tabulations of coordinate elements at
+/// the points.
+///
+/// The points and weights stay on the host in f64. A tabulation, the values or first
+/// derivatives of an element's basis functions at the points, is computed on the host in f64,
+/// narrowed to `F` and uploaded the first time it is asked for; the point set keeps it, so
+/// later calls with the same element reuse it. [`QuadRule::get`](crate::QuadRule::get) and
+/// [`FacetPointSet::points`](crate::FacetPointSet::points) return point sets. See
+/// [Quadrature rules] and [Tabulation].
 ///
 /// # Example
 ///
@@ -36,12 +43,17 @@ type TableCache<F, TD> = HashMap<(CoordinateElement<TD>, Table), DeviceBuffer<F>
 /// use tetraloma_dims::{Cell2, D2};
 /// use tetraloma_geometry::QuadRule;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let rule = QuadRule::<f32, D2>::gauss(&client, &[Cell2::Triangle], 2).unwrap();
 /// let ps = rule.get(Cell2::Triangle).unwrap();
 /// assert_eq!(ps.cell(), Cell2::Triangle);
+/// // Two reference coordinates per point.
 /// assert_eq!(ps.points().len(), 2 * ps.len());
 /// ```
+///
+/// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
+/// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
 pub struct PointSet<F: Real, TD: TopoDim> {
     cell: TD::Cell,
     points: Vec<f64>,
@@ -133,7 +145,9 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
         &self.weights_device
     }
 
-    /// The cell type.
+    /// The reference cell of the points.
+    ///
+    /// See [Quadrature rules].
     ///
     /// # Example
     ///
@@ -141,48 +155,64 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use tetraloma_dims::{Cell3, D3};
     /// use tetraloma_geometry::QuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D3>::gauss(&client, &[Cell3::Prism], 1).unwrap();
     /// assert_eq!(rule.get(Cell3::Prism).unwrap().cell(), Cell3::Prism);
     /// ```
+    ///
+    /// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
     pub fn cell(&self) -> TD::Cell {
         self.cell
     }
 
     /// The number of points.
     ///
+    /// A Gauss rule of degree k has ⌊k / 2⌋ + 1 points per direction; see [Quadrature rules].
+    ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_dims::{Cell1, D1};
     /// use tetraloma_geometry::QuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // Gauss–Legendre with 2 points is exact for degree 3.
     /// let rule = QuadRule::<f32, D1>::gauss(&client, &[Cell1::Interval], 3).unwrap();
     /// assert_eq!(rule.get(Cell1::Interval).unwrap().len(), 2);
     /// ```
+    ///
+    /// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
     pub fn len(&self) -> usize {
         self.weights.len()
     }
 
     /// Whether the set has no points.
     ///
+    /// Every Gauss rule has at least one point; see [Quadrature rules].
+    ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_dims::{Cell1, D1};
     /// use tetraloma_geometry::QuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D1>::gauss(&client, &[Cell1::Interval], 1).unwrap();
     /// assert!(!rule.get(Cell1::Interval).unwrap().is_empty());
     /// ```
+    ///
+    /// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
     pub fn is_empty(&self) -> bool {
         self.weights.is_empty()
     }
 
-    /// Reference coordinates, `[q][tdim]`.
+    /// The reference coordinates ξ of the points, in f64: `tdim` values per point, point
+    /// after point.
+    ///
+    /// All points of a Gauss rule lie inside the reference cell; see [Quadrature rules].
     ///
     /// # Example
     ///
@@ -190,16 +220,22 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use tetraloma_dims::{Cell2, D2};
     /// use tetraloma_geometry::QuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D2>::gauss(&client, &[Cell2::Quadrilateral], 3).unwrap();
     /// let ps = rule.get(Cell2::Quadrilateral).unwrap();
     /// assert!(ps.points().iter().all(|&x| (0.0..=1.0).contains(&x)));
     /// ```
+    ///
+    /// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
     pub fn points(&self) -> &[f64] {
         &self.points
     }
 
-    /// One weight per point.
+    /// The weights w_q, one per point, in f64.
+    ///
+    /// The weights of a Gauss rule are positive and add up to the volume of the reference
+    /// cell; see [Quadrature rules].
     ///
     /// # Example
     ///
@@ -207,16 +243,21 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use tetraloma_dims::{Cell3, D3};
     /// use tetraloma_geometry::QuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D3>::gauss(&client, &[Cell3::Tetrahedron], 2).unwrap();
     /// let volume: f64 = rule.get(Cell3::Tetrahedron).unwrap().weights().iter().sum();
     /// assert!((volume - 1.0 / 6.0).abs() < 1e-14);
     /// ```
+    ///
+    /// [Quadrature rules]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#quadrature-rules
     pub fn weights(&self) -> &[f64] {
         &self.weights
     }
 
-    /// The client the tabulations live on.
+    /// The client that holds the uploaded weights and tabulations.
+    ///
+    /// See [Tabulation].
     ///
     /// # Example
     ///
@@ -224,21 +265,28 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use tetraloma_dims::{Cell1, D1};
     /// use tetraloma_geometry::QuadRule;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D1>::gauss(&client, &[Cell1::Interval], 1).unwrap();
     /// let ps = rule.get(Cell1::Interval).unwrap();
     /// assert_eq!(ps.client().name(), client.name());
     /// ```
+    ///
+    /// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
     pub fn client(&self) -> &Client {
         &self.client
     }
 
-    /// Basis values of `e` at the points, `[q][k]`.
+    /// The values φ_k(ξ_q) of the basis functions of `e` at the points, on the device:
+    /// point-major `[q][k]`, narrowed to `F`.
+    ///
+    /// The first call for an element computes the table in f64 and uploads it; later calls
+    /// return a share of the same buffer. See [Tabulation].
     ///
     /// # Errors
     ///
-    /// `UnsupportedNodeFamily` or `UnsupportedDegree` for an element tetraloma-refcell does not
-    /// offer; device errors.
+    /// `UnsupportedNodeFamily` or `UnsupportedDegree` for an element that tetraloma does not
+    /// offer; allocation and device errors.
     ///
     /// # Example
     ///
@@ -246,10 +294,12 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use tetraloma_dims::{Cell2, D2};
     /// use tetraloma_geometry::{CoordinateElement, NodeFamily, QuadRule};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D2>::gauss(&client, &[Cell2::Triangle], 2).unwrap();
     /// let ps = rule.get(Cell2::Triangle).unwrap();
     /// let e = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+    /// // A copy to the host, for inspection.
     /// let phi = ps.tabulate(&e).unwrap().to_host().unwrap();
     /// assert_eq!(phi.len(), ps.len() * 3);
     /// // The basis is a partition of unity at every point.
@@ -257,11 +307,17 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     ///     assert!((row.iter().sum::<f32>() - 1.0).abs() < 1e-6);
     /// }
     /// ```
+    ///
+    /// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
     pub fn tabulate(&self, e: &CoordinateElement<TD>) -> Result<DeviceBuffer<F>> {
         self.cached(e, Table::Values)
     }
 
-    /// Reference derivatives of the basis of `e` at the points, `[q][k][d]`.
+    /// The first derivatives ∂φ_k/∂ξ_d(ξ_q) of the basis functions of `e` at the points, on
+    /// the device: `[q][k][d]`, narrowed to `F`.
+    ///
+    /// The first call for an element computes the table in f64 and uploads it; later calls
+    /// return a share of the same buffer. See [Tabulation].
     ///
     /// # Errors
     ///
@@ -273,13 +329,24 @@ impl<F: Real, TD: TopoDim> PointSet<F, TD> {
     /// use tetraloma_dims::{Cell2, D2};
     /// use tetraloma_geometry::{CoordinateElement, NodeFamily, QuadRule};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let rule = QuadRule::<f32, D2>::gauss(&client, &[Cell2::Quadrilateral], 3).unwrap();
     /// let ps = rule.get(Cell2::Quadrilateral).unwrap();
     /// let e = CoordinateElement::<D2> { cell: Cell2::Quadrilateral, degree: 2, family: NodeFamily::Gll };
+    /// // A copy to the host, for inspection: 9 basis functions, 2 derivatives each.
     /// let dphi = ps.tabulate_derivatives(&e).unwrap().to_host().unwrap();
     /// assert_eq!(dphi.len(), ps.len() * 9 * 2);
+    /// // The basis functions add up to 1, so their derivatives add up to 0.
+    /// for q in 0..ps.len() {
+    ///     for d in 0..2 {
+    ///         let sum: f32 = (0..9).map(|k| dphi[(q * 9 + k) * 2 + d]).sum();
+    ///         assert!(sum.abs() < 1e-5);
+    ///     }
+    /// }
     /// ```
+    ///
+    /// [Tabulation]: https://tetracl.github.io/tetraloma/concepts/quadrature.html#tabulation
     pub fn tabulate_derivatives(&self, e: &CoordinateElement<TD>) -> Result<DeviceBuffer<F>> {
         self.cached(e, Table::Derivatives)
     }

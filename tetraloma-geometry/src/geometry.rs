@@ -10,7 +10,14 @@ use tetraloma_parallel::{CommDyn, IndexMap};
 use crate::strategy::StrategyFamily;
 use crate::{EVector, GeometryBlock};
 
-/// The geometry of a mesh (ADR-0012).
+// Design: "Geometry", "Precision policy"; ADR-0012.
+/// The geometry of a mesh: one [`GeometryBlock`] per cell block, the node coordinates, the
+/// node index map and the origin, with a cache of the blocks' [`EVector`]s.
+///
+/// The node coordinates are stored relative to the origin, the centre of the mesh's bounding
+/// box, so that f32 meshes far from zero keep their accuracy ([Tolerances]). `Mesh` holds one
+/// and exposes it through [`DeviceGrid`](crate::DeviceGrid); a grid type of your own can
+/// hold one too. [Lagrange geometry] explains the map that the blocks define.
 ///
 /// # Example
 ///
@@ -20,7 +27,8 @@ use crate::{EVector, GeometryBlock};
 /// use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
 /// use tetraloma_parallel::{IndexMap, Serial};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// // Two nodes of a segment in the plane, relative to the origin (1, 2).
 /// let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
 /// let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
@@ -35,6 +43,9 @@ use crate::{EVector, GeometryBlock};
 /// assert_eq!(geometry.origin(), [1.0, 2.0]);
 /// assert_eq!(geometry.nodes().len(), 4);
 /// ```
+///
+/// [Tolerances]: https://tetracl.github.io/tetraloma/concepts/precision.html#tolerances
+/// [Lagrange geometry]: https://tetracl.github.io/tetraloma/concepts/geometry.html#coordinate-elements
 pub struct Geometry<F: Real, TD: TopoDim, GD: Dim> {
     blocks: Vec<GeometryBlock<TD>>,
     nodes: DeviceBuffer<F>,
@@ -51,15 +62,47 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
 {
-    /// The geometry of `blocks` over `nodes` (`[node][gdim]`, relative to `origin`).
+    /// The geometry of `blocks` over `nodes`: `gdim` coordinates per local node, node after
+    /// node, relative to `origin`, with `node_index_map` numbering the owned and ghost nodes.
+    ///
+    /// The E-vectors are built later, on first use. See [Lagrange geometry].
     ///
     /// # Errors
     ///
     /// `LengthMismatch` if `nodes` does not hold `gdim` values per local node, if a dofmap's
     /// stride is not its element's node count or its length not a whole number of rows, or if
-    /// there are no nodes but a dofmap is not empty (`expected: 0`). Node indices themselves
-    /// are not checked: the E-vector kernel clamps an index past the local nodes to the last
-    /// node.
+    /// there are no nodes but a dofmap is not empty (`expected: 0`); allocation and device
+    /// errors. Node indices themselves are not checked: the E-vector kernel clamps an index
+    /// past the local nodes to the last node.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::{DeviceBuffer, DeviceStrided, GridError};
+    /// use tetraloma_dims::{Cell1, D1, D2};
+    /// use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// use tetraloma_parallel::{IndexMap, Serial};
+    ///
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let block = || GeometryBlock {
+    ///     element,
+    ///     dofmap: DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 },
+    /// };
+    /// // Two nodes in the plane need four coordinates.
+    /// let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0])?;
+    /// let geometry = Geometry::<f32, D1, D2>::new(vec![block()], nodes, IndexMap::new(&Serial, 2)?, [1.0, 2.0])?;
+    /// assert_eq!(geometry.blocks().len(), 1);
+    /// let three = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5])?;
+    /// assert!(matches!(
+    ///     Geometry::<f32, D1, D2>::new(vec![block()], three, IndexMap::new(&Serial, 2)?, [1.0, 2.0]),
+    ///     Err(GridError::LengthMismatch { expected: 4, found: 3 })
+    /// ));
+    /// # Ok::<(), GridError>(())
+    /// ```
+    ///
+    /// [Lagrange geometry]: https://tetracl.github.io/tetraloma/concepts/geometry.html#coordinate-elements
     pub fn new(
         blocks: Vec<GeometryBlock<TD>>,
         nodes: DeviceBuffer<F>,
@@ -107,31 +150,177 @@ where
     }
 
     /// The geometry blocks, one per cell block.
+    ///
+    /// See [Lagrange geometry].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell1, D1, D2};
+    /// # use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// // `geometry`: one segment in the plane from (0.5, 2) to (1.5, 2), its nodes relative to
+    /// // the origin (1, 2), as in the example of `Geometry::new`.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// # let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// # let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// # let geometry = Geometry::<f32, D1, D2>::new(
+    /// #     vec![GeometryBlock { element, dofmap }],
+    /// #     nodes,
+    /// #     IndexMap::new(&Serial, 2).unwrap(),
+    /// #     [1.0, 2.0],
+    /// # )
+    /// # .unwrap();
+    /// assert_eq!(geometry.blocks().len(), 1);
+    /// assert_eq!(geometry.blocks()[0].num_cells(), 1);
+    /// ```
+    ///
+    /// [Lagrange geometry]: https://tetracl.github.io/tetraloma/concepts/geometry.html#coordinate-elements
     pub fn blocks(&self) -> &[GeometryBlock<TD>] {
         &self.blocks
     }
 
-    /// The L-vector `[node][gdim]`, relative to [`origin`](Geometry::origin).
+    /// The node coordinates on the device: `gdim` values per local node, node after node,
+    /// relative to the [`origin`](Geometry::origin).
+    ///
+    /// See [Tolerances] for why the coordinates are relative.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell1, D1, D2};
+    /// # use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// // `geometry`: one segment in the plane from (0.5, 2) to (1.5, 2), its nodes relative to
+    /// // the origin (1, 2), as in the example of `Geometry::new`.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// # let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// # let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// # let geometry = Geometry::<f32, D1, D2>::new(
+    /// #     vec![GeometryBlock { element, dofmap }],
+    /// #     nodes,
+    /// #     IndexMap::new(&Serial, 2).unwrap(),
+    /// #     [1.0, 2.0],
+    /// # )
+    /// # .unwrap();
+    /// // A copy to the host, for inspection.
+    /// assert_eq!(geometry.nodes().to_host().unwrap(), [-0.5, 0.0, 0.5, 0.0]);
+    /// ```
+    ///
+    /// [Tolerances]: https://tetracl.github.io/tetraloma/concepts/precision.html#tolerances
     pub fn nodes(&self) -> &DeviceBuffer<F> {
         &self.nodes
     }
 
-    /// The [owned | ghost] nodes.
+    /// The index map of the nodes: the owned nodes first, then the ghosts.
+    ///
+    /// See [Index maps].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell1, D1, D2};
+    /// # use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// // `geometry`: one segment in the plane from (0.5, 2) to (1.5, 2), its nodes relative to
+    /// // the origin (1, 2), as in the example of `Geometry::new`.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// # let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// # let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// # let geometry = Geometry::<f32, D1, D2>::new(
+    /// #     vec![GeometryBlock { element, dofmap }],
+    /// #     nodes,
+    /// #     IndexMap::new(&Serial, 2).unwrap(),
+    /// #     [1.0, 2.0],
+    /// # )
+    /// # .unwrap();
+    /// let map = geometry.node_index_map();
+    /// assert_eq!((map.num_owned(), map.num_ghosts()), (2, 0));
+    /// ```
+    ///
+    /// [Index maps]: https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps
     pub fn node_index_map(&self) -> &IndexMap {
         &self.node_index_map
     }
 
-    /// The centre of the bounding box, in f64.
+    /// The origin of the node coordinates, in f64: the centre of the mesh's bounding box for
+    /// a mesh from `MeshBuilder` or a reader.
+    ///
+    /// See [Tolerances].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell1, D1, D2};
+    /// # use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// // `geometry`: one segment in the plane from (0.5, 2) to (1.5, 2), its nodes relative to
+    /// // the origin (1, 2), as in the example of `Geometry::new`.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// # let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// # let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// # let geometry = Geometry::<f32, D1, D2>::new(
+    /// #     vec![GeometryBlock { element, dofmap }],
+    /// #     nodes,
+    /// #     IndexMap::new(&Serial, 2).unwrap(),
+    /// #     [1.0, 2.0],
+    /// # )
+    /// # .unwrap();
+    /// assert_eq!(geometry.origin(), [1.0, 2.0]);
+    /// ```
+    ///
+    /// [Tolerances]: https://tetracl.github.io/tetraloma/concepts/precision.html#tolerances
     pub fn origin(&self) -> GD::Array<f64> {
         self.origin
     }
 
-    /// The E-vector of block `b`, built on first use with the strategy of the degree policy
-    /// (ADR-0042, item 3) and cached.
+    /// The E-vector of block `b`: built on the device on first use, then cached.
+    ///
+    /// See [`EVector`] and [Writing kernels].
     ///
     /// # Errors
     ///
     /// Allocation and device errors of the first build.
+    ///
+    /// # Panics
+    ///
+    /// If there is no block `b`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell1, D1, D2};
+    /// # use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// // `geometry`: one segment in the plane from (0.5, 2) to (1.5, 2), its nodes relative to
+    /// // the origin (1, 2), as in the example of `Geometry::new`.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// # let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// # let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// # let geometry = Geometry::<f32, D1, D2>::new(
+    /// #     vec![GeometryBlock { element, dofmap }],
+    /// #     nodes,
+    /// #     IndexMap::new(&Serial, 2).unwrap(),
+    /// #     [1.0, 2.0],
+    /// # )
+    /// # .unwrap();
+    /// let xe = geometry.evector(0).unwrap();
+    /// assert_eq!(xe.num_cells(), 1);
+    /// // Later calls return the cached E-vector.
+    /// assert!(std::ptr::eq(xe, geometry.evector(0).unwrap()));
+    /// ```
+    ///
+    /// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#geometryblock
     pub fn evector(&self, b: usize) -> Result<&EVector<F>> {
         let cache = &self.evectors[b];
         if let Some(xe) = cache.get() {
@@ -212,13 +401,42 @@ where
             + self.node_index_map.footprint_bytes()
     }
 
-    /// A deep copy of every device array; the E-vector cache starts empty. The node index
-    /// map, ghosts included, is cloned and shares its neighbourhoods with the original, so the
-    /// copy is not collective and `comm` is unused.
+    /// A deep copy of every device array; the E-vector cache of the copy starts empty.
+    ///
+    /// The node index map, ghosts included, is cloned and shares its neighbourhoods with the
+    /// original, so the copy is not collective and `comm` is unused. See [Lagrange geometry].
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone`.
+    /// Allocation and device errors of the copies.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell1, D1, D2};
+    /// # use tetraloma_geometry::{CoordinateElement, Geometry, GeometryBlock, NodeFamily};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// // `geometry`: one segment in the plane from (0.5, 2) to (1.5, 2), its nodes relative to
+    /// // the origin (1, 2), as in the example of `Geometry::new`.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let nodes = DeviceBuffer::from_host(&client, &[-0.5f32, 0.0, 0.5, 0.0]).unwrap();
+    /// # let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// # let dofmap = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1]).unwrap(), stride: 2 };
+    /// # let geometry = Geometry::<f32, D1, D2>::new(
+    /// #     vec![GeometryBlock { element, dofmap }],
+    /// #     nodes,
+    /// #     IndexMap::new(&Serial, 2).unwrap(),
+    /// #     [1.0, 2.0],
+    /// # )
+    /// # .unwrap();
+    /// // `Serial`: the communicator of a program on one process.
+    /// let copy = geometry.try_clone(&Serial).unwrap();
+    /// assert_eq!(copy.origin(), geometry.origin());
+    /// assert_eq!(copy.nodes().to_host().unwrap(), geometry.nodes().to_host().unwrap());
+    /// ```
+    ///
+    /// [Lagrange geometry]: https://tetracl.github.io/tetraloma/concepts/geometry.html#coordinate-elements
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
         let _ = comm;
         let blocks: Vec<GeometryBlock<TD>> = self

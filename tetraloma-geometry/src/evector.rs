@@ -15,18 +15,28 @@ use crate::QuadChunk;
 use crate::field::{alloc_chunks, chunk_cells};
 use crate::strategy::Strategy;
 
-/// The cached E-vector of one geometry block (ADR-0012): chunks of whole tiles,
-/// `[k][g][cell]` with cells fastest, the cell count padded to `VECTOR_PAD` with copies of the
-/// block's last cell. An empty block has no chunks. Built on first use by
-/// `DeviceGrid::evector`.
+// Design: "Geometry", "Padding and tiles"; ADR-0012.
+/// The node coordinates of one cell block, gathered per cell: the block's E-vector.
+///
+/// Entry (k, g, c) holds coordinate g of node k of cell c, relative to the mesh's origin, with
+/// the cells fastest, so that the lanes of a vector instruction read consecutive cells. The
+/// cells are stored in chunks, so that no chunk exceeds the device's largest allocation; each
+/// chunk is padded to a multiple of [`VECTOR_PAD`](tetraloma_device::VECTOR_PAD) cells with
+/// copies of the block's last cell. An empty block has no chunks.
+///
+/// [`DeviceGrid::evector`](crate::DeviceGrid::evector) builds it on the device the first time
+/// a block's geometry is used, and keeps it; every geometric factor kernel reads it. A kernel
+/// of your own can read it too ([Writing kernels]).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh = tetraloma_testing::square_box(Cell2::Triangle, 3, 1).build::<f32, D2, D2>(&client)?;
+/// // `mesh`: the unit square in 3 × 3 squares of two triangles each, on the test device; the
+/// // tutorial "Building a mesh" shows how to make one.
+/// # let client = tetraloma_testing::test_client();
+/// # let mesh = tetraloma_testing::square_box(Cell2::Triangle, 3, 1).build::<f32, D2, D2>(&client)?;
 /// let xe = mesh.evector(0)?;
 /// assert_eq!(xe.num_cells(), 18);
 /// // One chunk of 3 nodes × 2 coordinates × 32 cells (18 padded to VECTOR_PAD).
@@ -34,6 +44,8 @@ use crate::strategy::Strategy;
 /// assert_eq!(xe.chunks()[0].data.len(), 3 * 2 * 32);
 /// # Ok::<(), GridError>(())
 /// ```
+///
+/// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#geometryblock
 pub struct EVector<F: Real> {
     chunks: Vec<QuadChunk<F>>,
     num_cells: usize,
@@ -48,24 +60,34 @@ pub struct EVector<F: Real> {
 }
 
 impl<F: Real> EVector<F> {
-    /// The number of cells, padding excluded.
+    /// The number of cells of the block, padding excluded.
+    ///
+    /// See [Writing kernels] for how a kernel uses the E-vector.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // `mesh`: the unit square in 2 × 2 quadrilaterals, on the test device; the tutorial
+    /// // "Building a mesh" shows how to make one.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
     /// assert_eq!(mesh.evector(0)?.num_cells(), 4);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#geometryblock
     pub fn num_cells(&self) -> usize {
         self.num_cells
     }
 
-    /// The chunks, in cell order. Row (k, g) of a chunk starts at (k · gdim + g) · stride, with
-    /// stride the chunk's cell count rounded up to `VECTOR_PAD`.
+    /// The chunks, in cell order.
+    ///
+    /// Row (k, g) of a chunk, coordinate g of node k, starts at (k · gdim + g) · stride, where
+    /// the stride is the chunk's cell count rounded up to
+    /// [`VECTOR_PAD`](tetraloma_device::VECTOR_PAD); within a row, the cells follow one
+    /// another. See [Writing kernels] for how a kernel reads them.
     ///
     /// # Example
     ///
@@ -73,15 +95,19 @@ impl<F: Real> EVector<F> {
     /// use tetraloma::VECTOR_PAD;
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // `mesh`: the unit square in 2 × 2 quadrilaterals, on the test device; the tutorial
+    /// // "Building a mesh" shows how to make one.
+    /// # let client = tetraloma_testing::test_client();
+    /// # let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
     /// let chunk = &mesh.evector(0)?.chunks()[0];
     /// assert_eq!((chunk.first_cell, chunk.num_cells), (0, 4));
-    /// // Row (k, g) holds coordinate g of node k of each cell, cells fastest.
+    /// // 4 nodes × 2 coordinates per cell, cells fastest.
     /// let stride = chunk.num_cells.next_multiple_of(VECTOR_PAD);
     /// assert_eq!(chunk.data.len(), 4 * 2 * stride);
     /// # Ok::<(), GridError>(())
     /// ```
+    ///
+    /// [Writing kernels]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#geometryblock
     pub fn chunks(&self) -> &[QuadChunk<F>] {
         &self.chunks
     }
