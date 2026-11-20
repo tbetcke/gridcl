@@ -1,342 +1,95 @@
-# Hosted CI jobs of docs/design.md, "CI matrix": cpu, mpi-mpich, mpi-openmpi, vulkan, docs and
-# pages.
-# The commands are the ones docs/dev-environment.md, "Test commands", records.
-#
-# Every push runs once; a pull request shows the checks of its head commit's push run, so there
-# is no pull_request trigger (it ran every job twice). Caches hold dependencies only and are
-# saved from main alone: branches restore main's caches instead of evicting them, since all
-# workflows share 10 GB per repository.
+# Throwaway probe (ADR-0068): does hosted CI's MPICH give real ranks with a workaround?
+# Ubuntu 24.04's mpich 4.2.0-5build3 links PMIx, which its hydra launcher does not serve
+# (Launchpad bug 2072338). This branch is deleted after the probe.
 name: ci
 
 on:
   push:
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  # No debug info in test builds: it made up most of the cached target directory and of the
-  # link time. Backtraces keep function names.
   CARGO_PROFILE_DEV_DEBUG: 0
-  # Workspace crates at opt-level 1 (dependencies are at 2, Cargo.toml): their host code
-  # dominated the debug test times. Debug assertions and overflow checks stay on.
   CARGO_PROFILE_DEV_OPT_LEVEL: 1
-  # The CPU runtime's build script downloads its LLVM bundle to $XDG_DATA_HOME/tracel.
   XDG_DATA_HOME: /home/runner/.local/share
+  UCX_TLS: self,sm,tcp
 
 jobs:
-  cpu:
+  # Option 1: Ubuntu's MPICH with MPIR_CVAR_PMI_VERSION=1.
+  pmi-version:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: mpich libmpich-dev libclang-dev
+      - run: mpichversion | head -20
+      - name: C program, plain and with MPIR_CVAR_PMI_VERSION=1
+        run: |
+          cat > hello.c <<'C'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(void) {
+            MPI_Init(NULL, NULL);
+            int r, s;
+            MPI_Comm_rank(MPI_COMM_WORLD, &r);
+            MPI_Comm_size(MPI_COMM_WORLD, &s);
+            printf("rank %d of %d\n", r, s);
+            MPI_Finalize();
+            return 0;
+          }
+          C
+          mpicc hello.c -o hello
+          echo "--- plain"; mpirun -n 4 ./hello || true
+          echo "--- MPIR_CVAR_PMI_VERSION=1"; MPIR_CVAR_PMI_VERSION=1 mpirun -n 4 ./hello
+          echo "--- -genv"; mpirun -genv MPIR_CVAR_PMI_VERSION 1 -n 4 ./hello
       - name: Rust toolchain from rust-toolchain.toml
         run: |
-          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
-            --profile minimal --component rustfmt,clippy
-          rustc --version
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # Shared with cpu-tetraloma, which builds a subset and saves nothing.
-          shared-key: cpu
-          cache-directories: ~/.local/share/tracel
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo fmt --all -- --check
-      # The project's name (ADR-0066, rule 5).
-      - run: scripts/check-name.sh
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      # `cargo test --workspace` in two jobs: tetraloma's suite and tetraloma-geometry's integration
-      # tests (8 min, M9's orient tests) run in cpu-tetraloma.
-      - run: cargo test --workspace --exclude tetraloma --exclude tetraloma-geometry
-      # The serial examples (ADR-0060 item 6) in the debug build; halo_exchange runs in the mpi
-      # jobs.
-      - run: scripts/run-examples.sh --serial
-        env:
-          TETRALOMA_EXAMPLES_PROFILE: debug
-      - run: cargo test -p tetraloma-geometry --lib
-      - run: cargo test -p tetraloma-geometry --doc
-      # Partition-quality tests with vendored METIS, the design's CI default (M7 T3): only what
-      # the feature changes; the rest of tetraloma's suite ran above.
-      - name: Partitioner tests with METIS
-        run: |
-          cargo test -p tetraloma-partition --features metis
-          cargo test -p tetraloma --features metis --test integration partition_threads::
-          cargo test -p tetraloma --features metis --doc -- partitioner
-      # Rustdoc without warnings and every public item documented (ADR-0060 item 7); the
-      # partitioner and I/O features in ptscotch.yml.
-      - run: scripts/check-docs.sh default
-      - run: scripts/check-workspace-deps.sh
-      # Negative check: the script must still find MPI (exit 3) when a feature pulls it in.
-      - run: |
-          rc=0
-          scripts/check-workspace-deps.sh --features tetraloma-mpi-tests/mpi || rc=$?
-          test "$rc" -eq 3
-
-  # tetraloma's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the eleven
-  # shards of scripts/ci-tetraloma-shard.sh: in one job they took 52-59 min (M8 review). Shard 1,
-  # the shortest (6 min), also runs tetraloma-geometry's integration tests.
-  cpu-tetraloma:
-    name: cpu-tetraloma-${{ matrix.shard }}
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Rust toolchain from rust-toolchain.toml
-        run: |
-          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
-            --profile minimal
-          rustc --version
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: cpu
+          key: mpi-mpich
           cache-directories: ~/.local/share/tracel
           save-if: false
-      - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
-          .venv/bin/python scripts/oracles/vtk_oracle.py versions
-      - run: scripts/ci-tetraloma-shard.sh ${{ matrix.shard }}
-      - if: matrix.shard == 1
-        run: cargo test -p tetraloma-geometry --test integration
-
-  # Each MPI in two jobs: the MPI tests, and the hdf5 steps (together 25 min in one job, M8
-  # review). The hdf5 jobs restore the mpi jobs' cache and save none.
-  mpi:
-    name: mpi-${{ matrix.mpi }}${{ matrix.part == 'hdf5' && '-hdf5' || '' }}
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        mpi: [mpich, openmpi]
-        part: [tests, hdf5]
-        include:
-          # bind: one hardware thread per rank. Each rank's CPU runtime starts one thread per
-          # CPU it may use; unbound, 3-4 ranks oversubscribe the 4 vCPUs and exceed the time
-          # limit (M6).
-          - mpi: mpich
-            packages: mpich libmpich-dev libhdf5-mpich-dev
-            bind: -bind-to hwthread
-          - mpi: openmpi
-            packages: openmpi-bin libopenmpi-dev libhdf5-openmpi-dev
-            bind: --use-hwthread-cpus --bind-to hwthread
-    env:
-      # Single node: some runner VMs expose an RDMA device that UCX picks but cannot use
-      # (ibv_create_srq: Operation not supported), so MPI_Init fails.
-      UCX_TLS: self,sm,tcp
-      TETRALOMA_MPIRUN_FLAGS: ${{ matrix.bind }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: MPI, its parallel HDF5 (M8 VTKHDF) and libclang (rsmpi's bindgen)
-        uses: ./.github/actions/apt-install
-        with:
-          packages: ${{ matrix.packages }} libclang-dev
-      - run: mpirun --version
-      - name: Rust toolchain from rust-toolchain.toml
-        run: |
-          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
-            --profile minimal --component clippy
-          rustc --version
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: mpi-${{ matrix.mpi }}
-          cache-directories: ~/.local/share/tracel
-          save-if: ${{ github.ref == 'refs/heads/main' && matrix.part == 'tests' }}
-      - name: Pinned Python oracles of the VTK tests (ADR-0024, ADR-0035)
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
-          .venv/bin/python scripts/oracles/vtk_oracle.py versions
-      - if: matrix.part == 'tests'
-        run: cargo clippy -p tetraloma-mpi-tests --features mpi --all-targets -- -D warnings
-      - if: matrix.part == 'tests'
-        run: scripts/mpi-test.sh 1 2 3 4
-      # The MPI examples (ADR-0060 item 6; ADR-0067) run in the hdf5 part: parallel_io writes
-      # VTKHDF with feature hdf5.
-      - if: matrix.part == 'tests'
-        run: cargo clippy -p tetraloma-examples --features mpi --all-targets -- -D warnings
-      # Feature hdf5 with Ubuntu's HDF5 1.10.10 (ADR-0035, rules 8-9): the gather path
-      # (tetraloma-io, ThreadComm) and the MPI-IO path (vtkhdf_parallel), read back by VTK.
-      - name: HDF5_DIR for the parallel HDF5 of this MPI
-        if: matrix.part == 'hdf5'
-        run: |
-          # hdf5-metno-sys looks for include/ and lib/ under HDF5_DIR; Ubuntu keeps the headers
-          # and libraries of its MPI builds in separate trees.
-          so=$(dpkg -L libhdf5-${{ matrix.mpi }}-dev | grep '/libhdf5\.so$' | head -n 1)
-          test -n "$so"
-          root=$RUNNER_TEMP/hdf5-${{ matrix.mpi }}
-          mkdir -p "$root"
-          ln -sfn /usr/include/hdf5/${{ matrix.mpi }} "$root/include"
-          ln -sfn "$(dirname "$so")" "$root/lib"
-          grep -E '^#define H5_(VERSION|HAVE_PARALLEL) ' "$root/include/H5pubconf.h"
-          echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
-      - if: matrix.part == 'hdf5'
-        run: cargo clippy -p tetraloma-mpi-tests --features mpi,hdf5 --all-targets -- -D warnings
-      - if: matrix.part == 'hdf5'
-        run: cargo test -p tetraloma-io --features hdf5
-      - if: matrix.part == 'hdf5'
-        run: cargo test -p tetraloma --features hdf5 --test integration io_threads::vtkhdf
-      - if: matrix.part == 'hdf5'
-        run: cargo test -p tetraloma --features hdf5 --doc vtkhdf
-      - if: matrix.part == 'hdf5'
-        run: scripts/mpi-test.sh 1 2 3 4
+      - name: tetraloma's MPI examples on 3 and 4 ranks with MPIR_CVAR_PMI_VERSION=1
         env:
-          TETRALOMA_MPI_FEATURES: hdf5
-          TETRALOMA_MPI_TESTS: vtkhdf_parallel
-      # The MPI examples of the book (halo_exchange, distributed_mesh, parallel_io) on 1-4 ranks
-      # (ADR-0067, rule 5), in the debug build of the step before.
-      - if: matrix.part == 'hdf5'
-        run: cargo clippy -p tetraloma-examples --features mpi,hdf5 --all-targets -- -D warnings
-      - if: matrix.part == 'hdf5'
-        run: |
-          for ranks in 1 2 3 4; do
-            scripts/run-examples.sh --mpi --ranks "$ranks" --features hdf5
-          done
-        env:
+          MPIR_CVAR_PMI_VERSION: 1
           TETRALOMA_EXAMPLES_PROFILE: debug
+          TETRALOMA_MPIRUN_FLAGS: -bind-to hwthread
+        run: |
+          scripts/run-examples.sh --mpi --ranks 3
+          scripts/run-examples.sh --mpi --ranks 4
 
-  # In nine jobs (33 min in one, M8 review): tetraloma's shards of scripts/ci-tetraloma-shard.sh, two
-  # or more to a job where they are short, and the other crates, whose job saves the cache.
-  vulkan:
-    name: vulkan-${{ matrix.shard }}
+  # Option 2: Debian's fixed 4.2.0-5.1 (built for Ubuntu 24.10) installed on 24.04.
+  debian-fix:
     runs-on: ubuntu-24.04
-    # A runaway job ends with its log (one ran 3 h and left none).
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        # Not h5-h8 (M9h's tests at p = 5-8): too slow on lavapipe; Metal and CUDA run them.
-        shard: ["1,4", "2", "3", "5,7,8", "6", "9", "10", "11", other]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Software Vulkan (Mesa lavapipe)
-        uses: ./.github/actions/apt-install
-        with:
-          packages: mesa-vulkan-drivers vulkan-tools
-      - run: vulkaninfo --summary
-      - name: Rust toolchain from rust-toolchain.toml
+      - name: Install mpich 4.2.0-5.1 from Launchpad
         run: |
-          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
-            --profile minimal
-          rustc --version
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: vulkan
-          cache-directories: ~/.local/share/tracel
-          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 'other' }}
-      - name: Pinned Python oracles of the M5 VTK tests (ADR-0024)
+          mkdir debs && cd debs
+          for p in libmpich12 libmpich-dev mpich; do
+            curl -fsSLO "https://launchpad.net/ubuntu/+archive/primary/+files/${p}_4.2.0-5.1_amd64.deb"
+          done
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends ./*.deb
+          mpichversion | head -20
+      - name: C program, plain
         run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --quiet --disable-pip-version-check vtk==9.7.1 meshio==5.3.5
-          .venv/bin/python scripts/oracles/vtk_oracle.py versions
-      # Release build: the primitives' property tests are too slow on lavapipe in a debug
-      # build (docs/plans/M2.md, question 15). It also runs the release-only mask tests.
-      - if: matrix.shard != 'other'
-        run: scripts/ci-tetraloma-shard.sh ${{ matrix.shard }} --release --features tetraloma-testing/vulkan
-        env:
-          TETRALOMA_TEST_DEVICE: vulkan
-      - if: matrix.shard == 'other'
-        run: cargo test --release --workspace --exclude tetraloma --features tetraloma-testing/vulkan
-        env:
-          TETRALOMA_TEST_DEVICE: vulkan
-
-  # The user documentation (docs/design.md, "User documentation"; ADR-0067, rule 7) on the image
-  # of ptscotch.yml (MPI, its parallel HDF5, Scotch, PT-Scotch, METIS and ParMETIS): the site
-  # (book and API, scripts/build-site.sh) and its checks, the parmetis audit, the book's doctests
-  # and the doctests of the nine library crates with the site's features. On main it uploads the
-  # site, which the job pages deploys.
-  docs:
-    runs-on: ubuntu-24.04
-    env:
-      # As in the mpi jobs: the one-process MPI doctests must not pick an unusable RDMA device.
-      UCX_TLS: self,sm,tcp
-      # The site's features (scripts/build-site.sh), and tetraloma-testing's ThreadComm with them.
-      DOCTEST_FEATURES: tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis,tetraloma-testing/mpi
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Check (h) compares the library sources with D1's base commit.
-          fetch-depth: 0
-      - name: Scotch, PT-Scotch, METIS, ParMETIS, Open MPI, its parallel HDF5 and libclang (bindgen)
-        uses: ./.github/actions/apt-install
-        with:
-          packages: libscotch-dev libptscotch-dev libmetis-dev libparmetis-dev openmpi-bin libopenmpi-dev libhdf5-openmpi-dev libclang-dev
-      - name: Rust toolchain from rust-toolchain.toml
-        run: |
-          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
-            --profile minimal
-          rustc --version
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: docs
-          cache-directories: ~/.local/share/tracel
-          # The book tools have their own cache below.
-          cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # mdBook and mdbook-katex at their pinned versions (scripts/install-doc-tools.sh), cached
-      # per pin and toolchain; saved from main only, as the other caches.
-      - id: doc-tools
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/mdbook
-            ~/.cargo/bin/mdbook-katex
-          key: doc-tools-${{ runner.os }}-${{ hashFiles('scripts/install-doc-tools.sh', 'rust-toolchain.toml') }}
-      - run: scripts/install-doc-tools.sh
-      - if: github.ref == 'refs/heads/main' && steps.doc-tools.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/mdbook
-            ~/.cargo/bin/mdbook-katex
-          key: doc-tools-${{ runner.os }}-${{ hashFiles('scripts/install-doc-tools.sh', 'rust-toolchain.toml') }}
-      - name: HDF5_DIR for Open MPI's parallel HDF5
-        run: |
-          # As in ptscotch.yml: hdf5-metno-sys looks for include/ and lib/ under HDF5_DIR.
-          so=$(dpkg -L libhdf5-openmpi-dev | grep '/libhdf5\.so$' | head -n 1)
-          test -n "$so"
-          root=$RUNNER_TEMP/hdf5-openmpi
-          mkdir -p "$root"
-          ln -sfn /usr/include/hdf5/openmpi "$root/include"
-          ln -sfn "$(dirname "$so")" "$root/lib"
-          echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
-      # Checks (a)-(h). The steps after it run even if it fails, so one push reports them all.
-      - run: scripts/check-user-docs.sh --verbose
-      # tetraloma-partition's API with parmetis instead of metis (ADR-0033): checks (c)-(e).
-      - if: ${{ !cancelled() }}
-        run: scripts/check-user-docs.sh --parmetis --verbose
-      # The book's Rust blocks (tetraloma-examples' doctest harness) on the CPU runtime.
-      - if: ${{ !cancelled() }}
-        run: cargo test -p tetraloma-examples --doc
-      # The API examples with the site's features; the MPI ones as one-process programs.
-      - if: ${{ !cancelled() }}
-        run: |
-          cargo test --doc --features "$DOCTEST_FEATURES" \
-            -p tetraloma -p tetraloma-dims -p tetraloma-refcell -p tetraloma-device \
-            -p tetraloma-parallel -p tetraloma-topology -p tetraloma-geometry \
-            -p tetraloma-partition -p tetraloma-io
-      - if: github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: site
-
-  # Deploys the site of the docs job to GitHub Pages, from main only (.github/workflows/pages.yml).
-  pages:
-    needs: docs
-    if: github.ref == 'refs/heads/main'
-    # A called workflow gets at most its caller's permissions: contents: read for pages.yml's
-    # top level too.
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/pages.yml
+          cat > hello.c <<'C'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(void) {
+            MPI_Init(NULL, NULL);
+            int r, s;
+            MPI_Comm_rank(MPI_COMM_WORLD, &r);
+            MPI_Comm_size(MPI_COMM_WORLD, &s);
+            printf("rank %d of %d\n", r, s);
+            MPI_Finalize();
+            return 0;
+          }
+          C
+          mpicc hello.c -o hello
+          mpirun -n 4 ./hello
