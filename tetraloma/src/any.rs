@@ -1,5 +1,5 @@
-//! The erased layer (Listing B6): `AnyMesh`, `AnyMeshRef`, `with_mesh!` and the `TryFrom`
-//! impls.
+// Design: "API walkthrough", Listing B6.
+//! The erased layer: `AnyMesh`, `AnyMeshRef`, `with_mesh!` and the `TryFrom` impls.
 
 use tetraloma_device::{GridError, Real, Result};
 use tetraloma_dims::{D1, D2, D3, Dim};
@@ -7,19 +7,36 @@ use tetraloma_parallel::{Comm, Serial};
 
 use crate::Mesh;
 
-/// A mesh whose dimensions are known only at run time, as file readers return it. Convert it
-/// with `TryFrom` into the typed mesh, or borrow it with [`as_ref`](AnyMesh::as_ref) for
-/// [`with_mesh!`](crate::with_mesh).
+// Design: "API walkthrough", Listing B6.
+/// A mesh whose dimensions are known only at run time, as the Gmsh reader returns it.
+///
+/// Each variant holds the mesh of one valid pair (TD, GD). `try_into`, through the `TryFrom` impls
+/// of the six mesh types, fixes the dimensions once and returns `DimensionMismatch` for another
+/// variant. [`as_ref`](AnyMesh::as_ref) borrows the mesh for [`with_mesh!`](crate::with_mesh),
+/// which runs generic code on any variant. [AnyMesh] explains the erased layer, and [Fixing the
+/// dimensions] shows it after reading a file.
+///
+/// [AnyMesh]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#anymesh
+/// [Fixing the dimensions]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#fixing-the-dimensions
+///
+/// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let h = tetraloma_testing::square_box(Cell2::Triangle, 1, 1);
-/// let any = AnyMesh::Planar(h.build::<f32, D2, D2>(&client)?);
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // planar: a `PlanarMesh<f32>`, the unit square as two triangles; the tutorial "Building a mesh"
+/// // shows how to make a mesh.
+/// # let planar: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
+/// let any = AnyMesh::Planar(planar);
 /// assert_eq!((any.tdim(), any.gdim()), (2, 2));
-/// let planar = PlanarMesh::<f32>::try_from(any)?;
+/// // Fix the dimensions.
+/// let planar: PlanarMesh<f32> = any.try_into()?;
 /// assert_eq!(planar.cell_blocks()[0].index_map.num_local(), 2);
+/// // Another mesh type is an error.
+/// let r = SurfaceMesh::<f32>::try_from(AnyMesh::Planar(planar));
+/// assert!(matches!(r, Err(GridError::DimensionMismatch { expected: (2, 3), found: (2, 2) })));
 /// # Ok::<(), GridError>(())
 /// ```
 pub enum AnyMesh<F: Real, C: Comm = Serial> {
@@ -37,14 +54,25 @@ pub enum AnyMesh<F: Real, C: Comm = Serial> {
     Volume(Mesh<F, D3, D3, C>),
 }
 
-/// Borrowed view, so writers never need to move or clone a mesh.
+// Design: "API walkthrough", Listing B6.
+/// A borrowed [`AnyMesh`]: one reference per variant, so that [`with_mesh!`](crate::with_mesh) and
+/// the writers never move or copy a mesh.
+///
+/// [`AnyMesh::as_ref`] makes one from an `AnyMesh`, and each variant wraps a reference to a typed
+/// mesh. [AnyMesh] explains the erased layer.
+///
+/// [AnyMesh]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#anymesh
+///
+/// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let h = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1);
-/// let planar: PlanarMesh<f32> = h.build(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // planar: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial "Building
+/// // a mesh" shows how to make a mesh.
+/// # let planar: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
 /// let cells = with_mesh!(AnyMeshRef::Planar(&planar), m => m.cell_blocks()[0].index_map.num_local());
 /// assert_eq!(cells, 4);
 /// # Ok::<(), GridError>(())
@@ -65,15 +93,22 @@ pub enum AnyMeshRef<'a, F: Real, C: Comm = Serial> {
 }
 
 impl<F: Real, C: Comm> AnyMesh<F, C> {
-    /// The borrowed view.
+    /// The borrowed view of the mesh, for [`with_mesh!`](crate::with_mesh) and the writers.
+    ///
+    /// [AnyMesh] explains the erased layer.
+    ///
+    /// [AnyMesh]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#anymesh
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let any = AnyMesh::Volume(tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // any: an `AnyMesh<f32>` that holds the unit cube as one hexahedron, as a reader returns a
+    /// // mesh; the tutorial "Reading and writing files" shows how to read one.
+    /// # let any = AnyMesh::Volume(tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
     /// let cells = with_mesh!(any.as_ref(), m => m.cell_blocks()[0].index_map.num_local());
     /// assert_eq!(cells, 1);
     /// # Ok::<(), GridError>(())
@@ -89,15 +124,22 @@ impl<F: Real, C: Comm> AnyMesh<F, C> {
         }
     }
 
-    /// The topological dimension.
+    /// The topological dimension of the mesh inside, as a number.
+    ///
+    /// [AnyMesh] explains the erased layer.
+    ///
+    /// [AnyMesh]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#anymesh
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let any = AnyMesh::Volume(tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // any: an `AnyMesh<f32>` that holds the unit cube as one hexahedron, as a reader returns a
+    /// // mesh; the tutorial "Reading and writing files" shows how to read one.
+    /// # let any = AnyMesh::Volume(tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
     /// assert_eq!(any.tdim(), 3);
     /// # Ok::<(), GridError>(())
     /// ```
@@ -105,15 +147,22 @@ impl<F: Real, C: Comm> AnyMesh<F, C> {
         crate::with_mesh!(self.as_ref(), m => m.tdim())
     }
 
-    /// The geometric dimension.
+    /// The geometric dimension of the mesh inside, as a number.
+    ///
+    /// [AnyMesh] explains the erased layer.
+    ///
+    /// [AnyMesh]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#anymesh
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let any = AnyMesh::Volume(tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // any: an `AnyMesh<f32>` that holds the unit cube as one hexahedron, as a reader returns a
+    /// // mesh; the tutorial "Reading and writing files" shows how to read one.
+    /// # let any = AnyMesh::Volume(tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?);
     /// assert_eq!(any.gdim(), 3);
     /// # Ok::<(), GridError>(())
     /// ```
@@ -122,17 +171,35 @@ impl<F: Real, C: Comm> AnyMesh<F, C> {
     }
 }
 
-/// Runs `$body` once per variant with `$m: &Mesh<F, TD, GD, C>` of that variant's types.
-/// Call sites pass `any.as_ref()`.
+// Design: "API walkthrough", Listing B6.
+/// Runs an expression on the mesh inside an [`AnyMeshRef`], with the mesh's concrete type.
+///
+/// `with_mesh!(any.as_ref(), m => body)` matches the six variants. In each arm `m` is a
+/// `&Mesh<F, TD, GD, C>` of that variant's dimensions, and `body` is compiled once per variant, so
+/// it may call generic code; every arm must give the same type. [with_mesh!] shows it with generic
+/// code, and [AnyMesh] explains the erased layer.
+///
+/// [with_mesh!]: https://tetracl.github.io/tetraloma/tutorials/kernels.html#with_mesh
+/// [AnyMesh]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#anymesh
+///
+/// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let h = tetraloma_testing::interval_box(3, 1);
-/// let any = AnyMesh::Curve1(h.build::<f32, D1, D1>(&client)?);
+/// // A generic function over every mesh type: the number of local cells.
+/// fn cells<F: Real, TD: TopoDim + EmbeddedIn<GD>, GD: Dim, C: Comm>(m: &Mesh<F, TD, GD, C>) -> usize {
+///     m.cell_blocks().iter().map(|b| b.index_map.num_local()).sum()
+/// }
+///
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // any: an `AnyMesh<f32>` that holds the unit interval in three cells, as a reader returns a
+/// // mesh; the tutorial "Reading and writing files" shows how to read one.
+/// # let any = AnyMesh::Curve1(tetraloma_testing::interval_box(3, 1).build::<f32, D1, D1>(&client)?);
 /// let (tdim, gdim) = with_mesh!(any.as_ref(), m => (m.tdim(), m.gdim()));
 /// assert_eq!((tdim, gdim), (1, 1));
+/// assert_eq!(with_mesh!(any.as_ref(), m => cells(m)), 3);
 /// # Ok::<(), GridError>(())
 /// ```
 #[macro_export]
