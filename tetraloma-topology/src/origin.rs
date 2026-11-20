@@ -3,6 +3,8 @@
 /// The device words of `ids`: `(hi ^ 0x8000_0000, lo)` per id, interleaved, where hi and lo are
 /// the high and low words of the i64. Unsigned lexicographic pair order equals i64 order.
 ///
+/// See [Origin ids].
+///
 /// # Example
 ///
 /// ```
@@ -10,6 +12,8 @@
 ///
 /// assert_eq!(encode_origin_ids(&[5, -1]), vec![0x8000_0000, 5, 0x7fff_ffff, 0xffff_ffff]);
 /// ```
+///
+/// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
 pub fn encode_origin_ids(ids: &[i64]) -> Vec<u32> {
     let mut words = Vec::with_capacity(2 * ids.len());
     for &id in ids {
@@ -25,6 +29,8 @@ const SIGN: u32 = 0x8000_0000;
 
 /// The ids of interleaved device words; the inverse of [`encode_origin_ids`].
 ///
+/// Use it to read origin ids back from the device; see [Origin ids].
+///
 /// # Example
 ///
 /// ```
@@ -37,6 +43,8 @@ const SIGN: u32 = 0x8000_0000;
 /// # Panics
 ///
 /// If `words.len()` is odd.
+///
+/// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
 pub fn decode_origin_ids(words: &[u32]) -> Vec<i64> {
     assert!(
         words.len().is_multiple_of(2),
@@ -51,8 +59,10 @@ pub fn decode_origin_ids(words: &[u32]) -> Vec<i64> {
         .collect()
 }
 
-/// Whether every id lies in [0, 2^32): then every stored hi word is 0x8000_0000, and kernels
-/// compare the lo words only (the comptime fast path).
+/// Whether every id lies in [0, 2³²): then every stored hi word is 0x8000_0000, and kernels
+/// compare the lo words only (a faster path chosen when the kernel is compiled).
+///
+/// See [Origin ids].
 ///
 /// # Example
 ///
@@ -63,6 +73,8 @@ pub fn decode_origin_ids(words: &[u32]) -> Vec<i64> {
 /// assert!(!origin_ids_fit_u32(&[-1]));
 /// assert!(!origin_ids_fit_u32(&[1 << 32]));
 /// ```
+///
+/// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
 pub fn origin_ids_fit_u32(ids: &[i64]) -> bool {
     ids.iter()
         .all(|&id| (0..=i64::from(u32::MAX)).contains(&id))

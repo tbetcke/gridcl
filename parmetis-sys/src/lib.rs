@@ -1,7 +1,15 @@
+// ADR-0029, items 4 and 5. A shared libparmetis that contains METIS: built by
+// scripts/hpc/build-partition-libs.sh.
 //! FFI bindings to ParMETIS, with the widths of `idx_t` and `real_t` from the binding.
 //!
+//! This crate is the raw C interface behind tetraloma's partitioner `ParMetis` (feature `parmetis`
+//! of the crate `tetraloma`). It is for the developers of tetraloma: a program partitions a mesh
+//! through `ParMetis` and never calls these functions itself. The [user book] describes the
+//! partitioners in [Distributed meshes], and [Cargo features] says where the build looks for
+//! ParMETIS.
+//!
 //! The bindings exist only with the feature `mpi` (off by default); without it the crate is
-//! empty, so the workspace build needs neither MPI nor ParMETIS (ADR-0029, items 4 and 5).
+//! empty, so the workspace build needs neither MPI nor ParMETIS.
 //!
 //! With `mpi`, the build script runs bindgen on `parmetis.h` (which includes `metis.h`), found
 //! through `PARMETIS_DIR` and `METIS_DIR` (`include/`, `lib/`) or the system paths, and links
@@ -12,10 +20,14 @@
 //! - `MPI_Comm` in the signatures is mpi-sys's type (`mpi::ffi`), so a pointer to a
 //!   communicator's `as_raw()` passes straight to `ParMETIS_V3_PartKway`.
 //! - `libparmetis` must resolve METIS itself, as a shared library does that contains METIS
-//!   (scripts/hpc/build-partition-libs.sh) or depends on `libmetis` (Debian, Ubuntu).
+//!   or depends on `libmetis` (Debian, Ubuntu).
 //!
 //! ParMETIS is not free software: its licence allows non-commercial use and redistribution
 //! with conditions. Check the licence terms before redistributing binaries that link it.
+//!
+//! [user book]: https://tetracl.github.io/tetraloma/
+//! [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
+//! [Cargo features]: https://tetracl.github.io/tetraloma/features.html#partitioners
 
 #[cfg(feature = "mpi")]
 #[allow(

@@ -1,10 +1,22 @@
+// Design: "Cargo features", "Dependency rules"; ADR-0059, ADR-0060.
 //! Test support for tetraloma: the test device chosen by `TETRALOMA_TEST_DEVICE`, test meshes,
-//! tolerance helpers and the Python oracles.
+//! tolerance helpers, a threaded communicator and the Python oracles.
 //!
-//! This crate is not published. Its features forward CubeCL's runtime features; besides it,
-//! only tetraloma-bench and tetraloma-examples enable them. tetraloma-device's `gpu-aware-cuda` is an
-//! empty, reserved feature (docs/design.md, "Cargo features", "Dependency rules"; ADR-0059,
-//! ADR-0060).
+//! This crate lives in the repository and is not published. It is for the developers of tetraloma:
+//! the library's tests, its API examples and the benchmarks get their device and their test meshes
+//! here. A program of your own opens its device through `cubecl::Device` and builds its meshes with
+//! the mesh builder or a file reader, as the [user book] shows from [A first program] on. The API
+//! examples name the test mesh each hidden line makes, so you can follow them without this crate.
+//!
+//! The variable `TETRALOMA_TEST_DEVICE` (for example `cpu`, `metal`, `vulkan` or `cuda`) picks the
+//! device of the tests; [Compute devices] describes the same choice for programs. The crate's
+//! features forward CubeCL's runtime features; besides this crate, only tetraloma-bench and
+//! tetraloma-examples enable them. tetraloma-device's feature `gpu-aware-cuda` is empty and
+//! reserved.
+//!
+//! [user book]: https://tetracl.github.io/tetraloma/
+//! [A first program]: https://tetracl.github.io/tetraloma/getting-started/first-program.html
+//! [Compute devices]: https://tetracl.github.io/tetraloma/devices.html#choosing-a-device-at-run-time
 
 mod comm;
 pub mod comm_checks;

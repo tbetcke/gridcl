@@ -11,7 +11,13 @@ use tetraloma_dims::CellType;
 
 use crate::{RefCellError, sub_entities, sub_entity_types, tdim, vertices};
 
-/// The 1D point family of a Lagrange layout ("Reference cells and conventions", node families).
+// Design: "Reference cells and conventions", node families.
+/// The 1D point family of a Lagrange layout: where the nodes sit along each edge.
+///
+/// See [Node families] and [GLL and equispaced nodes].
+///
+/// [Node families]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-families
+/// [GLL and equispaced nodes]: https://tetracl.github.io/tetraloma/concepts/geometry.html#gll-and-equispaced-nodes
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeFamily {
     /// Equispaced points, on every cell.
@@ -29,9 +35,11 @@ fn checked_count(cell: CellType, degree: u32, f: impl Fn(u64) -> Option<u64>) ->
         })
 }
 
-/// The number of Lagrange nodes N(p) of degree `degree` on `cell` (A.4).
+// Design: Appendix A, A.4.
+/// The number of Lagrange nodes N(p) of degree `degree` on `cell`.
 ///
-/// The point cell has one node. Degree 0 gives one node on every cell.
+/// The point cell has one node. Degree 0 gives one node on every cell. The chapter [Node counts]
+/// gives the formula of each cell.
 ///
 /// # Example
 ///
@@ -46,6 +54,8 @@ fn checked_count(cell: CellType, degree: u32, f: impl Fn(u64) -> Option<u64>) ->
 /// # Panics
 ///
 /// If the count overflows `usize`; the message names the cell and the degree.
+///
+/// [Node counts]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-counts
 pub fn num_lagrange_nodes(cell: CellType, degree: u32) -> usize {
     checked_count(cell, degree, |p| {
         let a = p.checked_add(1)?;
@@ -66,8 +76,11 @@ pub fn num_lagrange_nodes(cell: CellType, degree: u32) -> usize {
     })
 }
 
-/// The number of Lagrange nodes in the interior of `cell` (A.4); 0 below the first degree with
+// Design: Appendix A, A.4.
+/// The number of Lagrange nodes in the interior of `cell`; 0 below the first degree with
 /// interior nodes, for degree 0, and for the point cell.
+///
+/// See [Node counts].
 ///
 /// # Example
 ///
@@ -82,6 +95,8 @@ pub fn num_lagrange_nodes(cell: CellType, degree: u32) -> usize {
 /// # Panics
 ///
 /// If the count overflows `usize`; the message names the cell and the degree.
+///
+/// [Node counts]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-counts
 pub fn num_interior_lagrange_nodes(cell: CellType, degree: u32) -> usize {
     checked_count(cell, degree, |p| {
         // The first degree with interior nodes: every factor below is then non-negative.
@@ -116,8 +131,12 @@ fn block_size(entity: CellType, degree: u32) -> usize {
     }
 }
 
-/// The Lagrange nodes of degree `degree` on `cell` in internal order (A.5), flat and
-/// node-major with [`tdim`](crate::tdim) coordinates per node.
+// Design: Appendix A, A.5.
+/// The Lagrange nodes of degree `degree` on `cell` in tetraloma's order, flat and node-major
+/// with [`tdim`](crate::tdim) coordinates per node.
+///
+/// This is the order of the nodes of each cell that a mesh's geometry stores. The chapter
+/// [Node ordering] explains it.
 ///
 /// # Example
 ///
@@ -139,6 +158,8 @@ fn block_size(entity: CellType, degree: u32) -> usize {
 /// # Panics
 ///
 /// If the Newton iteration for a GLL point does not converge (tested for `degree` ≤ 39).
+///
+/// [Node ordering]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
 pub fn lagrange_points(
     cell: CellType,
     degree: u32,
@@ -244,9 +265,12 @@ pub fn lagrange_points(
     Ok(out)
 }
 
-/// The node indices (a range of the internal order) of the Lagrange nodes inside sub-entity
-/// `index` of dimension `dim`, excluding its boundary (A.5 block layout). For `dim = 0` this
-/// is the vertex's single node.
+// Design: Appendix A, A.5 (block layout).
+/// The node indices (a range of tetraloma's order) of the Lagrange nodes inside sub-entity
+/// `index` of dimension `dim`, excluding its boundary. For `dim = 0` this is the vertex's
+/// single node.
+///
+/// The nodes come in blocks: vertices, edges, faces, then the interior. See [Node ordering].
 ///
 /// # Example
 ///
@@ -264,6 +288,8 @@ pub fn lagrange_points(
 /// # Panics
 ///
 /// If `degree == 0`, `dim > tdim(cell)` or `index` is not a sub-entity of that dimension.
+///
+/// [Node ordering]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
 pub fn lagrange_entity_nodes(
     cell: CellType,
     degree: u32,

@@ -22,12 +22,15 @@ pub(crate) fn clone_strided(s: &DeviceStrided<u32>) -> Result<DeviceStrided<u32>
     })
 }
 
-/// The topology of a mesh (ADR-0012).
+// Design: "Topology construction on the device"; ADR-0012.
+/// The topology of a mesh: its cell blocks, vertices, entities, connectivity and permutation
+/// bits.
 ///
 /// Entities of dimension 0 ≤ d < tdim are created on demand; cells stay in
-/// [`cell_blocks`](Topology::cell_blocks). Stored connectivities are (tdim, d), downward and
-/// filled by entity creation, for 1 ≤ d < tdim, and (d, tdim), upward, for 0 ≤ d < tdim;
-/// (tdim, 0) is `CellBlock::vertices` and d → 0 is `EntityBlock::vertices`.
+/// [`cell_blocks`](Topology::cell_blocks). Stored connectivities are (tdim, d), downward and filled
+/// by entity creation, for 1 ≤ d < tdim, and (d, tdim), upward, for 0 ≤ d < tdim; (tdim, 0) is
+/// `CellBlock::vertices` and d → 0 is `EntityBlock::vertices`. A `tetraloma::Mesh` owns one and
+/// offers its operations as mesh methods. See [Meshes and topology].
 ///
 /// # Example
 ///
@@ -37,7 +40,8 @@ pub(crate) fn clone_strided(s: &DeviceStrided<u32>) -> Result<DeviceStrided<u32>
 /// use tetraloma_parallel::{IndexMap, Serial};
 /// use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// // Two triangles sharing the edge (1, 2).
 /// let block = CellBlock::<D2>::new(
 ///     Cell2::Triangle,
@@ -52,6 +56,8 @@ pub(crate) fn clone_strided(s: &DeviceStrided<u32>) -> Result<DeviceStrided<u32>
 /// let bits = topology.permutation_info(0).unwrap().to_host().unwrap();
 /// assert_eq!(bits, [0b000, 0b111]);
 /// ```
+///
+/// [Meshes and topology]: https://tetracl.github.io/tetraloma/concepts/meshes.html
 pub struct Topology<TD: TopoDim> {
     client: Client,
     cell_blocks: Vec<CellBlock<TD>>,
@@ -83,13 +89,47 @@ impl<TD: TopoDim> Topology<TD> {
     /// per cell or its `flags` not one word per cell (cells: its index map's `num_local`);
     /// `TooLarge` if a length overflows; device errors.
     ///
-    /// The vertex indices themselves stay on the device and are not checked. Out-of-range
-    /// indices are not an error but give a meaningless topology: every kernel that reads
-    /// through a vertex index clamps an index past the local vertices to the last vertex, so
-    /// no read leaves its buffer, and entities, keys and permutation info are computed as if
-    /// the index were the last vertex. The (tdim, 0) connectivity,
-    /// [`CellBlock::vertices`](crate::CellBlock), is the input unchanged and keeps the raw
-    /// indices.
+    /// The vertex indices themselves stay on the device and are not checked. Out-of-range indices
+    /// are not an error but give a meaningless topology: every kernel that reads through a vertex
+    /// index clamps an index past the local vertices to the last vertex, so no read leaves its
+    /// buffer, and entities, keys and permutation info are computed as if the index were the last
+    /// vertex. The (tdim, 0) connectivity, [`CellBlock::vertices`](crate::CellBlock), is the input
+    /// unchanged and keeps the raw indices. See [Cell blocks] and [Origin ids].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::{DeviceBuffer, DeviceStrided, GridError};
+    /// use tetraloma_dims::{Cell2, D2};
+    /// use tetraloma_parallel::{IndexMap, Serial};
+    /// use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let block = || -> Result<CellBlock<D2>, GridError> {
+    ///     Ok(CellBlock::new(
+    ///         Cell2::Triangle,
+    ///         IndexMap::new(&Serial, 2)?,
+    ///         DeviceStrided {
+    ///             data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?,
+    ///             stride: 3,
+    ///         },
+    ///         DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    ///         DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    ///     ))
+    /// };
+    /// // Four vertices with origin ids 10–13.
+    /// let topology = Topology::new(&client, vec![block()?], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// assert_eq!(topology.cell_blocks().len(), 1);
+    ///
+    /// // One origin id per local vertex, or `LengthMismatch`.
+    /// let short = Topology::new(&client, vec![block()?], IndexMap::new(&Serial, 4)?, &[10, 11]);
+    /// assert!(matches!(short, Err(GridError::LengthMismatch { expected: 4, found: 2 })));
+    /// # Ok::<(), GridError>(())
+    /// ```
+    ///
+    /// [Cell blocks]: https://tetracl.github.io/tetraloma/concepts/meshes.html#cell-blocks
+    /// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
     pub fn new(
         client: &Client,
         cell_blocks: Vec<CellBlock<TD>>,
@@ -178,35 +218,207 @@ impl<TD: TopoDim> Topology<TD> {
     }
 
     /// The client the arrays live on.
+    ///
+    /// See [Compute devices].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// // A new buffer on the topology's device.
+    /// let flags = DeviceBuffer::from_host(topology.client(), &[0u32, 1])?;
+    /// assert_eq!(flags.to_host()?, [0, 1]);
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Compute devices]: https://tetracl.github.io/tetraloma/devices.html
     pub fn client(&self) -> &Client {
         &self.client
     }
 
     /// The cell blocks, in creation order.
+    ///
+    /// See [Blocks].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// let blocks = topology.cell_blocks();
+    /// assert_eq!(blocks.len(), 1);
+    /// assert_eq!(blocks[0].cell, Cell2::Triangle);
+    /// assert_eq!(blocks[0].index_map.num_local(), 2);
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Blocks]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#blocks
     pub fn cell_blocks(&self) -> &[CellBlock<TD>] {
         &self.cell_blocks
     }
 
     /// The [owned | ghost] vertices.
+    ///
+    /// See [Ownership and ghosts].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// // A serial topology has no ghosts.
+    /// let vertices = topology.vertex_index_map();
+    /// assert_eq!((vertices.num_owned(), vertices.num_ghosts()), (4, 0));
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Ownership and ghosts]: https://tetracl.github.io/tetraloma/concepts/meshes.html#ownership-and-ghosts
     pub fn vertex_index_map(&self) -> &IndexMap {
         &self.vertex_index_map
     }
 
-    /// The interleaved (hi ^ 0x8000_0000, lo) origin id of each local vertex.
+    /// The interleaved (hi ^ 0x8000_0000, lo) origin id of each local vertex
+    /// ([`encode_origin_ids`]).
+    ///
+    /// See [Origin ids].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// // A host read, for inspection only.
+    /// let words = topology.vertex_origin_ids().to_host()?;
+    /// assert_eq!(tetraloma_topology::decode_origin_ids(&words), [10, 11, 12, 13]);
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
     pub fn vertex_origin_ids(&self) -> &DeviceBuffer<u32> {
         &self.vertex_origin_ids
     }
 
-    /// Whether every vertex origin id lies in [0, 2^32), the comptime fast path of the kernels.
+    /// Whether every vertex origin id lies in [0, 2³²): then the kernels compare one word per
+    /// id instead of two ([`origin_ids_fit_u32`]).
+    ///
+    /// See [Origin ids].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// // The origin ids 10–13 fit in 32 bits.
+    /// assert!(topology.ids_fit_u32());
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
     pub fn ids_fit_u32(&self) -> bool {
         self.ids_fit_u32
     }
 
-    /// The orientation word (A.6) of each cell of block `b`; `None` for interval cells.
+    // Design: Appendix A, A.6.
+    /// The orientation word of each cell of block `b`; `None` for interval cells.
+    ///
+    /// The chapter [Orientation bits] gives the bit layout of every cell.
     ///
     /// # Panics
     ///
     /// If `b` is not a block index.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// // Edge bits, one per edge: set when the edge runs from a higher origin id to a lower.
+    /// // The second triangle's edges (3, 2), (3, 1) and (2, 1) all do.
+    /// let bits = topology.permutation_info(0).expect("triangles have edge bits").to_host()?;
+    /// assert_eq!(bits, [0b000, 0b111]);
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Orientation bits]: https://tetracl.github.io/tetraloma/elements/orientation-bits.html
     pub fn permutation_info(&self, b: usize) -> Option<&DeviceBuffer<u32>> {
         self.permutation_info[b].as_ref()
     }
@@ -217,6 +429,37 @@ impl<TD: TopoDim> Topology<TD> {
     ///
     /// `EntitiesNotCreated(dim)` until `create_entities(dim)` has run, and always for
     /// `dim` ≥ tdim.
+    ///
+    /// See [Entities].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// # use tetraloma_device::GridError;
+    /// assert!(matches!(topology.entity_blocks(1), Err(GridError::EntitiesNotCreated(1))));
+    /// topology.create_entities(&Serial, 1)?;
+    /// // One block of edges: five edges, numbered from 0.
+    /// let edges = &topology.entity_blocks(1)?[0];
+    /// assert_eq!((edges.index_map.num_local(), edges.offset), (5, 0));
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Entities]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#entities
     pub fn entity_blocks(&self, dim: usize) -> Result<&[EntityBlock]> {
         self.entities
             .get(dim)
@@ -263,6 +506,45 @@ impl<TD: TopoDim> Topology<TD> {
     ///
     /// `ConnectivityNotCreated(key)` until it has been created; `UnsupportedConnectivity(key)`
     /// for pairs other than (tdim, d) with 1 ≤ d < tdim and (d, tdim) with 0 ≤ d < tdim.
+    ///
+    /// See [Connectivity].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// # use tetraloma_device::{ConnKey, GridError};
+    /// # use tetraloma_topology::Connectivity;
+    /// let key = ConnKey { from: 1, to: 2 };
+    /// assert!(matches!(topology.connectivity(key), Err(GridError::ConnectivityNotCreated(_))));
+    /// // Cell → vertex is the cell blocks' `vertices`, not a stored connectivity.
+    /// let cell_vertex = ConnKey { from: 2, to: 0 };
+    /// assert!(matches!(topology.connectivity(cell_vertex), Err(GridError::UnsupportedConnectivity(_))));
+    ///
+    /// topology.create_connectivity(&Serial, 1, 2)?;
+    /// let Connectivity::Upward(csr) = topology.connectivity(key)? else {
+    ///     unreachable!("edge -> cell is upward")
+    /// };
+    /// // Five edges; only the shared edge (1, 2) has two cells.
+    /// assert_eq!((csr.offsets.len(), csr.indices.len()), (6, 6));
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Connectivity]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#connectivity
     pub fn connectivity(&self, key: ConnKey) -> Result<&Connectivity> {
         if !Self::supported(key) {
             return Err(GridError::UnsupportedConnectivity(key));
@@ -272,10 +554,11 @@ impl<TD: TopoDim> Topology<TD> {
             .ok_or(GridError::ConnectivityNotCreated(key))
     }
 
-    /// Stores the sharer sets of the local vertices, uploads one shared flag per vertex and
-    /// derives the sharing neighbourhood: every rank that shares a vertex with this one
-    /// (ADR-0026). Without sharers every vertex is unshared. Pipeline stage 9 calls it at mesh
-    /// creation, and submesh creation for the child (ADR-0039, item 16).
+    // ADR-0026; submesh creation: ADR-0039, item 16.
+    /// Stores the sharer sets of the local vertices, uploads one shared flag per vertex and derives
+    /// the sharing neighbourhood: every rank that shares a vertex with this one. Without sharers
+    /// every vertex is unshared. Mesh creation and submesh creation call it. See
+    /// [Ownership and ghosts].
     ///
     /// # Errors
     ///
@@ -293,7 +576,8 @@ impl<TD: TopoDim> Topology<TD> {
     /// use tetraloma_parallel::{IndexMap, Serial};
     /// use tetraloma_topology::{CellBlock, Topology, VertexSharers, encode_origin_ids};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let block = CellBlock::<D1>::new(
     ///     Cell1::Interval,
     ///     IndexMap::new(&Serial, 1).unwrap(),
@@ -310,6 +594,8 @@ impl<TD: TopoDim> Topology<TD> {
     /// t.set_vertex_sharers(ok.clone()).unwrap();
     /// assert_eq!(t.vertex_sharers(), Some(&ok));
     /// ```
+    ///
+    /// [Ownership and ghosts]: https://tetracl.github.io/tetraloma/concepts/meshes.html#ownership-and-ghosts
     pub fn set_vertex_sharers(&mut self, s: VertexSharers) -> Result<()> {
         let n = self.vertex_index_map.num_local();
         check_sharers(&s, n)?;
@@ -367,17 +653,18 @@ impl<TD: TopoDim> Topology<TD> {
         Ok(())
     }
 
+    // Design: "Ownership of vertices and entities"; ADR-0026, item 15.
     /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and, for dim ≥ 1, the downward
     /// connectivity (tdim, dim). Does nothing if they exist.
     ///
     /// Collective on more than one rank: every rank of `comm` calls it with the same `dim`.
-    /// Entities whose vertices are all shared ([`set_vertex_sharers`](Topology::set_vertex_sharers))
-    /// get their owners by an exchange over the sharing neighbourhood (docs/design.md,
-    /// "Ownership of vertices and entities"), and errors are agreed (ADR-0026, item 15).
-    /// Each entity block is numbered [owned | ghost]: owned entities by their smallest touching
-    /// cell, ghosts by (owner rank, global index), with global numbers from an exclusive scan
-    /// of the owned counts and, for ghosts, from their owners. The dimension-0 `Point` block
-    /// shares the vertex index map.
+    /// Entities whose vertices are all shared
+    /// ([`set_vertex_sharers`](Topology::set_vertex_sharers)) get their owners by an exchange over
+    /// the sharing neighbourhood, and every rank returns an error if one rank fails. Each
+    /// entity block is numbered [owned | ghost]: owned entities by their smallest touching cell,
+    /// ghosts by (owner rank, global index), with global numbers from an exclusive scan of the
+    /// owned counts and, for ghosts, from their owners. The dimension-0 `Point` block shares the
+    /// vertex index map. See [Cells and entities] and [Ownership and ghosts].
     ///
     /// # Errors
     ///
@@ -390,6 +677,39 @@ impl<TD: TopoDim> Topology<TD> {
     /// If an entity whose vertices are all shared has no holder in an owned cell, or a ghost
     /// entity receives no global number, which happens only if the vertex sharers are not
     /// consistent across ranks.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// topology.create_entities(&Serial, 1)?;
+    /// // The five edges, each stored from its lower origin id to its higher one (a host read,
+    /// // for inspection only), and the downward connectivity cell → edge.
+    /// let words = topology.entity_blocks(1)?[0].vertices.data.to_host()?;
+    /// let mut edges: Vec<[u32; 2]> = words.chunks(2).map(|e| [e[0], e[1]]).collect();
+    /// assert!(edges.iter().all(|e| e[0] < e[1]));
+    /// edges.sort();
+    /// assert_eq!(edges, [[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]]);
+    /// assert!(topology.connectivity(tetraloma_device::ConnKey { from: 2, to: 1 }).is_ok());
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Cells and entities]: https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities
+    /// [Ownership and ghosts]: https://tetracl.github.io/tetraloma/concepts/meshes.html#ownership-and-ghosts
     pub fn create_entities(&mut self, comm: &dyn CommDyn, dim: usize) -> Result<()> {
         self.create_entities_with(comm, dim, false)
     }
@@ -486,6 +806,44 @@ impl<TD: TopoDim> Topology<TD> {
     ///
     /// `UnsupportedConnectivity` for pairs that are not stored; errors of
     /// [`create_entities`](Topology::create_entities).
+    ///
+    /// See [Connectivity].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// # use tetraloma_device::{ConnKey, GridError};
+    /// # use tetraloma_topology::Connectivity;
+    /// // Vertex → cell: the cells around each vertex, ascending.
+    /// topology.create_connectivity(&Serial, 0, 2)?;
+    /// let Connectivity::Upward(csr) = topology.connectivity(ConnKey { from: 0, to: 2 })? else {
+    ///     unreachable!("vertex -> cell is upward")
+    /// };
+    /// assert_eq!(csr.offsets.to_host()?, [0, 1, 3, 5, 6]);
+    /// assert_eq!(csr.indices.to_host()?, [0, 0, 1, 0, 1, 1]);
+    ///
+    /// // Edge → vertex is the edge blocks' `vertices`, not a stored connectivity.
+    /// let err = topology.create_connectivity(&Serial, 1, 0);
+    /// assert!(matches!(err, Err(GridError::UnsupportedConnectivity(_))));
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Connectivity]: https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity
     pub fn create_connectivity(
         &mut self,
         comm: &dyn CommDyn,
@@ -608,13 +966,43 @@ impl<TD: TopoDim> Topology<TD> {
             + self.vertex_origin_ids.footprint_bytes()
     }
 
+    // `comm` stays in the signature: ADR-0012.
     /// A deep copy of every device array. Index maps, ghosts included, are cloned and share
     /// their neighbourhoods with the original, so the copy is not collective and `comm` is
-    /// unused (it stays in the signature, ADR-0012).
+    /// unused.
+    ///
+    /// See [Meshes and topology].
     ///
     /// # Errors
     ///
     /// Errors of `DeviceBuffer::deep_clone`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // topology: two triangles (0, 1, 2) and (3, 2, 1) on four vertices with origin ids
+    /// // 10–13, built as in the example of `Topology::new`.
+    /// # use tetraloma_device::{DeviceBuffer, DeviceStrided};
+    /// # use tetraloma_dims::{Cell2, D2};
+    /// # use tetraloma_parallel::{IndexMap, Serial};
+    /// # use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
+    /// # let client = tetraloma_testing::test_client();
+    /// # let block = CellBlock::<D2>::new(
+    /// #     Cell2::Triangle,
+    /// #     IndexMap::new(&Serial, 2)?,
+    /// #     DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 3, 2, 1])?, stride: 3 },
+    /// #     DeviceBuffer::from_host(&client, &encode_origin_ids(&[0, 1]))?,
+    /// #     DeviceBuffer::from_host(&client, &[0u32, 0])?,
+    /// # );
+    /// # let mut topology = Topology::new(&client, vec![block], IndexMap::new(&Serial, 4)?, &[10, 11, 12, 13])?;
+    /// topology.create_entities(&Serial, 1)?;
+    /// let copy = topology.try_clone(&Serial)?;
+    /// assert_eq!(copy.entity_blocks(1)?[0].index_map.num_local(), 5);
+    /// assert_eq!(copy.permutation_info(0).unwrap().to_host()?, [0b000, 0b111]);
+    /// # Ok::<(), tetraloma_device::GridError>(())
+    /// ```
+    ///
+    /// [Meshes and topology]: https://tetracl.github.io/tetraloma/concepts/meshes.html
     pub fn try_clone(&self, comm: &dyn CommDyn) -> Result<Self> {
         let clone_opt =
             |b: &Option<DeviceBuffer<u32>>| b.as_ref().map(DeviceBuffer::deep_clone).transpose();

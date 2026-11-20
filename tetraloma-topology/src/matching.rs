@@ -123,7 +123,7 @@ impl<TD: TopoDim> Topology<TD> {
     /// type the dimension does not have matches nothing.
     ///
     /// Sorts the entity keys and `keys` together on the device and reads one count back
-    /// (`unique_by_key`).
+    /// (`unique_by_key`). See [Cells and entities].
     ///
     /// # Errors
     ///
@@ -138,7 +138,8 @@ impl<TD: TopoDim> Topology<TD> {
     /// use tetraloma_parallel::{IndexMap, Serial};
     /// use tetraloma_topology::{CellBlock, Topology, encode_origin_ids};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // Two triangles sharing the edge (1, 2).
     /// let block = CellBlock::<D2>::new(
     ///     Cell2::Triangle,
@@ -158,6 +159,8 @@ impl<TD: TopoDim> Topology<TD> {
     /// assert_eq!(found[2], found[0]);
     /// assert_eq!(found[3], u32::MAX);
     /// ```
+    ///
+    /// [Cells and entities]: https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities
     pub fn match_entities(&self, dim: usize, keys: &SortKeys) -> Result<DeviceBuffer<u32>> {
         let client = self.client();
         let blocks = self.entity_blocks(dim)?;
