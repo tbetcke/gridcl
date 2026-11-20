@@ -2,13 +2,15 @@
 
 use crate::CommDyn;
 
-/// Index of this rank's GPU on its node: the rank within the node. Collective.
+// Listing B8 (the fallback to another device).
+/// The index of the GPU this rank should open: its rank among the ranks of its node.
+/// Collective.
 ///
-/// With an MPI communicator, the rank in `MPI_Comm_split_type(…, MPI_COMM_TYPE_SHARED, …)`;
-/// otherwise [`CommDyn::rank`]: 0 for [`Serial`](crate::Serial), and the ranks of an in-process
-/// communicator share one node. It does not know the GPU count: a program that opens
-/// `Device::cuda(local_gpu_index(&comm))` falls back to another device if there is no such GPU
-/// (Listing B8).
+/// With an MPI communicator, it is the rank in the communicator of the ranks that share this node's
+/// memory (`MPI_Comm_split_type` with `MPI_COMM_TYPE_SHARED`); otherwise [`CommDyn::rank`]: 0 for
+/// [`Serial`](crate::Serial). It does not know how many GPUs the node has: a program that opens
+/// `Device::cuda(local_gpu_index(&comm))` should fall back to another device if there is no such
+/// GPU ([Compute devices](https://tetracl.github.io/tetraloma/devices.html#one-gpu-per-mpi-rank)).
 ///
 /// # Example
 ///

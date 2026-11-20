@@ -58,9 +58,16 @@ fn scatter_kernel<T: Numeric>(
     }
 }
 
-/// `out[i] = src[idx[i]]`. An index >= `src.len()` yields 0 through a mask (debug builds
-/// panic); the read address is clamped and never out of bounds. An empty `src` gives zeros
-/// without reading it.
+/// A new buffer with `out[i] = src[idx[i]]` for every `i < idx.len()`.
+///
+/// An index ≥ `src.len()` yields 0 in release builds; the kernel never reads outside `src`. An
+/// empty `src` gives zeros. Each output element is read independently, so the result is the same on
+/// every run
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
+///
+/// # Errors
+///
+/// `TooLarge` if `src` has 2^32 or more elements; device errors.
 ///
 /// # Panics
 ///
@@ -71,7 +78,8 @@ fn scatter_kernel<T: Numeric>(
 /// ```
 /// use tetraloma_device::{DeviceBuffer, gather};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let src = DeviceBuffer::from_host(&client, &[10.0f32, 20.0, 30.0]).unwrap();
 /// let idx = DeviceBuffer::from_host(&client, &[2u32, 0, 0, 1]).unwrap();
 /// assert_eq!(gather(&src, &idx).unwrap().to_host().unwrap(), vec![30.0, 10.0, 10.0, 20.0]);
@@ -129,8 +137,13 @@ pub fn gather<T: DeviceScalar>(
     Ok(out)
 }
 
-/// `dst[idx[i]] = src[i]`. Out-of-range writes are dropped. Indices must be distinct:
-/// duplicates are memory-safe but leave the result unspecified (debug builds panic).
+/// Writes `dst[idx[i]] = src[i]` for every `i < src.len()`; the other elements of `dst` keep
+/// their values.
+///
+/// Writes to an index ≥ `dst.len()` are dropped. The indices must be distinct: with duplicates the
+/// call is still memory-safe, but which value lands is unspecified, so the result would not be
+/// reproducible
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Errors
 ///
@@ -147,7 +160,8 @@ pub fn gather<T: DeviceScalar>(
 /// ```
 /// use tetraloma_device::{DeviceBuffer, scatter};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let src = DeviceBuffer::from_host(&client, &[1i32, 2, 3]).unwrap();
 /// let idx = DeviceBuffer::from_host(&client, &[3u32, 0, 7]).unwrap();
 /// let mut dst = DeviceBuffer::from_host(&client, &[0i32; 4]).unwrap();

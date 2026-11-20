@@ -9,14 +9,21 @@ use cubecl::prelude::*;
 
 use crate::{VECTOR_PAD, testing};
 
-/// Kernel families with an entry in the vector policy.
+/// The kernel families of tetraloma that the [`VectorPolicy`] gives their own vector size and
+/// CPU settings.
+///
+/// A [`LaunchPlan`](crate::LaunchPlan) takes the family of the kernel it plans, so kernels with
+/// different memory access patterns can use different vector widths. [Compute
+/// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings) describes the
+/// settings that override the policy.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{KernelKind, VectorPolicy};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let n = VectorPolicy::for_client(&client).vector_size(KernelKind::Fill, 4);
 /// assert!(n.is_power_of_two());
 /// ```
@@ -47,7 +54,7 @@ pub enum KernelKind {
     GeomFactors,
     /// The Newton iteration of the pull-back.
     PullBack,
-    /// Kernels not on the candidate list; always vector size 1 (ADR-0015).
+    /// Kernels that are not vectorised: always vector size 1.
     Scalar,
 }
 
@@ -88,15 +95,20 @@ impl KernelKind {
     }
 }
 
-/// Device classes the policy distinguishes, derived from `Client::properties()`. Each class has
-/// one generic set per scalar size (4 and 8 bytes), not one per platform (ADR-0058).
+// ADR-0058: one generic set per class and scalar size, not one per platform.
+/// The two kinds of device the [`VectorPolicy`] distinguishes: CPUs and GPUs.
+///
+/// The policy holds one set of settings per class and scalar size (4 and 8 bytes), measured to be
+/// good on every CPU and GPU tested ([Compute
+/// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::DeviceClass;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let class = DeviceClass::for_client(&client);
 /// assert_eq!(class == DeviceClass::Cpu, client.properties().hardware.num_cpu_cores.is_some());
 /// ```
@@ -111,9 +123,22 @@ pub enum DeviceClass {
 impl DeviceClass {
     const ALL: [DeviceClass; 2] = [DeviceClass::Cpu, DeviceClass::Gpu];
 
-    /// A device with `hardware.num_cpu_cores` is `Cpu`; every other device is `Gpu`.
-    /// `load_width` does not tell a CPU from wgpu, which also reports 128 bits, and does not
-    /// class CPUs (ADR-0058).
+    // ADR-0058: `load_width` does not tell a CPU from wgpu, which also reports 128 bits.
+    /// The class of `client`'s device: `Cpu` if the device reports a CPU core count
+    /// (`hardware.num_cpu_cores`), as the CubeCL CPU runtime does, and `Gpu` for every other device
+    /// ([Compute devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::DeviceClass;
+    ///
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let class = DeviceClass::for_client(&client);
+    /// let reports_cores = client.properties().hardware.num_cpu_cores.is_some();
+    /// assert_eq!(class == DeviceClass::Cpu, reports_cores);
+    /// ```
     pub fn for_client(client: &Client) -> DeviceClass {
         DeviceClass::from_properties(&testing::properties(client))
     }
@@ -144,15 +169,22 @@ impl DeviceClass {
     }
 }
 
-/// The CPU units a launch uses: one per hardware thread, or one per performance core where the
-/// CPU reports a smaller performance-core count (macOS; ADR-0017).
+// ADR-0017.
+/// The CPU threads a launch on the CPU runtime uses: one per hardware thread, or one per
+/// performance core.
+///
+/// On CPUs with performance and efficiency cores (Apple silicon), some kernels run faster on the
+/// performance cores alone; the [`VectorPolicy`] says which ([Compute
+/// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)). Where the CPU
+/// does not report its performance cores, `Performance` uses every hardware thread.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{CpuUnits, DeviceClass, KernelKind, VectorPolicy};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let units = VectorPolicy::for_client(&client).cpu_units(KernelKind::Reduce, 4);
 /// assert_eq!(units.is_none(), DeviceClass::for_client(&client) == DeviceClass::Gpu);
 /// ```
@@ -180,11 +212,15 @@ pub(crate) const VECTOR_SIZE_VAR: &str = "TETRALOMA_VECTOR_SIZE";
 /// The environment variable that overrides the QuadField tile width.
 pub(crate) const QUAD_TILE_VAR: &str = "TETRALOMA_QUAD_TILE";
 
-/// Value of `TETRALOMA_VECTOR_SIZE` (`scalar | policy | widest | <n>`) and of
-/// `testing::with_vector_size`. `Widest` is the first of `io_optimized_vector_sizes(elem_bytes)`.
-/// `Fixed(n)` and `Widest` skip the register budget but stay clamped by `max_vector` (and by the
-/// device's `max_vector_size`); `Policy` applies the full rule of
-/// [`LaunchPlan::elementwise`](crate::LaunchPlan::elementwise).
+/// A choice of vector size that replaces the [`VectorPolicy`]'s: the values of the environment
+/// variable `TETRALOMA_VECTOR_SIZE` (`scalar`, `policy`, `widest` or a power of two `n` from 1 to
+/// 16; [Compute devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
+///
+/// `Widest` is the widest vector size the device reads efficiently for the scalar size.
+/// `Fixed(n)` and `Widest` ignore the register budget but are still capped by what the data
+/// layout and the device allow; `Policy` applies the full rule of
+/// [`LaunchPlan::elementwise`](crate::LaunchPlan::elementwise). tetraloma's tests also set it for
+/// a scope, as the example does.
 ///
 /// # Example
 ///
@@ -192,7 +228,8 @@ pub(crate) const QUAD_TILE_VAR: &str = "TETRALOMA_QUAD_TILE";
 /// use tetraloma_device::{KernelKind, LaunchPlan, VectorSizeOverride};
 /// use tetraloma_device::testing::with_vector_size;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let plan = with_vector_size(VectorSizeOverride::Scalar, || {
 ///     LaunchPlan::elementwise(&client, KernelKind::Fill, 1000, 4, 16, 1)
 /// })
@@ -273,17 +310,22 @@ fn read_env(var: &str) -> Option<String> {
     std::env::var(var).ok().filter(|v| !v.is_empty())
 }
 
-/// Vector sizes, QuadField tiles, CPU block sizes and CPU units chosen from benchmarks
-/// (docs/perf/vectorization.md), per (`KernelKind`, `DeviceClass`, element size), compiled in
-/// from tetraloma-device/vector-policy.toml (ADR-0015, ADR-0017). `TETRALOMA_VECTOR_SIZE` and
-/// `TETRALOMA_QUAD_TILE` override it for tests and benchmarks.
+// ADR-0015, ADR-0017; the benchmarks behind the values: docs/perf/vectorization.md.
+/// The built-in performance settings of tetraloma's kernels: vector sizes, the tile width of
+/// fields at quadrature points, and the block size and threads of CPU launches.
+///
+/// The values were chosen from benchmarks per [`KernelKind`], [`DeviceClass`] and scalar size,
+/// and are compiled into the library from the file `vector-policy.toml` of tetraloma-device.
+/// The environment variables `TETRALOMA_VECTOR_SIZE` and `TETRALOMA_QUAD_TILE` override them
+/// ([Compute devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::VectorPolicy;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// assert!([1, 2, 4, 8, 16].contains(&VectorPolicy::for_client(&client).quad_tile(4)));
 /// ```
 #[derive(Debug)]
@@ -301,7 +343,20 @@ pub struct VectorPolicy {
 const POLICY_TOML: &str = include_str!("../vector-policy.toml");
 
 impl VectorPolicy {
-    /// The policy of the client's device class, parsed once per class.
+    /// The policy of `client`'s [`DeviceClass`], read once per class and process ([Compute
+    /// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::{KernelKind, VectorPolicy};
+    ///
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let policy = VectorPolicy::for_client(&client);
+    /// // Kernels that are not vectorised run at vector size 1.
+    /// assert_eq!(policy.vector_size(KernelKind::Scalar, 4), 1);
+    /// ```
     pub fn for_client(client: &Client) -> &'static VectorPolicy {
         VectorPolicy::for_class(DeviceClass::for_client(client))
     }
@@ -314,15 +369,19 @@ impl VectorPolicy {
         })
     }
 
-    /// Preferred vector size for one kernel family and scalar size, chosen from the M3s
-    /// benchmarks (docs/perf/vectorization.md); 1 for scalar sizes the policy does not list.
+    // From the M3s benchmarks, docs/perf/vectorization.md.
+    /// The preferred vector size of the kernel family `kind` for scalars of `elem_bytes` bytes; 1
+    /// for scalar sizes the policy does not list. A [`LaunchPlan`](crate::LaunchPlan) may choose a
+    /// smaller one ([Compute
+    /// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{KernelKind, VECTOR_PAD, VectorPolicy};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let n = VectorPolicy::for_client(&client).vector_size(KernelKind::Fill, 4);
     /// assert!(n.is_power_of_two() && VECTOR_PAD % n == 0);
     /// ```
@@ -333,16 +392,19 @@ impl VectorPolicy {
             .unwrap_or(1)
     }
 
-    /// Tile width of QuadField and E-vector chunks for one scalar size: 1, 2, 4, 8 or 16. The
-    /// scoped override (`testing::with_quad_tile`), then `TETRALOMA_QUAD_TILE`, then the policy;
-    /// 16 for scalar sizes the policy does not list. The overrides apply to every scalar size.
+    /// The tile width of fields at quadrature points (and of E-vectors) for scalars of `elem_bytes`
+    /// bytes: how many cells are interleaved, 1, 2, 4, 8 or 16. The environment variable
+    /// `TETRALOMA_QUAD_TILE` overrides the policy for every scalar size; 16 for scalar sizes the
+    /// policy does not list ([Compute
+    /// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::VectorPolicy;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let tile = VectorPolicy::for_client(&client).quad_tile(size_of::<f32>());
     /// assert!([1, 2, 4, 8, 16].contains(&tile));
     /// ```
@@ -356,16 +418,18 @@ impl VectorPolicy {
             .unwrap_or_else(|| self.quad_tiles.get(&elem_bytes).copied().unwrap_or(16))
     }
 
-    /// CPU block of one kind and element size in bytes (vector-policy.toml stores units of
-    /// 4 KiB); `None` on `Gpu`. The scoped override (`testing::with_cpu_block_bytes`), then the
-    /// policy; 16 KiB for kinds and scalar sizes the policy does not list.
+    /// The bytes of the block each CPU thread processes at a time, for the kernel family `kind` and
+    /// scalars of `elem_bytes` bytes: a power of two from 4 to 64 KiB, 16 KiB for kinds and sizes
+    /// the policy does not list; `None` on a GPU ([Compute
+    /// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{DeviceClass, KernelKind, VectorPolicy};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let block = VectorPolicy::for_client(&client).cpu_block_bytes(KernelKind::Fill, 4);
     /// match DeviceClass::for_client(&client) {
     ///     DeviceClass::Gpu => assert_eq!(block, None),
@@ -382,16 +446,19 @@ impl VectorPolicy {
         }))
     }
 
-    /// CPU units of one kind and element size: all hardware threads or the performance cores
-    /// (ADR-0017); `None` on `Gpu`. The scoped override (`testing::with_cpu_units`), then the
-    /// policy; `All` for kinds and scalar sizes the policy does not list.
+    // ADR-0017.
+    /// The CPU threads a launch of the kernel family `kind` uses for scalars of `elem_bytes` bytes:
+    /// all hardware threads or the performance cores; `All` for kinds and sizes the policy does not
+    /// list, `None` on a GPU ([Compute
+    /// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{CpuUnits, DeviceClass, KernelKind, VectorPolicy};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let units = VectorPolicy::for_client(&client).cpu_units(KernelKind::GeomFactors, 8);
     /// match DeviceClass::for_client(&client) {
     ///     DeviceClass::Gpu => assert_eq!(units, None),
@@ -560,10 +627,10 @@ fn parse_sizes<T>(
 mod tests {
     use super::*;
 
-    /// M3s acceptance (bullet 4), for the two classes of ADR-0058: every kind and class has `vector_size` and per-size
-    /// `quad_tile` entries, and every CPU class `cpu_block` and `cpu_units` entries; every
-    /// numeric value is a power of two from 1 to 16, every `cpu_units` value is `all` or
-    /// `performance` (ADR-0017), and `Scalar` runs at vector size 1.
+    /// M3s acceptance (bullet 4), for the two classes of ADR-0058: every kind and class has
+    /// `vector_size` and per-size `quad_tile` entries, and every CPU class `cpu_block` and
+    /// `cpu_units` entries; every numeric value is a power of two from 1 to 16, every `cpu_units`
+    /// value is `all` or `performance` (ADR-0017), and `Scalar` runs at vector size 1.
     #[test]
     fn policy_covers_every_kind_and_class() {
         let table: toml::Table = POLICY_TOML.parse().unwrap();

@@ -9,7 +9,16 @@ use crate::comm::agree;
 use crate::scatterer::SharedIndices;
 use crate::{CommDyn, CommExt, DType, GridError, Neighbourhood, ReduceOp, Result, Scatterer};
 
-/// Ownership of a distributed index set in the DOLFINx sense: `[owned | ghost]` local indices.
+/// The ownership of a set of indices distributed over the ranks, such as the vertices or cells
+/// of a mesh: which indices this rank owns, and which it holds as ghosts of other ranks.
+///
+/// Local indices list the `num_owned()` owned indices first and the `num_ghosts()` ghosts after
+/// them. The owned indices of a rank have the contiguous global numbers `owned_range()`, rank after
+/// rank in the order of the ranks; each ghost knows its global number and its owner's rank. This is
+/// the layout of DOLFINx's index maps. A mesh has one index map for each cell block, for its
+/// vertices, its geometry nodes and its entity blocks, and [`scatterer`](Self::scatterer) runs the
+/// halo exchange of a map ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
 ///
 /// Dropping the last clone of a map with ghosts under `Mpi` frees the communicators of its
 /// neighbourhoods, which MPI makes collective (`MPI_Comm_free`): every rank drops its
@@ -79,13 +88,15 @@ fn combine([hi, lo]: [u64; 2]) -> u128 {
 }
 
 impl IndexMap {
-    /// Without ghosts: owned range from `exscan_sum` of `num_owned`, size from `sum`; an i64
-    /// overflow gives `TooLarge`.
+    /// The map in which this rank owns `num_owned` indices and holds no ghosts. Collective: every
+    /// rank of `comm` calls it, and rank r's owned indices get the global numbers after those of
+    /// the ranks below r ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
-    /// Collective: every rank of `comm` must call it. The sum and the exclusive scan run on
-    /// the 32-bit halves of `num_owned` as u64, so they cannot wrap (for fewer than 2^32
-    /// ranks), and every rank sees the same global size and so returns `TooLarge` alike
-    /// when it exceeds `i64::MAX`.
+    /// # Errors
+    ///
+    /// `TooLarge` on every rank if the global size exceeds `i64::MAX`. (The sums run on the
+    /// 32-bit halves of the counts, so they cannot wrap with fewer than 2^32 ranks.)
     ///
     /// # Example
     ///
@@ -129,20 +140,22 @@ impl IndexMap {
             device: OnceCell::new(),
         })
     }
-    /// With ghosts: `ghosts[k]` is the global index of ghost k and `ghost_owners[k]` its owning
-    /// rank. Collective. Ghosts request their indices from their owners, which range-check them
-    /// (`IndexOutOfRange`, agreed); destinations by `all_to_all_v`; forward and transposed
-    /// reverse neighbourhoods; send lists ordered by (neighbour rank, ghost position on the
-    /// receiver) (ADR-0026).
+    // ADR-0026: requests by `all_to_all_v`, owners range-check them (agreed); forward and
+    // transposed reverse neighbourhoods; send lists ordered by (neighbour rank, ghost position on
+    // the receiver).
+    /// The map in which this rank owns `num_owned` indices and holds the ghosts `ghosts`:
+    /// `ghosts[k]` is the global number of ghost k and `ghost_owners[k]` the rank that owns it.
+    /// Collective ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
-    /// The forward neighbourhood receives from the owners of this rank's ghosts and sends to
-    /// the ranks that ghost its owned indices, both in ascending rank order; the reverse
-    /// neighbourhood is its transpose.
+    /// The owners check that they own the indices asked for. The map then knows the ranks it
+    /// exchanges with: it receives from the owners of its ghosts and sends to the ranks that
+    /// hold its owned indices as ghosts, both in ascending rank order.
     ///
     /// # Errors
     ///
-    /// Agreed over the ranks (ADR-0026, item 15); ranks without a local error return
-    /// `RemoteFailure` with the lowest failing rank.
+    /// Agreed over the ranks: ranks without a local error return `RemoteFailure` with the lowest
+    /// failing rank.
     /// - `LengthMismatch` if `ghost_owners` and `ghosts` differ in length;
     /// - `IndexOutOfRange { index: owner, len: size }` for an owner that is not another rank;
     /// - `IndexOutOfRange { index: g, len: size_global }` on the owner, for a requested global
@@ -152,9 +165,32 @@ impl IndexMap {
     /// # Example
     ///
     /// ```
+    /// use tetraloma_parallel::{CommDyn, IndexMap, Result};
+    ///
+    /// /// Each rank owns three indices and holds the first index of the next rank, round the
+    /// /// ring, as a ghost.
+    /// fn ring(comm: &dyn CommDyn) -> Result<IndexMap> {
+    ///     let next = (comm.rank() + 1) % comm.size();
+    ///     IndexMap::with_ghosts(comm, 3, vec![3 * next as i64], vec![next as i32])
+    /// }
+    ///
+    /// // `maps`: `ring` called on each of two ranks, run as two threads of this process by a
+    /// // test communicator. Under MPI, each process calls `ring` with its `Mpi`.
+    /// # let maps = tetraloma_testing::ThreadComm::run(2, |comm| {
+    /// #     let map = ring(&comm).unwrap();
+    /// #     (map.owned_range(), map.ghosts().to_vec(), map.ghost_owners().to_vec(), map.size_global())
+    /// # });
+    /// // Rank 0 owns the global indices 0, 1, 2 and holds index 3 of rank 1 as a ghost.
+    /// assert_eq!(maps[0], ((0, 3), vec![3], vec![1], 6));
+    /// // Rank 1 owns 3, 4, 5 and holds index 0 of rank 0.
+    /// assert_eq!(maps[1], ((3, 6), vec![0], vec![0], 6));
+    /// ```
+    ///
+    /// On one rank there is no other rank to take ghosts from:
+    ///
+    /// ```
     /// use tetraloma_parallel::{GridError, IndexMap, Serial};
     ///
-    /// // One rank has no other rank to take ghosts from.
     /// let map = IndexMap::with_ghosts(&Serial, 4, vec![], vec![])?;
     /// assert_eq!((map.owned_range(), map.num_ghosts()), ((0, 4), 0));
     /// let err = IndexMap::with_ghosts(&Serial, 4, vec![2], vec![0]);
@@ -239,9 +275,14 @@ impl IndexMap {
             ..base
         })
     }
-    /// The scatterer of this map for `block_size` values per index on `client`. Not
-    /// collective. The first call uploads the send and receive index lists and caches them
-    /// for `client`; a scatterer on another client uploads its own copy.
+    /// The [`Scatterer`] of this map for arrays of `block_size` values per local index on
+    /// `client`'s device: `block_size · num_local()` values, the owned blocks first. Not collective
+    /// ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
+    ///
+    /// The first call uploads the map's lists of indices to send and receive, and the map
+    /// keeps them for later scatterers on the same device; a scatterer on another device
+    /// uploads its own copy. Make a scatterer once and use it for every exchange.
     ///
     /// # Errors
     ///
@@ -251,15 +292,17 @@ impl IndexMap {
     /// # Example
     ///
     /// ```
-    /// use tetraloma_device::Client;
-    /// use tetraloma_parallel::{IndexMap, Result, Serial};
+    /// use tetraloma_parallel::{GridError, IndexMap, Serial, Transport};
     ///
-    /// fn scatterers(client: &Client) -> Result<()> {
-    ///     let map = IndexMap::new(&Serial, 4)?;
-    ///     assert!(map.scatterer(client, 3).is_ok());
-    ///     assert!(map.scatterer(client, 0).is_err());
-    ///     Ok(())
-    /// }
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let map = IndexMap::new(&Serial, 4)?;
+    /// // Three values per index: arrays of 3 · 4 values.
+    /// let scatterer = map.scatterer(&client, 3)?;
+    /// assert_eq!(scatterer.transport(), Transport::HostStaged);
+    /// // A block of no values is refused.
+    /// assert!(matches!(map.scatterer(&client, 0), Err(GridError::LengthMismatch { .. })));
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn scatterer(&self, client: &Client, block_size: usize) -> Result<Scatterer> {
         Scatterer::new(self, client, block_size)
@@ -315,7 +358,8 @@ impl IndexMap {
     pub(crate) fn device_cache(&self) -> &OnceCell<SharedIndices> {
         &self.device
     }
-    /// Global indices `[begin, end)` owned by this rank.
+    /// The global numbers `[begin, end)` of the indices this rank owns ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -328,7 +372,8 @@ impl IndexMap {
     pub fn owned_range(&self) -> (i64, i64) {
         self.owned_range
     }
-    /// Global index of each ghost.
+    /// The global number of each ghost, in the order of the local ghost indices ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -342,7 +387,8 @@ impl IndexMap {
     pub fn ghosts(&self) -> &[i64] {
         &self.ghosts
     }
-    /// Owning rank of each ghost.
+    /// The rank that owns each ghost ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -355,7 +401,9 @@ impl IndexMap {
     pub fn ghost_owners(&self) -> &[i32] {
         &self.ghost_owners
     }
-    /// Owned indices on this rank.
+    /// The number of indices this rank owns; local indices `0..num_owned()` are the owned ones
+    /// ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -369,7 +417,8 @@ impl IndexMap {
         // Fits: it was a usize when the map was built.
         (self.owned_range.1 - self.owned_range.0) as usize
     }
-    /// Ghost indices on this rank.
+    /// The number of ghosts on this rank ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -382,7 +431,8 @@ impl IndexMap {
     pub fn num_ghosts(&self) -> usize {
         self.ghosts.len()
     }
-    /// Owned plus ghosts.
+    /// The number of local indices: owned plus ghosts ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -395,7 +445,8 @@ impl IndexMap {
     pub fn num_local(&self) -> usize {
         self.num_owned() + self.num_ghosts()
     }
-    /// Size of the global index set.
+    /// The number of indices over all ranks: the sum of `num_owned()` ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#index-maps)).
     ///
     /// # Example
     ///
@@ -411,7 +462,9 @@ impl IndexMap {
     }
 }
 
-/// Shares the neighbourhoods; the device cache is not copied (ADR-0026).
+// ADR-0026.
+/// A copy that shares the communication pattern; the device copies of the index lists, which a
+/// scatterer makes, are not copied.
 ///
 /// # Example
 ///

@@ -1,8 +1,14 @@
-//! Device primitives (Listing S1b), re-exported at the crate root.
+// Listing S1b.
+//! Parallel algorithms on device buffers, re-exported at the crate root: fill and copy, gather
+//! and scatter, pack and unpack, histogram, reductions, prefix sums, a stable radix sort,
+//! run-length encoding and grouping of sorted keys.
 //!
-//! Every primitive takes its launch shape from one `LaunchPlan` (one partition per primitive),
-//! uses no plane operations, no 64-bit atomics and no float atomics, and is bitwise
-//! deterministic. An empty input never launches a kernel.
+//! tetraloma builds its meshes with them, and you may use them on buffers of your own. Every
+//! primitive takes its launch shape from one [`LaunchPlan`](crate::LaunchPlan), uses no plane
+//! operations, no 64-bit atomics and no floating-point atomics, and gives the same bits on every
+//! run on a device
+//! ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)). An empty
+//! input never launches a kernel.
 
 use cubecl::prelude::*;
 
@@ -41,7 +47,11 @@ mod sealed {
     impl Sealed for u32 {}
 }
 
-/// The scalars of the typed primitives (sealed): f32, f64, i32, u32.
+/// The scalar types of the arithmetic primitives: `f32`, `f64`, `i32` and `u32`.
+///
+/// The trait is sealed: no other type can implement it. [`reduce`], the prefix sums and
+/// [`segmented_reduce`] combine values in a fixed order for each of these types
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Example
 ///
@@ -52,7 +62,8 @@ mod sealed {
 ///     reduce(x, ReduceOp::Sum).unwrap().to_host().unwrap()
 /// }
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// assert_eq!(total(&DeviceBuffer::from_host(&client, &[1i32, 2, 3]).unwrap()), vec![6]);
 /// assert_eq!(total(&DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap()), vec![6]);
 /// ```
@@ -63,14 +74,19 @@ impl DeviceScalar for f64 {}
 impl DeviceScalar for i32 {}
 impl DeviceScalar for u32 {}
 
-/// Sum, min or max. Re-exported by tetraloma-parallel, so `tetraloma_parallel::ReduceOp` stays valid.
+/// The operation of a reduction: the sum, the minimum or the maximum.
+///
+/// [`reduce`], [`segmented_reduce`] and the collectives of tetraloma-parallel take it. Sums of
+/// floating-point values are taken in a fixed order, so they give the same bits on every run on a
+/// device ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, ReduceOp, reduce};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let x = DeviceBuffer::from_host(&client, &[3.0f32, -1.0, 2.0]).unwrap();
 /// assert_eq!(reduce(&x, ReduceOp::Sum).unwrap().to_host().unwrap(), vec![4.0]);
 /// assert_eq!(reduce(&x, ReduceOp::Min).unwrap().to_host().unwrap(), vec![-1.0]);

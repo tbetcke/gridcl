@@ -4,7 +4,12 @@ use core::fmt;
 
 use cubecl::server::ServerError;
 
-/// The result type of tetraloma.
+/// The result type of tetraloma: `Ok(T)` or a [`GridError`].
+///
+/// Every fallible function of tetraloma returns it, so `?` passes errors through, and a
+/// [`GridError`] converts into `Box<dyn std::error::Error>`. The tutorial [Building a
+/// mesh](https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#errors) shows the errors
+/// of mesh creation.
 ///
 /// # Example
 ///
@@ -19,10 +24,15 @@ use cubecl::server::ServerError;
 /// ```
 pub type Result<T, E = GridError> = core::result::Result<T, E>;
 
-/// A connectivity between two topological dimensions (Listing T1): `from` → `to`.
+// Listing T1; defined here so that `GridError::ConnectivityNotCreated` can carry it, and
+// re-exported by tetraloma-topology and tetraloma (ADR-0012).
+/// The name of a connectivity, from the entities of dimension `from` to those of dimension
+/// `to`. In a mesh of triangles, `ConnKey { from: 2, to: 1 }` gives the edges of each cell, and
+/// `ConnKey { from: 1, to: 2 }` the cells that contain each edge.
 ///
-/// Defined here so that [`GridError::ConnectivityNotCreated`] can carry it; tetraloma-topology and
-/// tetraloma re-export it (ADR-0012).
+/// A connectivity is downward if `from > to` and upward if `from < to`. [Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity) explains
+/// both kinds. It prints as `from -> to`.
 ///
 /// # Example
 ///
@@ -48,7 +58,14 @@ impl fmt::Display for ConnKey {
     }
 }
 
-/// Errors of tetraloma. Later milestones add variants when they first use them.
+/// The errors of tetraloma.
+///
+/// Each variant names one kind of failure, and its `Display` text says what went wrong. The
+/// enum is `#[non_exhaustive]`, so a `match` on it needs a `_` arm. Collective operations agree
+/// on their errors: the rank that failed returns its own error, and the other ranks return
+/// [`RemoteFailure`](GridError::RemoteFailure). The tutorial [Building a
+/// mesh](https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#errors) shows the most
+/// common errors of mesh creation.
 ///
 /// # Example
 ///
@@ -138,7 +155,7 @@ pub enum GridError {
     DuplicateCellBlock(&'static str),
     /// The quadrature rule has no point set for this cell type.
     CellNotInRule(&'static str),
-    /// A method declared before the milestone that implements it.
+    /// A method that is declared but not implemented yet; the payload names it.
     NotYetImplemented(&'static str),
     /// A tag element (Gmsh element tag `tag`, of dimension `dim`) matches no mesh entity.
     UnmatchedTagElement {
@@ -160,7 +177,9 @@ pub enum GridError {
         /// What was wrong.
         message: String,
     },
-    /// The file's element type is not supported (A.7 for Gmsh).
+    /// The file's element type is not supported; [File
+    /// formats](https://tetracl.github.io/tetraloma/elements/file-formats.html#gmsh) lists the
+    /// supported Gmsh element types.
     UnsupportedElementType {
         /// The name of the file format.
         format: &'static str,
@@ -174,40 +193,47 @@ pub enum GridError {
         /// The topological dimension searched.
         dim: usize,
     },
-    /// An MPI count or displacement of `count` elements exceeds `i32::MAX` (ADR-0026).
+    /// An MPI count or displacement of `count` elements exceeds `i32::MAX`, the limit of MPI's
+    /// `int` counts.
     MessageTooLarge {
         /// The count or displacement, in elements.
         count: usize,
     },
-    /// A collective operation failed on another rank; `rank` is the lowest failing rank
-    /// (ADR-0026).
+    /// A collective operation failed on another rank; `rank` is the lowest failing rank, which
+    /// returns its own error.
     RemoteFailure {
         /// The lowest rank on which the operation failed.
         rank: usize,
     },
+    // ADR-0029, item 6.
     /// A partitioner library returned the status `code`; tetraloma's own conditions use negative
     /// codes: −1 for ParMETIS with an empty rank, −2 for a self-loop, −3 for an asymmetric
-    /// graph (ADR-0029, item 6). With `name` `"metis"`, a code after validation is METIS's own
-    /// status (`rstatus_et`: −2 input error, −3 out of memory, −4 other error).
+    /// graph. With `name` `"metis"`, a code after validation is METIS's own status
+    /// (`rstatus_et`: −2 input error, −3 out of memory, −4 other error).
     PartitionerFailed {
         /// The partitioner's name, as `"metis"`.
         name: &'static str,
         /// The library's status, or tetraloma's negative code.
         code: i32,
     },
+    // ADR-0029, item 6.
     /// A distributed partitioner was asked for more than one part on a communicator without an
-    /// MPI handle (`CommDyn::raw` is `None`), on any number of ranks (ADR-0029, item 6).
+    /// MPI handle (`CommDyn::raw` is `None`), on any number of ranks.
     NeedsMpiCommunicator(&'static str),
+    // ADR-0039.
     /// A facet has more than two cells, counting owned cells on all ranks: the mesh is not a
-    /// manifold (`orient`, `boundary`, `facet_submesh`; ADR-0039).
+    /// manifold (`orient`, `boundary`, `facet_submesh`).
     NonManifold,
+    // ADR-0039.
     /// A tagged facet of `facet_submesh` has two cells: facet submeshes take boundary facets
-    /// only (ADR-0039).
+    /// only.
     InteriorFacet,
+    // ADR-0039.
     /// `OrientationRule::Outward` on a component with boundary facets, which encloses no
-    /// volume: orient it with `AwayFrom` or `Towards` (ADR-0039).
+    /// volume: orient it with `AwayFrom` or `Towards`.
     NeedsReferencePoint,
-    /// The manifold cannot be oriented consistently, as a Möbius strip (ADR-0039).
+    // ADR-0039.
+    /// The manifold cannot be oriented consistently, as a Möbius strip.
     NonOrientable,
 }
 

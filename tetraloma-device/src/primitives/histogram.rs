@@ -53,14 +53,24 @@ fn histogram_kernel(
     }
 }
 
-/// Counts of each value in `0..num_bins`. Values >= `num_bins` are not counted.
+/// The number of occurrences of each value `0..num_bins` in `values`, as a buffer of `num_bins`
+/// counts. Values ≥ `num_bins` are not counted.
+///
+/// The counts are exact integers, so the result is the same on every run whatever order the device
+/// adds them in
+/// ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
+///
+/// # Errors
+///
+/// `TooLarge` if `values` has 2^32 or more elements; device errors.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, histogram};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let values = DeviceBuffer::from_host(&client, &[2u32, 0, 2, 9, 1, 2]).unwrap();
 /// assert_eq!(histogram(&values, 4).unwrap().to_host().unwrap(), vec![1, 1, 3, 0]);
 /// ```

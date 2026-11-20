@@ -24,14 +24,18 @@ fn fill_kernel<T: Numeric + LaunchArg<RuntimeArg = T>, N: Size>(
     }
 }
 
-/// Writes `v` over the padded length. An empty buffer is not touched.
+/// Writes `v` to every element of `x`, padding included, with a kernel: nothing is uploaded
+/// ([Host–device
+/// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)). An empty
+/// buffer is not touched.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, fill};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let mut x = DeviceBuffer::<i32>::uninit(&client, 5).unwrap();
 /// fill(&mut x, -3).unwrap();
 /// assert_eq!(x.to_host().unwrap(), vec![-3; 5]);

@@ -69,28 +69,50 @@ fn same_device(a: &Client, b: &Client) -> bool {
     Arc::ptr_eq(&a.properties_shared(), &b.properties_shared())
 }
 
-/// The forward (owner → ghosts) and reverse (ghosts → owner) exchange of one `IndexMap`,
-/// built by [`IndexMap::scatterer`].
+// Design: "Transports"; ADR-0009, ADR-0026.
+/// The halo exchange of one [`IndexMap`] on device arrays, made by [`IndexMap::scatterer`]:
+/// [`forward`](Self::forward) sends the owners' values to their ghosts, and
+/// [`reverse`](Self::reverse) combines the ghosts' values into their owners'.
 ///
-/// Values are stored `block` per local index, `[owned | ghost]`.
+/// An array holds `block` values per local index, the owned blocks first and the ghost blocks after
+/// them. The exchange stays on the device except for the values that cross between ranks: a kernel
+/// packs the values to send, they are copied to the host and sent by MPI to the neighbouring ranks
+/// only, and the received values are uploaded and unpacked by another kernel. A scatterer keeps its
+/// buffers for reuse, so make it once and use it for every exchange ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{Client, DeviceBuffer};
-/// use tetraloma_parallel::{IndexMap, ReverseOp, Result, Serial, Transport};
+/// use tetraloma_parallel::{CommDyn, IndexMap, ReverseOp, Result};
 ///
-/// fn round_trip(client: &Client) -> Result<()> {
-///     let map = IndexMap::new(&Serial, 3)?;
-///     let scatterer = map.scatterer(client, 2)?;
-///     assert_eq!(scatterer.transport(), Transport::HostStaged);
-///     let mut x = DeviceBuffer::from_host(client, &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0])?;
+/// /// Each rank owns two indices and holds the first index of the next rank, round the ring,
+/// /// as a ghost. Returns the values after the forward and after the reverse exchange.
+/// fn ring(comm: &dyn CommDyn, client: &Client) -> Result<(Vec<f32>, Vec<f32>)> {
+///     let next = (comm.rank() + 1) % comm.size();
+///     let map = IndexMap::with_ghosts(comm, 2, vec![2 * next as i64], vec![next as i32])?;
+///     let scatterer = map.scatterer(client, 1)?;
+///     // The owned values are the global numbers plus 1; the ghost starts at 0.
+///     let first = map.owned_range().0 as f32;
+///     let mut x = DeviceBuffer::from_host(client, &[first + 1.0, first + 2.0, 0.0])?;
+///     // Owners to ghosts: the ghost receives its owner's value.
 ///     scatterer.forward(&mut x)?;
+///     let forward = x.to_host()?;
+///     // Ghosts to owners: each owner adds the values of its ghosts.
 ///     scatterer.reverse(&mut x, ReverseOp::Add)?;
-///     // One rank: nothing to exchange.
-///     assert_eq!(x.to_host()?, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-///     Ok(())
+///     Ok((forward, x.to_host()?))
 /// }
+///
+/// // `results`: `ring` called on each of two ranks, run as two threads of this process by a
+/// // test communicator, each with its own `client`. Under MPI, each process calls `ring` with
+/// // its `Mpi`.
+/// # let results = tetraloma_testing::ThreadComm::run(2, |comm| {
+/// #     ring(&comm, &tetraloma_testing::test_client()).unwrap()
+/// # });
+/// // Rank 0 owns global indices 0 and 1 and ghosts index 2; rank 1 owns 2 and 3 and ghosts 0.
+/// assert_eq!(results[0], (vec![1.0, 2.0, 3.0], vec![2.0, 2.0, 3.0]));
+/// assert_eq!(results[1], (vec![3.0, 4.0, 1.0], vec![6.0, 4.0, 1.0]));
 /// ```
 pub struct Scatterer {
     transport: Transport,
@@ -234,15 +256,42 @@ impl Scatterer {
         self.buffers.borrow_mut().push(Box::new(b));
     }
 
-    /// Owner → ghosts: every ghost block receives its owner's block. Owned values are
-    /// unchanged. T moves as u32 words, so `size_of::<T>()` must be a multiple of 4 (checked at
-    /// compile time) and any such T works on every device. Collective over the map's
-    /// communicator.
+    /// Owners to ghosts: every ghost block of `x` receives its owner's block, and the owned blocks
+    /// are unchanged. Collective over the map's communicator ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#forward)).
+    ///
+    /// The values move as 32-bit words, so `size_of::<T>()` must be a multiple of 4, which the
+    /// compiler checks, and any such `T` works on every device.
     ///
     /// # Errors
     ///
     /// `LengthMismatch` if `x` does not hold `block` values per local index;
     /// `MessageTooLarge` and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::{Client, DeviceBuffer};
+    /// use tetraloma_parallel::{CommDyn, IndexMap, Result};
+    ///
+    /// /// Each rank owns one index, with two values, and holds the other rank's as a ghost.
+    /// fn swap(comm: &dyn CommDyn, client: &Client) -> Result<Vec<u32>> {
+    ///     let (rank, other) = (comm.rank(), 1 - comm.rank());
+    ///     let map = IndexMap::with_ghosts(comm, 1, vec![other as i64], vec![other as i32])?;
+    ///     let scatterer = map.scatterer(client, 2)?;
+    ///     let r = rank as u32;
+    ///     let mut x = DeviceBuffer::from_host(client, &[10 * r, 10 * r + 1, 0, 0])?;
+    ///     scatterer.forward(&mut x)?;
+    ///     x.to_host()
+    /// }
+    ///
+    /// // `results`: `swap` called on each of two ranks, run as two threads of this process
+    /// // by a test communicator. Under MPI, each process calls `swap` with its `Mpi`.
+    /// # let results = tetraloma_testing::ThreadComm::run(2, |comm| {
+    /// #     swap(&comm, &tetraloma_testing::test_client()).unwrap()
+    /// # });
+    /// assert_eq!(results, [vec![0u32, 1, 10, 11], vec![10, 11, 0, 1]]);
+    /// ```
     pub fn forward<T: CubeElement>(&self, x: &mut DeviceBuffer<T>) -> Result<()> {
         const { assert!(size_of::<T>().is_multiple_of(4), "forward moves u32 words") };
         self.check_len(x.len())?;
@@ -275,20 +324,49 @@ impl Scatterer {
         result
     }
 
-    /// Ghosts → owner by a segmented reduce: deterministic and free of atomics. Each owned
-    /// value that some rank ghosts is combined by `op` with every ghost contribution, ordered
-    /// by neighbour rank and then by ghost position on that rank (ADR-0009, ADR-0026). Ghost
-    /// values and owned values nobody ghosts are unchanged. Collective over the map's
-    /// communicator.
+    // ADR-0009, ADR-0026 (segmented reduce, order of the contributions); ADR-0059 (only the
+    // received values are uploaded; the targets' own values are packed on the device, during
+    // the exchange on GPUs).
+    /// Ghosts to owners: each owned value that some rank holds as a ghost is combined by `op`
+    /// with the values of all its ghost copies. Ghost values, and owned values that no rank
+    /// ghosts, are unchanged. Collective over the map's communicator ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#reverse)).
     ///
-    /// Only the received values are uploaded (ADR-0059): the targets' own values are packed on
-    /// the device (during the exchange on GPUs), and both are placed on the device in the
-    /// order of the reduce, each segment the target's own value and then its contributions.
+    /// The values are combined on the device in a fixed order, by neighbouring rank and then by
+    /// the ghost's position on that rank, without atomic operations, so a floating-point sum
+    /// gives the same bits on every run. Only the received values are uploaded.
     ///
     /// # Errors
     ///
-    /// `UnsupportedPrecision` if the device lacks T; `LengthMismatch` if `x` does not hold
-    /// `block` values per local index; `MessageTooLarge` and device errors.
+    /// `UnsupportedPrecision` if the device does not support `T`; `LengthMismatch` if `x` does
+    /// not hold `block` values per local index; `MessageTooLarge` and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_device::{Client, DeviceBuffer};
+    /// use tetraloma_parallel::{CommDyn, IndexMap, Result, ReverseOp};
+    ///
+    /// /// Each rank owns one index and holds the other rank's as a ghost; every value is its
+    /// /// rank plus 1. Returns the values after a reverse maximum.
+    /// fn largest(comm: &dyn CommDyn, client: &Client) -> Result<Vec<i32>> {
+    ///     let other = 1 - comm.rank();
+    ///     let map = IndexMap::with_ghosts(comm, 1, vec![other as i64], vec![other as i32])?;
+    ///     let scatterer = map.scatterer(client, 1)?;
+    ///     let v = comm.rank() as i32 + 1;
+    ///     let mut x = DeviceBuffer::from_host(client, &[v, v])?;
+    ///     scatterer.reverse(&mut x, ReverseOp::Max)?;
+    ///     x.to_host()
+    /// }
+    ///
+    /// // `results`: `largest` called on each of two ranks, run as two threads of this process
+    /// // by a test communicator. Under MPI, each process calls `largest` with its `Mpi`.
+    /// # let results = tetraloma_testing::ThreadComm::run(2, |comm| {
+    /// #     largest(&comm, &tetraloma_testing::test_client()).unwrap()
+    /// # });
+    /// // Each owner takes the larger of its value and its ghost's; ghosts are unchanged.
+    /// assert_eq!(results, [vec![2, 1], vec![2, 2]]);
+    /// ```
     pub fn reverse<T: ScatterNumeric>(&self, x: &mut DeviceBuffer<T>, op: ReverseOp) -> Result<()> {
         let client = x.client().clone();
         if !device_properties(&client).supports_type(T::cube_type()) {
@@ -372,7 +450,20 @@ impl Scatterer {
         result
     }
 
-    /// The transport this scatterer exchanges through.
+    /// How this scatterer moves values between ranks: always [`Transport::HostStaged`] ([Halo
+    /// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#scatterers)).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma_parallel::{GridError, IndexMap, Serial, Transport};
+    ///
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let scatterer = IndexMap::new(&Serial, 5)?.scatterer(&client, 1)?;
+    /// assert_eq!(scatterer.transport(), Transport::HostStaged);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn transport(&self) -> Transport {
         self.transport
     }
@@ -430,12 +521,14 @@ impl Scatterer {
     }
 }
 
-/// How [`Scatterer::reverse`] combines the ghost contributions with the owner's value.
+// ADR-0011, ADR-0026.
+/// How [`Scatterer::reverse`] combines the values of an index's ghost copies with its owner's
+/// value.
 ///
-/// `Add`, `Min` and `Max` combine the owner's value with every ghost contribution in a fixed
-/// order; `Insert` replaces it by the lowest neighbour rank's contribution (unchanged without
-/// any). Ghost values are unchanged by reverse; empty segments use the ADR-0011 identities
-/// (ADR-0026).
+/// `Add`, `Min` and `Max` combine the owner's value with the value of every ghost copy in a
+/// fixed order; `Insert` replaces it by the value from the lowest neighbouring rank, and leaves
+/// it as it is if no rank holds a ghost copy. Ghost values are unchanged ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#reverse)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReverseOp {
     /// The sum.
@@ -448,7 +541,9 @@ pub enum ReverseOp {
     Insert,
 }
 
-/// The scalars of [`Scatterer::reverse`]: f32, f64, i32 and u32.
+/// The scalar types of [`Scatterer::reverse`]: `f32`, `f64`, `i32` and `u32`. `f64` works only on
+/// devices that support it ([Halo
+/// exchange](https://tetracl.github.io/tetraloma/tutorials/halo-exchange.html#reverse)).
 pub trait ScatterNumeric: DeviceScalar {}
 
 impl ScatterNumeric for f32 {}
@@ -456,13 +551,14 @@ impl ScatterNumeric for f64 {}
 impl ScatterNumeric for i32 {}
 impl ScatterNumeric for u32 {}
 
-/// How a [`Scatterer`] moves data between ranks. `HostStaged` is the only transport;
-/// `GpuAware` is reserved (ADR-0026, ADR-0059).
+// ADR-0026, ADR-0059.
+/// How a [`Scatterer`] moves values between ranks. `HostStaged` is the only transport in use;
+/// `GpuAware` is reserved for a later version ([Reserved
+/// features](https://tetracl.github.io/tetraloma/features.html#reserved-features)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
     /// Pack on the device, exchange on the host, unpack on the device.
     HostStaged,
-    /// Reserved (ADR-0059): device pointers handed to a CUDA-aware MPI. No scatterer chooses
-    /// it.
+    /// Reserved: device memory handed directly to a CUDA-aware MPI. No scatterer uses it yet.
     GpuAware,
 }

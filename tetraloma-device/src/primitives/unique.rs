@@ -154,14 +154,19 @@ fn offsets_kernel(starts: &[u32], offsets: &mut [u32], len: u32, items_per_unit:
     }
 }
 
-/// Runs of consecutive equal keys; `offsets` has runs + 1 entries.
+/// The runs of consecutive equal keys, the result of [`run_length`].
+///
+/// `keys` holds one key per run, and run r covers the input keys `offsets[r]..offsets[r + 1]`
+/// ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{Runs, SortKeys, run_length};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let Runs { keys, offsets } = run_length(&SortKeys::from_host(&client, &[7, 7, 9], 1).unwrap()).unwrap();
 /// assert_eq!(keys.to_host().unwrap(), vec![7, 9]);
 /// assert_eq!(offsets.to_host().unwrap(), vec![0, 2, 3]);
@@ -174,9 +179,11 @@ pub struct Runs {
     pub offsets: DeviceBuffer<u32>,
 }
 
-/// The runs of consecutive equal keys (the keys need not be sorted). Reads the run count back
-/// once (a blocking 4-byte read), so the result is exactly sized. Empty keys give no runs and
-/// `offsets = [0]`.
+/// The runs of consecutive equal keys (the keys need not be sorted): run-length encoding.
+///
+/// It reads the run count back to the host once, a blocking 4-byte read, so the result is
+/// exactly sized. Empty keys give no runs and `offsets = [0]`. The result is the same on every
+/// run ([Precision](https://tetracl.github.io/tetraloma/concepts/precision.html#determinism)).
 ///
 /// # Errors
 ///
@@ -187,7 +194,8 @@ pub struct Runs {
 /// ```
 /// use tetraloma_device::{SortKeys, run_length};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let keys = SortKeys::from_host(&client, &[4, 4, 4, 1, 4, 4], 1).unwrap();
 /// let runs = run_length(&keys).unwrap();
 /// assert_eq!(runs.keys.to_host().unwrap(), vec![4, 1, 4]);
@@ -236,14 +244,17 @@ pub fn run_length(keys: &SortKeys) -> Result<Runs> {
     })
 }
 
-/// Groups of equal neighbours of sorted keys.
+/// The groups of equal neighbours of sorted keys, the result of [`unique_by_key`]: entity creation
+/// makes one entity of each group ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, SortKeys, Unique, unique_by_key};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let sorted = SortKeys::from_host(&client, &[1, 1, 5, 5, 5, 8], 1).unwrap();
 /// let payload = DeviceBuffer::from_host(&client, &[10u32, 11, 12, 13, 14, 15]).unwrap();
 /// let Unique { keys, first, group } = unique_by_key(&sorted, &payload).unwrap();
@@ -260,8 +271,14 @@ pub struct Unique {
     pub group: DeviceBuffer<u32>,
 }
 
-/// Groups equal neighbours of `sorted`. Reads the group count back once (a blocking 4-byte
-/// read), so the result is exactly sized.
+/// Groups the equal neighbours of `sorted`: one key per group, the payload of each group's
+/// first key, and the group of every input position.
+///
+/// After a [`radix_sort`](crate::radix_sort), equal keys are neighbours, so each group holds all
+/// copies of one key ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)). It
+/// reads the group count back to the host once, a blocking 4-byte read, so the result is exactly
+/// sized.
 ///
 /// # Errors
 ///
@@ -273,7 +290,8 @@ pub struct Unique {
 /// ```
 /// use tetraloma_device::{DeviceBuffer, SortKeys, unique_by_key};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let keys = SortKeys::from_host(&client, &[2, 2, 5, 7, 7, 7], 1).unwrap();
 /// let payload = DeviceBuffer::from_host(&client, &[10u32, 11, 12, 13, 14, 15]).unwrap();
 /// let u = unique_by_key(&keys, &payload).unwrap();
@@ -298,7 +316,8 @@ pub fn unique_by_key(sorted: &SortKeys, payload: &DeviceBuffer<u32>) -> Result<U
 /// ```
 /// use tetraloma_device::{DeviceBuffer, SortKeys, unique_by_key_runs};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let keys = SortKeys::from_host(&client, &[2, 2, 5, 7, 7, 7], 1).unwrap();
 /// let payload = DeviceBuffer::from_host(&client, &[10u32, 11, 12, 13, 14, 15]).unwrap();
 /// let (u, offsets) = unique_by_key_runs(&keys, &payload).unwrap();
