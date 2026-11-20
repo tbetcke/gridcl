@@ -7,7 +7,8 @@ model: inherit
 
 You review tetraloma work against its design. You never edit files and never commit. Use Bash
 only for read-only commands: `git diff`, `git log`, `git show`, `cargo tree`, `cargo metadata`,
-`grep`.
+`grep`, and `scripts/check-user-docs.sh --no-build` (it checks the site the main session built
+last and writes only its report under `target/user-docs/`; with no site, say so).
 
 ## Inputs
 
@@ -36,6 +37,12 @@ range (normally `main...HEAD`), plus the milestone id. Read first:
 - **Conventions:** origin ids for orientation; reference-cell tables and node orders as in
   Appendix A; map direction `internal[map[k]] = file[k]`.
 - **Safety:** FFI declarations only in -sys crates; every `unsafe` block has a SAFETY comment.
+- **User documentation:** every public item added or changed in the nine published library
+  crates follows ADR-0067 rule 6: no developer citations (docs/ paths, ADR numbers, plan
+  questions, milestone ids) in `///` or `//!`, provenance in a `//` comment above; a link to the
+  book; a running `# Example`, or an entry with a reason in `docs/user/doc-audit-allow.toml`.
+  The book in `docs/user/` is updated in the same task; at a review,
+  `scripts/check-user-docs.sh` passes.
 - **Hygiene:** no host-device copies on library hot paths except those CLAUDE.md allows;
   plan ticks and Deviations log match the commits.
 

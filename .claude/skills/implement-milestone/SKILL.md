@@ -34,6 +34,12 @@ If the milestone is empty, ask the user which milestone to implement.
    `not yet implemented`, not with compile errors.
 3. **Implement** until the task's tests pass. Follow every rule in CLAUDE.md, in particular the
    kernel, precision, crate-boundary and origin-id rules.
+   - **User documentation:** document every public item the task adds or changes in the nine
+     published library crates by ADR-0067 rule 6 (CLAUDE.md): no developer citations in `///`
+     or `//!` (provenance in a `//` comment above), a link to the book, and a running
+     `# Example` or an entry with a reason in `docs/user/doc-audit-allow.toml`. Update the book
+     chapters in `docs/user/` that describe them, in the same task. Check the crate with
+     `scripts/check-user-docs.sh --audit-only <crate>` (flags in docs/dev-environment.md).
 4. **Verify:** run the task's verification command. The `verify` skill runs before each commit.
    When the task changed kernels, also run the affected crates on Metal
    (`TETRALOMA_TEST_DEVICE=metal`) and, after committing, on Locust with the `hpc-test` skill
@@ -73,6 +79,7 @@ run the `draft-adr` skill, and wait for the user's decision. Do not edit docs/de
 When every task is ticked:
 
 1. Ask the test-runner subagent for the full acceptance run: `cargo test --workspace`, lint,
+   `scripts/check-user-docs.sh` (ADR-0067; local flags in docs/dev-environment.md),
    Metal, CUDA on Locust (Myriad V100 as the fallback) and any other targets in the plan's coverage table, MPI if the milestone touches
    tetraloma-parallel or later crates, and conformance if tetraloma-refcell or conformance/ changed.
 2. Fix failures as new tasks or as commits to the task they belong to (note them in the

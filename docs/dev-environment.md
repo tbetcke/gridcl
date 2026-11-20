@@ -75,6 +75,7 @@ The project was renamed to tetraloma in E1 (ADR-0066). The directories on the re
     | The M5 Python oracles, pinned: `vtk==9.7.1` and `meshio==5.3.5` (ADR-0024) | in `.venv`, see below (`scripts/check-local-tools.sh` checks the pins) | `scripts/oracles/vtk_oracle.py` (the M5 VTK tests) and `scripts/fixtures/vtk/generate.py` (the VTK-written reference cells) |
     | HDF5 built with MPI, 1.10.10 to 2.2.0 | Homebrew (`hdf5-mpi`, 2.2.0 on the Mac mini); builds with the `hdf5` feature set `HDF5_DIR=/opt/homebrew/opt/hdf5-mpi` (`scripts/check-local-tools.sh` checks it) | M8 VTKHDF output (Parallel I/O (M8)) |
     | Scotch with PT-Scotch 7.0.14, and METIS (5.1.0) | Scotch: `scripts/hpc/build-partition-libs.sh <prefix>` (`<prefix>/scotch-7.0.14`); Homebrew's `scotch` (7.0.18 on the Mac mini) may stay installed but is not used (ADR-0034); METIS: Homebrew (`metis`) | M7's `scotch` and `ptscotch` features; the `metis` feature builds its own METIS |
+    | mdBook 0.5.3 and mdbook-katex 0.10.0 | `scripts/install-doc-tools.sh` (`cargo install --locked` into `~/.cargo/bin`) | the user book and its checks (User documentation (D1)) |
 
     **Python environment.** One virtual environment at the repository root, `.venv` (git-ignored), holds every pinned Python package:
 
@@ -292,6 +293,29 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 
   `GLIBC_TUNABLES` in the command applies to `mpirun` and, through `-x`, to every rank. The box goes to the remote tree's `target/` on Lustre: Kathleen's nodes are diskless.
 
+### User documentation (D1)
+
+- **Tools.** `scripts/install-doc-tools.sh` installs the pinned book tools, mdBook 0.5.3 and mdbook-katex 0.10.0, with `cargo install --locked` into `~/.cargo/bin`, and skips a tool already at its pin; `--check` installs nothing and fails unless both are at their pins. Not the newest mdBook 0.5.4: mdbook-katex 0.10.0 is built against mdBook 0.5.3 and logs a `WARN` under any other mdBook, which the checks reject (plan D1, question 5 and Deviations log). KaTeX's stylesheet and fonts are committed in `docs/user/src/katex/`, so the build needs no network.
+- **Local flags.** The site and the API doctests use the site's features (`tetraloma/mpi,tetraloma/hdf5,tetraloma/scotch,tetraloma/ptscotch,tetraloma/metis`; ADR-0067, rule 2), so `scripts/check-user-docs.sh` needs MPI, a parallel HDF5 and Scotch with PT-Scotch. On the local Mac: `HDF5_DIR=/opt/homebrew/opt/hdf5-mpi` (Parallel I/O (M8)), `SCOTCH_ENV` of Partitioners (M7) (Scotch 7.0.14 from `<prefix>/scotch-7.0.14`, with `DYLD_LIBRARY_PATH`), and on the Mac mini `HWLOC_COMPONENTS=-darwin` for `cargo test --doc` with the site's features (Notes on the local Mac). `--parmetis` also needs `PARMETIS_DIR` = `METIS_DIR` = `<prefix>/parmetis-4.0.3`. `<prefix>` is the partition-library prefix of Notes on the local Mac. The book alone (`mdbook build docs/user`) and the book's doctests need none of these; the `hdf5` feature of tetraloma-examples needs `HDF5_DIR`.
+- **Output.** The site goes to `site/` (`TETRALOMA_SITE_DIR` overrides it): the book at `site/`, the API of the nine library crates at `site/api/`. `mdbook build docs/user` alone writes `docs/user/book/`. Both are git-ignored. The checks write their report to `target/user-docs/report.txt` and the build logs to `target/user-docs/logs/` (`mdbook.log`, `rustdoc-<crate>.log`, `doctest-list.log`). The cargo steps take the lock `target/user-docs.lock`; remove it if a killed run left it behind.
+- **Commands:**
+
+  | Purpose | Command |
+  | --- | --- |
+  | install or check the tools | `scripts/install-doc-tools.sh`; `scripts/install-doc-tools.sh --check` |
+  | build the book only | `mdbook build docs/user` |
+  | every check of ADR-0067, rule 7: build the site, then audit it | `scripts/check-user-docs.sh` (with the local flags above) |
+  | the checks again on the last build, without cargo | `scripts/check-user-docs.sh --no-build` |
+  | the API checks (developer citations, book links, examples) of one crate | `scripts/check-user-docs.sh --no-build --audit-only <crate>` |
+  | the second audit: tetraloma-partition with `parmetis` | `scripts/check-user-docs.sh --parmetis` (with `PARMETIS_DIR` and `METIS_DIR`) |
+  | print every failure, not only the counts | add `--verbose` |
+  | build the site without the checks (D1 T2): the book at `site/`, the API of the nine crates at `site/api/` | `scripts/build-site.sh` |
+  | the book's doctests (CPU runtime) | `cargo test -p tetraloma-examples --doc` |
+  | regenerate the figures (`docs/user/src/figures/`; the test `figures_are_generated` compares them) | `cargo run -p tetraloma-examples --bin figures` |
+  | one program of the book | `scripts/run-examples.sh --example <name>`; on Metal with `--features metal` (unsandboxed). An MPI program runs under `mpirun` on `--ranks <n>` (default 2), and the script adds the feature `mpi` and the hwloc workaround itself; `--features hdf5` (with `HDF5_DIR`) adds the VTKHDF part of `parallel_io`. `--serial` or `--mpi` without `--example` runs every serial or MPI program. |
+
+  Hosted CI runs the same script in the `docs` job, and the `pages` workflow deploys the site from `main` (D1 T2; docs/design.md, "CI matrix").
+
 ## Change history
 
 | Date | Change |
@@ -323,3 +347,4 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | 2026-11-08 | M9h T2: CUDA tools on Locust (`ptxas`, `compute-sanitizer`; `ncu` refused by the driver), `scripts/bench/cuda-resources.sh`; `status.sh` shows a running direct job's last output line. |
 | 2026-11-14 | Hosted CI after M9h (M9h's tests took cpu-tetraloma-4 and -6 to 26–28 min): M9h's tests are one test per degree (`<test>::p<p>`); cpu-tetraloma in eleven shards, p = 1–4 shared over shards 2, 3, 6, 9, 10 and 11, `submesh` in shard 10, `vector_size_invariance` at p = 3 and 4 alone in shard 11 (next to it, submesh's and io_threads' tests ran two to ten times slower on lavapipe); shards h5–h8 hold p = 5–8 (release only), which hosted CI does not run: on lavapipe p = 5 took 20 min, p = 6 33 min and p = 7 and 8 over an hour each (maintainer, 2026-11-14). vulkan has a 40-min timeout, so a runaway job keeps its log. On a branch, builds without the main-branch cache add about 6.5 min to cpu (26 min on the branch, about 18 on main) and 6.5–7.5 min to each vulkan job; the 20 min are for main. Job times vary by up to half between runs of the same tests (vulkan-other: 17.4 and 24.4 min). |
 | 2026-11-20 | E1 (ADR-0066): the project, its crates, `TETRALOMA_*` variables, the runner internals (`.tetraloma-hpc/`) and the CI jobs (`cpu-tetraloma`) carry the name tetraloma; the repository moved to github.com/tetracl/tetraloma. Remote directories keep their old names until the cleanup after E1 (Targets). |
+| 2026-11-20 | D1 T1 (ADR-0067): User documentation (D1): the pinned book tools (mdBook 0.5.3, mdbook-katex 0.10.0), local flags, output and commands of the book and its checks; local tools row. |
