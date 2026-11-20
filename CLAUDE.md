@@ -33,7 +33,8 @@
 - Tests: cargo test --workspace must pass on the CPU runtime.
   GPU runs: TETRALOMA_TEST_DEVICE=vulkan | metal | cuda.
 - MPI tests: crate tetraloma-mpi-tests ([[test]] targets, harness = false),
-  run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI.
+  run via scripts/mpi-test.sh 1 2 3 4 under MPICH and Open MPI; the scripts check that
+  the world size equals the rank count requested (ADR-0068).
 - Run plans: only the runs that show the code works and the timings a decision needs
   (ADR-0057). The standing matrix stays (CPU runtime and Metal on every change, Locust after
   kernel tasks, MPI on 1-4 ranks under both flavours, f32 and f64, scalar and widest vector
