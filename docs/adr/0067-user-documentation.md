@@ -1,6 +1,6 @@
 # ADR-0067: User documentation: a book on GitHub Pages and API docs written for users
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-20
 - **Raised in:** D1 planning (maintainer request, 2026-11-20)
 - **Design sections affected:** a new section "User documentation" (after "Import and export");
@@ -174,4 +174,4 @@ Option 3, with these rules.
 
 ## Decision record
 
-<Filled by the maintainer.>
+Accepted by the maintainer on 2026-11-20, as proposed.
