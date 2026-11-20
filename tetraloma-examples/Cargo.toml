@@ -1,6 +1,6 @@
 [package]
 name = "tetraloma-examples"
-description = "The examples of tetraloma's API walkthrough, each over a tested run function"
+description = "The example programs of tetraloma's API walkthrough and user book, each over a tested run function"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,16 +18,33 @@ cpu = ["cubecl/cpu", "tetraloma-testing/cpu"]
 cuda = ["cubecl/cuda", "tetraloma-testing/cuda"]
 vulkan = ["cubecl/vulkan", "tetraloma-testing/vulkan"]
 metal = ["cubecl/metal", "tetraloma-testing/metal"]
-# The halo_exchange example under mpirun.
+# The MPI examples (halo_exchange, distributed_mesh, parallel_io) under mpirun.
 mpi = ["tetraloma/mpi", "tetraloma-testing/mpi", "dep:mpi"]
+# The VTKHDF part of parallel_io (ADR-0067).
+hdf5 = ["tetraloma/hdf5"]
 
 [dependencies]
 cubecl.workspace = true
 tetraloma = { path = "../tetraloma" }
+# The tables of the book's figures (figures.rs; ADR-0067, rule 3).
+tetraloma-refcell = { path = "../tetraloma-refcell" }
 tetraloma-testing = { path = "../tetraloma-testing", default-features = false }
 mpi = { workspace = true, optional = true }
 
-# The other examples are found by name; halo_exchange runs under mpirun.
+# Writes the book's figures to docs/user/src/figures/.
+[[bin]]
+name = "figures"
+path = "src/bin/figures.rs"
+
+# The serial examples are found by name; the MPI examples run under mpirun.
 [[example]]
 name = "halo_exchange"
+required-features = ["mpi"]
+
+[[example]]
+name = "distributed_mesh"
+required-features = ["mpi"]
+
+[[example]]
+name = "parallel_io"
 required-features = ["mpi"]

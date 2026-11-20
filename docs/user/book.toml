@@ -1,0 +1,35 @@
+# The tetraloma user book (ADR-0067). Build it with `mdbook build docs/user`; the tools are pinned
+# in scripts/install-doc-tools.sh, and scripts/check-user-docs.sh builds and checks the whole site.
+
+[book]
+title = "tetraloma"
+description = "Distributed unstructured meshes on GPUs and CPUs through CubeCL"
+authors = ["The tetraloma developers"]
+language = "en-GB"
+src = "src"
+
+[rust]
+edition = "2024"
+
+[build]
+# Git-ignored; scripts/check-user-docs.sh builds the site into site/ instead.
+build-dir = "book"
+create-missing = false
+
+# Maths between $…$ and $$…$$, rendered at build time. The KaTeX 0.16.4 stylesheet and its
+# woff2 fonts (the KaTeX version mdbook-katex renders with) are served from src/katex/, linked
+# by theme/head.hbs, not from a CDN.
+[preprocessor.katex]
+after = ["links"]
+no-css = true
+throw-on-error = true
+
+[output.html]
+site-url = "/tetraloma/"
+git-repository-url = "https://github.com/tetracl/tetraloma"
+mathjax-support = false
+
+[output.html.playground]
+runnable = false
+editable = false
+copyable = true

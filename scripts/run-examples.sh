@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Runs the tetraloma-examples binaries (ADR-0060 item 6): the serial examples directly, and
-# halo_exchange (feature mpi) under mpirun.
+# Runs the tetraloma-examples binaries (ADR-0060 item 6; ADR-0067, rule 5): the serial examples
+# directly, and the MPI examples (feature mpi) under mpirun. The book includes these programs.
 #
-# Usage: scripts/run-examples.sh [--serial | --mpi] [--ranks N] [--features FEATURES]
+# Usage: scripts/run-examples.sh [--serial | --mpi] [--example NAME] [--ranks N]
+#                                [--features FEATURES]
 #   --serial             only the serial examples (hosted CI's cpu job, which has no MPI)
-#   --mpi                only halo_exchange under mpirun
-#   --ranks N            ranks of halo_exchange: default 2, and 1 with a cuda feature (one GPU)
-#   --features FEATURES  cargo features of tetraloma-examples, for example metal or cuda; each
-#                        example opens the first device of Listing B8 the build links
+#   --mpi                only the MPI examples under mpirun
+#   --example NAME       only the example NAME (serial or MPI)
+#   --ranks N            ranks of the MPI examples: default 2, and 1 with a cuda feature (one GPU)
+#   --features FEATURES  cargo features of tetraloma-examples, for example metal, cuda or hdf5;
+#                        each example opens the first device of Listing B8 the build links
 #
 # Environment:
 #   TETRALOMA_MPIRUN_FLAGS        extra mpirun flags, split on whitespace (as in mpi-test.sh)
@@ -26,7 +28,10 @@ die() {
     exit 2
 }
 
-serial_examples="read_gmsh surface_submesh geometric_factors vtk_output"
+# The programs (scripts/doc_audit.py reads these two lists: the book may include only them).
+serial_examples="first_program devices build_mesh read_gmsh iterate_cells geometric_factors pull_back surface_submesh vtk_output custom_kernel"
+mpi_examples="halo_exchange distributed_mesh parallel_io"
+only=
 run_serial=1
 run_mpi=1
 ranks=
@@ -35,6 +40,12 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --serial) run_mpi= ;;
         --mpi) run_serial= ;;
+        --example)
+            [[ $# -ge 2 ]] || die "--example needs a name"
+            only=$2
+            shift
+            ;;
+        --example=*) only=${1#--example=} ;;
         --ranks)
             [[ $# -ge 2 ]] || die "--ranks needs a value"
             ranks=$2
@@ -48,7 +59,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --features=*) features=${1#--features=} ;;
         -h | --help)
-            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *) die "unknown argument '$1' (see --help)" ;;
@@ -56,6 +67,24 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 [[ -n $run_serial || -n $run_mpi ]] || die "--serial and --mpi exclude each other"
+if [[ -n $only ]]; then
+    case " $serial_examples " in
+        *" $only "*)
+            serial_examples=$only
+            run_mpi=
+            ;;
+        *)
+            case " $mpi_examples " in
+                *" $only "*)
+                    mpi_examples=$only
+                    run_serial=
+                    ;;
+                *) die "unknown example '$only' (serial: $serial_examples; MPI: $mpi_examples)" ;;
+            esac
+            ;;
+    esac
+    [[ -n $run_serial || -n $run_mpi ]] || die "--example $only is not in the selected set"
+fi
 [[ -z $features || "$features" =~ ^[A-Za-z0-9_/,-]+$ ]] ||
     die "--features '$features' is not a comma-separated feature list"
 if [[ -z $ranks ]]; then
@@ -162,15 +191,21 @@ if [[ -n $run_mpi ]]; then
 
     mpi_features=mpi
     [[ -z $features ]] || mpi_features="mpi,$features"
-    echo "run-examples.sh: halo_exchange on $ranks rank(s), $flavour, features $mpi_features, profile $profile"
+    echo "run-examples.sh: MPI examples on $ranks rank(s), $flavour, features $mpi_features, profile $profile"
     [[ -z $hwloc_workaround ]] || echo "run-examples.sh: HWLOC_COMPONENTS=-darwin (hwloc issue 852)"
+    example_flags=()
+    for name in $mpi_examples; do
+        example_flags+=(--example "$name")
+    done
     cargo build ${profile_flags[@]+"${profile_flags[@]}"} -p tetraloma-examples \
-        --features "$mpi_features" --example halo_exchange
-    exe=${CARGO_TARGET_DIR:-target}/$profile/examples/halo_exchange
-    [[ -x $exe ]] || die "$exe was not built"
-    echo "--- halo_exchange"
-    run_one halo_exchange ${mpi_env[@]+"${mpi_env[@]}"} \
-        mpirun ${mpirun_flags[@]+"${mpirun_flags[@]}"} -n "$ranks" "$exe"
+        --features "$mpi_features" "${example_flags[@]}"
+    for name in $mpi_examples; do
+        exe=${CARGO_TARGET_DIR:-target}/$profile/examples/$name
+        [[ -x $exe ]] || die "$exe was not built"
+        echo "--- $name"
+        run_one "$name" ${mpi_env[@]+"${mpi_env[@]}"} \
+            mpirun ${mpirun_flags[@]+"${mpirun_flags[@]}"} -n "$ranks" "$exe"
+    done
 fi
 
 if [[ $failed -gt 0 ]]; then
