@@ -1,6 +1,6 @@
 # ADR-0068: Real multi-rank runs under MPICH in hosted CI
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-20
 - **Raised in:** D1 T16 preparation (final runs of D1; the hosted CI run of commit b21ce5e)
 - **Design sections affected:** "CI matrix" (rows `mpi-mpich, mpi-openmpi`); "Testing and validation"
@@ -118,4 +118,4 @@ size.
 
 ## Decision record
 
-<Filled by the maintainer: accepted or rejected, date, and any conditions.>
+Accepted by the maintainer on 2026-11-20, as proposed (option 3: milestone E2).
