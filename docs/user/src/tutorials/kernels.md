@@ -3,7 +3,7 @@
 tetraloma keeps a mesh on the device, and a library built on it, such as a finite element or
 boundary element code, computes on the device too. It writes its own CubeCL kernels and gives
 them the mesh's arrays directly, with no copy to the host. This tutorial shows the arrays a
-kernel can read: the views of the trait `DeviceGrid`, the node maps of a `GeometryBlock` and the
+kernel can read: the views of the trait `DeviceGrid`, the dofmap of a `GeometryBlock` and the
 fields of a `BlockFields`. It then writes a kernel that integrates a function over a mesh,
 wraps it in functions that work on every mesh type, and calls them on meshes whose dimensions
 are known only at run time.
@@ -29,7 +29,7 @@ scalar and the two dimensions, and its methods return views of device arrays:
 
 - `client()` and `comm()`: the device and the communicator of the grid;
 - `cell_blocks()`: the cell blocks, with their cell type, index map and vertices;
-- `geometry_block(b)`: the coordinate element and node map of block `b`;
+- `geometry_block(b)`: the coordinate element and dofmap of block `b`;
 - `nodes()` and `origin()`: the node coordinates, relative to the origin, and the origin;
 - `node_index_map()`, `vertex_index_map()` and `vertex_origin_ids()`: the owned and ghost nodes
   and vertices, and the vertices' origin ids;
@@ -146,10 +146,10 @@ each other in memory. Component $k$ of point $q$ of cell $c$, counted from the f
 its chunk, is at
 
 $$
-\bigl( \lfloor c / t \rfloor \cdot n_q \cdot n_k + q \cdot n_k + k \bigr) \cdot t + (c \bmod t),
+\bigl( \lfloor c / w \rfloor \cdot n_q \cdot n_k + q \cdot n_k + k \bigr) \cdot w + (c \bmod w),
 $$
 
-with the tile width $t$, $n_q$ points and $n_k$ components. A scalar field such as
+with the tile width $w$, $n_q$ points and $n_k$ components. A scalar field such as
 $\det J$ has $n_k = 1$. The tile width is 1, 2, 4, 8 or 16, set by the device's policy, so a
 kernel takes it as a parameter. A large field is split into chunks, because one allocation may
 not exceed the device's limit. Each [`QuadChunk`](../api/tetraloma/struct.QuadChunk.html) holds

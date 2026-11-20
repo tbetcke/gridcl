@@ -37,7 +37,8 @@ The interior formulas hold from the first degree with interior nodes on (2 for t
 quadrilateral and hexahedron, 3 for the triangle, prism and pyramid, 4 for the tetrahedron);
 below it the count is 0. The pyramid is special: its map is not a polynomial but a rational
 function, from the DefElement Lagrange pyramid space spanned by
-$x^a y^b z^c / (1-z)^{\min(a,b)}$ with $a + c \le p$ and $b + c \le p$, whose dimension is the
+$x^a y^b z^c / (1-z)^{\min(a,b)}$ with $a + c \le p$ and $b + c \le p$ (where $x$, $y$, $z$ are
+the reference coordinates $\xi_0$, $\xi_1$, $\xi_2$), whose dimension is the
 count in the table.
 
 This test checks the table against tetraloma-refcell, for the three degrees shown and for the

@@ -12,7 +12,7 @@ reference points, and returns a [`BlockFields`](../api/tetraloma/struct.BlockFie
 [`QuadField`](../api/tetraloma/struct.QuadField.html) per cell block, with a value per cell
 and point. A field stays on the device, stored in tiles of consecutive cells so that kernels
 read it fast. `to_host_cell_major` copies it to the host in plain
-$[\text{cell}][\text{point}]$ order; the snippets use it to inspect the values.
+$[\text{cell}][\text{point}]$ order (cell-major); the snippets use it to inspect the values.
 
 ## Points
 
@@ -46,8 +46,9 @@ for p in field.to_host_cell_major()? {
 ## Jacobians
 
 The Jacobian $J$ of the map $X$ at a point has the entries
-$J_{gd} = \partial X_g / \partial \xi_d$. It has `gdim` rows and `tdim` columns, and tetraloma
-stores it column by column. On the host a Jacobian of a planar mesh is a `[[F; 2]; 2]`, and
+$J_{\gamma d} = \partial X_\gamma / \partial \xi_d$. It has $g$ rows and $t$ columns, for the
+geometric dimension $g$ and the topological dimension $t$, and tetraloma stores it column by
+column (column-major). On the host a Jacobian of a planar mesh is a `[[F; 2]; 2]`, and
 `j[d]` is the column $\partial X / \partial \xi_d$. For a triangle of degree 1 the columns are
 the edge vectors from vertex 0 to vertices 1 and 2, the same at every point:
 
@@ -85,9 +86,10 @@ not a wrong index at run time.
 
 `detj(&rule)` returns $\det J$ at every point. When the cells have lower dimension than the
 space, as on a surface in 3D, $J$ is not square, and the method returns
-$\sqrt{\det(J^T J)}$ instead: the factor by which the map stretches area or length. Either way,
-$\int_K f \, dx = \int_{\hat K} f(X(\xi)) \, \det J(\xi) \, d\xi$ over the reference cell
-$\hat K$. For a triangle of a planar mesh, $\det J$ is positive if the vertices run
+$\sqrt{\det(J^{\mathsf T} J)}$, the pseudo-determinant, instead: the factor by which the map
+stretches area or length. Either way,
+$\int_T f \, dx = \int_{\hat T} f(X(\xi)) \, \det J(\xi) \, d\xi$ over the reference cell
+$\hat T$ of a cell $T$. For a triangle of a planar mesh, $\det J$ is positive if the vertices run
 counter-clockwise. The triangle above has $\det J = 2$, twice its area, because the reference
 triangle has area $1/2$:
 
@@ -114,9 +116,10 @@ assert!((mesh.measure(1)? - 1.0).abs() < 1e-12);
 
 Gradients need the inverse map. For cells of full dimension, `inverse_jacobians(&rule)`
 returns $J^{-1}$, which exists only on such meshes. `pseudo_inverse_jacobians(&rule)` returns
-$K = (J^T J)^{-1} J^T$ on every mesh: it equals $J^{-1}$ when $J$ is square, and on a surface it
-maps a vector in space to the reference coordinates of its tangential part. $K$ has `tdim`
-rows and `gdim` columns, stored column by column, so on the host `k[g]` is column $g$. The
+$K = (J^{\mathsf T} J)^{-1} J^{\mathsf T}$ on every mesh: it equals $J^{-1}$ when $J$ is square,
+and on a surface it
+maps a vector in space to the reference coordinates of its tangential part. $K$ has $t$
+rows and $g$ columns, stored column by column, so on the host `k[γ]` is column $\gamma$. The
 snippet below computes both for a triangle in 3D:
 
 ```rust
@@ -202,7 +205,7 @@ assert!(close(&n[2], &[h, h]));
 # }
 ```
 
-A curve in 2D has the normal $n = s\,(J_{y}, -J_{x}) / |J|$ of its tangent $J$, which points
+A curve in 2D has the normal $n = s\,(J_{10}, -J_{00}) / |J_0|$ of its tangent $J_0$, which points
 outward on a closed curve that runs counter-clockwise. `normals` exists only on meshes of
 codimension 1, and `facet_normals` only on meshes of codimension 0; the compiler rejects the
 other calls.

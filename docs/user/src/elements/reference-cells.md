@@ -30,7 +30,8 @@ italic. An arrow on each edge shows its direction. A three-dimensional cell is d
 oblique projection: the point $(x, y, z)$ appears at $(x + 0.75\,y,\; z + 0.45\,y)$, so the
 $x$–$z$ plane keeps its shape and the $y$ axis recedes up and to the right. Edges behind the cell
 are dashed, and numbers on hidden parts are faded. The small axes in the corner of each figure
-show the directions of $x$, $y$ and $z$.
+show the directions of $x$, $y$ and $z$. In this chapter $x$, $y$ and $z$ are the reference
+coordinates $\xi_0$, $\xi_1$ and $\xi_2$ of [Reference cells and maps](../concepts/reference-cells.md).
 
 The rule for sub-entities is a single generator, so you can rebuild any edge or face table
 yourself. This test does it for every cell and checks that the result is sorted:

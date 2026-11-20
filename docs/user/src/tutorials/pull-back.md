@@ -100,7 +100,7 @@ $0 \le \xi_0, \xi_1 \le 1$; for a triangle it is $\xi_0, \xi_1 \ge 0$ and $\xi_0
 [Reference cells and maps](../concepts/reference-cells.md#reference-cells) lists the reference
 cells.
 
-The iteration confines every iterate to the box $[-0.1, 1.1]^{\text{tdim}}$, which holds every
+The iteration confines every iterate to the box $[-0.1, 1.1]^t$, with $t$ the topological dimension, which holds every
 reference cell with a margin of $0.1$. A point whose reference point lies outside this box
 does not converge: its `last_step` stays above the tolerance. The program shows both cases with
 two unit squares side by side:

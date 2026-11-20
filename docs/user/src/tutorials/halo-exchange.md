@@ -36,7 +36,7 @@ knows its global index, `ghosts()`, and its owner's rank, `ghost_owners()`. `num
 sum of the two, and `size_global()` the number of owned entities over all ranks.
 
 A mesh has index maps for its cell blocks, its vertices, its geometry nodes and, once created, its
-entity blocks. The program takes the node map of its surface mesh `scalp`:
+entity blocks. The program takes the node index map of its surface mesh `scalp`:
 
 ```rust,ignore
 {{#include ../../../../tetraloma-examples/src/halo_exchange.rs:index_map}}

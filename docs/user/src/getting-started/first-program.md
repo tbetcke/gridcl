@@ -72,28 +72,31 @@ mesh to the device:
 
 The [`CoordinateElement`](../api/tetraloma/struct.CoordinateElement.html) says how each cell's
 geometry is described: here a triangle of polynomial degree 1, that is, with straight sides and
-its three vertices as nodes. A cell block holds cells of one type; a mesh with triangles and
+its three vertices as nodes. A [cell block](../concepts/meshes.md#cell-blocks) holds cells of one
+type; a mesh with triangles and
 quadrilaterals would call `cell_block` twice.
 
 The type [`PlanarMesh<F>`](../api/tetraloma/type.PlanarMesh.html) is `Mesh<F, D2, D2>`: cells of
 topological dimension 2 in a space of dimension 2. `build` checks the input, numbers the vertices
 and nodes, and uploads everything to the device. It stores the coordinates relative to the centre
-of the mesh's bounding box, here $(1, \tfrac12)$, which limits rounding errors in `f32`. Every
+of the mesh's bounding box, here $(1, \tfrac12)$, which limits rounding errors in `f32` (see
+[Precision](../concepts/precision.md#tolerances)). Every
 method that returns coordinates adds this origin back.
 
 ## Geometric data
 
-Each triangle $K$ is the image of the reference triangle with vertices $(0,0)$, $(1,0)$ and $(0,1)$
-under a map $x = \phi_K(\xi)$. Its Jacobian $J = \partial x / \partial \xi$ is a $2 \times 2$
+Each triangle $T$ is the image of the reference triangle with vertices $(0,0)$, $(1,0)$ and $(0,1)$
+under a map $x = X_T(\xi)$ (see [Reference cells and maps](../concepts/reference-cells.md)). Its
+Jacobian $J = \partial x / \partial \xi$ is a $2 \times 2$
 matrix, and $\det J$ relates areas: an integral over the mesh becomes a sum over cells and
 quadrature points $\xi_q$ with weights $w_q$,
 
 $$
-\int_\Omega f \, \mathrm{d}x \approx \sum_K \sum_q w_q \, f(\phi_K(\xi_q)) \, \det J_K(\xi_q).
+\int_\Omega f \, \mathrm{d}x \approx \sum_T \sum_q w_q \, f(X_T(\xi_q)) \, \det J_T(\xi_q).
 $$
 
 For $f = 1$ the sum is the area of the rectangle, 2, for any rule. The program computes the
-physical points $\phi_K(\xi_q)$, the Jacobians and their determinants at the points of a Gauss
+physical points $X_T(\xi_q)$, the Jacobians and their determinants at the points of a Gauss
 rule, copies them to the host to look at them, and forms this sum:
 
 ```rust,ignore
@@ -101,14 +104,15 @@ rule, copies them to the host to look at them, and forms this sum:
 ```
 
 [`QuadRule::for_grid`](../api/tetraloma/struct.QuadRule.html) makes one rule for every cell type
-of the mesh, here Gauss points exact for polynomials of degree 2 on the triangle. The results are
+of the mesh (see [Quadrature](../concepts/quadrature.md)), here Gauss points exact for
+polynomials of degree 2 on the triangle. The results are
 [`BlockFields`](../api/tetraloma/struct.BlockFields.html): one field per cell block, kept on the
 device. `to_host_cell_major` copies one block's field to the host in the order cell by cell, point
 by point. A program that goes on computing would leave the fields on the device and pass them to
 its own kernels; the copies here are for inspection only.
 
-The Jacobian of a point is stored by columns: `j[0]` is $\partial x / \partial \xi_1$ and `j[1]` is
-$\partial x / \partial \xi_2$. Every triangle here is half of a square of side $\tfrac12$, so
+The Jacobian of a point is stored by columns: `j[0]` is $\partial x / \partial \xi_0$ and `j[1]` is
+$\partial x / \partial \xi_1$. Every triangle here is half of a square of side $\tfrac12$, so
 $\det J = \tfrac14$ at every point: the reference triangle has area $\tfrac12$ and each mesh
 triangle has area $\tfrac18$. The program checks this, checks that $\det J$ is the determinant of
 the stored $J$, and checks that both the quadrature sum and

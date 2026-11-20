@@ -35,7 +35,8 @@ slower than later ones.
 A kernel launch runs on one worker thread per hardware thread. Each thread processes contiguous
 blocks of cells or elements, and tetraloma's kernels use the CPU's SIMD registers through CubeCL's
 vector types (NEON on Apple silicon and Arm servers, AVX2 or AVX-512 on x86-64). The CPU runtime
-reports a plane size of 1, and every tetraloma algorithm is correct with it.
+reports a plane size of 1 (a plane is a group of units that execute in lockstep, a warp on NVIDIA
+GPUs), and every tetraloma algorithm is correct with it.
 
 Results on the CPU runtime are bitwise reproducible. Kernels that compute each cell or point
 independently, such as the geometric factors, also give the same bits at every vector width.

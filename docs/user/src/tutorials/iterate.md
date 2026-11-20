@@ -20,7 +20,7 @@ The cells of a mesh are grouped into cell blocks, one per cell type. Within a bl
 has the same number of vertices and nodes, so its arrays have a fixed stride and need no
 offsets. `cell_blocks()` returns the blocks as
 [`CellBlock`](../api/tetraloma/struct.CellBlock.html) values, and `geometry_block(b)` returns
-the coordinate element and node map of block `b` as a
+the coordinate element and dofmap of block `b` as a
 [`GeometryBlock`](../api/tetraloma/struct.GeometryBlock.html):
 
 ```rust,ignore
@@ -90,7 +90,8 @@ rows of different lengths, so it is one compressed sparse row array:
 {{#include ../../../../tetraloma-examples/src/iterate_cells.rs:connectivity}}
 ```
 
-`create_entities(d)` makes the downward pair (tdim, $d$), and `create_connectivity(d, tdim)`
+`create_entities(d)` makes the downward pair $(t, d)$, with $t$ the topological dimension, and
+`create_connectivity(d, tdim)`
 makes the upward one; both are collective on a distributed mesh. tetraloma stores only these
 pairs. The vertices of a cell are in `CellBlock::vertices`, and those of an entity in
 `EntityBlock::vertices`. In the rectangle six edges have one cell, the boundary, and two have

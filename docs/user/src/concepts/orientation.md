@@ -49,7 +49,7 @@ flags in four steps:
    - `AwayFrom(p)`: the one with $\int (x - p) \cdot n \ge 0$, normals pointing away from $p$.
    - `Towards(p)`: the one with $\int (x - p) \cdot n \le 0$, normals pointing towards $p$.
 
-   The integrals use Gauss rules of degree $3k$ for geometry of degree $k$, and they are
+   The integrals use Gauss rules of degree $3p$ for geometry of degree $p$, and they are
    finished in f64. If an integral is exactly 0, the component keeps the orientation from
    step 3.
 

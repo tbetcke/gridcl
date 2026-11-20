@@ -50,12 +50,12 @@ assert!((mesh.measure(1)? - 1.0).abs() < 1e-12);
   one of six pairs: curves in 1D, 2D and 3D, planar meshes, surfaces in 3D, and volume meshes.
   Methods such as `normals`, `inverse_jacobians` and `boundary` exist only where they make
   sense. [`AnyMesh`](api/tetraloma/enum.AnyMesh.html) holds a mesh whose dimensions a file
-  decides.
+  decides ([Typed dimensions](concepts/typed-dimensions.md)).
 - **All standard cells.** Intervals, triangles, quadrilaterals, tetrahedra, hexahedra, prisms and
   pyramids, and hybrid meshes that mix them. Each cell type is stored in a block of its own.
 - **High-order geometry.** Cells are Lagrange elements of any polynomial degree, with equispaced or
   Gauss–Lobatto–Legendre nodes. The device kernels are verified and tuned up to degree 8, and up to
-  degree 3 for pyramids.
+  degree 3 for pyramids ([Lagrange geometry](concepts/geometry.md)).
 - **Geometric data on the device.** Physical points, Jacobians, determinants, pseudo-inverses,
   inverse Jacobians, normals, facet normals and measures at the points of a quadrature rule, and
   the pull-back of physical points to reference coordinates.
@@ -67,12 +67,12 @@ assert!((mesh.measure(1)? - 1.0).abs() < 1e-12);
   time, in `f32` and `f64`.
 - **Distributed meshes.** Meshes spread over the ranks of an MPI program, with partitioners
   (a built-in block partitioner, METIS, Scotch, PT-Scotch and ParMETIS), ghost cells and halo
-  exchange.
+  exchange ([Distributed meshes](tutorials/distributed.md)).
 - **Files.** Gmsh MSH 4.1 reading and writing; VTK output as VTU, PVTU and VTKHDF, with Lagrange
   cells for curved geometry.
 - **Reproducible results.** Every kernel gives bitwise identical results from run to run on the
   same device. Kernels that treat cells or points independently give the same bits on the CPU
-  runtime at every SIMD vector width.
+  runtime at every SIMD vector width ([Determinism](concepts/precision.md#determinism)).
 
 ## Status
 

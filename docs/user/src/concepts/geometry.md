@@ -59,7 +59,7 @@ J(\xi) = \begin{pmatrix} 1 + 0.4\,\xi_1 & 0.4\,\xi_0 \\ 0.4\,\xi_1 & 1 + 0.4\,\x
 $$
 
 with $\det J = 1 + 0.4\,(\xi_0 + \xi_1)$. The area is
-$\int_{\hat K} \det J \, d\xi = 1/2 + 0.4 \cdot 2 \cdot 1/6 = 19/30$: the straight triangle's
+$\int_{\hat T} \det J \, d\xi = 1/2 + 0.4 \cdot 2 \cdot 1/6 = 19/30$: the straight triangle's
 $1/2$ plus the parabolic segment of Archimedes, $4/3$ of the triangle with corners $(1, 0)$,
 $(0, 1)$ and $(0.6, 0.6)$.
 
