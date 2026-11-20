@@ -87,3 +87,9 @@ Option 3, with this mapping and these rules:
 ## Decision record
 
 Accepted by the maintainer on 2026-11-19, as proposed. The repository transfer was done the same day.
+
+Condition (maintainer, 2026-11-19, during E1 T2): in rule 3, the bench crate's `history/*.toml` keep their
+recorded tables verbatim, but their comment headers take the new name. The headers are generator output that
+ADR-0065's `m10_history_is_the_m10_rule_on_the_committed_records` compares byte for byte, and the generator
+names the renamed crates. Only `docs/perf/data/` stays verbatim as a whole, and the guard of rule 5 allowlists
+only it (E1 plan, Deviations log).

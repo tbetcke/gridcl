@@ -1,6 +1,6 @@
 //! `owner_hash`: the owner and rendezvous hash of ADR-0026, item 9.
 
-/// The seed of the fold: "tetraloma" and the milestone that introduced it.
+/// The seed of the fold: a fixed value (ADR-0026), kept from M6, the milestone that introduced it.
 const SEED: u64 = 0x6772_6964_636C_0006;
 
 /// SplitMix64's finaliser, with wrapping arithmetic.

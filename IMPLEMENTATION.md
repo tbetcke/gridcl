@@ -30,7 +30,7 @@ The development tooling and the Rust workspace do not exist yet. Milestone E0 cr
 
    ```sh
    cd path/to/tetraloma
-   unzip tetraloma-claude-workflow.zip
+   unzip <workflow-archive>.zip    # the archive this guide came with
    ```
 
 2. **Commit** the files to a git repository:
