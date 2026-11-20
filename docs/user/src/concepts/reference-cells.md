@@ -74,10 +74,10 @@ assert_eq!(sub_entities(CellType::Prism, 2)[1], [0, 1, 3, 4]);
 
 ## The reference-to-physical map
 
-A cell $K$ of the mesh is the image of its reference cell $\hat K$ under a map
+A cell $T$ of the mesh is the image of its reference cell $\hat T$ under a map
 
 $$
-X : \hat K \to K, \qquad x = X(\xi).
+X : \hat T \to T, \qquad x = X(\xi).
 $$
 
 The map is a polynomial (for pyramids, a rational function) built from the cell's nodes. If

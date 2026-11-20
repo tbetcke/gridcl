@@ -70,9 +70,9 @@ block, at run time; the topological dimension is part of the mesh's type (see
 [Typed dimensions](typed-dimensions.md)).
 
 Each cell block holds the cell type, an index map of its cells, the vertices of each cell in
-the vertex order of the reference cell, the origin id of each cell and one word of flags per
-cell. Each cell block also has a geometry block, which holds the coordinate element of its
-cells and the indices of their nodes in the mesh's node array.
+the vertex order of the reference cell, the [origin id](#origin-ids) of each cell and one word of
+flags per cell. Each cell block also has a geometry block, which holds the
+[coordinate element](geometry.md#coordinate-elements) of its cells and the indices of their nodes in the mesh's node array.
 
 Entities are grouped the same way. A mesh of prisms has two face blocks after
 `create_entities(2)`: one of triangles and one of quadrilaterals. A face shared by a hexahedron

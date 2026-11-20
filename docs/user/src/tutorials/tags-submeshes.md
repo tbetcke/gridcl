@@ -89,10 +89,11 @@ device and pass them to the methods below.
 
 A region is a set of cells, the volume part of a physical group. You select one by name with
 [`TagRegistry::named`](../api/tetraloma/struct.TagRegistry.html) and a
-[`Codim`](../api/tetraloma/enum.Codim.html). A codimension counts down from the mesh's
-topological dimension: `Codim::Vol` is the cells, `Codim::Bnd` their facets, `Codim::BBnd` the
-facets of those, and `Codim::BBBnd` one further. The same code then addresses the cells of a
-curve, a surface or a volume mesh, as explained in [Typed dimensions](../concepts/typed-dimensions.md#codimension).
+[`Codim`](../api/tetraloma/enum.Codim.html). This codimension counts down from the mesh's
+topological dimension, not from the geometric one: `Codim::Vol` is the cells, `Codim::Bnd` their
+facets, `Codim::BBnd` the facets of those, and `Codim::BBBnd` one further. The same code then
+addresses the cells of a curve, a surface or a volume mesh. (The codimension $g - t$ of
+[Typed dimensions](../concepts/typed-dimensions.md#codimension) is a different number.)
 
 `cell_submesh` turns tagged cells into a mesh of the same dimensions, together with an
 [`EntityMap`](../api/tetraloma/struct.EntityMap.html) back to the parent:
@@ -302,8 +303,8 @@ otherwise). It then makes neighbouring cells agree, one connected component at a
 with `GridError::NonOrientable` on a surface such as a Möbius strip. Last, it picks the direction
 of each component from the [`OrientationRule`](../api/tetraloma/enum.OrientationRule.html):
 
-- `Outward` makes the enclosed signed volume $\frac{1}{d} \oint x \cdot n \, ds$ positive, where
-  $d$ is the geometric dimension. It needs closed components and returns
+- `Outward` makes the enclosed signed volume $\frac{1}{g} \oint x \cdot n \, ds$ positive, where
+  $g$ is the geometric dimension. It needs closed components and returns
   `GridError::NeedsReferencePoint` for a component with a boundary.
 - `AwayFrom(p)` makes $\int (x - p) \cdot n \, ds$ non-negative, and `Towards(p)` makes it
   non-positive. These work for open components too.
