@@ -1,5 +1,6 @@
-//! `MeshBuilder` (ADR-0012, ADR-0026): a `Mesh` from host arrays with origin ids, serial or
-//! distributed, through the parallel creation pipeline.
+// Design: "Parallel creation pipeline"; ADR-0012, ADR-0026.
+//! `MeshBuilder`: a `Mesh` from host arrays with origin ids, serial or distributed, through the
+//! parallel creation pipeline.
 
 use std::collections::HashMap;
 
@@ -69,8 +70,15 @@ pub(crate) fn ids_or_index(ids: Option<&[i64]>, n: usize, first: usize) -> Resul
     }
 }
 
-/// The ghost cells each rank holds besides its owned cells (docs/design.md, "Distributed mesh
-/// model"; ADR-0026).
+// Design: "Distributed mesh model"; ADR-0026.
+/// The ghost cells each rank holds besides its owned cells: copies of cells that other ranks own.
+///
+/// Ghost cells let a rank compute on the neighbourhood of its owned cells without asking other
+/// ranks. They come after the owned cells in each cell block. [Ghost modes] describes the modes,
+/// and [Ownership and ghosts] explains ownership.
+///
+/// [Ghost modes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#ghost-modes
+/// [Ownership and ghosts]: https://tetracl.github.io/tetraloma/concepts/meshes.html#ownership-and-ghosts
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GhostMode {
     /// No ghost cells.
@@ -84,8 +92,15 @@ pub enum GhostMode {
     },
 }
 
-/// The order of the owned cells of each rank (pipeline stage 7; ADR-0026). Ghost cells follow,
-/// ordered by (owner rank, origin id).
+// Design: "Parallel creation pipeline", stage 7; ADR-0026, item 6.
+/// The order of the owned cells of each rank. Ghost cells follow, ordered by owner rank and then by
+/// origin id.
+///
+/// The order is the order in which kernels visit the cells, and vertices and nodes are numbered in
+/// order of the first cell that uses them. Ties are broken by origin id, so every ordering is
+/// deterministic. [Cell ordering] describes the orderings.
+///
+/// [Cell ordering]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#cell-ordering
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellOrdering {
     /// Source rank, then input position (the default).
@@ -111,30 +126,37 @@ struct BlockInput<TD: TopoDim> {
     elementary: Option<Vec<i32>>,
 }
 
-/// Builds a [`Mesh`] from host arrays (ADR-0012, ADR-0026).
+// Design: "API walkthrough", "Parallel creation pipeline"; ADR-0012, ADR-0026.
+/// Builds a [`Mesh`] from arrays on the host.
 ///
-/// - [`nodes`](MeshBuilder::nodes): coordinates `[node][gdim]` in f64, with optional origin ids
-///   (default: the node's global index, an exclusive scan of the ranks' node counts plus its
-///   index).
-/// - [`cell_block`](MeshBuilder::cell_block): cell → node lists in A.5 order, one block per
-///   cell type, with optional cell origin ids (default: the cell's global index over all
-///   blocks, in call order). A cell's vertices are its first V nodes, and a vertex's origin id
-///   is its node's. [`cell_block_by_ids`](MeshBuilder::cell_block_by_ids) references the nodes
-///   by origin id instead.
-/// - [`build`](MeshBuilder::build) builds a serial mesh, [`build_on`](MeshBuilder::build_on) a
-///   distributed one, both through the parallel creation pipeline: they check the input,
-///   partition and order the cells, number vertices and nodes in order of the first cell that
-///   touches them (blocks in order of first declaration; pipeline stage 8), store coordinates
-///   relative to the centre of the global bounding box, and upload. Nodes no cell uses are
-///   dropped.
+/// - [`nodes`](MeshBuilder::nodes) sets the node coordinates, `[node][gdim]` in f64, with optional
+///   origin ids (by default a node's global index: its index plus the number of nodes on lower
+///   ranks).
+/// - [`cell_block`](MeshBuilder::cell_block) adds a block of cells of one cell type, one row of
+///   node indices per cell in tetraloma's node order, with optional cell origin ids (by default the
+///   cell's global index over all blocks, in call order). A cell's vertices are its first nodes,
+///   and a vertex's origin id is its node's. [`cell_block_by_ids`](MeshBuilder::cell_block_by_ids)
+///   names the nodes by origin id instead.
+/// - [`build`](MeshBuilder::build) builds a serial mesh, and [`build_on`](MeshBuilder::build_on) a
+///   distributed one.
+///
+/// Both check the input, partition and order the cells, number the vertices and nodes in order of
+/// the first cell that uses them (blocks in the order of their first declaration), store the
+/// coordinates relative to the centre of the global bounding box, and upload the mesh to the
+/// device. Nodes that no cell uses are dropped. [Building a mesh] shows the builder step by step,
+/// and [Lagrange nodes] gives the node order of every cell type.
+///
+/// [Building a mesh]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html
+/// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// // Two P1 triangles of the unit square.
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // Two triangles of degree 1 that make up the unit square.
 /// let coords = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
 /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
 /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
@@ -168,7 +190,28 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     GD: Dim,
 {
-    /// An empty builder on `client`.
+    /// An empty builder for a mesh on the device of `client`.
+    ///
+    /// The type parameters fix the mesh: the scalar `F` and the dimensions `TD` and `GD`. Rust
+    /// often infers them from the type of the built mesh. [From arrays] shows the steps that
+    /// follow.
+    ///
+    /// [From arrays]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#from-arrays
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let builder = MeshBuilder::<f32, D1, D1>::new(&client);
+    /// // The interval [0, 2] as two cells.
+    /// let seg = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh = builder.nodes(&[0.0, 1.0, 2.0], None).cell_block(seg, &[0, 1, 1, 2], None).build()?;
+    /// assert!((mesh.measure(1)? - 2.0).abs() < 1e-6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn new(client: &Client) -> Self {
         MeshBuilder {
             client: client.clone(),
@@ -187,15 +230,83 @@ where
         }
     }
 
-    /// The node coordinates, `[node][gdim]` in f64, and optionally their origin ids.
+    /// Sets the node coordinates, `[node][gdim]` in f64, and optionally one origin id per node.
+    ///
+    /// The coordinates are f64 whatever the scalar `F` of the mesh. Without origin ids, a node's id
+    /// is its global index: its index plus the number of nodes on lower ranks. A second call
+    /// replaces the first. [From arrays] explains the arguments, and [Origin ids] what the ids are
+    /// for.
+    ///
+    /// [From arrays]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#from-arrays
+    /// [Origin ids]: https://tetracl.github.io/tetraloma/concepts/meshes.html#origin-ids
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // One triangle, corners (0, 0), (2, 0) and (0, 2), node origin ids 10, 20 and 30.
+    /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+    ///     .nodes(&[0.0, 0.0, 2.0, 0.0, 0.0, 2.0], Some(&[10, 20, 30]))
+    ///     .cell_block(tri, &[0, 1, 2], None)
+    ///     .build()?;
+    /// // The mesh stores coordinates relative to the centre of the bounding box; `read_node` adds
+    /// // it back.
+    /// assert_eq!(mesh.origin(), [1.0, 1.0]);
+    /// assert_eq!(mesh.read_node(1)?, [2.0, 0.0]);
+    ///
+    /// // Five coordinates are not a whole number of nodes in 2D.
+    /// let r = MeshBuilder::<f32, D2, D2>::new(&client)
+    ///     .nodes(&[0.0, 0.0, 2.0, 0.0, 0.0], None)
+    ///     .cell_block(tri, &[0, 1, 2], None)
+    ///     .build();
+    /// assert!(matches!(r, Err(GridError::LengthMismatch { expected: 6, found: 5 })));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn nodes(mut self, coords: &[f64], origin_ids: Option<&[i64]>) -> Self {
         self.coords = coords.to_vec();
         self.node_ids = origin_ids.map(<[i64]>::to_vec);
         self
     }
 
-    /// A cell block: `nodes` holds one row of the element's node count per cell, indices into
-    /// the node array, in A.5 order; `origin_ids` optionally one id per cell.
+    /// Adds a block of cells of one cell type: `nodes` holds one row of node indices per cell, as
+    /// many as the element has nodes, in tetraloma's node order; `origin_ids` optionally holds one
+    /// id per cell.
+    ///
+    /// The element fixes the cell type, the polynomial degree of the geometry and its node family.
+    /// Each cell type has at most one block, and the blocks keep the order of the calls. [Several
+    /// cell types] and [Higher-degree geometry] show it, and [Lagrange nodes] gives the node order
+    /// of every cell type.
+    ///
+    /// [Several cell types]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#several-cell-types
+    /// [Higher-degree geometry]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#higher-degree-geometry
+    /// [Lagrange nodes]: https://tetracl.github.io/tetraloma/elements/lagrange.html#node-ordering
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // The rectangle [0, 2] × [0, 1]: a quadrilateral on [0, 1] × [0, 1] and two triangles.
+    /// let quad = CoordinateElement::<D2> { cell: Cell2::Quadrilateral, degree: 1, family: NodeFamily::Equispaced };
+    /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, ..quad };
+    /// let coords = [0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0];
+    /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+    ///     .nodes(&coords, None)
+    ///     // The quadrilateral's corners in tensor order: (0, 0), (1, 0), (0, 1), (1, 1).
+    ///     .cell_block(quad, &[0, 1, 3, 4], None)
+    ///     .cell_block(tri, &[1, 2, 5, 1, 5, 4], None)
+    ///     .build()?;
+    /// assert_eq!(mesh.cell_blocks().len(), 2);
+    /// assert_eq!(mesh.cell_blocks()[1].cell, Cell2::Triangle);
+    /// assert!((mesh.measure(1)? - 2.0).abs() < 1e-6);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn cell_block(
         mut self,
         element: CoordinateElement<TD>,
@@ -212,9 +323,40 @@ where
         self
     }
 
-    /// A cell block whose cells reference nodes by node origin id: `node_ids` holds one row of
-    /// the element's node count per cell, in A.5 order; `origin_ids` optionally one id per
-    /// cell. A cell may reference the nodes of any rank (ADR-0026).
+    // ADR-0026 (the input contract of a distributed build).
+    /// Adds a block of cells that name their nodes by origin id: `node_ids` holds one row of node
+    /// origin ids per cell, in tetraloma's node order; `origin_ids` optionally holds one id per
+    /// cell.
+    ///
+    /// On a distributed build a cell may name nodes that another rank passed, so each rank can pass
+    /// any share of the nodes and cells. [Building on a communicator] shows it on several
+    /// processes.
+    ///
+    /// [Building on a communicator]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // The interval [0, 2] as two cells; the nodes have the origin ids 10, 11 and 12.
+    /// let seg = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh: Mesh<f32, D1, D1> = MeshBuilder::new(&client)
+    ///     .nodes(&[0.0, 1.0, 2.0], Some(&[10, 11, 12]))
+    ///     .cell_block_by_ids(seg, &[10, 11, 11, 12], None)
+    ///     .build()?;
+    /// assert!((mesh.measure(1)? - 2.0).abs() < 1e-6);
+    ///
+    /// // No node has the id 12 here.
+    /// let r = MeshBuilder::<f32, D1, D1>::new(&client)
+    ///     .nodes(&[0.0, 1.0], Some(&[10, 11]))
+    ///     .cell_block_by_ids(seg, &[10, 12], None)
+    ///     .build();
+    /// assert!(matches!(r, Err(GridError::IndexOutOfRange { .. })));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn cell_block_by_ids(
         mut self,
         element: CoordinateElement<TD>,
@@ -298,18 +440,57 @@ where
         self
     }
 
-    /// The ghost cells of each rank; default [`GhostMode::None`].
+    /// Sets the ghost cells each rank holds besides its owned cells; the default is
+    /// [`GhostMode::None`].
+    ///
+    /// On one rank there are no ghost cells. [Ghost modes] describes the modes.
+    ///
+    /// [Ghost modes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#ghost-modes
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    /// // ThreadComm: a test communicator that runs each rank as a thread of this process; a
+    /// // program passes an `Mpi` communicator instead.
+    /// use tetraloma_testing::ThreadComm;
+    ///
+    /// // Two ranks, one interval each, sharing the node with id 1.
+    /// let ghosts = ThreadComm::run(2, |comm| -> Result<usize> {
+    ///     // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    ///     # let client = tetraloma_testing::test_client();
+    ///     let r = comm.rank() as i64;
+    ///     let seg = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    ///     let (coords, ids): (&[f64], &[i64]) = if r == 0 { (&[0.0, 1.0], &[0, 1]) } else { (&[2.0], &[2]) };
+    ///     let mesh: Mesh<f32, D1, D1, ThreadComm> = MeshBuilder::new(&client)
+    ///         .nodes(coords, Some(ids))
+    ///         .cell_block_by_ids(seg, &[r, r + 1], None)
+    ///         .ghosts(GhostMode::SharedFacet)
+    ///         .build_on(comm)?;
+    ///     // The ghost cell does not count twice.
+    ///     assert!((mesh.measure(1)? - 2.0).abs() < 1e-6);
+    ///     Ok(mesh.cell_blocks()[0].index_map.num_ghosts())
+    /// });
+    /// // Each rank holds the other rank's cell as a ghost.
+    /// assert!(ghosts.iter().all(|g| g.as_ref().ok() == Some(&1)));
+    /// ```
     pub fn ghosts(mut self, mode: GhostMode) -> Self {
         self.ghosts = mode;
         self
     }
 
-    /// The partitioner of pipeline stage 3; default [`Block`].
+    // Design: "Partitioning"; ADR-0029, ADR-0033.
+    /// Sets the partitioner that assigns the cells to ranks on a distributed build; the default is
+    /// [`Block`].
     ///
-    /// The external partitioners are behind features (docs/design.md, "Partitioning";
-    /// ADR-0029): `Metis` and `Scotch` partition on rank 0, `PtScotch` and `ParMetis` on the
-    /// communicator's MPI handle (their features imply `mpi`). `metis` and `parmetis` exclude
-    /// each other (ADR-0033).
+    /// On one rank the partitioner is not called. The external partitioners need features: `Metis`
+    /// and `Scotch` partition on rank 0, and `PtScotch` and `ParMetis` on all ranks through the
+    /// communicator's MPI handle (their features imply `mpi`). The features `metis` and `parmetis`
+    /// exclude each other. [Partitioners] compares them, and [Cargo features] lists their features
+    /// and system libraries.
+    ///
+    /// [Partitioners]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#partitioners
+    /// [Cargo features]: https://tetracl.github.io/tetraloma/features.html#partitioners
     ///
     /// # Examples
     ///
@@ -319,11 +500,14 @@ where
     /// # #[cfg(feature = "metis")]
     /// # fn main() {
     /// use tetraloma::prelude::*;
+    /// // ThreadComm: a test communicator that runs each rank as a thread of this process; a
+    /// // program passes an `Mpi` communicator instead.
     /// use tetraloma_testing::ThreadComm;
     ///
     /// // Two ranks; rank 0 passes the four intervals of [0, 4], rank 1 none.
     /// let lengths = ThreadComm::run(2, |comm| {
-    ///     let client = tetraloma_testing::test_client();
+    ///     // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    ///     # let client = tetraloma_testing::test_client();
     ///     let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
     ///     let (coords, ids, cells): (&[f64], &[i64], &[i64]) = if comm.rank() == 0 {
     ///         (&[0.0, 1.0, 2.0, 3.0, 4.0], &[0, 1, 2, 3, 4], &[0, 1, 1, 2, 2, 3, 3, 4])
@@ -353,9 +537,10 @@ where
     ///
     /// let universe = mpi::initialize().expect("MPI is not initialised yet");
     /// let comm = Mpi::world(&universe);
-    /// let client = tetraloma_testing::test_client();
-    /// // Rank r passes the intervals [2r, 2r + 1] and [2r + 1, 2r + 2], and their nodes from
-    /// // 2r on (the last rank also the final node).
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // Rank r passes the intervals [2r, 2r + 1] and [2r + 1, 2r + 2], and their nodes from 2r on
+    /// // (the last rank also the final node).
     /// let (r, n) = (comm.rank() as i64, comm.size() as i64);
     /// let ids: Vec<i64> = (2 * r..if r == n - 1 { 2 * n + 1 } else { 2 * r + 2 }).collect();
     /// let coords: Vec<f64> = ids.iter().map(|&i| i as f64).collect();
@@ -376,25 +561,67 @@ where
         self
     }
 
-    /// The order of the owned cells; default [`CellOrdering::Input`].
-    pub fn ordering(mut self, o: CellOrdering) -> Self {
-        self.ordering = o;
-        self
-    }
-
-    /// Physical tags of entities of type `entity`: one entry per entity, with
-    /// `entity.num_vertices()` corner origin ids in `corners` and one value in `values`.
-    /// Entries are matched by their sorted corner ids, cells and lower-dimensional entities
-    /// alike; the build creates the entities of every tagged dimension below the cells'. Every
-    /// holder of an entity, owner or ghost, gets its values, and an entity in several groups
-    /// gets each value once (ADR-0026).
+    /// Sets the order of each rank's owned cells; the default is [`CellOrdering::Input`].
+    ///
+    /// Vertices and nodes are numbered in order of the first cell that uses them, so the ordering
+    /// changes their local order too. It does not change which cells a rank owns. [Cell ordering]
+    /// describes the orderings.
+    ///
+    /// [Cell ordering]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#cell-ordering
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // The interval [0, 4] as four cells, listed out of order.
+    /// let seg = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
+    /// let coords = [0.0, 1.0, 2.0, 3.0, 4.0];
+    /// let cells: [u32; 8] = [2, 3, 0, 1, 3, 4, 1, 2];
+    /// let build = |ordering| -> Result<Mesh<f32, D1, D1>> {
+    ///     MeshBuilder::new(&client)
+    ///         .nodes(&coords, None)
+    ///         .cell_block(seg, &cells, None)
+    ///         .ordering(ordering)
+    ///         .build()
+    /// };
+    /// // Whether each cell shares a vertex with the next one; the copy to the host is for
+    /// // inspection.
+    /// let chained = |mesh: &Mesh<f32, D1, D1>| -> Result<bool> {
+    ///     let v = mesh.cell_blocks()[0].vertices.data.to_host()?;
+    ///     Ok(v.chunks_exact(2).zip(v.chunks_exact(2).skip(1)).all(|(a, b)| a.iter().any(|x| b.contains(x))))
+    /// };
+    /// // The input order jumps; reverse Cuthill–McKee walks along the line.
+    /// assert!(!chained(&build(CellOrdering::Input)?)?);
+    /// assert!(chained(&build(CellOrdering::ReverseCuthillMcKee)?)?);
+    /// # Ok::<(), GridError>(())
+    /// ```
+    pub fn ordering(mut self, o: CellOrdering) -> Self {
+        self.ordering = o;
+        self
+    }
+
+    // ADR-0026 (tags of a distributed build).
+    /// Adds physical tags to entities of type `entity`: one entry per entity, with
+    /// `entity.num_vertices()` corner origin ids in `corners` and one value in `values`.
+    ///
+    /// Entries match entities by their sorted corner ids, cells and lower-dimensional entities
+    /// alike, and the build creates the entities of every tagged dimension below the cells'. Every
+    /// rank that holds a tagged entity, as owner or ghost, gets its values, and an entity in
+    /// several groups gets each value once. [Physical groups] shows how to tag a mesh and select
+    /// the tagged entities.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let coords = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
     /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
     /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
@@ -418,9 +645,35 @@ where
         self
     }
 
-    /// The tag name table: (name, dimension, value), in the mesh's
-    /// [`TagRegistry`](crate::TagRegistry). The tables of all ranks are agreed: rank 0's
-    /// entries, then each further rank's entries that no lower rank gave.
+    /// Adds entries to the table of tag names: (name, dimension, value) each, stored in the mesh's
+    /// [`TagRegistry`](crate::TagRegistry).
+    ///
+    /// The ranks agree on one table: rank 0's entries, then each further rank's entries that no
+    /// lower rank gave. [Physical groups] shows how to select tagged entities by name.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let coords = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+    ///     .nodes(&coords, Some(&[10, 11, 12, 13]))
+    ///     .cell_block(tri, &[0, 1, 2, 3, 2, 1], None)
+    ///     // The edge from node 10 to node 11 in group 1 of dimension 1, named "bottom".
+    ///     .physical_tags(CellType::Interval, &[10, 11], &[1])
+    ///     .tag_names(&[("bottom", 1, 1)])
+    ///     .build()?;
+    /// assert_eq!(mesh.tags().names().collect::<Vec<_>>(), [("bottom", 1, 1)]);
+    /// assert_eq!(mesh.tags().lookup(1, "bottom"), Some(1));
+    /// assert_eq!(mesh.tags().named(Codim::Bnd, "bottom")?.indices.len(), 1);
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn tag_names(mut self, names: &[(&str, usize, i32)]) -> Self {
         self.tag_names.extend(
             names
@@ -430,28 +683,39 @@ where
         self
     }
 
-    /// Builds the distributed mesh on `comm` through the parallel creation pipeline (stages
-    /// 1–9; docs/design.md, "Parallel creation pipeline"). Collective: every rank passes its
-    /// chunk of nodes, cells and tags, under the input contract of ADR-0026. On one rank the
-    /// partitioner is not called.
+    // Design: "Parallel creation pipeline", stages 1–9; ADR-0026 (the input contract).
+    /// Builds a distributed mesh on the communicator `comm`. Collective: every rank passes its
+    /// share of the nodes, cells and tags, and gets its part of the mesh.
+    ///
+    /// Which rank passes what is up to you, as long as the origin ids are unique over all ranks.
+    /// The build checks the shares, partitions the cells with the
+    /// [`partitioner`](MeshBuilder::partitioner), moves each cell to its rank, adds the
+    /// [`ghosts`](MeshBuilder::ghosts), orders the cells by [`ordering`](MeshBuilder::ordering),
+    /// numbers cells, vertices and nodes, and uploads the mesh. On one rank the partitioner is not
+    /// called. [Building on a communicator] walks through it.
+    ///
+    /// [Building on a communicator]: https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator
     ///
     /// # Errors
     ///
-    /// Agreed over the ranks: a rank with a local error returns it, every other rank
+    /// Agreed over the ranks: a rank with a local error returns it, and every other rank returns
     /// `RemoteFailure` with the lowest failing rank. The errors of [`build`](MeshBuilder::build);
     /// `IndexOutOfRange` for a node id of `cell_block_by_ids` that no rank passed; errors of the
-    /// partitioner and the exchanges. `UnmatchedTagElement` for a tag entry of dimension below
+    /// partitioner and of the exchanges. `UnmatchedTagElement` for a tag entry of dimension below
     /// the cells' is the same on every rank: the entry of lowest global input position.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
+    /// // ThreadComm: a test communicator that runs each rank as a thread of this process; a
+    /// // program passes an `Mpi` communicator instead.
     /// use tetraloma_testing::ThreadComm;
     ///
-    /// // Two ranks, one P1 interval each, sharing the node with id 1.
+    /// // Two ranks, one interval each, sharing the node with id 1.
     /// let lengths = ThreadComm::run(2, |comm| {
-    ///     let client = tetraloma_testing::test_client();
+    ///     // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    ///     # let client = tetraloma_testing::test_client();
     ///     let r = comm.rank() as i64;
     ///     let element = CoordinateElement::<D1> { cell: Cell1::Interval, degree: 1, family: NodeFamily::Equispaced };
     ///     // Rank 0 passes the nodes 0 and 1, rank 1 the node 2.
@@ -483,22 +747,51 @@ where
         dual_graph(&comm, &read.blocks, &read.cells)
     }
 
-    /// Checks, numbers and uploads the mesh: [`build_on`](MeshBuilder::build_on) with the
-    /// one-rank [`Serial`] communicator.
+    /// Checks the input, numbers the cells, vertices and nodes, and uploads the mesh:
+    /// [`build_on`](MeshBuilder::build_on) with the one-rank [`Serial`] communicator.
+    ///
+    /// [Errors] shows the common input errors.
+    ///
+    /// [Errors]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html#errors
     ///
     /// # Errors
     ///
     /// - `UnsupportedPrecision` if the device lacks `F`;
-    /// - `LengthMismatch` if a length is not a multiple of its row length or an id list does
-    ///   not match its rows; `IndexOutOfRange` for a node index beyond the nodes;
+    /// - `LengthMismatch` if a length is not a multiple of its row length or an id list does not
+    ///   match its rows; `IndexOutOfRange` for a node index beyond the nodes;
     /// - `DuplicateOriginId` for repeated node or cell ids; `NodeRoleMismatch` if a node is a
     ///   vertex of one cell and a non-vertex node of another; `DuplicateCellBlock` for a second
-    ///   block of one cell type; `UnsupportedNodeFamily` or `UnsupportedDegree` for an element
-    ///   tetraloma-refcell does not offer;
+    ///   block of one cell type; `UnsupportedNodeFamily` or `UnsupportedDegree` for an element that
+    ///   tetraloma does not offer;
     /// - `UnmatchedTagElement` for a tag entry that matches no cell or entity, `tag` being its
-    ///   global input position (entries counted over the `physical_tags` calls in call order,
-    ///   ranks in order);
+    ///   global input position (entries counted over the `physical_tags` calls in call order, ranks
+    ///   in order);
     /// - allocation and device errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tetraloma::prelude::*;
+    ///
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// let coords = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    /// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+    /// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+    ///     .nodes(&coords, None)
+    ///     .cell_block(tri, &[0, 1, 2, 3, 2, 1], None)
+    ///     .build()?;
+    /// assert_eq!(mesh.cell_blocks()[0].index_map.num_owned(), 2);
+    ///
+    /// // A second block of triangles.
+    /// let r = MeshBuilder::<f32, D2, D2>::new(&client)
+    ///     .nodes(&coords, None)
+    ///     .cell_block(tri, &[0, 1, 2], None)
+    ///     .cell_block(tri, &[3, 2, 1], None)
+    ///     .build();
+    /// assert!(matches!(r, Err(GridError::DuplicateCellBlock(_))));
+    /// # Ok::<(), GridError>(())
+    /// ```
     pub fn build(self) -> Result<Mesh<F, TD, GD>> {
         self.build_on(Serial)
     }

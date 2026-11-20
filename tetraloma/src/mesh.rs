@@ -1,4 +1,5 @@
-//! `Mesh` (Listings B3, B4 and B7).
+// Design: "Architecture", "API walkthrough"; Listings B3, B4 and B7.
+//! `Mesh`: the mesh type, its aliases and its methods.
 
 use cubecl::prelude::Client;
 use tetraloma_device::{ConnKey, DeviceBuffer, GridError, Real, Result};
@@ -14,24 +15,45 @@ use tetraloma_topology::{CellBlock, Connectivity, EntityBlock, Topology};
 
 use crate::{EntityMap, MeshTags, TagRegistry};
 
-/// A mesh, generic over scalar, dimensions and communicator, not over the backend
-/// (Listing B3). Constructors and methods require `TD: EmbeddedIn<GD>`. Not `Clone`: see
-/// [`try_clone`](Mesh::try_clone).
+// Design: "Architecture", "Distributed mesh model"; Listing B3; ADR-0012, ADR-0026.
+/// A mesh on a compute device: its cells, vertices, geometry nodes and tags.
+///
+/// The type parameters are the scalar type `F` (`f32` or `f64`), the topological dimension `TD` and
+/// the geometric dimension `GD` (the markers [`D1`](crate::D1), [`D2`](crate::D2) and
+/// [`D3`](crate::D3)), and the communicator `C`, [`Serial`](crate::Serial) by default. The device's
+/// runtime is not a type parameter: the mesh holds a runtime-erased CubeCL client, so one program
+/// type serves every device. Every method needs `TD: EmbeddedIn<GD>`, that is TD ≤ GD; some exist
+/// only for particular dimensions, as [Methods by dimension] lists. A mesh is not `Clone`, because
+/// a copy duplicates every device array: [`try_clone`](Mesh::try_clone) makes one explicitly.
+///
+/// [The mesh type] explains the type parameters, [Building a mesh] shows how to make a mesh from
+/// arrays, and [Distributed meshes] how to make one on many processes.
+///
+/// [Methods by dimension]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#methods-by-dimension
+/// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
+/// [Building a mesh]: https://tetracl.github.io/tetraloma/tutorials/build-mesh.html
+/// [Distributed meshes]: https://tetracl.github.io/tetraloma/tutorials/distributed.html
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh: Mesh<f32, D2, D2> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
-/// assert_eq!(mesh.cell_blocks()[0].index_map.num_local(), 4);
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // The unit square as one quadrilateral of degree 1, its corners in tensor order.
+/// let quad = CoordinateElement::<D2> { cell: Cell2::Quadrilateral, degree: 1, family: NodeFamily::Equispaced };
+/// let mesh: Mesh<f32, D2, D2> = MeshBuilder::new(&client)
+///     .nodes(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0], None)
+///     .cell_block(quad, &[0, 1, 2, 3], None)
+///     .build()?;
+/// assert_eq!(mesh.cell_blocks()[0].index_map.num_local(), 1);
 /// assert!((mesh.measure(1)? - 1.0).abs() < 1e-6);
 /// # Ok::<(), GridError>(())
 /// ```
 ///
-/// A distributed mesh (feature `mpi`, run under `mpirun`): every rank passes its chunk of the
-/// input to [`MeshBuilder::build_on`](crate::MeshBuilder::build_on), which partitions it with
+/// A distributed mesh (feature `mpi`, run under `mpirun`): every rank passes its share of the input
+/// to [`MeshBuilder::build_on`](crate::MeshBuilder::build_on), which partitions it with
 /// [`Block`](crate::Block) and adds one layer of ghost cells across facets.
 ///
 /// ```no_run
@@ -40,10 +62,13 @@ use crate::{EntityMap, MeshTags, TagRegistry};
 ///
 /// let universe = mpi::initialize().expect("MPI is not initialised yet");
 /// let comm = Mpi::world(&universe);
-/// let client = tetraloma_testing::test_client();
-/// let chunk = tetraloma_testing::cube_box(Cell3::Tetrahedron, 8, 1).chunk(comm.rank(), comm.size());
-/// let mesh: VolumeMesh<f32, Mpi> = chunk
-///     .builder(&client)?
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // builder: a `MeshBuilder` with this rank's share of the unit cube in 6 · 8³ tetrahedra.
+/// # let builder = tetraloma_testing::cube_box(Cell3::Tetrahedron, 8, 1)
+/// #     .chunk(comm.rank(), comm.size())
+/// #     .builder::<f32, D3, D3>(&client)?;
+/// let mesh: VolumeMesh<f32, Mpi> = builder
 ///     .ghosts(GhostMode::SharedFacet)
 ///     .build_on(comm.clone())?;
 /// let owned: usize = mesh.cell_blocks().iter().map(|b| b.index_map.num_owned()).sum();
@@ -53,8 +78,8 @@ use crate::{EntityMap, MeshTags, TagRegistry};
 /// # Ok::<(), tetraloma::GridError>(())
 /// ```
 ///
-/// Dropping a distributed mesh is collective: it frees the MPI communicators of its index
-/// maps (see [`IndexMap`](crate::IndexMap)), so every rank drops its meshes in the same order.
+/// Dropping a distributed mesh is collective: it frees the MPI communicators of its index maps (see
+/// [`IndexMap`](crate::IndexMap)), so every rank drops its meshes in the same order.
 pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     pub(crate) client: Client,
     pub(crate) comm: C,
@@ -64,7 +89,12 @@ pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
     pub(crate) tags: TagRegistry,
 }
 
-/// A curve in 3D.
+// Design: "Architecture", Listing B3.
+/// A curve in three-dimensional space: a mesh of intervals, [`Mesh<F, D1, D3, C>`](Mesh).
+///
+/// [The mesh type] lists the named mesh types.
+///
+/// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 ///
 /// # Example
 ///
@@ -74,41 +104,73 @@ pub struct Mesh<F: Real, TD: TopoDim, GD: Dim, C: Comm = Serial> {
 /// assert_eq!((CurveMesh::<f32>::TDIM, CurveMesh::<f32>::GDIM), (1, 3));
 /// ```
 pub type CurveMesh<F, C = Serial> = Mesh<F, D1, D3, C>;
-/// A planar mesh.
+// Design: "Architecture", Listing B3.
+/// A planar mesh: triangles and quadrilaterals in the plane, [`Mesh<F, D2, D2, C>`](Mesh).
+///
+/// [The mesh type] lists the named mesh types.
+///
+/// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // The unit square as two triangles.
+/// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+/// let mesh: PlanarMesh<f32> = MeshBuilder::new(&client)
+///     .nodes(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0], None)
+///     .cell_block(tri, &[0, 1, 2, 3, 2, 1], None)
+///     .build()?;
 /// assert_eq!((mesh.tdim(), mesh.gdim()), (2, 2));
 /// # Ok::<(), GridError>(())
 /// ```
 pub type PlanarMesh<F, C = Serial> = Mesh<F, D2, D2, C>;
-/// A surface in 3D.
+// Design: "Architecture", Listing B3.
+/// A surface in three-dimensional space: triangles and quadrilaterals in space,
+/// [`Mesh<F, D2, D3, C>`](Mesh).
+///
+/// [The mesh type] lists the named mesh types.
+///
+/// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // One triangle in space.
+/// let tri = CoordinateElement::<D2> { cell: Cell2::Triangle, degree: 1, family: NodeFamily::Equispaced };
+/// let mesh: SurfaceMesh<f32> = MeshBuilder::new(&client)
+///     .nodes(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], None)
+///     .cell_block(tri, &[0, 1, 2], None)
+///     .build()?;
 /// assert_eq!((mesh.tdim(), mesh.gdim()), (2, 3));
 /// # Ok::<(), GridError>(())
 /// ```
 pub type SurfaceMesh<F, C = Serial> = Mesh<F, D2, D3, C>;
-/// A volume mesh.
+// Design: "Architecture", Listing B3.
+/// A volume mesh: tetrahedra, hexahedra, prisms and pyramids in space,
+/// [`Mesh<F, D3, D3, C>`](Mesh).
+///
+/// [The mesh type] lists the named mesh types.
+///
+/// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build(&client)?;
+/// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // mesh: a `VolumeMesh<f32>`, the unit cube as one hexahedron; the tutorial "Building a mesh"
+/// // shows how to make a mesh.
+/// # let mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build(&client)?;
 /// assert_eq!((mesh.tdim(), mesh.gdim()), (3, 3));
 /// # Ok::<(), GridError>(())
 /// ```
@@ -194,15 +256,23 @@ where
         Ok(BlockFields { blocks })
     }
 
-    /// The topological dimension.
+    /// The topological dimension TD as a number: 1 for curves, 2 for planar and surface meshes, 3
+    /// for volume meshes.
+    ///
+    /// [The mesh type] explains the dimensions.
+    ///
+    /// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `SurfaceMesh<f32>`, the icosahedron (20 flat triangles with their corners on the
+    /// // unit sphere); the tutorial "Building a mesh" shows how to make a mesh.
+    /// # let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
     /// assert_eq!(mesh.tdim(), 2);
     /// # Ok::<(), GridError>(())
     /// ```
@@ -210,15 +280,22 @@ where
         TD::N
     }
 
-    /// The geometric dimension.
+    /// The geometric dimension GD as a number: the number of coordinates of a point.
+    ///
+    /// [The mesh type] explains the dimensions.
+    ///
+    /// [The mesh type]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#the-mesh-type
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `SurfaceMesh<f32>`, the icosahedron (20 flat triangles with their corners on the
+    /// // unit sphere); the tutorial "Building a mesh" shows how to make a mesh.
+    /// # let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
     /// assert_eq!(mesh.gdim(), 3);
     /// # Ok::<(), GridError>(())
     /// ```
@@ -226,15 +303,23 @@ where
         GD::N
     }
 
-    /// The runtime-erased client.
+    /// The CubeCL client of the device that holds the mesh, with its runtime type erased.
+    ///
+    /// Device arrays that you pass to the mesh's methods live on this client. [Compute devices]
+    /// shows how to open a client.
+    ///
+    /// [Compute devices]: https://tetracl.github.io/tetraloma/devices.html
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square as one quadrilateral; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build(&client)?;
     /// // Device arrays for this mesh go on its client.
     /// let values = DeviceBuffer::from_host(mesh.client(), &[1.0f32, 2.0])?;
     /// assert_eq!(values.len(), 2);
@@ -244,16 +329,26 @@ where
         &self.client
     }
 
-    /// Physical and elementary tags and the name table (empty unless read from a file).
+    /// The mesh's tags: the physical and elementary tags of its cells and of lower-dimensional
+    /// entities, and the table of tag names.
+    ///
+    /// A mesh read from a Gmsh file carries the file's tags; a mesh from
+    /// [`MeshBuilder`](crate::MeshBuilder) carries the tags you give it, and none otherwise.
+    /// [Physical groups] shows how to select tagged cells and facets.
+    ///
+    /// [Physical groups]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#physical-groups
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build::<f32, D2, D2>(&client)?;
-    /// // A builder mesh has no tags.
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square as two triangles; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Triangle, 1, 1).build(&client)?;
+    /// // A builder mesh without tags.
     /// assert!(mesh.tags().physical(1).is_none());
     /// assert_eq!(mesh.tags().names().count(), 0);
     /// # Ok::<(), GridError>(())
@@ -267,19 +362,28 @@ where
         self.tags = tags;
     }
 
-    /// A deep copy of every device array, tags included.
+    /// A deep copy of the mesh: every device array, tags included, is copied on the device.
+    ///
+    /// A mesh is not `Clone`, so a copy of its device memory is always explicit. The copy of a
+    /// distributed mesh shares the neighbourhoods of its index maps with the original, so it is not
+    /// collective. [Meshes and topology] describes the arrays a mesh holds.
+    ///
+    /// [Meshes and topology]: https://tetracl.github.io/tetraloma/concepts/meshes.html
     ///
     /// # Errors
     ///
-    /// Errors of `DeviceBuffer::deep_clone`.
+    /// Allocation and device errors of the copies.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let copy = mesh.try_clone()?;
     /// assert_eq!(copy.nodes().to_host()?, mesh.nodes().to_host()?);
     /// # Ok::<(), GridError>(())
@@ -294,22 +398,35 @@ where
         })
     }
 
-    /// Physical points at the points of `rule`, one field per cell block.
+    /// The physical points x = X(ξ) of the reference points ξ of `rule` in every cell, one field
+    /// per cell block.
+    ///
+    /// X is the map from the reference cell to the cell. Each field holds GD absolute coordinates
+    /// per cell and point, with the mesh's origin added back. [Points] shows how to read them, and
+    /// [The reference-to-physical map] defines X.
+    ///
+    /// [Points]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#points
+    /// [The reference-to-physical map]: https://tetracl.github.io/tetraloma/concepts/reference-cells.html#the-reference-to-physical-map
     ///
     /// # Errors
     ///
-    /// `CellNotInRule` if `rule` lacks a cell type of the mesh; allocation and device errors.
+    /// `CellNotInRule` if `rule` has no points for a cell type of the mesh; allocation and device
+    /// errors.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square as one quadrilateral; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
     /// let x = mesh.physical_points(&rule)?;
-    /// // The one Gauss point of the unit square is its centre.
+    /// // The one Gauss point of the unit square is its centre; the copy to the host is for
+    /// // inspection.
     /// let [x0, y0] = x.blocks[0].to_host_cell_major()?[0];
     /// assert!((x0 - 0.5).abs() < 1e-6 && (y0 - 0.5).abs() < 1e-6);
     /// # Ok::<(), GridError>(())
@@ -318,7 +435,14 @@ where
         self.per_block(|b| physical_points_block(self, b, rule.get(self.cell(b))?))
     }
 
-    /// Jacobians at the points of `rule`: per point GD × TD, column-major.
+    /// The Jacobians J = ∂x/∂ξ at the points of `rule`: per cell and point a GD × TD matrix, stored
+    /// column-major, one field per cell block.
+    ///
+    /// On the host, entry `[c][r]` of a point is row r of column c. [Jacobians] shows the layout on
+    /// a mesh, and [The Jacobian] defines J.
+    ///
+    /// [Jacobians]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#jacobians
+    /// [The Jacobian]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#the-jacobian
     ///
     /// # Errors
     ///
@@ -329,10 +453,13 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
-    /// // Squares of side 1/2: J = I / 2, column-major.
+    /// // Squares of side 1/2: J = I / 2.
     /// for j in mesh.jacobians(&rule)?.blocks[0].to_host_cell_major()? {
     ///     assert!((j[0][0] - 0.5).abs() < 1e-6 && (j[1][1] - 0.5).abs() < 1e-6);
     ///     assert!(j[0][1].abs() < 1e-6 && j[1][0].abs() < 1e-6);
@@ -343,7 +470,14 @@ where
         self.per_block(|b| jacobians_block(self, b, rule.get(self.cell(b))?))
     }
 
-    /// det J, or sqrt(det(JᵀJ)) when TD < GD.
+    /// The determinants det J at the points of `rule`, or the pseudo-determinants √det(JᵀJ) where
+    /// TD < GD, one field per cell block.
+    ///
+    /// det J turns a reference quadrature weight into a physical one. [Determinants] shows it on a
+    /// mesh, and [The determinant] defines both cases.
+    ///
+    /// [Determinants]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#determinants
+    /// [The determinant]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#the-determinant
     ///
     /// # Errors
     ///
@@ -354,9 +488,13 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
+    /// // Squares of side 1/2 have det J = 1/4.
     /// let detj = mesh.detj(&rule)?.blocks[0].to_host_cell_major()?;
     /// assert!(detj.iter().all(|d| (d - 0.25).abs() < 1e-6));
     /// # Ok::<(), GridError>(())
@@ -365,7 +503,15 @@ where
         self.per_block(|b| detj_block(self, b, rule.get(self.cell(b))?))
     }
 
-    /// K = (JᵀJ)⁻¹Jᵀ; equals J⁻¹ in codimension 0. Needed for surface gradients in BEM.
+    /// The pseudo-inverses K = (JᵀJ)⁻¹Jᵀ at the points of `rule`: per cell and point a TD × GD
+    /// matrix, stored column-major, one field per cell block.
+    ///
+    /// K J is the identity, and K equals J⁻¹ when TD = GD. On a surface, Kᵀ turns a reference
+    /// gradient into the surface gradient, as boundary element methods need. [Pseudo-inverses]
+    /// shows it on a mesh, and [The pseudo-inverse] derives it.
+    ///
+    /// [Pseudo-inverses]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#pseudo-inverses
+    /// [The pseudo-inverse]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#the-pseudo-inverse
     ///
     /// # Errors
     ///
@@ -376,8 +522,11 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `SurfaceMesh<f32>`, the icosahedron (20 flat triangles with their corners on the
+    /// // unit sphere); the tutorial "Building a mesh" shows how to make a mesh.
+    /// # let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
     /// let j = mesh.jacobians(&rule)?.blocks[0].to_host_cell_major()?;
     /// let k = mesh.pseudo_inverse_jacobians(&rule)?.blocks[0].to_host_cell_major()?;
@@ -399,20 +548,31 @@ where
         self.per_block(|b| pseudo_inverse_block(self, b, rule.get(self.cell(b))?))
     }
 
-    /// Sum over owned cells on all ranks, finished in f64 on the host, with Gauss rules of
-    /// `degree`.
+    /// The measure of the mesh (its length, area or volume), with Gauss rules of degree `degree`:
+    /// the sum of det J · w over the owned cells of all ranks.
+    ///
+    /// Each block's sum is computed on the device and finished in f64 on the host, and every rank
+    /// gets the same total. Collective on a distributed mesh. [Measures] shows it, and [Measure]
+    /// defines it.
+    ///
+    /// [Measures]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#measures
+    /// [Measure]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#measure
     ///
     /// # Errors
     ///
-    /// Allocation and device errors.
+    /// The errors of [`QuadRule::for_grid`](crate::QuadRule::for_grid) for `degree`; allocation and
+    /// device errors.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::cube_box(Cell3::Tetrahedron, 2, 1).build::<f32, D3, D3>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `VolumeMesh<f32>`, the unit cube in 48 tetrahedra; the tutorial "Building a mesh"
+    /// // shows how to make a mesh.
+    /// # let mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 2, 1).build(&client)?;
     /// assert!((mesh.measure(1)? - 1.0).abs() < 1e-6);
     /// # Ok::<(), GridError>(())
     /// ```
@@ -425,8 +585,13 @@ where
         Ok(self.comm.sum(local))
     }
 
-    /// One node copied to the host, with the origin added back. Tests and debugging only: one
-    /// device read and one sync per call.
+    /// Geometry node `i` copied to the host, with the origin added back: its GD absolute
+    /// coordinates.
+    ///
+    /// It copies the whole node array to read one node, so it is for tests and debugging only.
+    /// [Reading data back to the host] shows how to read data in bulk.
+    ///
+    /// [Reading data back to the host]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#reading-data-back-to-the-host
     ///
     /// # Errors
     ///
@@ -437,8 +602,11 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square as one quadrilateral; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build(&client)?;
     /// // The four corners of the unit square.
     /// for i in 0..4 {
     ///     let x = mesh.read_node(i)?;
@@ -464,24 +632,33 @@ where
         Ok(x)
     }
 
-    /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and the connectivity
-    /// (tdim, dim).
+    /// Creates the entities of dimension `dim` (0 ≤ dim < tdim) and the connectivity (tdim, dim)
+    /// from the cells to them.
     ///
-    /// Collective: on more than one rank, every rank calls it with the same `dim`, and the
-    /// owners of the entities on process boundaries are agreed by an exchange.
+    /// An entity is a vertex, edge or face that the cells containing it share. [Cells and entities]
+    /// explains them, and [Entities] shows how to read them.
+    ///
+    /// Collective: on more than one rank, every rank calls it with the same `dim`, and the ranks
+    /// agree on the owner of each entity on a process boundary.
+    ///
+    /// [Cells and entities]: https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities
+    /// [Entities]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#entities
     ///
     /// # Errors
     ///
-    /// `EntitiesNotCreated(dim)` for dim ≥ tdim; allocation, device and communication errors;
-    /// `RemoteFailure` if another rank failed.
+    /// `EntitiesNotCreated(dim)` for dim ≥ tdim, because the cells are in the cell blocks;
+    /// allocation, device and communication errors; `RemoteFailure` if another rank failed.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `VolumeMesh<f32>`, the unit cube as one hexahedron; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mut mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build(&client)?;
     /// mesh.create_entities(1)?;
     /// mesh.create_entities(2)?;
     /// // One cube: 12 edges and 6 faces.
@@ -495,12 +672,17 @@ where
         self.topology.create_entities(&self.comm, dim)
     }
 
-    /// Creates the connectivity `from` → `to` and the entities it needs. Collective, as
-    /// [`create_entities`](Mesh::create_entities).
+    /// Creates the connectivity `from` → `to`, and the entities it needs.
+    ///
+    /// [Connectivity] explains downward and upward connectivity, and [the tutorial] shows how to
+    /// read it. Collective, as [`create_entities`](Mesh::create_entities).
+    ///
+    /// [Connectivity]: https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity
+    /// [the tutorial]: https://tetracl.github.io/tetraloma/tutorials/iterate.html#connectivity
     ///
     /// # Errors
     ///
-    /// `UnsupportedConnectivity` for pairs tetraloma does not store; errors of
+    /// `UnsupportedConnectivity` for a pair tetraloma does not store; the errors of
     /// [`create_entities`](Mesh::create_entities).
     ///
     /// # Example
@@ -508,8 +690,11 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build::<f32, D3, D3>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `VolumeMesh<f32>`, the unit cube as one hexahedron; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mut mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 1).build(&client)?;
     /// mesh.create_connectivity(1, 3)?;
     /// let Connectivity::Upward(csr) = mesh.connectivity(ConnKey { from: 1, to: 3 })? else {
     ///     unreachable!("edge -> cell is upward")
@@ -524,26 +709,34 @@ where
         self.topology.create_connectivity(&self.comm, from, to)
     }
 
-    /// The tagged cells as a mesh of the same dimensions, and the map to the parent's cells
-    /// (ADR-0039, item 4). Child cells keep their owner, ghost status, origin id, flags and
-    /// coordinate element; vertices and nodes are re-owned among the ranks that hold them in
-    /// owned child cells. The child keeps the parent's origin and has one cell block per parent
-    /// block with tagged cells on some rank. The parent's cell tags become the child's.
-    /// Collective.
+    // Design: "Tags, regions and submeshes"; ADR-0039, item 4.
+    /// The tagged cells as a mesh of the same dimensions, with the map to the parent's cells.
+    ///
+    /// `cells` lists cells of this mesh (`cells.dim` = tdim), for example a group from
+    /// [`TagRegistry::named`](crate::TagRegistry::named). Child cells keep their owner, ghost
+    /// status, origin id, flags and coordinate element. The ranks that hold a vertex or node in
+    /// owned child cells agree on its new owner. The child keeps the parent's origin, has one cell
+    /// block per parent block with tagged cells on some rank, and carries the parent's cell tags.
+    /// [Regions] shows it on a mesh with two regions. Collective.
+    ///
+    /// [Regions]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#regions
     ///
     /// # Errors
     ///
-    /// `DimensionMismatch` if `cells.dim` is not tdim; `TooLarge`; allocation, device and
-    /// communication errors; `RemoteFailure` if another rank failed.
+    /// `DimensionMismatch` if `cells.dim` is not tdim; `TooLarge` if a size or index does not fit
+    /// its type; allocation, device and communication errors; `RemoteFailure` if another rank
+    /// failed.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: VolumeMesh<f32> =
-    ///     tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `VolumeMesh<f32>`, the unit cube in 2 × 2 × 2 hexahedra; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 1).build(&client)?;
     /// // Every other cell of the eight.
     /// let cells = MeshTags {
     ///     dim: 3,
@@ -559,23 +752,36 @@ where
         crate::submesh::cell_submesh(self, cells)
     }
 
-    /// The reference points of the absolute physical points `x`, given per cell and point of
-    /// every block as [`physical_points`](Mesh::physical_points) returns them, by Newton
-    /// iteration (Gauss–Newton where TD < GD), with |Δξ|∞ of the last iteration; see
-    /// [`pull_back_block`](crate::pull_back_block) (ADR-0039, item 13).
+    // Design: "Geometry", the pull-back; ADR-0039, item 13.
+    /// The reference points ξ of the physical points `x`, by Newton iteration (Gauss–Newton where
+    /// TD < GD), with the size |Δξ|∞ of each point's last step.
+    ///
+    /// `x` holds absolute physical points per cell and point of every block, in the layout that
+    /// [`physical_points`](Mesh::physical_points) returns; each cell's points are pulled back
+    /// through that cell's map. The result's `reference` holds the points ξ in the same layout, and
+    /// its `last_step` is above the tolerance where a point has not converged.
+    /// [`PullBackOptions`](crate::PullBackOptions) sets the tolerance and the number of iterations;
+    /// [`pull_back_block`](crate::pull_back_block) does the same for one block. [Pulling back
+    /// points] shows it, and [The pull-back] explains the iteration and when it fails.
+    ///
+    /// [Pulling back points]: https://tetracl.github.io/tetraloma/tutorials/pull-back.html
+    /// [The pull-back]: https://tetracl.github.io/tetraloma/concepts/pull-back.html
     ///
     /// # Errors
     ///
     /// `LengthMismatch` if `x` does not have one field per cell block, with one cell per local
-    /// cell; the element errors of a block's coordinate element; allocation and device errors.
+    /// cell; the errors of a block's coordinate element; allocation and device errors.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(1, 2).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `SurfaceMesh<f32>`, the unit sphere in 80 curved triangles of degree 2; the
+    /// // tutorial "Building a mesh" shows how to make a mesh.
+    /// # let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(1, 2).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 4)?;
     /// let x = mesh.physical_points(&rule)?;
     /// let pb = mesh.pull_back(&x, &PullBackOptions::default())?;
@@ -638,7 +844,14 @@ where
     GD: Dim,
     C: Comm,
 {
-    /// J⁻¹ at the points of `rule`.
+    /// The inverse Jacobians J⁻¹ at the points of `rule`, for a mesh whose cells fill their space
+    /// (TD = GD): the values of [`pseudo_inverse_jacobians`](Mesh::pseudo_inverse_jacobians).
+    ///
+    /// [Pseudo-inverses] shows both, and [Methods by dimension] explains why this method exists
+    /// only for TD = GD.
+    ///
+    /// [Pseudo-inverses]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#pseudo-inverses
+    /// [Methods by dimension]: https://tetracl.github.io/tetraloma/concepts/typed-dimensions.html#methods-by-dimension
     ///
     /// # Errors
     ///
@@ -649,8 +862,11 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square in 2 × 2 quadrilaterals; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
     /// // J = I / 2, so J⁻¹ = 2 I.
     /// for k in mesh.inverse_jacobians(&rule)?.blocks[0].to_host_cell_major()? {
@@ -666,8 +882,15 @@ where
         self.pseudo_inverse_jacobians(rule)
     }
 
-    /// Outward unit normals of every local facet of every cell, at facet quadrature points
-    /// (facet-major).
+    /// The outward unit normals of every facet of every cell at the points of the facet rule
+    /// `rule`, one field per cell block, facet-major: per cell, the points of facet 0, then those
+    /// of facet 1, and so on.
+    ///
+    /// It exists for meshes whose cells fill their space (TD = GD). [Facet normals] defines them,
+    /// and [Normals] shows them on a mesh.
+    ///
+    /// [Facet normals]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#facet-normals
+    /// [Normals]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#normals
     ///
     /// # Errors
     ///
@@ -678,8 +901,11 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build::<f32, D2, D2>(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `PlanarMesh<f32>`, the unit square as one quadrilateral; the tutorial "Building a
+    /// // mesh" shows how to make a mesh.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 1, 1).build(&client)?;
     /// let rule = FacetQuadRule::for_grid(&mesh, 1)?;
     /// let n = mesh.facet_normals(&rule)?.blocks[0].to_host_cell_major()?;
     /// // One point per side: four outward unit normals that sum to zero.
@@ -704,7 +930,15 @@ where
     GD: Dim,
     C: Comm,
 {
-    /// Unit normals; sign from the stored manifold orientation.
+    /// The unit normals at the points of `rule` of a mesh one dimension lower than its space (TD =
+    /// GD − 1), one field per cell block.
+    ///
+    /// Each cell's normal takes its sign from the cell's stored orientation, which
+    /// [`orient`](Mesh::orient) makes consistent. [Normals] shows them on a mesh, and [the concept]
+    /// defines them.
+    ///
+    /// [Normals]: https://tetracl.github.io/tetraloma/tutorials/geometric-data.html#normals
+    /// [the concept]: https://tetracl.github.io/tetraloma/concepts/geometric-factors.html#normals
     ///
     /// # Errors
     ///
@@ -715,8 +949,11 @@ where
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `SurfaceMesh<f32>`, the icosahedron (20 flat triangles with their corners on the
+    /// // unit sphere); the tutorial "Building a mesh" shows how to make a mesh.
+    /// # let mesh: SurfaceMesh<f32> = tetraloma_testing::sphere(0, 1).build(&client)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
     /// let n = mesh.normals(&rule)?.blocks[0].to_host_cell_major()?;
     /// assert_eq!(n.len(), 20);
@@ -727,30 +964,37 @@ where
         self.per_block(|b| normals_block(self, b, rule.get(self.cell(b))?))
     }
 
-    /// Consistent orientation of a manifold mesh (docs/design.md, "Manifold orientation"):
-    /// writes bit 0 of every cell's flags, ignoring the flags it had. Creates the facet entities
-    /// and the (tdim − 1, tdim) connectivity it needs. Collective.
+    // Design: "Manifold orientation"; ADR-0039, item 2.
+    /// Orients a mesh one dimension lower than its space consistently: writes bit 0 of every cell's
+    /// flags, so that the normals of neighbouring cells agree, and ignores the flags the cells had.
     ///
-    /// Each component's direction comes from the sign of (1/gdim) ∮ x·n (`Outward`) or of
-    /// ∫ (x − p)·n (`AwayFrom(p)`, `Towards(p)`) by Gauss degree 3p; a sum of exactly 0 flips
-    /// nothing.
+    /// `rule` chooses the direction of each connected component: `Outward` from the sign of (1/GD)
+    /// ∮ x·n, `AwayFrom(p)` and `Towards(p)` from the sign of ∫ (x − p)·n, each computed with a
+    /// Gauss rule of degree 3p for geometry of degree p. A sum of exactly 0 flips nothing. `orient`
+    /// creates the facet entities and the (tdim − 1, tdim) connectivity it needs. [Manifold
+    /// orientation] explains the method, and [Orientation] shows it. Collective.
+    ///
+    /// [Manifold orientation]: https://tetracl.github.io/tetraloma/concepts/orientation.html#manifold-orientation
+    /// [Orientation]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#orientation
     ///
     /// # Errors
     ///
-    /// `NonManifold` if a facet has more than two cells, `NonOrientable` if a component cannot
-    /// be oriented consistently, `NeedsReferencePoint` for `Outward` on a component with
-    /// boundary facets, all agreed across ranks; allocation, device and communication errors;
-    /// `RemoteFailure` if another rank failed.
+    /// Agreed across ranks: `NonManifold` if a facet has more than two cells, `NonOrientable` if a
+    /// component cannot be oriented consistently, `NeedsReferencePoint` for `Outward` on a
+    /// component with boundary facets. Allocation, device and communication errors; `RemoteFailure`
+    /// if another rank failed.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// // A sphere with half of its cells flipped.
-    /// let host = tetraloma_testing::sphere(0, 1).with_flipped_cells(1, 0.5);
-    /// let mut mesh: SurfaceMesh<f32> = host.build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `SurfaceMesh<f32>`, the icosahedron with half of its cells flipped; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let host = tetraloma_testing::sphere(0, 1).with_flipped_cells(1, 0.5);
+    /// # let mut mesh: SurfaceMesh<f32> = host.build(&client)?;
     /// mesh.orient(OrientationRule::Outward)?;
     /// let rule = QuadRule::for_grid(&mesh, 1)?;
     /// let x = mesh.physical_points(&rule)?.blocks[0].to_host_cell_major()?;
@@ -774,31 +1018,39 @@ where
     TD: TopoDim + EmbeddedIn<GD>,
     TD::Lower: TopoDim + EmbeddedIn<GD>,
 {
-    /// All boundary facets as a mesh one dimension lower, with the map to the parent's facets;
-    /// facet entities must exist (`EntitiesNotCreated`). Codimension-1 children are oriented
-    /// outward through their flags; codimension-2 children have flags 0 (ADR-0039).
+    // Design: "Tags, regions and submeshes"; ADR-0039.
+    /// The boundary facets as a mesh one dimension lower, with the map to the parent's facets.
     ///
-    /// A facet is on the boundary if it has one owned cell over all ranks. Child cells keep
-    /// the facet's owner and ghost status; vertices and nodes are re-owned among the ranks that
-    /// hold them in owned child cells. The child keeps the parent's origin and vertex origin
-    /// ids, and carries the parent's facet tags as cell tags. Collective.
+    /// A facet is on the boundary if exactly one owned cell over all ranks contains it. The facet
+    /// entities must exist: call `create_entities(tdim − 1)` first. A child one dimension lower
+    /// than its space (the surface of a volume mesh, the boundary curve of a planar mesh) is
+    /// oriented outward through its flags; a child two dimensions lower (the boundary of a surface
+    /// in 3D) has flags 0. Child cells keep their facet's owner and ghost status, and the ranks
+    /// that hold a vertex or node in owned child cells agree on its new owner. The child keeps the
+    /// parent's origin and vertex origin ids, and the parent's facet tags become its cell tags.
+    /// [Boundary meshes] shows it. Collective.
+    ///
+    /// [Boundary meshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#boundary-meshes
     ///
     /// # Errors
     ///
-    /// `EntitiesNotCreated(tdim − 1)` before `create_entities(tdim − 1)`; agreed across ranks:
-    /// `NonManifold` if a facet has more than two cells, `TooLarge` if a child origin id
-    /// 8 · (cell origin id) + local facet overflows i64, `UnsupportedDegree` or
-    /// `UnsupportedNodeFamily` if the parent cells of one facet type differ in degree or node
-    /// family; allocation, device and communication errors; `RemoteFailure` if another rank
-    /// failed.
+    /// `EntitiesNotCreated(tdim − 1)` before `create_entities(tdim − 1)`. Agreed across ranks:
+    /// `NonManifold` if a facet has more than two cells; `TooLarge` if a child cell's origin id, 8
+    /// · c + f for facet f of the parent cell with origin id c, does not fit i64;
+    /// `UnsupportedDegree` or `UnsupportedNodeFamily` if the parent cells of one facet type differ
+    /// in degree or node family. Allocation, device and communication errors; `RemoteFailure` if
+    /// another rank failed.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut volume: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 1).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // volume: a `VolumeMesh<f32>`, the unit cube in 2 × 2 × 2 hexahedra; the tutorial "Building
+    /// // a mesh" shows how to make a mesh.
+    /// # let mut volume: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 2, 1).build(&client)?;
     /// volume.create_entities(2)?;
     /// let (mut surface, map) = volume.boundary()?;
     /// // Six faces of 2 × 2 quadrilaterals, each with one parent facet.
@@ -816,27 +1068,38 @@ where
         crate::submesh::boundary(self)
     }
 
-    /// The tagged boundary facets as a mesh one dimension lower, as
-    /// [`boundary`](Mesh::boundary) for a subset of its facets.
+    // Design: "Tags, regions and submeshes", Listing B9; ADR-0039.
+    /// The tagged boundary facets as a mesh one dimension lower, with the map to the parent's
+    /// facets: [`boundary`](Mesh::boundary) for a subset of the boundary facets.
+    ///
+    /// `facets` lists facets of this mesh (`facets.dim` = tdim − 1), for example a group from
+    /// [`TagRegistry::named`](crate::TagRegistry::named) with [`Codim::Bnd`](crate::Codim::Bnd).
+    /// [Surface meshes] shows it. Collective.
+    ///
+    /// [Surface meshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#surface-meshes
     ///
     /// # Errors
     ///
-    /// `DimensionMismatch` if `facets.dim` is not tdim − 1; `InteriorFacet` if a tagged facet
-    /// has two cells and `NonManifold` if a facet has more (both agreed); the errors of
+    /// `DimensionMismatch` if `facets.dim` is not tdim − 1; agreed across ranks: `InteriorFacet` if
+    /// a tagged facet has two cells and `NonManifold` if a facet has more; the errors of
     /// [`boundary`](Mesh::boundary).
     ///
     /// # Example
     ///
-    /// Listing B9 on a box whose boundary facets carry the generated tags 100 and 101:
+    /// The surface of a box whose boundary facets carry physical tags:
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut head: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 2, 2)
-    ///     .chunk(0, 1)
-    ///     .builder::<f32, D3, D3>(&client)?
-    ///     .build()?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // head: a `VolumeMesh<f32>`, the unit cube in 48 tetrahedra of degree 2, whose boundary
+    /// // facets carry the tags 100 and 101 alternately, named "boundary-100" and "boundary-101";
+    /// // the tutorial "Tags and submeshes" shows how to tag a mesh.
+    /// # let mut head: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 2, 2)
+    /// #     .chunk(0, 1)
+    /// #     .builder::<f32, D3, D3>(&client)?
+    /// #     .build()?;
     /// head.create_entities(2)?;
     /// let scalp_tag = head.tags().named(Codim::Bnd, "boundary-100")?; // boundary facets only
     /// let (scalp, emap): (SurfaceMesh<f32>, EntityMap) = head.facet_submesh(&scalp_tag)?;
@@ -847,7 +1110,7 @@ where
     /// let n = scalp.normals(&rule)?; // compiles: D2 is Codim1 in D3
     /// let j = scalp.jacobians(&rule)?; // per point two columns of three
     /// let k = scalp.pseudo_inverse_jacobians(&rule)?; // for surface gradients
-    /// let area = scalp.measure(6)?; // pseudo-determinant path, chosen at comptime
+    /// let area = scalp.measure(6)?; // the pseudo-determinant, chosen at compile time
     /// assert_eq!((n.blocks.len(), j.blocks.len(), k.blocks.len()), (1, 1, 1));
     /// assert!(area > 0.0 && area < 6.0);
     /// // The child carries the tagged facets as cell tags.
@@ -864,20 +1127,26 @@ where
 }
 
 impl<F: Real, C: Comm> Mesh<F, D3, D3, C> {
-    /// The tagged edges, interior or boundary, as a curve mesh in 3D with the map to the
-    /// parent's edges; needs `create_entities(1)` and `create_connectivity(1, 3)` (ADR-0039,
-    /// item 3). Child cells take the edges' canonical orientation and have flags 0. A child
-    /// cell's origin id is the minimum of 12 · (cell origin id) + (local edge index) over the
-    /// cells containing its edge (item 7); its geometry is the parent's along the edge, with
-    /// the parent's degree and node family. The parent's edge tags become the child's cell
-    /// tags. Collective.
+    // Design: "Tags, regions and submeshes"; ADR-0039, items 3 and 7.
+    /// The tagged edges, interior or boundary, as a curve mesh in 3D, with the map to the parent's
+    /// edges.
+    ///
+    /// `edges` lists edges of this mesh (`edges.dim` = 1). The edges and the edge-to-cell
+    /// connectivity must exist: call `create_entities(1)` and `create_connectivity(1, 3)` first.
+    /// Child cells run along their edge from its lower vertex origin id to its higher one, and have
+    /// flags 0. A child cell's origin id is the smallest 12 · c + e over the cells that contain its
+    /// edge, for edge e of the cell with origin id c. Its geometry is the parent's along the edge,
+    /// with the parent's degree and node family. The parent's edge tags become its cell tags.
+    /// [Boundary meshes] shows it. Collective.
+    ///
+    /// [Boundary meshes]: https://tetracl.github.io/tetraloma/tutorials/tags-submeshes.html#boundary-meshes
     ///
     /// # Errors
     ///
     /// `DimensionMismatch` if `edges.dim` is not 1; `EntitiesNotCreated(1)`,
-    /// `ConnectivityNotCreated`; agreed: `TooLarge` if a child origin id does not fit i64,
-    /// `UnsupportedDegree` or `UnsupportedNodeFamily` if the cells that give the child nodes
-    /// differ in degree or node family; allocation, device and communication errors;
+    /// `ConnectivityNotCreated`; agreed across ranks: `TooLarge` if a child origin id does not fit
+    /// i64, `UnsupportedDegree` or `UnsupportedNodeFamily` if the cells that give the child nodes
+    /// differ in degree or node family. Allocation, device and communication errors;
     /// `RemoteFailure` if another rank failed.
     ///
     /// # Example
@@ -885,9 +1154,11 @@ impl<F: Real, C: Comm> Mesh<F, D3, D3, C> {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mut mesh: VolumeMesh<f32> =
-    ///     tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 2).build(&client)?;
+    /// // client: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: a `VolumeMesh<f32>`, the unit cube as one hexahedron of degree 2; the tutorial
+    /// // "Building a mesh" shows how to make a mesh.
+    /// # let mut mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Hexahedron, 1, 2).build(&client)?;
     /// mesh.create_connectivity(1, 3)?;
     /// // All twelve edges of the unit cube.
     /// let edges = MeshTags {
