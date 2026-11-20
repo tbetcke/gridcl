@@ -30,6 +30,7 @@ pub fn run(client: &Client, path: &Path) -> tetraloma::Result<()> {
 }
 
 fn read<F: Real>(client: &Client, path: &Path) -> tetraloma::Result<()> {
+    // ANCHOR: read
     // The file decides D_TOP and D_GEO at run time ...
     let any: AnyMesh<F> = gmsh::read(client, Serial, path, GmshOptions::default())?;
     println!(
@@ -41,6 +42,7 @@ fn read<F: Real>(client: &Client, path: &Path) -> tetraloma::Result<()> {
 
     // ... the program fixes them once.
     let head: VolumeMesh<F> = any.try_into()?;
+    // ANCHOR_END: read
     let owned: usize = head
         .cell_blocks()
         .iter()
@@ -56,6 +58,7 @@ fn read<F: Real>(client: &Client, path: &Path) -> tetraloma::Result<()> {
         println!("  {:?}: {} cells", block.cell, block.index_map.num_owned());
     }
 
+    // ANCHOR: regions
     // The physical groups of the cells, by name.
     let mut in_regions = 0;
     for name in ["hex", "tet"] {
@@ -64,6 +67,7 @@ fn read<F: Real>(client: &Client, path: &Path) -> tetraloma::Result<()> {
         in_regions += region.indices.len();
     }
     assert_eq!(in_regions, owned, "the regions do not cover the mesh");
+    // ANCHOR_END: regions
 
     let volume = head.measure(1)?;
     println!("  volume {volume}");

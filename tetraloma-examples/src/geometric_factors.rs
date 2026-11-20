@@ -76,12 +76,14 @@ fn factors<F: Real>(client: &Client) -> tetraloma::Result<()> {
 /// The geometric factors of the sphere at degree `p`.
 fn degree<F: Real>(client: &Client, p: u32) -> tetraloma::Result<Errors> {
     let mesh: SurfaceMesh<F> = tetraloma_testing::sphere(0, p).build(client)?;
+    // ANCHOR: factors
     let rule = QuadRule::for_grid(&mesh, 2 * p)?;
     let x = mesh.physical_points(&rule)?;
     let j = mesh.jacobians(&rule)?;
     let detj = mesh.detj(&rule)?;
     let k = mesh.pseudo_inverse_jacobians(&rule)?;
     let n = mesh.normals(&rule)?;
+    // ANCHOR_END: factors
 
     let tol = 100.0 * crate::tol::<F>();
     let (mut radius, mut angle, mut points) = (0.0f64, 0.0f64, 0);
@@ -107,8 +109,10 @@ fn degree<F: Real>(client: &Client, p: u32) -> tetraloma::Result<Errors> {
         }
         assert!(detj.iter().all(|d| d.widen() > 0.0), "p = {p}: det J ≤ 0");
     }
+    // ANCHOR: area
     let sphere = 4.0 * std::f64::consts::PI;
     let area = (mesh.measure(2 * p + 2)? - sphere).abs() / sphere;
+    // ANCHOR_END: area
     println!("  {p:>2}  {points:>6}  {radius:>11.3e}  {angle:>15.3e}  {area:>10.3e}");
     Ok(Errors { radius, area })
 }

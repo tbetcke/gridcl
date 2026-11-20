@@ -39,6 +39,7 @@ fn write<F: Real + VtkScalar>(client: &Client, out_dir: &Path) -> tetraloma::Res
         crate::scalar_name::<F>()
     );
 
+    // ANCHOR: write
     // One vector per geometry node: its coordinates, with the mesh's origin added back.
     let origin = scalp.origin();
     let position: Vec<F> = scalp
@@ -60,6 +61,7 @@ fn write<F: Real + VtkScalar>(client: &Client, out_dir: &Path) -> tetraloma::Res
     VtkWriter::vtu(&linear)
         .lagrange(false)
         .write_any(AnyMeshRef::Surface(&scalp))?; // erased path, no clone
+    // ANCHOR_END: write
 
     for stem in [&lagrange, &linear] {
         let path = stem.with_extension("vtu");
