@@ -182,9 +182,9 @@ jobs:
         env:
           TETRALOMA_EXAMPLES_PROFILE: debug
       # Feature hdf5 with the parallel HDF5 of this MPI's Ubuntu package (ADR-0035, rules 8-9;
-      # 1.10.10 on Ubuntu 24.04 for Open MPI, the H5_VERSION the next step prints on 26.04 for
-      # MPICH): the gather path (tetraloma-io, ThreadComm) and the MPI-IO path
-      # (vtkhdf_parallel), read back by VTK.
+      # 1.10.10 on Ubuntu 24.04 for Open MPI, 1.14.6 on Ubuntu 26.04 for MPICH; the next step
+      # fails outside 1.10.10-2.2.0 or without H5_HAVE_PARALLEL): the gather path (tetraloma-io,
+      # ThreadComm) and the MPI-IO path (vtkhdf_parallel), read back by VTK.
       - name: HDF5_DIR for the parallel HDF5 of this MPI
         if: matrix.part == 'hdf5'
         run: |
@@ -196,7 +196,21 @@ jobs:
           mkdir -p "$root"
           ln -sfn /usr/include/hdf5/${{ matrix.mpi }} "$root/include"
           ln -sfn "$(dirname "$so")" "$root/lib"
-          grep -E '^#define H5_(VERSION|HAVE_PARALLEL) ' "$root/include/H5pubconf.h"
+          conf=$root/include/H5pubconf.h
+          grep -E '^#define H5_(VERSION|HAVE_PARALLEL) ' "$conf"
+          # ADR-0035: hdf5-metno 0.15.1 supports 1.10.10 to 2.2.0, and the MPI-IO path needs a
+          # parallel build (as scripts/check-local-tools.sh checks on the Mac).
+          version=$(sed -n 's/^#define H5_VERSION "\(.*\)"/\1/p' "$conf")
+          test -n "$version"
+          if [[ $(printf '%s\n' 1.10.10 "$version" | sort -V | head -n 1) != 1.10.10 ||
+                $(printf '%s\n' 2.2.0 "$version" | sort -V | tail -n 1) != 2.2.0 ]]; then
+            echo "::error::HDF5 $version is outside 1.10.10-2.2.0 (ADR-0035)"
+            exit 1
+          fi
+          if ! grep -q '^#define H5_HAVE_PARALLEL 1' "$conf"; then
+            echo "::error::HDF5 $version in $root is not a parallel build"
+            exit 1
+          fi
           echo "HDF5_DIR=$root" >> "$GITHUB_ENV"
       - if: matrix.part == 'hdf5'
         run: cargo clippy -p tetraloma-mpi-tests --features mpi,hdf5 --all-targets -- -D warnings
