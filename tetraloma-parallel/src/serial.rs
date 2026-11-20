@@ -3,7 +3,11 @@
 use crate::comm::{dtype_size, identity_bytes};
 use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result};
 
-/// One rank; collectives are no-ops.
+/// The communicator of one process: one rank, whose collectives return at once.
+///
+/// A serial mesh uses it, and every distributed method works on it too ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+/// Its collectives behave as those of a one-rank MPI communicator:
 ///
 /// - `rank()` is 0, `size()` is 1 and `barrier()` returns at once.
 /// - `all_reduce_bytes` leaves `buf` unchanged.

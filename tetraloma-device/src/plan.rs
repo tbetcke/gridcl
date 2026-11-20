@@ -16,19 +16,28 @@ const CPU_LINE_BYTES: usize = 128;
 /// Buffers a library kernel may bind (docs/design.md, "Device limits").
 const MAX_KERNEL_BUFFERS: u32 = 6;
 
-/// Shape of one launch on the current device. Not `Copy`: `CubeCount` is not `Copy` in
-/// CubeCL 0.11 (ADR-0010).
+// ADR-0010 (not `Copy`: `CubeCount` is not `Copy` in CubeCL 0.11); the loop of Listing B5.
+/// The shape of one kernel launch on a device: the cube count, the cube dimension, the vector
+/// size and the vectors each unit processes.
 ///
-/// Kernels compute `first = ABSOLUTE_POS * items_per_unit` and loop over `items_per_unit`
-/// vectors, checking `v < num_vectors` (Listing B5). A unit owns `items_per_unit ·
-/// vector_size` consecutive scalars, and a cube owns `cube_dim` times as many.
+/// tetraloma's kernels take their launch shape only from a plan, which
+/// [`elementwise`](Self::elementwise) and [`per_group`](Self::per_group) compute from the device's
+/// limits and the [`VectorPolicy`](crate::VectorPolicy). A kernel computes `first = ABSOLUTE_POS *
+/// items_per_unit` and loops over `items_per_unit` vectors from there, skipping those at or past
+/// `num_vectors`. A unit thus owns `items_per_unit · vector_size` consecutive scalars, and a cube
+/// `cube_dim` times as many. [Writing
+/// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch-shape) explains
+/// launch shapes for kernels of your own, and [Compute
+/// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings) the settings
+/// that change them.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{KernelKind, LaunchPlan};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let plan = LaunchPlan::elementwise(&client, KernelKind::Fill, 1_000_000, 4, 16, 1).unwrap();
 /// let cubes = match plan.cube_count {
 ///     cubecl::prelude::CubeCount::Static(x, y, z) => (x * y * z) as u64,
@@ -49,29 +58,33 @@ pub struct LaunchPlan {
     pub items_per_unit: u32,
     /// Vectors covered, padding included.
     pub num_vectors: u32,
-    /// Units that cooperate on one group; 1 for [`elementwise`](Self::elementwise)
-    /// (ADR-0042).
+    /// Units that cooperate on one group; 1 for [`elementwise`](Self::elementwise).
     pub units_per_group: u32,
 }
 
 impl LaunchPlan {
-    /// `items` scalar items; `max_vector` the widest size the data layout allows (a divisor of
-    /// `VECTOR_PAD`); `live` the vectors the kernel keeps live, for the register budget.
+    // ADR-0010 (cube count), ADR-0011 (device limits), ADR-0015 (CPU blocks), ADR-0017
+    // (performance cores); the scoped overrides of `testing` apply in tetraloma's tests.
+    /// The plan of an element-wise kernel of the family `kind` over `items` scalar items of
+    /// `elem_bytes` bytes each. `max_vector` is the widest vector size the data layout allows
+    /// (a power of two dividing `VECTOR_PAD`), and `live` the number of vectors the kernel keeps
+    /// live at once, which bounds the vector size by the device's registers.
     ///
-    /// - **Vector size:** the largest power of two not above the policy's size, `max_vector`,
-    ///   the device's `hardware.max_vector_size` (ADR-0011) and the widest of
-    ///   `vector_sizes_in_registers(elem_bytes, live)`; overridden by `TETRALOMA_VECTOR_SIZE`,
-    ///   `testing::with_vector_size` or `testing::with_kind_vector_size` (see
-    ///   [`VectorSizeOverride`]). `KernelKind::Scalar` is always 1.
-    /// - **GPUs:** `cube_dim` is 256, or `max_units_per_cube` (at most `max_cube_dim.0`) if
-    ///   that is smaller; `items_per_unit` is 1.
-    /// - **CPUs:** `cube_dim` equals `max_units_per_cube` (at most `max_cube_dim.0`,
-    ///   ADR-0011), one unit per hardware thread, or the performance-core count where
-    ///   `VectorPolicy::cpu_units(kind, elem_bytes)` (or `testing::with_cpu_units`) says
-    ///   `Performance` and the CPU reports a smaller count (macOS; ADR-0017). Each unit takes
-    ///   blocks of `VectorPolicy::cpu_block_bytes(kind, elem_bytes)` of the widest stream
-    ///   (a power of two from 4 to 64 KiB), rounded to whole 128-byte lines (ADR-0015).
-    /// - **Cube count:** x up to `max_cube_count.0`, then y, then z (ADR-0010).
+    /// - **Vector size:** the largest power of two not above the policy's size for `kind`,
+    ///   `max_vector`, the device's `hardware.max_vector_size` and the widest size whose `live`
+    ///   vectors fit the registers. The environment variable `TETRALOMA_VECTOR_SIZE` overrides the
+    ///   policy (see [`VectorSizeOverride`] and [Compute
+    ///   devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings)).
+    ///   `KernelKind::Scalar` is always 1.
+    /// - **GPUs:** `cube_dim` is 256, or the device's `max_units_per_cube` (at most
+    ///   `max_cube_dim.0`) if that is smaller; `items_per_unit` is 1.
+    /// - **CPUs:** `cube_dim` is `max_units_per_cube` (at most `max_cube_dim.0`), one unit per
+    ///   hardware thread, or the number of performance cores where
+    ///   [`VectorPolicy::cpu_units`](crate::VectorPolicy::cpu_units) says `Performance` and the
+    ///   CPU reports fewer of them (macOS). Each unit processes blocks of about
+    ///   [`VectorPolicy::cpu_block_bytes`](crate::VectorPolicy::cpu_block_bytes) of the widest
+    ///   stream, a power of two from 4 to 64 KiB rounded to whole 128-byte cache lines.
+    /// - **Cube count:** along x up to `max_cube_count.0`, then y, then z.
     ///
     /// # Errors
     ///
@@ -87,7 +100,8 @@ impl LaunchPlan {
     /// ```
     /// use tetraloma_device::{KernelKind, LaunchPlan, VECTOR_PAD};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // 100 items pad to 112 = 7 · VECTOR_PAD scalars, whatever the vector size.
     /// let plan = LaunchPlan::elementwise(&client, KernelKind::Copy, 100, 4, VECTOR_PAD, 2).unwrap();
     /// assert_eq!(plan.num_vectors as usize * plan.vector_size, 7 * VECTOR_PAD);
@@ -114,8 +128,13 @@ impl LaunchPlan {
         Ok(plan)
     }
 
-    /// `groups` independent work groups (a cell or a tile of cells), each run by
-    /// `units_per_group` units: the largest power of two ≤ min(`units`, `max_units_per_cube`).
+    // ADR-0042 (cooperative groups), ADR-0045 (CPU threads), ADR-0017 (performance cores).
+    /// The plan of a kernel over `groups` independent work groups (a cell or a tile of cells), each
+    /// run by `units_per_group` cooperating units: the largest power of two ≤ min(`units`,
+    /// `max_units_per_cube`). `shared_bytes` is the shared memory each cube needs; the other
+    /// arguments are those of [`elementwise`](Self::elementwise). [Compute
+    /// devices](https://tetracl.github.io/tetraloma/devices.html#performance-settings) lists the
+    /// settings that change the plan.
     ///
     /// Groups are items as in [`elementwise`](Self::elementwise): the vector size follows
     /// the same rule and overrides, lanes are independent groups, and `num_vectors` counts
@@ -130,16 +149,15 @@ impl LaunchPlan {
     ///   `units_per_group` is at most that too; `items_per_unit` is 1.
     /// - **CPUs:** a cube holds `units_per_group` × (groups per cube) units, as many as
     ///   `elementwise`'s CPU units U (the hardware threads, or the performance cores where
-    ///   the vector policy says so, ADR-0017) allow: `units_per_group` × ⌊U /
+    ///   the vector policy says so) allow: `units_per_group` × ⌊U /
     ///   `units_per_group`⌋, so `units_per_group` is at most U. Each group slot visits blocks
     ///   of `items_per_unit` consecutive vectors of groups, sized as `elementwise`'s blocks
     ///   (whole 128-byte lines of about `VectorPolicy::cpu_block_bytes`). The CPU runtime
     ///   runs one thread per unit of a cube, so a CPU plan uses the threads `elementwise`
-    ///   uses (ADR-0045).
+    ///   uses.
     /// - `shared_bytes` per cube is checked against the device's shared-memory limit
     ///   (`hardware.max_shared_memory_size`), along with `max_cube_dim`,
-    ///   `max_units_per_cube` and `max_cube_count`, with usize overflow checks (ADR-0042,
-    ///   item 4).
+    ///   `max_units_per_cube` and `max_cube_count`, with `usize` overflow checks.
     ///
     /// Reductions over a group's units are pairwise trees over a fixed comptime leaf count
     /// L: each unit reduces its L / `units_per_group` consecutive leaves pairwise, then the
@@ -164,7 +182,8 @@ impl LaunchPlan {
     /// ```
     /// use tetraloma_device::{KernelKind, LaunchPlan};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // 1000 cells, up to 48 units per cell, 1 KiB of shared memory per cube.
     /// let plan = LaunchPlan::per_group(&client, KernelKind::GeomFactors, 1000, 48, 4, 16, 2, 1024)
     ///     .unwrap();
@@ -468,9 +487,12 @@ fn spread_cubes(cubes: usize, max: (u32, u32, u32)) -> Result<(u32, u32, u32)> {
     Ok((fit(x)?, fit(y)?, fit(z)?))
 }
 
-/// Debug check of a launch's buffer count: at most six, and at most the device's
-/// `max_bindings` (read through [`device_properties`](crate::device_properties)). Every kernel
-/// launcher calls it once per launch; release builds skip the check.
+/// Checks in debug builds that a launch binds at most `n` ≤ six buffers, and at most the
+/// device's `max_bindings` (read through [`device_properties`](crate::device_properties)).
+///
+/// Every kernel launcher of tetraloma calls it once per launch; release builds skip the check. Six
+/// buffers is the limit that lets every kernel run on every backend ([Writing
+/// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#rules-for-downstream-kernels)).
 ///
 /// # Panics
 ///
@@ -481,7 +503,8 @@ fn spread_cubes(cubes: usize, max: (u32, u32, u32)) -> Result<(u32, u32, u32)> {
 /// ```
 /// use tetraloma_device::debug_assert_bindings;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// debug_assert_bindings(&client, 4);
 /// ```
 pub fn debug_assert_bindings(client: &Client, n: u32) {

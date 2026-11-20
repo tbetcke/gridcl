@@ -13,18 +13,25 @@ use crate::comm::{dtype_size, identity_bytes};
 use crate::counts::checked_counts;
 use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result};
 
-/// An MPI communicator. It wraps rsmpi's communicator in an `Rc`, so it is deliberately not
-/// `Send` (docs/design.md, "MPI bindings"); clones and [`CommDyn::duplicate`] refer to the
-/// same communicator.
+// Design: "MPI bindings" (deliberately not `Send`); ADR-0011 (the identity on rank 0).
+/// An MPI communicator; feature `mpi`.
 ///
-/// - `exscan_bytes` writes the identity of the operation on rank 0 (ADR-0011).
+/// It wraps a communicator of the `mpi` crate (rsmpi) in a reference count, so clones and
+/// [`CommDyn::duplicate`] refer to the same communicator, and it is not `Send`: each rank keeps its
+/// mesh on one host thread. tetraloma does not initialise MPI: your program does, with
+/// `mpi::initialize()`, and wraps the world communicator with [`Mpi::world`] ([Distributed
+/// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator);
+/// [Cargo features](https://tetracl.github.io/tetraloma/features.html#mpi)).
+///
+/// - `exscan_bytes` writes the identity of the operation on rank 0, where MPI leaves the result
+///   undefined.
 /// - Counts or displacements above `i32::MAX` give `GridError::MessageTooLarge`.
-/// - Neighbourhood exchanges run on the graph communicator of a [`Neighbourhood`] made on
+/// - Neighbourhood exchanges run on the MPI graph communicator of a [`Neighbourhood`] made on
 ///   this communicator (`MPI_Neighbor_alltoallv`).
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust,standalone_crate
 /// use tetraloma_parallel::{CommDyn, CommExt, Mpi};
 ///
 /// let universe = mpi::initialize().expect("MPI is not initialised yet");
@@ -36,11 +43,37 @@ use crate::{CommDyn, DType, GridError, Neighbourhood, ReduceOp, Result};
 pub struct Mpi(Rc<SimpleCommunicator>);
 
 impl Mpi {
-    /// The world communicator of `universe`.
+    /// The communicator of all ranks of the program, `MPI_COMM_WORLD`, from the `universe` that
+    /// `mpi::initialize()` returns. MPI stays initialised while `universe` lives ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```rust,standalone_crate
+    /// use tetraloma_parallel::{CommDyn, Mpi};
+    ///
+    /// // Once per process; dropping `universe` finalises MPI.
+    /// let universe = mpi::initialize().expect("MPI is not initialised yet");
+    /// let world = Mpi::world(&universe);
+    /// assert!(world.rank() < world.size());
+    /// ```
     pub fn world(universe: &mpi::environment::Universe) -> Mpi {
         Mpi(Rc::new(universe.world()))
     }
-    /// A communicator from rsmpi's.
+    /// Wraps a communicator of the `mpi` crate, for example one split off the world communicator
+    /// ([Distributed
+    /// meshes](https://tetracl.github.io/tetraloma/tutorials/distributed.html#building-on-a-communicator)).
+    ///
+    /// # Example
+    ///
+    /// ```rust,standalone_crate
+    /// use tetraloma_parallel::{CommDyn, CommExt, Mpi};
+    ///
+    /// let universe = mpi::initialize().expect("MPI is not initialised yet");
+    /// // Any communicator of the `mpi` crate; here the world communicator itself.
+    /// let comm = Mpi::new(universe.world());
+    /// assert_eq!(comm.sum(1_u64) as usize, comm.size());
+    /// ```
     pub fn new(comm: SimpleCommunicator) -> Mpi {
         Mpi(Rc::new(comm))
     }

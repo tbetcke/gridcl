@@ -34,16 +34,23 @@ thread_local! {
     static PLANS: RefCell<Option<Vec<(KernelKind, LaunchPlan)>>> = const { RefCell::new(None) };
 }
 
-/// The properties tetraloma-device reads for `client`: the injected ones inside
-/// `testing::with_properties` (feature `testing`), else the client's own. Kernel launchers in
-/// every crate read device limits through it, so injected limits reach them (ADR-0012).
+// ADR-0012: kernel launchers in every crate read device limits through it, so the limits that
+// `testing::with_properties` injects reach them.
+/// The properties of `client`'s device that tetraloma's kernels use: its limits (bindings, cube
+/// sizes, shared memory, the largest allocation) and the types it supports.
+///
+/// They are the client's own properties, `client.properties()`. tetraloma's own tests may replace
+/// them for a scope to imitate a device with smaller limits; a program sees the device's real ones.
+/// Read them to choose a launch shape for a kernel of your own, or to check for f64 before you
+/// build a mesh ([f64 support](https://tetracl.github.io/tetraloma/devices.html#f64-support)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::device_properties;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let props = device_properties(&client);
 /// assert_eq!(props.memory.max_page_size, client.properties().memory.max_page_size);
 /// ```

@@ -506,7 +506,12 @@ def parse_api_page(api: Path, page: Path):
         path = "::".join(dirs)
     heading = main.find(lambda n: n.has_class(MAIN_HEADING_CLASS))
     src = _src_of(heading)
-    top = main.find(lambda n: n.tag == "details" and n.has_class(TOP_DOC_CLASS))
+    if m and src is None:
+        # An item of a crate outside the site (`--no-deps`), inlined by a re-export (CubeCL's
+        # `Client`, re-exported by tetraloma-device): not an item of the audited crates (rule
+        # 6.2), and its docs are that crate's.
+        return page_crate, [], []
+    top =main.find(lambda n: n.tag == "details" and n.has_class(TOP_DOC_CLASS))
     doc = None
     if top is not None:
         doc = next((c for c in top.children if isinstance(c, Node) and c.has_class(DOCBLOCK_CLASS)), None)

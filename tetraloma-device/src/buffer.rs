@@ -8,33 +8,46 @@ use cubecl::server::Handle;
 use crate::primitives::launch_fill;
 use crate::{GridError, Result, testing};
 
-/// Every allocation is padded to a multiple of `VECTOR_PAD` elements, the widest vector size
-/// any device class uses, so vectorized kernels never need a scalar tail.
+/// The padding of every device buffer: its allocation holds a multiple of `VECTOR_PAD` = 16
+/// elements, at least one block, so vectorised kernels need no scalar tail.
+///
+/// 16 is the widest vector size of any device class. A kernel of your own may read up to the end of
+/// the padding ([Writing
+/// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, VECTOR_PAD};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let b = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
 /// assert_eq!(b.padded_len(), VECTOR_PAD);
 /// ```
 pub const VECTOR_PAD: usize = 16;
 
-/// Typed, length-carrying view of one CubeCL allocation. Not `Clone`: a second view of the same
-/// memory is made explicitly with [`share`](Self::share), an independent copy with
-/// [`deep_clone`](Self::deep_clone).
+// Listing S1.
+/// A typed array of `len()` elements of `T` in device memory.
 ///
-/// Every constructor checks the allocation against the device's `max_page_size` and returns
-/// `GridError::AllocationTooLarge` above it.
+/// Meshes hand out their data as device buffers, and kernels read and write them. The
+/// allocation is padded to a multiple of [`VECTOR_PAD`] elements. Copies between host and
+/// device are explicit and blocking: [`from_host`](Self::from_host) and
+/// [`write_host`](Self::write_host) upload, [`to_host`](Self::to_host) downloads ([Host–device
+/// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+///
+/// A buffer is not `Clone`: [`share`](Self::share) makes a second view of the same memory, and
+/// [`deep_clone`](Self::deep_clone) an independent copy. Every constructor checks the
+/// allocation against the largest allocation the device allows, its `max_page_size`, and
+/// returns `GridError::AllocationTooLarge` above it.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::DeviceBuffer;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let b = DeviceBuffer::from_host(&client, &[1.5f32, 2.5]).unwrap();
 /// assert_eq!(b.len(), 2);
 /// assert_eq!(b.to_host().unwrap(), vec![1.5, 2.5]);
@@ -50,14 +63,22 @@ pub struct DeviceBuffer<T: CubeElement> {
 // Listing S1 has no `is_empty`; the public API follows it.
 #[allow(clippy::len_without_is_empty)]
 impl<T: CubeElement> DeviceBuffer<T> {
-    /// Uploads `data` and zeroes the padding.
+    /// A buffer holding a copy of `data`, uploaded to `client`'s device; the padding is zero. The
+    /// copy blocks until it is done ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+    ///
+    /// # Errors
+    ///
+    /// `AllocationTooLarge` if the padded buffer exceeds the device's largest allocation;
+    /// `TooLarge` if its length overflows `usize`.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::from_host(&client, &[7i32; 20]).unwrap();
     /// assert_eq!((b.len(), b.padded_len()), (20, 32));
     /// ```
@@ -70,16 +91,22 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Ok(Self::new(handle, data.len(), padded, client))
     }
 
-    /// An allocation of `len` elements whose contents, padding included, are unspecified: only
-    /// for outputs that a kernel fully writes. An empty buffer still allocates one
-    /// `VECTOR_PAD` block, so no handle has zero size.
+    /// A buffer of `len` elements whose contents, padding included, are unspecified: only for
+    /// outputs that a kernel writes completely. An empty buffer still allocates one `VECTOR_PAD`
+    /// block, so no allocation has zero size ([Writing
+    /// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
+    ///
+    /// # Errors
+    ///
+    /// As for [`from_host`](Self::from_host).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{DeviceBuffer, VECTOR_PAD};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::<f32>::uninit(&client, 0).unwrap();
     /// assert_eq!((b.len(), b.padded_len()), (0, VECTOR_PAD));
     /// ```
@@ -89,14 +116,21 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Ok(Self::new(client.empty(bytes), len, padded, client))
     }
 
-    /// `len` zeros, padding included (uninit and the fill kernel, over u32 words).
+    /// A buffer of `len` zeros, padding included, written on the device by a kernel: nothing is
+    /// uploaded ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+    ///
+    /// # Errors
+    ///
+    /// As for [`from_host`](Self::from_host).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let z = DeviceBuffer::<f32>::zeros(&client, 3).unwrap();
     /// assert_eq!(z.to_host().unwrap(), vec![0.0; 3]);
     /// ```
@@ -108,14 +142,17 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Ok(buffer)
     }
 
-    /// A second view of the same allocation; aliasing is explicit.
+    /// A second view of the same allocation: a write through either view changes both. Nothing is
+    /// copied ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let a = DeviceBuffer::from_host(&client, &[1u32, 2]).unwrap();
     /// let b = a.share();
     /// assert_eq!(b.to_host().unwrap(), a.to_host().unwrap());
@@ -124,15 +161,22 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Self::new(self.handle.clone(), self.len, self.padded, &self.client)
     }
 
-    /// An independent copy, made by the copy kernel (CubeCL 0.11 has no same-device copy). As
-    /// for [`copy`](crate::copy), `size_of::<T>()` must be a multiple of 4.
+    /// An independent copy on the same device, made by a copy kernel without a round trip through
+    /// the host ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)). As for
+    /// [`copy`](crate::copy), `size_of::<T>()` must be a multiple of 4, which the compiler checks.
+    ///
+    /// # Errors
+    ///
+    /// As for [`uninit`](Self::uninit).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let a = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
     /// let b = a.deep_clone().unwrap();
     /// drop(a);
@@ -144,14 +188,16 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Ok(clone)
     }
 
-    /// The logical length in elements, not bytes.
+    /// The length in elements, not bytes, without the padding ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// assert_eq!(DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap().len(), 3);
     /// assert_eq!(DeviceBuffer::<u32>::uninit(&client, 0).unwrap().len(), 0);
     /// ```
@@ -159,14 +205,17 @@ impl<T: CubeElement> DeviceBuffer<T> {
         self.len
     }
 
-    /// The allocated length in elements: `len` rounded up to `VECTOR_PAD`, at least one block.
+    /// The allocated length in elements: `len` rounded up to a multiple of [`VECTOR_PAD`], at least
+    /// one block ([Writing
+    /// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{DeviceBuffer, VECTOR_PAD};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// assert_eq!(DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap().padded_len(), VECTOR_PAD);
     /// assert_eq!(DeviceBuffer::<u32>::uninit(&client, 0).unwrap().padded_len(), VECTOR_PAD);
     /// assert_eq!(DeviceBuffer::<u32>::uninit(&client, 17).unwrap().padded_len(), 2 * VECTOR_PAD);
@@ -183,7 +232,8 @@ impl<T: CubeElement> DeviceBuffer<T> {
     /// ```
     /// use tetraloma_device::{DeviceBuffer, VECTOR_PAD};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::<f64>::uninit(&client, 17).unwrap();
     /// assert_eq!(b.footprint_bytes(), 2 * VECTOR_PAD * 8);
     /// ```
@@ -193,14 +243,17 @@ impl<T: CubeElement> DeviceBuffer<T> {
         self.padded * size_of::<T>()
     }
 
-    /// The CubeCL handle, which keeps the allocation alive.
+    /// The CubeCL handle of the allocation, for CubeCL calls of your own; it keeps the allocation
+    /// alive ([Writing
+    /// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let x = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
     /// let bytes = client.read_one(x.handle().clone()).unwrap();
     /// assert_eq!(bytes.len(), x.padded_len() * size_of::<u32>());
@@ -209,14 +262,16 @@ impl<T: CubeElement> DeviceBuffer<T> {
         &self.handle
     }
 
-    /// The client the buffer lives on.
+    /// The client of the device the buffer lives on ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let x = DeviceBuffer::from_host(&client, &[1.0f32, 2.0]).unwrap();
     /// let y = DeviceBuffer::from_host(x.client(), &[3.0f32, 4.0]).unwrap();
     /// assert_eq!(y.client().name(), client.name());
@@ -225,14 +280,22 @@ impl<T: CubeElement> DeviceBuffer<T> {
         &self.client
     }
 
-    /// Explicit, blocking device-to-host copy of the logical length.
+    /// A copy of the `len()` elements on the host. It blocks until the device has finished the work
+    /// queued before it and the copy is done, so use it to inspect results, not inside loops
+    /// ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+    ///
+    /// # Errors
+    ///
+    /// `GridError::Server` if the device reports an error.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::from_host(&client, &[3u32, 1, 4]).unwrap();
     /// assert_eq!(b.to_host().unwrap(), vec![3, 1, 4]);
     /// ```
@@ -241,17 +304,18 @@ impl<T: CubeElement> DeviceBuffer<T> {
         decode(&bytes, self.len)
     }
 
-    /// Overwrites the buffer with `data` through `Client::write` and zeroes the padding, as
-    /// [`from_host`](DeviceBuffer::from_host) does (ADR-0026): the write covers the whole
-    /// allocation, which the CPU runtime requires. The host-staged halo exchange uploads its
-    /// receive buffer with it.
+    // ADR-0026: the write covers the whole allocation, which the CPU runtime requires; the
+    // host-staged halo exchange uploads its receive buffer with it. Pinned staging through
+    // `Client::staging` on CUDA and HIP uploads 2.4 MB about six times faster on CUDA (C23); on
+    // the other runtimes it would only block until the device's queue reaches it.
+    /// Overwrites the buffer with `data` from the host and zeroes the padding, as
+    /// [`from_host`](DeviceBuffer::from_host) does, without a new allocation ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
     ///
-    /// `data` is copied once, into one allocation of the padded length. On CUDA and HIP that
-    /// copy is moved into pinned host memory (`Client::staging`) before the write, which on
-    /// CUDA uploads 2.4 MB about six times faster than leaving the staging to `Client::write`
-    /// (C23). The CPU runtime and the wgpu runtimes (Metal, Vulkan) have no pinned staging, and
-    /// the call is skipped there: it would only block the caller until the device's queue
-    /// reaches it.
+    /// `data` is copied once, into host memory of the padded length. On CUDA and HIP that copy
+    /// is moved into pinned (page-locked) host memory before the upload, which makes large
+    /// uploads several times faster. The CPU runtime and the wgpu runtimes (Metal, Vulkan) have
+    /// no pinned memory and upload directly.
     ///
     /// # Errors
     ///
@@ -262,7 +326,8 @@ impl<T: CubeElement> DeviceBuffer<T> {
     /// ```
     /// use tetraloma_device::{DeviceBuffer, GridError};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let mut b = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
     /// b.write_host(&[7, 8, 9]).unwrap();
     /// assert_eq!(b.to_host().unwrap(), vec![7, 8, 9]);
@@ -291,14 +356,21 @@ impl<T: CubeElement> DeviceBuffer<T> {
         Ok(())
     }
 
-    /// Explicit device-to-host copy of the logical length.
+    /// A copy of the `len()` elements on the host, as a future: the asynchronous form of
+    /// [`to_host`](Self::to_host) ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+    ///
+    /// # Errors
+    ///
+    /// As for [`to_host`](Self::to_host).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::from_host(&client, &[2.0f32, 4.0]).unwrap();
     /// let host = cubecl::future::block_on(b.to_host_async()).unwrap();
     /// assert_eq!(host, vec![2.0, 4.0]);
@@ -308,20 +380,23 @@ impl<T: CubeElement> DeviceBuffer<T> {
         decode(&out.remove(0), self.len)
     }
 
-    /// Scalar kernel argument.
+    /// The buffer as a kernel argument of scalars, for a kernel of your own that takes it as `&[T]`
+    /// or `&mut [T]` ([Writing
+    /// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
     ///
     /// # Safety
     ///
-    /// In CubeCL 0.11 the handle's size, not the logical length, bounds the kernel's slice. The
-    /// kernel must stay within `len` and the padding, and takes its lengths as explicit
-    /// arguments.
+    /// The kernel does not check its indices: the size of the allocation, not `len()`, bounds
+    /// its slice. The kernel must stay within `len()` and the padding, and should take the
+    /// lengths it needs as explicit arguments.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::from_host(&client, &[1u32, 2, 3]).unwrap();
     /// // SAFETY: the argument is not passed to a kernel.
     /// let _arg = unsafe { b.arg() };
@@ -332,19 +407,22 @@ impl<T: CubeElement> DeviceBuffer<T> {
         unsafe { BufferArg::from_raw_parts(self.handle.clone(), self.len) }
     }
 
-    /// Argument for a kernel over `Vector<T, n>`: the padded length, counted in vectors.
+    /// The buffer as a kernel argument of vectors of `n` lanes, for a kernel of your own that
+    /// takes it as `&[Vector<T, N>]`: the padded length, counted in vectors ([Writing
+    /// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
     ///
     /// # Safety
     ///
-    /// As for [`arg`](Self::arg); kernels take `num_vectors` explicitly, as in Listing B5.
-    /// `n` must be a power of two that divides `VECTOR_PAD`.
+    /// As for [`arg`](Self::arg); the kernel should take its number of vectors as an explicit
+    /// argument. `n` must be a power of two that divides [`VECTOR_PAD`].
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::DeviceBuffer;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let b = DeviceBuffer::from_host(&client, &[0.5f32; 40]).unwrap();
     /// // SAFETY: the argument is not passed to a kernel.
     /// let _arg = unsafe { b.vector_arg(4) };
@@ -367,9 +445,12 @@ impl<T: CubeElement> DeviceBuffer<T> {
     }
 }
 
-/// `len` rounded up to `VECTOR_PAD`: the allocated length of a buffer of `len` elements, and the
-/// plane stride of `SortKeys`. An empty buffer still gets one block, so no handle has zero size
-/// (wgpu rejects zero-size bindings); `len()` stays 0.
+/// `len` rounded up to a multiple of [`VECTOR_PAD`], at least one block: the allocated length of
+/// a buffer of `len` elements, and the plane stride of [`SortKeys`](crate::SortKeys).
+///
+/// An empty buffer still gets one block, because some backends reject bindings of size zero; its
+/// `len()` stays 0 ([Writing
+/// kernels](https://tetracl.github.io/tetraloma/tutorials/kernels.html#the-launch)).
 ///
 /// # Errors
 ///
@@ -435,14 +516,19 @@ fn decode<T: CubeElement>(bytes: &[u8], len: usize) -> Result<Vec<T>> {
     Ok(out)
 }
 
-/// Fixed number of entries per row (cell -> vertices, etc.).
+/// Rows of a fixed length in one device buffer: row `i` is `data[i * stride..(i + 1) * stride]`.
+///
+/// A cell block's vertices and its downward connectivity, such as cell → edges, are strided:
+/// every cell has the same number of them ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, DeviceStrided};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let triangles = DeviceStrided { data: DeviceBuffer::from_host(&client, &[0u32, 1, 2, 1, 3, 2]).unwrap(), stride: 3 };
 /// assert_eq!(triangles.data.len() / triangles.stride as usize, 2);
 /// ```
@@ -453,14 +539,20 @@ pub struct DeviceStrided<T: CubeElement> {
     pub stride: u32,
 }
 
-/// Variable-length rows (facet -> cells, vertex -> cells).
+/// Rows of different lengths in compressed sparse row (CSR) form: row `i` is
+/// `indices[offsets[i]..offsets[i + 1]]`.
+///
+/// Upward connectivity, such as facet → cells or vertex → cells, is stored this way, because a
+/// boundary facet has one cell and an interior facet two ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#connectivity)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, DeviceCsr};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let csr = DeviceCsr {
 ///     offsets: DeviceBuffer::from_host(&client, &[0u32, 2, 3]).unwrap(),
 ///     indices: DeviceBuffer::from_host(&client, &[4u32, 5, 6]).unwrap(),

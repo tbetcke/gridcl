@@ -23,15 +23,24 @@ fn copy_kernel<N: Size>(
     }
 }
 
-/// Copies `src` into `dst`, padding included. Moves u32 words, so `size_of::<T>()` must be a
-/// multiple of 4 (checked at compile time); unequal lengths give `LengthMismatch`.
+/// Copies `src` into `dst` on the device, padding included, without a round trip through the host
+/// ([Host–device
+/// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+///
+/// The kernel moves 32-bit words, so `size_of::<T>()` must be a multiple of 4, which the
+/// compiler checks.
+///
+/// # Errors
+///
+/// `LengthMismatch` if the two buffers differ in length.
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::{DeviceBuffer, copy};
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// let src = DeviceBuffer::from_host(&client, &[1.0f64, 2.0, 3.0]).unwrap();
 /// let mut dst = DeviceBuffer::<f64>::uninit(&client, 3).unwrap();
 /// copy(&src, &mut dst).unwrap();

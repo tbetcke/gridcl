@@ -5,16 +5,22 @@ use cubecl::prelude::*;
 use crate::buffer::pad_len;
 use crate::{DeviceBuffer, GridError, Result};
 
-/// `len` keys of 1..=4 u32 words, planar: word w of key i at `w * pad_len(len) + i`; word 0
-/// most significant. Each plane is padded to `VECTOR_PAD`, so the lanes of a vector are
-/// independent keys.
+/// `len()` keys of one to four `u32` words each on the device, the input of
+/// [`radix_sort`](crate::radix_sort), [`run_length`](crate::run_length) and
+/// [`unique_by_key`](crate::unique_by_key).
+///
+/// Word 0 is the most significant. The words are stored planar: word w of key i is at `w *
+/// pad_len(len) + i`, so the lanes of a vector hold independent keys. Entity creation sorts the
+/// vertex lists of sub-entities as such keys ([Meshes and
+/// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma_device::SortKeys;
 ///
-/// let client = tetraloma_testing::test_client();
+/// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
 /// // Two keys of two words, key-major: (1, 2) and (3, 4).
 /// let keys = SortKeys::from_host(&client, &[1, 2, 3, 4], 2).unwrap();
 /// assert_eq!((keys.len(), keys.num_words()), (2, 2));
@@ -32,7 +38,8 @@ pub struct SortKeys {
 // Listing S1b has no `is_empty`; the public API follows it.
 #[allow(clippy::len_without_is_empty)]
 impl SortKeys {
-    /// `len` keys of `num_words` words with unspecified contents.
+    /// `len` keys of `num_words` words with unspecified contents, for a kernel to fill ([Meshes and
+    /// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
     ///
     /// # Errors
     ///
@@ -48,7 +55,8 @@ impl SortKeys {
     /// ```
     /// use tetraloma_device::{SortKeys, VECTOR_PAD};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let keys = SortKeys::uninit(&client, 5, 3).unwrap();
     /// assert_eq!(keys.words().len(), 3 * VECTOR_PAD);
     /// ```
@@ -61,8 +69,9 @@ impl SortKeys {
         })
     }
 
-    /// Uploads key-major host keys: key i is `keys[i * num_words..(i + 1) * num_words]`.
-    /// The padding of each plane is zero.
+    /// Uploads keys from the host, given key by key: key i is `keys[i * num_words..(i + 1) *
+    /// num_words]`. The padding of each plane is zero ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
     ///
     /// # Errors
     ///
@@ -77,7 +86,8 @@ impl SortKeys {
     /// ```
     /// use tetraloma_device::SortKeys;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let keys = SortKeys::from_host(&client, &[7, 3, 5], 1).unwrap();
     /// assert_eq!(keys.to_host().unwrap(), vec![7, 3, 5]);
     /// ```
@@ -103,14 +113,20 @@ impl SortKeys {
         })
     }
 
-    /// The keys, key-major (an explicit, blocking device-to-host copy).
+    /// The keys on the host, key by key: an explicit, blocking copy ([Host–device
+    /// transfers](https://tetracl.github.io/tetraloma/devices.html#hostdevice-transfers)).
+    ///
+    /// # Errors
+    ///
+    /// Device errors, as for [`DeviceBuffer::to_host`].
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::SortKeys;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let keys = SortKeys::from_host(&client, &[1, 0, 0, 9], 2).unwrap();
     /// assert_eq!(keys.to_host().unwrap(), vec![1, 0, 0, 9]);
     /// ```
@@ -124,14 +140,16 @@ impl SortKeys {
         Ok(keys)
     }
 
-    /// The number of keys.
+    /// The number of keys ([Meshes and
+    /// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::SortKeys;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // Three two-word keys, key-major on the host.
     /// assert_eq!(SortKeys::from_host(&client, &[1, 2, 3, 4, 5, 6], 2).unwrap().len(), 3);
     /// ```
@@ -139,28 +157,33 @@ impl SortKeys {
         self.len
     }
 
-    /// Words per key, 1..=4.
+    /// The number of words per key, 1 to 4 ([Meshes and
+    /// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::SortKeys;
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// assert_eq!(SortKeys::from_host(&client, &[1, 2, 3, 4, 5, 6], 2).unwrap().num_words(), 2);
     /// ```
     pub fn num_words(&self) -> usize {
         self.num_words
     }
 
-    /// The planar word buffer: `num_words · pad_len(len)` words.
+    /// The planar word buffer, `num_words · pad_len(len)` words, for kernels that read the keys
+    /// ([Meshes and
+    /// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{SortKeys, VECTOR_PAD};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// // Keys [1, 2] and [3, 4]: word 0 of every key comes first, then word 1.
     /// let keys = SortKeys::from_host(&client, &[1, 2, 3, 4], 2).unwrap();
     /// let planar = keys.words().to_host().unwrap();
@@ -172,14 +195,16 @@ impl SortKeys {
         &self.words
     }
 
-    /// The planar word buffer, mutable.
+    /// The planar word buffer, for kernels that write the keys ([Meshes and
+    /// topology](https://tetracl.github.io/tetraloma/concepts/meshes.html#cells-and-entities)).
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma_device::{SortKeys, fill};
     ///
-    /// let client = tetraloma_testing::test_client();
+    /// // `client`: a CubeCL client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
     /// let mut keys = SortKeys::from_host(&client, &[5, 6, 7], 1).unwrap();
     /// fill(keys.words_mut(), 0u32).unwrap();
     /// assert_eq!(keys.to_host().unwrap(), vec![0, 0, 0]);
