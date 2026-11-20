@@ -14,6 +14,7 @@ pub mod oracle;
 pub mod parallel;
 pub mod partition;
 pub mod reference;
+mod world_size;
 
 pub use comm::ThreadComm;
 pub use meshes::{
@@ -21,6 +22,7 @@ pub use meshes::{
     hemisphere, hex_prism_pyramid_box, interval_box, mixed_box, mixed_surface, mobius_strip,
     sphere, square_box, triangle_strip, y_junction,
 };
+pub use world_size::{EXPECT_RANKS_VAR, check_world_size, check_world_size_against};
 
 use cubecl::Device;
 use cubecl::device::{DeviceUnavailable, MetalDevice, WgpuDeviceKind};
