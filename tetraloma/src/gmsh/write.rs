@@ -16,30 +16,42 @@ use tetraloma_parallel::Comm;
 use crate::io_download::{self, GmshNumbering, agree_write};
 use crate::{AnyMeshRef, Mesh, MeshTags};
 
-/// Writes meshes as Gmsh MSH 4.1 files, ASCII by default (ADR-0022, item 10; ADR-0035, item
-/// 11).
+// Design: "Import and export / Gmsh MSH 4.1"; ADR-0022, item 10; ADR-0035, item 11.
+/// Writes meshes as Gmsh MSH 4.1 files, ASCII by default.
 ///
-/// - Node tags are the vertex origin ids; the other nodes are numbered after the largest vertex
-///   id, in global node order. Element tags are the cell origin ids; tag elements are numbered
-///   after the largest cell id. Tags below 1 are shifted by one constant per kind so that the
-///   smallest is 1. The numbering is global, so one rank gives the serial numbering and every
-///   file of a distributed mesh agrees with the gathered file.
-/// - Tagged entities of dimension < D_TOP are written as linear tag elements from
-///   `EntityBlock::vertices` (canonical A.6 orientation); cells carry their physical and
-///   elementary tags. A mesh without tags gets one entity with tag 1.
-/// - `$Entities` is rebuilt from the elementary tags: one entity per (elementary tag, set of
-///   physical tags).
-/// - On more than one rank the owned cells, their nodes and the owned tag entities are
-///   gathered to rank 0, which writes the file: cells by (rank, owned order), nodes in global
-///   node order. [`partitioned`](GmshWriter::partitioned) writes one file per rank instead.
+/// - The node tags of the vertices are their origin ids; the other geometry nodes are numbered
+///   after the largest vertex id, in global node order. The element tags of the cells are
+///   their origin ids; tag elements are numbered after the largest cell id. If the smallest id
+///   of a kind is below 1, all ids of that kind are shifted by one constant so that the
+///   smallest becomes 1. The numbering is global: a distributed mesh gets the numbers of the
+///   same mesh on one rank, and every file of a distributed mesh agrees with the gathered file.
+/// - Tagged entities of dimension below TD are written as linear tag elements from their
+///   vertices, in the canonical orientation of the reference cell, so the orientation of the
+///   original file's boundary elements is not kept. Cells carry their physical and elementary
+///   tags. A mesh without tags gets one geometric entity with tag 1.
+/// - The `$Entities` section is rebuilt from the elementary tags: one entity per pair of an
+///   elementary tag and a set of physical tags.
+/// - On more than one rank the owned cells, their nodes and the owned tagged entities are
+///   gathered to rank 0, which writes the file: cells by rank and then in owned order, nodes in
+///   global node order. [`partitioned`](GmshWriter::partitioned) writes one file per rank
+///   instead.
+///
+/// The tutorial [Reading and writing files] writes a mesh and reads it back, and
+/// [Parallel I/O] writes a distributed mesh.
+///
+/// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-gmsh
+/// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
 ///
 /// # Example
 ///
 /// ```
 /// use tetraloma::prelude::*;
 ///
-/// let client = tetraloma_testing::test_client();
-/// let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+/// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+/// # let client = tetraloma_testing::test_client();
+/// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a mesh" shows how
+/// // to build one.
+/// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
 /// let path = std::env::temp_dir().join(format!("tetraloma-doc-{}.msh", std::process::id()));
 /// gmsh::GmshWriter::new(&path).binary(true).write(&mesh)?;
 /// let back = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, &path, GmshOptions::default())?)?;
@@ -260,15 +272,32 @@ where
 }
 
 impl GmshWriter {
-    /// A writer of the file at `path`.
+    /// A writer of the file at `path`, ASCII and gathered on rank 0 unless you change it with
+    /// [`binary`](GmshWriter::binary) and [`partitioned`](GmshWriter::partitioned). Nothing
+    /// is written before [`write`](GmshWriter::write).
+    ///
+    /// The tutorial [Reading and writing files] shows the writer in use.
+    ///
+    /// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-gmsh
     ///
     /// # Example
     ///
     /// ```
-    /// use tetraloma::gmsh::GmshWriter;
+    /// use tetraloma::prelude::*;
     ///
-    /// let writer = GmshWriter::new("mesh.msh").binary(true);
-    /// # let _ = writer;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit interval as 4 cells; the tutorial "Building a mesh" shows how to build
+    /// // one.
+    /// # let mesh = tetraloma_testing::interval_box(4, 1).build::<f32, D1, D1>(&client)?;
+    /// let path = std::env::temp_dir().join(format!("tetraloma-doc-new-{}.msh", std::process::id()));
+    /// let writer = gmsh::GmshWriter::new(&path);
+    /// writer.write(&mesh)?;
+    /// let text = std::fs::read_to_string(&path).unwrap();
+    /// std::fs::remove_file(&path).ok();
+    /// // ASCII by default.
+    /// assert!(text.starts_with("$MeshFormat\n4.1 0 8\n"));
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn new(path: impl AsRef<Path>) -> Self {
         GmshWriter {
@@ -278,35 +307,68 @@ impl GmshWriter {
         }
     }
 
-    /// Binary (little-endian, 8-byte `size_t`) instead of ASCII.
+    /// Binary (little-endian, with an 8-byte `size_t`) if `binary` is true, ASCII (the default)
+    /// if false. Binary files are smaller, and [`read`](super::read) reads them in parallel,
+    /// each rank its own share.
+    ///
+    /// [Parallel I/O] explains the parallel read of binary files.
+    ///
+    /// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     ///
     /// # Example
     ///
     /// ```
-    /// use tetraloma::gmsh::GmshWriter;
+    /// use tetraloma::prelude::*;
     ///
-    /// let ascii = GmshWriter::new("mesh.msh").binary(false);
-    /// # let _ = ascii;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a mesh" shows how
+    /// // to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let path = std::env::temp_dir().join(format!("tetraloma-doc-binary-{}.msh", std::process::id()));
+    /// gmsh::GmshWriter::new(&path).binary(true).write(&mesh)?;
+    /// let bytes = std::fs::read(&path).unwrap();
+    /// std::fs::remove_file(&path).ok();
+    /// // The header names the binary format (file type 1, 8-byte size_t).
+    /// assert!(bytes.starts_with(b"$MeshFormat\n4.1 1 8\n"));
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn binary(self, binary: bool) -> Self {
         GmshWriter { binary, ..self }
     }
 
-    /// One file `<stem>_<r+1>.msh` per rank r instead of one file gathered on rank 0 (the
-    /// default; ADR-0035, item 11). The stem is the path without a
-    /// `.msh` extension. Each file holds the rank's owned cells, the nodes they use and its owned
-    /// tag entities, `$Entities` and `$PartitionedEntities` (P partitions, one partitioned
-    /// entity per entity, in partition r + 1, no ghost entities), and reads serially as that
-    /// rank's part. On one rank this is `<stem>_1.msh` with one partition.
+    /// One file `<stem>_<r+1>.msh` per rank r if `partitioned` is true, instead of one file
+    /// gathered on rank 0 (the default). The stem is the path without a `.msh` extension.
+    ///
+    /// Each file holds the rank's owned cells, the nodes they use and its owned tagged
+    /// entities, with the sections `$Entities` and `$PartitionedEntities`: P partitions for P
+    /// ranks, one partitioned entity per entity, all in partition r + 1, and no ghost
+    /// entities. Each file reads on one process as that rank's part of the mesh. On one rank
+    /// the writer writes `<stem>_1.msh` with one partition.
+    ///
+    /// [Parallel I/O] writes a distributed mesh in both ways.
+    ///
+    /// [Parallel I/O]: https://tetracl.github.io/tetraloma/tutorials/parallel-io.html#reading-gmsh-in-parallel
     ///
     /// # Example
     ///
     /// ```
-    /// use tetraloma::gmsh::GmshWriter;
+    /// use tetraloma::prelude::*;
     ///
-    /// // On 4 ranks: out/mesh_1.msh, …, out/mesh_4.msh.
-    /// let writer = GmshWriter::new("out/mesh.msh").partitioned(true);
-    /// # let _ = writer;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit square as 2 × 2 quadrilaterals; the tutorial "Building a mesh" shows how
+    /// // to build one.
+    /// # let mesh: PlanarMesh<f32> = tetraloma_testing::square_box(Cell2::Quadrilateral, 2, 1).build(&client)?;
+    /// let dir = std::env::temp_dir().join(format!("tetraloma-doc-partitioned-{}", std::process::id()));
+    /// std::fs::create_dir_all(&dir).unwrap();
+    /// // On one rank: mesh_1.msh; on 4 ranks: mesh_1.msh, …, mesh_4.msh.
+    /// gmsh::GmshWriter::new(dir.join("mesh.msh")).partitioned(true).write(&mesh)?;
+    /// let part = dir.join("mesh_1.msh");
+    /// let back = PlanarMesh::<f32>::try_from(gmsh::read(&client, Serial, &part, GmshOptions::default())?)?;
+    /// std::fs::remove_dir_all(&dir).ok();
+    /// assert!((back.measure(1)? - 1.0).abs() < 1e-5);
+    /// # Ok::<(), GridError>(())
     /// ```
     pub fn partitioned(self, partitioned: bool) -> Self {
         GmshWriter {
@@ -330,25 +392,32 @@ impl GmshWriter {
         PathBuf::from(name)
     }
 
+    // ADR-0022, items 9 and 10; ADR-0026, item 15; ADR-0035, item 11.
     /// Writes `mesh`, copying it to the host. Collective: on more than one rank every rank
-    /// calls it, and every rank returns an error if any rank fails (ADR-0035, item 11).
+    /// calls it, and every rank returns an error if any rank fails.
+    ///
+    /// Geometry on GLL nodes is written as its interpolant on equispaced nodes, the nodes that
+    /// Gmsh uses; the conversion runs on the device. [Reading and writing files] shows a write
+    /// and the read back.
+    ///
+    /// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#writing-gmsh
     ///
     /// # Errors
     ///
     /// `EntitiesNotCreated` for tags of a dimension without entities; `Io` if a file cannot be
-    /// written; `TooLarge` if a tag overflows; device errors. Errors of one rank are
-    /// `RemoteFailure` with the lowest failing rank on the others (ADR-0026, item 15).
-    ///
-    /// GLL geometry is written as its equispaced interpolant, converted on the device (ADR-0022,
-    /// item 9).
+    /// written; `TooLarge` if a tag overflows; device errors. When one rank fails, the others
+    /// return `RemoteFailure` with the lowest failing rank.
     ///
     /// # Example
     ///
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 1, 2).build(&client)?;
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit cube as tetrahedra of degree 2; the tutorial "Building a mesh" shows how
+    /// // to build one.
+    /// # let mesh: VolumeMesh<f32> = tetraloma_testing::cube_box(Cell3::Tetrahedron, 1, 2).build(&client)?;
     /// let path = std::env::temp_dir().join(format!("tetraloma-doc-write-{}.msh", std::process::id()));
     /// gmsh::GmshWriter::new(&path).write(&mesh)?;
     /// let text = std::fs::read_to_string(&path).unwrap();
@@ -366,9 +435,12 @@ impl GmshWriter {
     ///
     /// let universe = mpi::initialize().expect("MPI is not initialised yet");
     /// let comm = Mpi::world(&universe);
-    /// let client = tetraloma_testing::test_client();
-    /// let chunk = tetraloma_testing::cube_box(Cell3::Tetrahedron, 4, 1).chunk(comm.rank(), comm.size());
-    /// let mesh: VolumeMesh<f32, Mpi> = chunk.builder(&client)?.build_on(comm.clone())?;
+    /// // client: the client of this rank's compute device.
+    /// # let client = tetraloma_testing::test_client();
+    /// // mesh: the unit cube as tetrahedra, built on all ranks; the tutorial "Distributed
+    /// // meshes" shows how to build one.
+    /// # let chunk = tetraloma_testing::cube_box(Cell3::Tetrahedron, 4, 1).chunk(comm.rank(), comm.size());
+    /// # let mesh: VolumeMesh<f32, Mpi> = chunk.builder(&client)?.build_on(comm.clone())?;
     /// gmsh::GmshWriter::new("box.msh").write(&mesh)?; // box.msh, written by rank 0
     /// gmsh::GmshWriter::new("box.msh").partitioned(true).write(&mesh)?; // box_1.msh, …
     /// # }
@@ -425,7 +497,12 @@ impl GmshWriter {
         out.flush().map_err(io)
     }
 
-    /// Writes the mesh behind `mesh`.
+    /// Writes the mesh behind `mesh`, an [`AnyMesh`](crate::AnyMesh) whose dimensions are known
+    /// only at run time, as [`write`](GmshWriter::write) writes a typed mesh. Collective.
+    ///
+    /// [Reading and writing files] explains when a program keeps an `AnyMesh`.
+    ///
+    /// [Reading and writing files]: https://tetracl.github.io/tetraloma/tutorials/read-write.html#fixing-the-dimensions
     ///
     /// # Errors
     ///
@@ -436,8 +513,10 @@ impl GmshWriter {
     /// ```
     /// use tetraloma::prelude::*;
     ///
-    /// let client = tetraloma_testing::test_client();
-    /// let any = AnyMesh::Curve1(tetraloma_testing::interval_box(4, 1).build::<f32, D1, D1>(&client)?);
+    /// // client: a device client, for example `cubecl::Device::cpu()?.client()`.
+    /// # let client = tetraloma_testing::test_client();
+    /// // any: the unit interval as 4 cells, as an `AnyMesh`.
+    /// # let any = AnyMesh::Curve1(tetraloma_testing::interval_box(4, 1).build::<f32, D1, D1>(&client)?);
     /// let path = std::env::temp_dir().join(format!("tetraloma-doc-any-{}.msh", std::process::id()));
     /// gmsh::GmshWriter::new(&path).write_any(any.as_ref())?;
     /// std::fs::remove_file(&path).ok();
