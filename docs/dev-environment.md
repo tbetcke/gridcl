@@ -242,7 +242,7 @@ Fixed by M0; the verify skill, the test-runner and the hpc-test skill use them.
 | MPI on two Kathleen nodes (reviews from M6) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- 'TETRALOMA_MPIRUN_FLAGS="--map-by node:PE=5 --bind-to core" scripts/mpi-test.sh 2 4 8 16'` |
 | MPI | `scripts/mpi-test.sh 1 2 3 4` |
 | rank-count guard (a singleton launch must fail, and every rank of `-n N` with `TETRALOMA_EXPECT_RANKS=N+1`; default N = 2) | `scripts/check-rank-guard.sh [--ranks N]` |
-| rank-count guard on two Kathleen nodes (the variable reaches the second node) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- 'TETRALOMA_MPIRUN_FLAGS="--map-by node --display-map" scripts/check-rank-guard.sh --ranks 16'` |
+| rank-count guard on two Kathleen nodes (the variable reaches the second node) | `scripts/hpc/remote-test.sh kathleen --nodes 2 --ranks 16 -- 'TETRALOMA_MPIRUN_FLAGS="--map-by node:PE=5 --bind-to core" scripts/check-rank-guard.sh --ranks 16'` (16 ranks of 5 cores need both 40-core nodes) |
 | one test file (the integration tests of a crate are one executable, `integration`, with a module per file) | `cargo test -p tetraloma --test integration io_threads::` |
 | MPI on CUDA (Myriad V100; both ranks use GPU 0 until per-rank selection) | `scripts/hpc/remote-test.sh myriad-v100 --gpus 2 --ranks 2 -- scripts/mpi-test.sh` |
 | conformance | `cargo test --manifest-path conformance/Cargo.toml` |
