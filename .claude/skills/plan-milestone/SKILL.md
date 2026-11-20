@@ -1,6 +1,6 @@
 ---
 name: plan-milestone
-description: Plan one gridcl milestone from docs/design.md into docs/plans/<milestone>.md. Run as /plan-milestone <milestone>, preferably in plan mode.
+description: Plan one tetraloma milestone from docs/design.md into docs/plans/<milestone>.md. Run as /plan-milestone <milestone>, preferably in plan mode.
 argument-hint: <milestone, e.g. E0, M0, M1a, M3>
 arguments: milestone
 disable-model-invocation: true

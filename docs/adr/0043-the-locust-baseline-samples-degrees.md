@@ -7,7 +7,7 @@
 
 ## Context
 
-ADR-0042, item 11 asks for "a baseline of `direct` at a pinned commit before any dispatch change, measured on the current machines". It shows that dispatch adds no measurable cost, and it is "reported, not bounded". The plan's T3 runs the baseline at p = 1–8 on every M3s target. The acceptance test `baseline_covers_every_target_and_degree` (gridcl-bench/tests/high_order_record.rs) requires a record for every family, cell type, degree 1–8 (pyramids to 3), scalar type and rule size (10^6 and 10^7 points) on every target, all at one commit. No other acceptance test reads the baseline.
+ADR-0042, item 11 asks for "a baseline of `direct` at a pinned commit before any dispatch change, measured on the current machines". It shows that dispatch adds no measurable cost, and it is "reported, not bounded". The plan's T3 runs the baseline at p = 1–8 on every M3s target. The acceptance test `baseline_covers_every_target_and_degree` (tetraloma-bench/tests/high_order_record.rs) requires a record for every family, cell type, degree 1–8 (pyramids to 3), scalar type and rule size (10^6 and 10^7 points) on every target, all at one commit. No other acceptance test reads the baseline.
 
 The baseline is pinned at a88ab2a, the T3 commit. Status on 2026-11-10:
 
@@ -20,7 +20,7 @@ The baseline is pinned at a88ab2a, the T3 commit. Status on 2026-11-10:
 On Locust the sweep's time goes to the host, not the device:
 
 - Of part a's 4.47 h, only 0.56 h was kernel compile (0.35 h) and timed runs (0.21 h).
-- The rest is mostly building the host mesh at 10^7 points. A profile shows the time in the single-threaded numbering of the mesh pipeline (`gridcl::pipeline::number`).
+- The rest is mostly building the host mesh at 10^7 points. A profile shows the time in the single-threaded numbering of the mesh pipeline (`tetraloma::pipeline::number`).
 - Locust's Grace cores do that work 2.5 times slower than the M6 Mac: 7,811 s against 3,097 s on the configurations both ran.
 
 Estimated remaining times are about 4–4.5 h for part a, about 3.5–4 h for part b and 5–8 h for the Grace CPU sweep, plus an idle wait whenever another user is on the node.

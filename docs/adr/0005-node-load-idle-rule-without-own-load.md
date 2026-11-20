@@ -44,7 +44,7 @@ Option 3. On a shared node, the question is whether other users interfere, and p
 - Text to change in docs/design.md:
   - "Development environment and test targets", step 4: "… the 1-minute load average (recorded only), and the CPU share of other users' processes over 5 s. The node counts as idle if no other user has a GPU compute process, GPU utilisation is below 5%, and other users' processes use less than one core in total." The `node load:` line of step 6 and the benchmark condition in "Vectorization and CPU execution / Benchmarks" stay as they are.
   - ADR-0002 gets the note "Idle rule amended by ADR-0005".
-- Implementation: `scripts/hpc/jobs/common.sh` (`gridcl_job_node_load` drops the load-average condition; `gridcl_job_cpu_others` samples 5 s); `docs/dev-environment.md` (Locust reference, node load). The run.sh assertions (`node_load=(idle|busy)`, the summary line) stay valid.
+- Implementation: `scripts/hpc/jobs/common.sh` (`tetraloma_job_node_load` drops the load-average condition; `tetraloma_job_cpu_others` samples 5 s); `docs/dev-environment.md` (Locust reference, node load). The run.sh assertions (`node_load=(idle|busy)`, the summary line) stay valid.
 - Public API changes: none. The runner CLI and the summary format are unchanged.
 - Acceptance tests affected: none of E0's acceptance criteria (tests are not timing-sensitive). E0 T9 records the node-load lines under the current rule. They would be re-recorded under the new rule only if the maintainer wants that.
 - Later milestones affected: M3s and M10 benchmarks on Locust become possible under the idle rule; GPU utilisation in the "after" snapshot is still sampled right after the job's own GPU work, which M3s/M10 should watch.

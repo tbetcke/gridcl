@@ -44,8 +44,8 @@ with VTK's.
        raise ReadError(f"Unknown VTU file version '{version}'.")
    ```
 
-   VTK 9.7.1 writes `version="2.3"`, gridcl will write `2.2`; meshio reads neither, in any
-   encoding. gridcl cannot write 1.0 instead: VTK renumbers the hexahedra of older files. A
+   VTK 9.7.1 writes `version="2.3"`, tetraloma will write `2.2`; meshio reads neither, in any
+   encoding. tetraloma cannot write 1.0 instead: VTK renumbers the hexahedra of older files. A
    VTK-written P2 and P3 file relabelled `version="1.0"` reads back in VTK with the nodes of
    hexahedron edges 10 and 11 swapped (P2: connectivity entries 46 and 47 exchanged; P3: 78–79
    with 80–81), without an error or warning. Relabelled `2.2`, it reads back identically.
@@ -77,9 +77,9 @@ with VTK's.
    raw arrays one by one, and when a rewritten offset equals a raw offset it has not yet
    processed, it looks up the wrong `DataArray` (`len(offsets) != num_cells`).
 
-So meshio 5.3.5 cannot read gridcl's files as specified (problem 1). Even past the version
-check, it cannot read appended data (gridcl's default encoding) reliably (problems 2 and 3), and
-this does not depend on gridcl's writer.
+So meshio 5.3.5 cannot read tetraloma's files as specified (problem 1). Even past the version
+check, it cannot read appended data (tetraloma's default encoding) reliably (problems 2 and 3), and
+this does not depend on tetraloma's writer.
 
 ## Options
 
@@ -87,7 +87,7 @@ this does not depend on gridcl's writer.
    (version), and on most appended files after any version workaround. Not possible with the
    pinned meshio.
 2. **Write `version="1.0"`.** meshio then accepts the version, but VTK and ParaView renumber
-   gridcl's Lagrange hexahedra (problem 1). The appended-data failures remain. Not chosen.
+   tetraloma's Lagrange hexahedra (problem 1). The appended-data failures remain. Not chosen.
 3. **Relabel the version for meshio only, and check appended files through their base64 twins**
    (proposed).
    - The oracle's `meshio` subcommand hands meshio a temporary copy of each file in which only
@@ -137,12 +137,12 @@ release reads version 2.2 and appended data, the pin can move and the restrictio
     as its base64 twin (ADR-0025);".
 - Public API changes: none.
 - Acceptance tests affected:
-  - `gridcl::vtk::meshio_reads_identical_raw_arrays`:
+  - `tetraloma::vtk::meshio_reads_identical_raw_arrays`:
     - meshio reads the base64 and base64 + zlib files only;
     - each appended file (raw, raw + zlib) is written beside a base64 twin of the same case;
     - the test asserts `parse_vtu(appended) == parse_vtu(twin)` bitwise.
 
-    `gridcl/tests/common/vtk.rs` (`data_cases`, the meshio corpus cases) and `gridcl/tests/vtk.rs`
+    `tetraloma/tests/common/vtk.rs` (`data_cases`, the meshio corpus cases) and `tetraloma/tests/vtk.rs`
     change accordingly.
   - The T1 oracle contract: `meshio FILE...` relabels the version of a temporary copy and adds
     `"version": "<original>"` to each result. No other test changes.

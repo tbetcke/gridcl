@@ -1,6 +1,6 @@
 ---
 name: implement-milestone
-description: Implement an approved gridcl milestone plan task by task, committing after each task. Run as /implement-milestone <milestone> [task id]. Resumes from the plan after /clear.
+description: Implement an approved tetraloma milestone plan task by task, committing after each task. Run as /implement-milestone <milestone> [task id]. Resumes from the plan after /clear.
 argument-hint: <milestone> [task id to start from]
 arguments: milestone task
 disable-model-invocation: true
@@ -36,7 +36,7 @@ If the milestone is empty, ask the user which milestone to implement.
    kernel, precision, crate-boundary and origin-id rules.
 4. **Verify:** run the task's verification command. The `verify` skill runs before each commit.
    When the task changed kernels, also run the affected crates on Metal
-   (`GRIDCL_TEST_DEVICE=metal`) and, after committing, on Locust with the `hpc-test` skill
+   (`TETRALOMA_TEST_DEVICE=metal`) and, after committing, on Locust with the `hpc-test` skill
    (Myriad V100 only as the fallback, ADR-0014). Run the CUDA job in the background; check its
    result before starting a task that depends on this one, and fix failures before
    `Status: implemented`.
@@ -74,7 +74,7 @@ When every task is ticked:
 
 1. Ask the test-runner subagent for the full acceptance run: `cargo test --workspace`, lint,
    Metal, CUDA on Locust (Myriad V100 as the fallback) and any other targets in the plan's coverage table, MPI if the milestone touches
-   gridcl-parallel or later crates, and conformance if gridcl-refcell or conformance/ changed.
+   tetraloma-parallel or later crates, and conformance if tetraloma-refcell or conformance/ changed.
 2. Fix failures as new tasks or as commits to the task they belong to (note them in the
    Deviations log).
 3. Set `Status: implemented` in the plan, commit, update the plan status in the milestone

@@ -10,8 +10,8 @@
 # Allowlist (ADR-0066 rules 1 and 3): recorded data in docs/perf/data/ (the bench crate's history/
 # files are generator output that ADR-0065 checks byte for byte, so they carry the new name), the
 # spack repository namespace in scripts/hpc/spack/ (its directory, `gridcl.llvm`,
-# `namespace: 'gridcl'` and the repos key), and the three files that describe the rename: this
-# script, ADR-0066 and the E1 plan.
+# `namespace: 'gridcl'` and the repos key; the directory's path `spack_repo/gridcl` in any
+# file), and the three files that describe the rename: this script, ADR-0066 and the E1 plan.
 #
 # Usage: scripts/check-name.sh [-v]
 #   -v  print every hit (default: the first 10 per check)
@@ -64,12 +64,12 @@ report() { # report <check> <count> <what> <hits>
 
 # (a) paths and content.
 path_hits=$(git ls-files | grep -i 'gridcl' | grep -Ev "$allowed_path_re" || true)
-# Lines with the old name; in the spack directory the namespace tokens are removed first. Each
-# remaining line is printed with its count of occurrences.
+# Lines with the old name; the namespace path, and in the spack directory the other namespace
+# tokens, are removed first. Each remaining line is printed with its count of occurrences.
 content_hits=$(git grep -I -n -i 'gridcl' -- . "${excluded_files[@]}" | perl -ne '
     my ($file, $line, $text) = /^([^:]*):(\d+):(.*)$/ or next;
+    $text =~ s{spack_repo/gridcl}{}g;
     if ($file =~ m{^scripts/hpc/spack/}) {
-        $text =~ s{spack_repo/gridcl}{}g;
         $text =~ s{\bgridcl\.llvm\b}{}g;
         $text =~ s{namespace: .gridcl.}{}g;
         $text =~ s{^\s*gridcl(?=: \@ROOT\@)}{};
@@ -79,7 +79,7 @@ content_hits=$(git grep -I -n -i 'gridcl' -- . "${excluded_files[@]}" | perl -ne
 ' || true)
 path_count=$(grep -c . <<<"$path_hits" || true)
 occurrences=$(awk '{ s += $1 } END { print s + 0 }' <<<"$content_hits")
-files=$(cut -d' ' -f2 <<<"$content_hits" | cut -d: -f1 | grep . | sort -u | wc -l | tr -d ' ')
+files=$( { cut -d' ' -f2 <<<"$content_hits" | cut -d: -f1 | grep . || true; } | sort -u | wc -l | tr -d ' ')
 report "a: paths" "$path_count" "tracked paths name gridcl" "$path_hits"
 report "a: content" "$occurrences" "occurrences of gridcl in $files files" \
     "$(cut -d' ' -f2- <<<"$content_hits" | cut -c1-160)"

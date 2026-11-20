@@ -66,8 +66,8 @@ Option 2. A CPU plan then uses the threads `elementwise` uses, which is what the
   - In ADR-0042's decision record, a line "Amended by ADR-0045 (CPU cubes of per-group plans hold several groups)".
 - **Public API changes:** none. The signature and fields of `per_group` stay; only its documented CPU shape changes.
 - **Implementation:**
-  - `gridcl-device/src/plan.rs`: the CPU branch of `per_group`, sharing `elementwise`'s CPU unit count, and its rustdoc.
-  - Its unit test `cpu_cubes_visit_blocks_of_consecutive_groups`, and the property test in `gridcl-device/tests/launch_plan.rs`. On the CPU runtime, the rule-4 tree kernel test then also runs several group slots per cube.
+  - `tetraloma-device/src/plan.rs`: the CPU branch of `per_group`, sharing `elementwise`'s CPU unit count, and its rustdoc.
+  - Its unit test `cpu_cubes_visit_blocks_of_consecutive_groups`, and the property test in `tetraloma-device/tests/launch_plan.rs`. On the CPU runtime, the rule-4 tree kernel test then also runs several group slots per cube.
   - This is done as the first step of T9, the first strategy that plans with `per_group`, with a Deviations-log row. A CUDA run is not needed for it, since GPU plans do not change.
 - **Acceptance tests affected:** none. T5's tests change their expected CPU `cube_dim`, and T9–T10b's tests are unchanged.
 - **Plan (M9h):** T9's note "Planned by `per_group` with `units_per_group = 1`" stays. On CPUs it now means one group per unit, with all threads busy.
@@ -75,4 +75,4 @@ Option 2. A CPU plan then uses the threads `elementwise` uses, which is what the
 
 ## Decision record
 
-Accepted by the maintainer on 2026-11-10, as proposed (option 2). Applied in `adr: 0045 apply`: docs/design.md, Listing S2 (the doc comment of `LaunchPlan::per_group`), and ADR-0042's decision record. The change to `gridcl-device/src/plan.rs` and T5's CPU-shape tests follows as the first step of T9.
+Accepted by the maintainer on 2026-11-10, as proposed (option 2). Applied in `adr: 0045 apply`: docs/design.md, Listing S2 (the doc comment of `LaunchPlan::per_group`), and ADR-0042's decision record. The change to `tetraloma-device/src/plan.rs` and T5's CPU-shape tests follows as the first step of T9.

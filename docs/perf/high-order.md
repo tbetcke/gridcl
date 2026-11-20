@@ -134,7 +134,7 @@ The largest ratio per degree, over every family and cell type: 0.03 (p = 1), 0.0
 ## Strategy sweeps (T11a)
 
 Every strategy at p = 1–8 (pyramids 1–3) on equispaced nodes, at f1c32de and later sweep-tool
-commits (`GRIDCL_BENCH_COMMIT` and the runner's commit in each record), launch-only records
+commits (`TETRALOMA_BENCH_COMMIT` and the runner's commit in each record), launch-only records
 first:
 
 - **Mac mini**, CPU (CpuSimd128) and Metal (Gpu), locally;
@@ -5060,7 +5060,7 @@ and cause. M10's section above stays as M10's rule wrote it; M10's policy is kep
   class and 5 on the Gpu class. Mostly, M10's fallback to `direct` gives way to `loops` or
   `sumfact`, which meet the bound but were not admitted. The Gpu changes are EVector on hexahedra and prisms
   and PullBack on hexahedra at p = 7 in f32, and Points and Jacobian on hexahedra at p = 2 in f64.
-  The changes at p ≥ 5 reach the CUDA high-order tests under `GRIDCL_GEOM_STRATEGY=policy`
+  The changes at p ≥ 5 reach the CUDA high-order tests under `TETRALOMA_GEOM_STRATEGY=policy`
   (M10c T7).
 - **The vector set beneath the records.** M10's degree records ran under M10's vector policy.
   M10c's `[Cpu]` set changes what the CPU degree kernels run: EVector 4B goes from n = 1 to

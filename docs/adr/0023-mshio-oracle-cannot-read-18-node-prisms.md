@@ -12,7 +12,7 @@ M4's third acceptance bullet reads:
 > - nodes and elements agree with mshio on every fixture;
 
 "Import and export / Gmsh MSH 4.1" makes mshio "a test oracle, not the implementation", and
-ADR-0022 pins it as a dev-dependency of gridcl-io, `mshio = "=0.4.2"` (the newest release on
+ADR-0022 pins it as a dev-dependency of tetraloma-io, `mshio = "=0.4.2"` (the newest release on
 crates.io). The plan for T6 says: "if mshio rejects a corpus type, record it and raise an ADR row
 rather than dropping the fixture."
 
@@ -37,7 +37,7 @@ prism_p2.msh: mshio: MshParserError([([36, 69, 110, 100, 69, 108, 101, 109, 101,
 `nodes_and_elements_agree_with_mshio` therefore fails on these two files and on no other. The
 other 59 files agree with mshio: node blocks (entity, coordinates, tags) and element blocks
 (entity, type, tags, node tags), and so do the other prism types (6, 90, 91 and the serendipity
-type 18). gridcl's own parser reads both files with Gmsh's node and element counts
+type 18). tetraloma's own parser reads both files with Gmsh's node and element counts
 (`corpus_reads_with_gmsh_node_counts` passes), and its binary parse of `prism_p2-binary.msh`
 re-encodes to Gmsh's bytes exactly (`binary_byte_orders_and_size_t_widths`).
 
@@ -78,7 +78,7 @@ Options 3 and 4 add a fork or a second toolchain to fix a gap that these checks 
     - "Gmsh MSH 4.1", "Own reader and writer": append "mshio 0.4.2 gives the 18-node prism 28
       nodes, so it cannot read files that contain one (ADR-0023)."
 - Public API changes: none.
-- Acceptance tests affected: `gridcl_io::gmsh_corpus::nodes_and_elements_agree_with_mshio`
+- Acceptance tests affected: `tetraloma_io::gmsh_corpus::nodes_and_elements_agree_with_mshio`
   compares the files without type 13 with mshio, and asserts that mshio fails on each file with
   type 13. No other test changes.
 - Later milestones affected: none. If a later mshio release fixes the entry, the test fails until

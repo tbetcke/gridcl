@@ -1,4 +1,4 @@
-# Implementing gridcl with Claude Code
+# Implementing tetraloma with Claude Code
 
 Each milestone of `docs/design.md` goes through the same loop: plan, implement, review, merge. You drive it with three skills: `/plan-milestone`, `/implement-milestone` and `/review-milestone`. Everything else (rules, subagents, templates) is in files Claude reads on its own.
 
@@ -29,8 +29,8 @@ The development tooling and the Rust workspace do not exist yet. Milestone E0 cr
 1. **Unpack** the archive in the project root. The files sit at the top level of the archive, including the hidden `.claude/` directory:
 
    ```sh
-   cd path/to/gridcl
-   unzip gridcl-claude-workflow.zip
+   cd path/to/tetraloma
+   unzip tetraloma-claude-workflow.zip
    ```
 
 2. **Commit** the files to a git repository:
@@ -153,9 +153,9 @@ Claude may do these steps when you ask.
 M1a and M2 can run side by side after M0, M4, M5 and M6 after M3, and M7 and M9 after M6. Give each milestone its own git worktree and its own Claude Code session:
 
 ```sh
-git worktree add ../gridcl-m4 -b m4-gmsh-io main
-git worktree add ../gridcl-m5 -b m5-vtk-output main
-cd ../gridcl-m4 && scripts/setup-worktree.sh         # .venv and scripts/hpc/targets.env
+git worktree add ../tetraloma-m4 -b m4-gmsh-io main
+git worktree add ../tetraloma-m5 -b m5-vtk-output main
+cd ../tetraloma-m4 && scripts/setup-worktree.sh         # .venv and scripts/hpc/targets.env
 claude --permission-mode plan                        # then /plan-milestone M4
 ```
 
@@ -168,10 +168,10 @@ Merge them into main one at a time, in dependency order. If a branch falls behin
 ## Milestone notes
 
 - **E0:** the one milestone where you take part in the work. Have the accounts and SSH aliases ready, keep a terminal open for `ssh myriad true` and similar prompts, and expect Claude to ask you for host names, module names or project codes it cannot discover. The milestone is done when `docs/dev-environment.md` has no open fields left; Locust may stay pending without blocking M0.
-- **M0:** the first plan with crates; it builds on the toolchain and runner from E0. M0 checks the `rust-toolchain.toml` that E0 created, and creates the workspace, gridcl-testing, gridcl-mpi-tests, `scripts/mpi-test.sh` and the CI jobs. Make sure `docs/plans/M0.md` records the exact commands for GPU backends and MPI; the test-runner and verify steps use them later.
+- **M0:** the first plan with crates; it builds on the toolchain and runner from E0. M0 checks the `rust-toolchain.toml` that E0 created, and creates the workspace, tetraloma-testing, tetraloma-mpi-tests, `scripts/mpi-test.sh` and the CI jobs. Make sure `docs/plans/M0.md` records the exact commands for GPU backends and MPI; the test-runner and verify steps use them later.
 - **M1b:** the conformance crate needs OpenBLAS (or Accelerate) and network access to codeberg.org for the pinned ndelement commit.
 - **M3:** the largest milestone. Expect the design-reviewer critique during planning and several `/clear` cycles during implementation.
-- **M3s:** a measurement milestone. Claude runs gridcl-bench on the M3 Max and, through `/hpc-test`, on Locust (CPU and CUDA) and on a whole CPU-only Myriad D node for the AVX-512 CPU class; Myriad's GPUs only if Locust is unavailable (ADR-0014). Before local benchmark runs, connect the power adapter and close other applications. The result is `vector-policy.toml` plus `docs/perf/vectorization.md`; later changes to the policy need new benchmark data. M3s can run in parallel with M4–M6.
+- **M3s:** a measurement milestone. Claude runs tetraloma-bench on the M3 Max and, through `/hpc-test`, on Locust (CPU and CUDA) and on a whole CPU-only Myriad D node for the AVX-512 CPU class; Myriad's GPUs only if Locust is unavailable (ADR-0014). Before local benchmark runs, connect the power adapter and close other applications. The result is `vector-policy.toml` plus `docs/perf/vectorization.md`; later changes to the policy need new benchmark data. M3s can run in parallel with M4–M6.
 - **M4:** generate the Gmsh fixture corpus once with a pinned Gmsh version and commit it; Claude can write the `.geo` scripts.
 - **M6 and later:** run the MPI tests under both MPICH and Open MPI where you can; the `Comm` design depends on it.
 - **CUDA:** Claude runs CUDA tests on Locust after kernel changes and at every review, and schedules Myriad V100 or A100 only for multi-GPU tests, architecture comparisons, or as the fallback when Locust is unavailable; CPU-only Myriad runs use a D node (ADR-0014). Ask for a specific target with `/hpc-test myriad-a100 -- <command>`.
@@ -185,7 +185,7 @@ Merge them into main one at a time, in dependency order. If a branch falls behin
 | Apply an accepted design change | "Apply ADR-0003 to docs/design.md and update the affected plans." |
 | Re-plan after a design change | "Re-plan the unticked tasks of docs/plans/M6.md after ADR-0004; keep ticked tasks unchanged." |
 | Check GPU backends mid-milestone | "Use the test-runner subagent to run the workspace tests on Metal and on locust and report failures." |
-| Benchmark one kernel family | "Run gridcl-bench for GeomFactors on the M3 Max and on locust (CPU and CUDA, idle node), and compare with docs/perf/vectorization.md." |
+| Benchmark one kernel family | "Run tetraloma-bench for GeomFactors on the M3 Max and on locust (CPU and CUDA, idle node), and compare with docs/perf/vectorization.md." |
 | Compare architectures | "Run the failing test on myriad-v100 and myriad-a100 with /hpc-test and compare with the Locust result." |
 | Quick design check | "Use the design-reviewer subagent to check the last three commits against docs/design.md." |
 | Start a milestone from scratch | "Discard docs/plans/M5.md and run /plan-milestone M5 again." |

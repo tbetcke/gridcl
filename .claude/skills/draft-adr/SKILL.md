@@ -1,6 +1,6 @@
 ---
 name: draft-adr
-description: Draft a gridcl architecture decision record in docs/adr/ when an implementation must deviate from docs/design.md or the design is ambiguous - a public API, crate boundary, convention or acceptance test that cannot be followed as written. Then stop for the maintainer's decision.
+description: Draft a tetraloma architecture decision record in docs/adr/ when an implementation must deviate from docs/design.md or the design is ambiguous - a public API, crate boundary, convention or acceptance test that cannot be followed as written. Then stop for the maintainer's decision.
 argument-hint: <short title>
 ---
 

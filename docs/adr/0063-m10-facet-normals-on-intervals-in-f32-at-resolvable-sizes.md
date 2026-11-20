@@ -9,7 +9,7 @@
 
 "Benchmarks" measures the degree-dependent families in M10 "at p = 1, 4 and 8 only, with the candidate protocol (ADR-0057)". The protocol's rule sizes are 10^6 and 10^7 quadrature points on every platform (ADR-0057 item 3, ADR-0060 item 2). A strategy that fails on a platform of a class is not selectable for that class (ADR-0056). The acceptance test `high_order_record::m10_policy_first_use_within_30_s` requires each choice at p = 1, 4 and 8 to have run (`status == "ok"`) on every platform of its class.
 
-The benchmark's FacetNormals workload on intervals uses `gridcl_testing::interval_box(side, p)`: `side` equal cells on [0, 1], with about size / 2 cells (two facet points per cell). Its check compares the device's unit normals with an f64 reference. The tolerance is scaled by `side`, because the Jacobian of a cell of length 1 / side loses accuracy in proportion.
+The benchmark's FacetNormals workload on intervals uses `tetraloma_testing::interval_box(side, p)`: `side` equal cells on [0, 1], with about size / 2 cells (two facet points per cell). Its check compares the device's unit normals with an f64 reference. The tolerance is scaled by `side`, because the Jacobian of a cell of length 1 / side loses accuracy in proportion.
 
 ## Problem
 
@@ -69,7 +69,7 @@ The existing p = 4 records at 10^6 points are already clean.
 
 - **Text to change in docs/design.md:** "Benchmarks", Degree sweep (M9h). After "In M10, and after a CubeCL pin bump, the degree-dependent families are measured at p = 1, 4 and 8 only, with the candidate protocol (ADR-0057).", add: "FacetNormals on intervals in f32 is measured at 10^5 and 10^6 points at p = 4–6 and at 10^4 and 10^5 points at p = 7–8, where 10^6 or 10^7 equispaced points exceed f32's resolution (ADR-0063)."
 - **Public API changes:** none.
-- **Code (gridcl-bench):**
+- **Code (tetraloma-bench):**
   - one function gives the rule sizes of a (family, cell, scalar, degree) entry;
   - `degree_sweep --candidates` takes its default sizes from it;
   - `decide_generic::decide_degree` and the M10 report read it.

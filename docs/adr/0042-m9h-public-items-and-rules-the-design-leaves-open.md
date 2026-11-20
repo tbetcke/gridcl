@@ -13,9 +13,9 @@
 
 ## Context
 
-M9h's roadmap section (ADR-0041) asks for degree sweeps p = 1–8 of every degree-dependent kernel family. It asks for four strategies compared with M9's direct evaluation ("runtime loops instead of full unrolling …; sum factorisation for quadrilaterals, hexahedra and prisms; tabulations or coefficients in shared memory; a workgroup cooperating on one cell only where these fall short, with fixed-order reductions that do not depend on the plane size"), a degree policy "with an override for tests (as `GRIDCL_VECTOR_SIZE` is for vector sizes)", and C18 closed. Its acceptance:
+M9h's roadmap section (ADR-0041) asks for degree sweeps p = 1–8 of every degree-dependent kernel family. It asks for four strategies compared with M9's direct evaluation ("runtime loops instead of full unrolling …; sum factorisation for quadrilaterals, hexahedra and prisms; tabulations or coefficients in shared memory; a workgroup cooperating on one cell only where these fall short, with fixed-order reductions that do not depend on the plane size"), a degree policy "with an override for tests (as `TETRALOMA_VECTOR_SIZE` is for vector sizes)", and C18 closed. Its acceptance:
 
-> - every cell type except pyramids, at p = 1–8 and with both node families where offered: … match the host reference (gridcl-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; …
+> - every cell type except pyramids, at p = 1–8 and with both node families where offered: … match the host reference (tetraloma-refcell's f64 tabulation) to 10^−12 (f64) and 10^−5 (f32), and the pull-back recovers reference points to the same tolerances; …
 > - every kernel variant up to p = 8 compiles, loads and launches on each backend, and the first-use compile and load time of each is at most 30 s on Locust;
 > - for quadrilaterals and hexahedra, the time per quadrature point of geometric factors and of a pull-back Newton step at p = 8 is at most 3 times that at p = 4 on every device class (direct evaluation: about 5.8 times);
 > - no family is more than 5% slower than in M9 at p ≤ 4 on any device class;
@@ -27,20 +27,20 @@ ADR-0041 left four points to the plan: f32 at p = 8, a throughput target for sim
 Planning read these against the code at main d90f90e (docs/plans/M9h.md, Findings):
 
 - **Kernels.** The degree enters every kernel at comptime, and node loops are fully unrolled:
-  - the factor kernel (`gridcl-geometry/src/layout.rs:233`, about 6,561 FMAs per point for J on a hexahedron at p = 8);
+  - the factor kernel (`tetraloma-geometry/src/layout.rs:233`, about 6,561 FMAs per point for J on a hexahedron at p = 8);
   - the E-vector kernel;
   - the pull-back (`pull_back.rs:88`): a runtime N² set-up a = C'·x into a local array of nb·gd vectors, then a Newton step that unrolls over every basis function (`basis_eval/mod.rs:212`).
-- **Launch shapes.** `LaunchPlan` has only `elementwise` (`gridcl-device/src/plan.rs:90`). It carries no group size and checks no shared-memory size, and no geometry kernel uses shared memory.
-- **Bases.** The hexahedron's orthogonal set is x-fastest lexicographic Legendre (`gridcl-refcell/src/polynomials.rs:157`), and the prism's is Dubiner × Legendre on layered nodes (:174). The coefficients therefore factor as Kronecker products under a node permutation.
+- **Launch shapes.** `LaunchPlan` has only `elementwise` (`tetraloma-device/src/plan.rs:90`). It carries no group size and checks no shared-memory size, and no geometry kernel uses shared memory.
+- **Bases.** The hexahedron's orthogonal set is x-fastest lexicographic Legendre (`tetraloma-refcell/src/polynomials.rs:157`), and the prism's is Dubiner × Legendre on layered nodes (:174). The coefficients therefore factor as Kronecker products under a node permutation.
 - **CUDA.** cubecl-cuda 0.11 keeps `CUfunction` private and never calls `cuFuncGetAttribute`. It does write every kernel's PTX on its default LLVM path under `CUBECL_CUDA_DUMP_PTX` (`src/compute/context.rs:474, 580`), and NVIDIA's `ncu`, `ptxas -v` and `compute-sanitizer` report registers, local memory and failing driver calls from outside the process.
-- **Benchmarks.** gridcl-bench has no degree axis, and its sizes count cells. A p = 8 hexahedron mesh of 10^6 cells needs about 17 GB of E-vector in f64. The committed vectorization data is from the M3 Max (ADR-0034).
+- **Benchmarks.** tetraloma-bench has no degree axis, and its sizes count cells. A p = 8 hexahedron mesh of 10^6 cells needs about 17 GB of E-vector in f64. The committed vectorization data is from the M3 Max (ADR-0034).
 
 ## Problem
 
 Each item matches the question of the same number in docs/plans/M9h.md.
 
 1. **Bullet 3 cannot hold for the pull-back.** At an arbitrary point ξ, X(ξ) and J(ξ) depend on every one of the (p + 1)^d coefficients of the cell, so a Newton step costs at least about (p + 1)^d operations per point. Sum factorisation lowers this cost only on a tensor grid of points shared by a cell, which the pull-back does not have (each point has its own ξ). From p = 4 to p = 8 the leading cost grows by (9/5)^3 ≈ 5.8 on hexahedra and (9/5)^2 ≈ 3.2 on quadrilaterals, both above 3, on any compute-bound device.
-2. **f32 cannot meet 10^−5 at p = 8.** The rounding error of evaluating Σ_j x_j ψ_j(ξ) grows with the amplification factor Σ_j |ψ_j(ξ)|, and the error of J with Σ_j |∇ψ_j(ξ)|. These are not kernel defects. Computed on the host in f64 at the Gauss points of degree 2p (gridcl-refcell `tabulate` and `coefficients`; reproduced by M9h T0a), relative to the p = 4 equispaced element of the same cell at the same points:
+2. **f32 cannot meet 10^−5 at p = 8.** The rounding error of evaluating Σ_j x_j ψ_j(ξ) grows with the amplification factor Σ_j |ψ_j(ξ)|, and the error of J with Σ_j |∇ψ_j(ξ)|. These are not kernel defects. Computed on the host in f64 at the Gauss points of degree 2p (tetraloma-refcell `tabulate` and `coefficients`; reproduced by M9h T0a), relative to the p = 4 equispaced element of the same cell at the same points:
 
    | Cell, nodes | p = 5 | p = 6 | p = 7 | p = 8 |
    | --- | --- | --- | --- | --- |
@@ -55,10 +55,10 @@ Each item matches the question of the same number in docs/plans/M9h.md.
    | Prism | 1.8 / 2.6 / 1.8 | 3.7 / 6.3 / 3.1 | 8.5 / 18 / 7.1 | 23 / 54 / 15 |
 
    "X" is max Σ_j |ψ_j|, "J" is max_d Σ_j |∂_d ψ_j|, and "coeff." is max Σ_k |φ_k| Σ_j |C_kj|, the path of the pull-back through `LagrangeElement::coefficients` (φ the orthonormal basis). The absolute factors at hexahedron p = 8 are 464, 19,019 and 6,910. At p ≤ 4 every ratio is at most 1.01, and on pyramids (p ≤ 3, reference p = 3) at most 1. For f64 the worst-case bound ε₆₄ · 19,019 ≈ 2 · 10^−12 for J on an equispaced hexahedron at p = 8 exceeds 10^−12 too, although typical errors are smaller.
-3. **Degree policy.** ADR-0041 asks whether it needs a public item next to `VectorPolicy`. gridcl-device does not know cell types, and the override has no name.
+3. **Degree policy.** ADR-0041 asks whether it needs a public item next to `VectorPolicy`. tetraloma-device does not know cell types, and the override has no name.
 4. **Cooperative launches.** A workgroup cooperating on one cell needs a cube per group of cells and a group size the kernel can read. `LaunchPlan::elementwise` gives neither, and CLAUDE.md requires every launch shape to come from `LaunchPlan`.
 5. **Copies.** Sum factorisation and a tensor pull-back upload 1D tabulations, a lexicographic node permutation, 1D nodes and barycentric weights, and the prism's triangle coefficient factor. The copy list names "quadrature points and tabulations when a rule is created or a tabulation is first cached" and "a geometry block's expansion coefficients", but not these items by name.
-6. **CUDA attributes.** CLAUDE.md allows FFI in gridcl-device only for GPU-aware MPI and the macOS core count, and CubeCL exposes no attribute query (Context).
+6. **CUDA attributes.** CLAUDE.md allows FFI in tetraloma-device only for GPU-aware MPI and the macOS core count, and CubeCL exposes no attribute query (Context).
 7. **"Every kernel variant"** is undefined once there are five strategies. Forcing all of them through every vector size, cell, degree and precision would mean thousands of CUDA JIT compilations of up to 30 s each in one test run. The direct strategy may also take minutes or fail at p = 8 (C18).
 8. **Vector-size invariance.** "Testing and validation" requires lengths up to 10^6 + 3. At p = 8 that case does not fit in memory, and a direct launch over it would take minutes per vector size.
 9. **Parallel invariance at p = 1–8.** The design lists which quantities are compared (counts, volume, vertex lists, permutation bits, files) but not geometric factors, and the existing parallel cases stop at p = 2. Every ghost mode at every degree on 1–4 ranks would exceed the CI budget.
@@ -70,7 +70,7 @@ Each item matches the question of the same number in docs/plans/M9h.md.
 ## Options
 
 1. **Keep the design as written.** Bullet 3's pull-back clause would fail by construction (item 1). Bullet 1 would fail in f32 at p ≥ 6 on equispaced tensor cells (item 2). The cooperative strategy could not be launched within CLAUDE.md (item 4). Items 7, 8 and 12 could not run in any time budget. Not chosen.
-2. **Fix the open items now, item by item** (below). This adds one public constructor and field to `LaunchPlan`, two hidden modules on gridcl-geometry, copy-list entries, a reading of bullets 2–4, tolerances that scale with the element's amplification, and design text. Items 1–4 record the maintainer's planning answers of 2026-11-08.
+2. **Fix the open items now, item by item** (below). This adds one public constructor and field to `LaunchPlan`, two hidden modules on tetraloma-geometry, copy-list entries, a reading of bullets 2–4, tolerances that scale with the element's amplification, and design text. Items 1–4 record the maintainer's planning answers of 2026-11-08.
 3. **Option 2 without the cooperative strategy** (no `per_group`; "only where these fall short", decided after the other strategies are measured). This needs no public API change now, but the maintainer chose to plan it up front (2026-11-08). Not proposed.
 
 ## Proposed decision
@@ -94,10 +94,10 @@ Option 2, item by item.
    - The factor is the element's. Test meshes at p ≥ 5 keep the ratio of coordinate size to cell size no larger than in M9's p ≤ 4 tests, so that coordinates relative to the origin add no amplification the factor does not cover.
    - The same factor scales the GPU invariance comparisons (item 8) and the f32-against-f64 comparisons.
 3. **Degree policy** (maintainer, 2026-11-08: crate-private):
-   - `gridcl-geometry/degree-policy.toml` is compiled in. It holds one entry per (family, cell type, device class, scalar size), each with ascending degree ranges and a strategy.
+   - `tetraloma-geometry/degree-policy.toml` is compiled in. It holds one entry per (family, cell type, device class, scalar size), each with ascending degree ranges and a strategy.
    - The families are EVector, Points, Jacobian (also det J and the pseudo-inverse), Normals, FacetNormals and PullBack.
    - The last range is open-ended and resolves to a strategy known to compile at p = 9–10 (Gmsh's highest orders).
-   - `GRIDCL_GEOM_STRATEGY` is `policy | direct | loops | sumfact | shared | cooperative`, or a comma list `<family>=<strategy>`. It is read once, and an invalid value panics naming the variable.
+   - `TETRALOMA_GEOM_STRATEGY` is `policy | direct | loops | sumfact | shared | cooperative`, or a comma list `<family>=<strategy>`. It is read once, and an invalid value panics naming the variable.
    - Precedence: the scoped hook, then the environment, then the TOML. The hook is thread-local.
    - A forced strategy that does not apply falls back to `loops`. That covers sum factorisation on a simplex or pyramid or on a non-tensor point set, and `shared` above the shared-memory limit.
    - Hidden modules (ADR-0038 style):
@@ -115,7 +115,7 @@ Option 2, item by item.
      pub mod bench { /* basis-evaluator, pull-back set-up and Newton-step timing hooks */ }
      ```
 
-   - gridcl-testing enables `testing`, and gridcl-bench enables `bench`. No stable public item changes.
+   - tetraloma-testing enables `testing`, and tetraloma-bench enables `bench`. No stable public item changes.
 4. **`LaunchPlan::per_group`** (maintainer, 2026-11-08: plan the cooperative strategy up front):
 
    ```rust
@@ -134,7 +134,7 @@ Option 2, item by item.
    - `sync_cube` is called only in uniform control flow.
 5. **Sum factorisation data and the copy list.**
    - A `PointSet` built by a tensor rule (Gauss on quadrilaterals and hexahedra; triangle rule × Gauss on prisms) records its factors crate-privately. User point sets have none.
-   - Uploaded once per (element, point set), as tabulations: the 1D (or triangle × 1D) tabulations, and the lexicographic-to-gridcl node permutation packed into the same buffer.
+   - Uploaded once per (element, point set), as tabulations: the 1D (or triangle × 1D) tabulations, and the lexicographic-to-tetraloma node permutation packed into the same buffer.
    - Uploaded once per geometry block, as expansion coefficients:
      - the 1D nodes and barycentric weights with which the tensor pull-back evaluates the 1D Lagrange bases at ξ (no set-up and no C' on quadrilaterals and hexahedra);
      - the prism's C'_tri factor.
@@ -177,23 +177,23 @@ Option 2, item by item.
 
 - **Text to change in docs/design.md:**
   - **Listing S2:** the `LaunchPlan` struct gains `units_per_group` ("Units that cooperate on one group; 1 for `elementwise`"). `per_group` follows `elementwise`, with item 4's doc. After the "One kernel source" bullet comes a new bullet: "**Groups:** `per_group` plans cubes of cooperating units; reductions inside a group are pairwise trees over a fixed leaf count, so results do not depend on the group size or the plane size; `sync_cube` only in uniform control flow (ADR-0042)."
-  - **"Benchmarks":** a new bullet, **Degree sweep (M9h):** item 12, with the record in `docs/perf/high-order.md` and `gridcl-geometry/degree-policy.toml`, raw JSON under `docs/perf/data/`, and CUDA resources from item 6.
+  - **"Benchmarks":** a new bullet, **Degree sweep (M9h):** item 12, with the record in `docs/perf/high-order.md` and `tetraloma-geometry/degree-policy.toml`, raw JSON under `docs/perf/data/`, and CUDA resources from item 6.
   - **"Tabulation and quadrature":**
     - after the device-evaluation bullet: "Tensor rules keep their 1D (or triangle × 1D) factors; sum-factorised kernels use 1D tabulations and a lexicographic node permutation, uploaded with the tabulation (ADR-0042)";
     - the f32 tolerance remark goes to "Testing and validation".
-  - **"Geometric factors":** after the list: "Each factor family runs one of the strategies direct, loops, sum-factorised (quadrilaterals, hexahedra, prisms on tensor rules), shared or cooperative, chosen per family, cell type, degree range and device class by gridcl-geometry's degree policy (`degree-policy.toml`, `docs/perf/high-order.md`); `GRIDCL_GEOM_STRATEGY` overrides it for tests and benchmarks (ADR-0042)."
+  - **"Geometric factors":** after the list: "Each factor family runs one of the strategies direct, loops, sum-factorised (quadrilaterals, hexahedra, prisms on tensor rules), shared or cooperative, chosen per family, cell type, degree range and device class by tetraloma-geometry's degree policy (`degree-policy.toml`, `docs/perf/high-order.md`); `TETRALOMA_GEOM_STRATEGY` overrides it for tests and benchmarks (ADR-0042)."
   - **"Pull-back":** a new bullet: "The pull-back runs the same strategies. On quadrilaterals and hexahedra, the sum-factorised pull-back evaluates the 1D Lagrange bases at ξ (barycentric form) and contracts the E-vector one dimension at a time, with no expansion coefficients; prisms combine the triangle's coefficients with the 1D interval basis (ADR-0042)."
   - **"Testing and validation":**
     - **Tolerances** gains item 2's degree scaling, with the amplification factors defined there;
     - **Parallel invariance** gains "geometric factors and pull-back results per cell origin id (from M9h; ADR-0042)";
     - **Vector-size invariance** gains item 8's case for p = 3–8.
-  - **"Cargo features":** "Test-support feature" adds gridcl-geometry's `testing` (the hidden `gridcl_geometry::testing`, enabled by gridcl-testing). "Benchmark-support feature" adds gridcl-geometry's `bench` (enabled by gridcl-bench).
+  - **"Cargo features":** "Test-support feature" adds tetraloma-geometry's `testing` (the hidden `tetraloma_geometry::testing`, enabled by tetraloma-testing). "Benchmark-support feature" adds tetraloma-geometry's `bench` (enabled by tetraloma-bench).
   - **"Handing this design to Claude Code"**, the copy list (and CLAUDE.md): "and of quadrature points and tabulations when a rule is created or a tabulation is first cached" becomes "… first cached, including the 1D tabulations and lexicographic node permutations of sum-factorised kernels". "the upload of a geometry block's expansion coefficients" becomes "… expansion coefficients, or of the 1D nodes, barycentric weights and coefficient factors of a sum-factorised pull-back".
   - **Roadmap M9h:** the acceptance gains "(read as in ADR-0042: bullet 1 item 2, bullet 2 item 7, bullet 3 item 1, bullet 4 item 11, bullet 5 items 2, 8 and 9, bullet 6 item 12)".
   - **"Development environment and test targets":** no change (Locust, Kathleen and the local Mac as for M3s).
 - **Public API changes:**
-  - gridcl-device: `LaunchPlan::per_group` and the public field `LaunchPlan::units_per_group`. A struct-literal construction of `LaunchPlan` outside gridcl-device would break; there is none in the workspace.
-  - gridcl-geometry: the hidden modules `testing` and `bench` behind new features (not stable API).
+  - tetraloma-device: `LaunchPlan::per_group` and the public field `LaunchPlan::units_per_group`. A struct-literal construction of `LaunchPlan` outside tetraloma-device would break; there is none in the workspace.
+  - tetraloma-geometry: the hidden modules `testing` and `bench` behind new features (not stable API).
   - No signature of an existing public function changes.
 - **Acceptance tests affected:** the M9h bullets, read as above; their tests are those of docs/plans/M9h.md. The existing p ≤ 4 tests are unchanged (the scale factor is at most 1.01 there).
 - **Later milestones affected:**
@@ -231,6 +231,6 @@ Amended by ADR-0056 (items 7 and 12: a strategy that fails, or takes over 30 s t
 Addenda at the M9h review (maintainer, 2026-11-15):
 
 - Item 3, inapplicable strategies: `cooperative` is also inapplicable, and falls back to `loops`, where the device's shared memory cannot hold one component per unit of a cube (the largest GPU cube at the device's widest vector; `cooperative::fits`). Before, such a launch returned `TooLarge`. No device of the test targets is affected (Metal: 4 KiB of 32 KiB); CPU classes plan one unit per group and use no shared memory.
-- Item 13 and "Cargo features": `gridcl_geometry::bench` holds the basis-evaluator timing hook only (`Interpolant`); the pull-back's set-up and Newton step are timed through the public call at 1 and 9 iterations, as item 1 defines them (M9h T1, Deviations log). docs/design.md's "basis-evaluator and pull-back timing hooks" is corrected to say so.
+- Item 13 and "Cargo features": `tetraloma_geometry::bench` holds the basis-evaluator timing hook only (`Interpolant`); the pull-back's set-up and Newton step are timed through the public call at 1 and 9 iterations, as item 1 defines them (M9h T1, Deviations log). docs/design.md's "basis-evaluator and pull-back timing hooks" is corrected to say so.
 
 Amended by ADR-0064 (item 2, accepted 2026-11-18): from M10 on, item 1's ratio is the policy's time per point at p = 8 (its choice there) over its time per point at p = 4 (its choice there); M9h's frozen section keeps the definition above.

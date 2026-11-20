@@ -9,12 +9,12 @@
   - "Device model and backends": the paragraph after Listing S1 (`GridError` variants);
   - "Import and export / Gmsh MSH 4.1" (mesh content, tags, geometric dimension, origin ids, precision);
   - "Tags, regions and submeshes" (the MeshTags and codimension bullets);
-  - "Workspace layout": the crate table (gridcl-io, gridcl);
+  - "Workspace layout": the crate table (tetraloma-io, tetraloma);
   - "Implementation roadmap": M4 (the first two acceptance bullets).
 
 ## Context
 
-M4 adds gridcl's own Gmsh MSH 4.1 reader and writer. "Import and export / Gmsh MSH 4.1" gives the
+M4 adds tetraloma's own Gmsh MSH 4.1 reader and writer. "Import and export / Gmsh MSH 4.1" gives the
 file-level rules, and Listing B8 the entry point:
 
 > ```rust
@@ -30,18 +30,18 @@ mapping names to (dimension, value). ADR-0012 adds the private `tags: TagRegistr
 
 Planning read these sections against the code of M1a–M3s. The relevant facts:
 
-- **The crate graph.** `Mesh`, `MeshBuilder` and `AnyMesh` live in gridcl (gridcl/src/{mesh,builder,any}.rs). gridcl depends on gridcl-io, whose crate-table row says it holds the "Gmsh reader and writer".
-- **`MeshBuilder`** (gridcl/src/builder.rs) takes `nodes(coords, Option<&[i64]>)` and `cell_block(CoordinateElement<TD>, &[u32] /* A.5 order */, Option<&[i64]>)`, and returns a `Serial` mesh. It keeps only the origin ids of vertices (`Topology::vertex_origin_ids`); `Geometry` stores no node ids. Default ids are indices from 0.
-- **`GridError`** (gridcl-device/src/error.rs) has no I/O, parse, element-type or tag variant, and is `Clone`.
+- **The crate graph.** `Mesh`, `MeshBuilder` and `AnyMesh` live in tetraloma (tetraloma/src/{mesh,builder,any}.rs). tetraloma depends on tetraloma-io, whose crate-table row says it holds the "Gmsh reader and writer".
+- **`MeshBuilder`** (tetraloma/src/builder.rs) takes `nodes(coords, Option<&[i64]>)` and `cell_block(CoordinateElement<TD>, &[u32] /* A.5 order */, Option<&[i64]>)`, and returns a `Serial` mesh. It keeps only the origin ids of vertices (`Topology::vertex_origin_ids`); `Geometry` stores no node ids. Default ids are indices from 0.
+- **`GridError`** (tetraloma-device/src/error.rs) has no I/O, parse, element-type or tag variant, and is `Clone`.
 - **`SortKeys`** holds 1–4 u32 words per key. Entity keys are sorted local vertex indices; they are dropped after `create_entities`, and no public function maps a vertex tuple to an entity.
 - **No tag types exist.** `TagRegistry`, `MeshTags`, `Codim` and `Mesh::tags` appear only in the design text; no listing gives their signatures.
 - **No logging crate** is in the workspace.
-- **gridcl-refcell** has `gmsh_to_internal(cell, degree)` for every cell and degree, and nothing for serendipity elements.
+- **tetraloma-refcell** has `gmsh_to_internal(cell, degree)` for every cell and degree, and nothing for serendipity elements.
 - **Gmsh** requires node and element tags ≥ 1, and lets one elementary entity belong to several physical groups and one name be used in several dimensions.
 
 ## Problem
 
-1. **Dependency cycle.** A `gridcl_io::gmsh::read` that returns `AnyMesh` or calls `MeshBuilder` needs gridcl-io → gridcl, but gridcl → gridcl-io already exists.
+1. **Dependency cycle.** A `tetraloma_io::gmsh::read` that returns `AnyMesh` or calls `MeshBuilder` needs tetraloma-io → tetraloma, but tetraloma → tetraloma-io already exists.
 2. **No error variants.** The design names `GridError::UnmatchedTagElement` but not its fields. File errors (I/O, malformed files, unsupported element types) and unknown tag names have no variant, and `std::io::Error` is not `Clone`.
 3. **Tags have no API, and the described shape cannot hold Gmsh data.**
    - Nothing fixes the fields of `MeshTags`, the methods of `TagRegistry` (Listing B9 calls `tags().named(Codim::Bnd, "scalp")`), or `Codim`.
@@ -74,11 +74,11 @@ Planning read these sections against the code of M1a–M3s. The relevant facts:
 
 ## Options
 
-1. **Keep the design as written.** `gmsh::read` in gridcl-io returning `AnyMesh` cannot compile (problem 1). The rest leaves the M4 tests and T0 stubs without signatures to target. Not chosen.
-2. **Fix the items below; keep the reader and writer at the file level in gridcl-io, and the mesh level in gridcl** (proposed).
-3. **Move `Mesh`, `MeshBuilder` and `AnyMesh` into a new crate below gridcl-io** (for example gridcl-mesh), so gridcl-io can build meshes itself.
+1. **Keep the design as written.** `gmsh::read` in tetraloma-io returning `AnyMesh` cannot compile (problem 1). The rest leaves the M4 tests and T0 stubs without signatures to target. Not chosen.
+2. **Fix the items below; keep the reader and writer at the file level in tetraloma-io, and the mesh level in tetraloma** (proposed).
+3. **Move `Mesh`, `MeshBuilder` and `AnyMesh` into a new crate below tetraloma-io** (for example tetraloma-mesh), so tetraloma-io can build meshes itself.
    - This changes the crate table and the facade's role, and moves code that M3 finished.
-   - Gmsh-specific mesh construction would be in gridcl-io, and M5's VTK writer would need the same crate.
+   - Gmsh-specific mesh construction would be in tetraloma-io, and M5's VTK writer would need the same crate.
    - Not chosen: option 2 meets the design's API without moving the mesh.
 4. **Store node origin ids in `Geometry`** (problem 7). This changes Listing B7 and the builder, and costs device memory for every mesh. The maintainer chose fresh tags instead (2026-10-26).
 5. **One `MeshTags` per physical group** instead of one per dimension (problem 3). Group lengths would then be known without a count read, but values would be redundant, and "Tags, regions and submeshes" describes per-dimension values. Not chosen.
@@ -91,14 +91,14 @@ Option 2. Each item answers the problem of the same number. The maintainer chose
 the tag-element degree in item 10 during M4 planning (2026-10-26).
 
 1. **Crate split.**
-   - `gridcl_io::gmsh` holds the host side:
+   - `tetraloma_io::gmsh` holds the host side:
      - the file model `MshFile` (with `PhysicalName`, `Entities`, `NodeBlock`, `ElementBlock`, `PartitionedEntities`, `Periodic`; `pub` fields; tags `i64`; coordinates `[node][3]` in f64);
      - `parse(bytes: &[u8]) -> Result<MshFile>`, `read_file(path: &Path) -> Result<MshFile>`, `MshFile::write_to(&self, w: &mut dyn Write, encoding: Encoding) -> Result<()>` and `enum Encoding { Ascii, Binary }`;
      - the element table of A.7: `ElementType { id: i32, cell: CellType, degree: u32, num_nodes: usize, serendipity: bool }`, `element_type(id) -> Result<ElementType>` and `lagrange_element_type(cell, degree) -> Result<ElementType>`;
      - the host mesh description `GmshMesh` (with `GmshCellBlock` and `GmshTagGroup`), `to_gmsh_mesh(file: &MshFile, comm: &dyn CommDyn, gdim: Option<usize>) -> Result<GmshMesh>` and `from_gmsh_mesh(mesh: &GmshMesh) -> Result<MshFile>`.
-   - `gridcl::gmsh` holds `read`, `GmshOptions` and `GmshWriter` (item 5), which build a `Mesh` through `MeshBuilder` or download one.
+   - `tetraloma::gmsh` holds `read`, `GmshOptions` and `GmshWriter` (item 5), which build a `Mesh` through `MeshBuilder` or download one.
    - The prelude exports the module `gmsh` and `GmshOptions`.
-   - gridcl-io gains direct dependencies on gridcl-dims, gridcl-refcell and gridcl-device. These are already transitive, so the crate graph gains no edge. Its dev-dependencies are `mshio = "=0.4.2"` (the test oracle) and `serde_json`.
+   - tetraloma-io gains direct dependencies on tetraloma-dims, tetraloma-refcell and tetraloma-device. These are already transitive, so the crate graph gains no edge. Its dev-dependencies are `mshio = "=0.4.2"` (the test oracle) and `serde_json`.
    - The parser checks header counts with checked arithmetic and sizes no allocation from a count before the data is there. Unknown sections are skipped, parametric node coordinates are read and dropped, and `$Periodic` is stored, not applied.
 2. **`GridError` variants**, each with a `Display` line:
    - `UnmatchedTagElement { dim: usize, tag: i64 }`, where `tag` is the Gmsh element tag;
@@ -106,7 +106,7 @@ the tag-element degree in item 10 during M4 planning (2026-10-26).
    - `Parse { format: &'static str, offset: u64, message: String }`, with a byte offset in ASCII and binary files alike. M5's VTU reader reuses it.
    - `UnsupportedElementType { format: &'static str, type_id: i32 }`;
    - `UnknownTag { name: String, dim: usize }`.
-3. **Tags** (gridcl):
+3. **Tags** (tetraloma):
    - `pub struct MeshTags { pub dim: usize, pub indices: DeviceBuffer<u32>, pub values: DeviceBuffer<i32> }`.
      - Entries are sorted by (index, value). An index repeats only with distinct values, which happens when an element is in several physical groups.
      - Cells (dim = tdim) use flat numbering over the cell blocks in block order, like entity blocks.
@@ -121,7 +121,7 @@ the tag-element degree in item 10 during M4 planning (2026-10-26).
    - Ghost consistency by forward scatter remains M6's.
 4. **Matching.**
    - The reader maps corner node tags to local vertex indices on the host. A corner node that is not a mesh vertex gives `UnmatchedTagElement`.
-   - The matching itself is `Topology::match_entities(&self, dim: usize, keys: &SortKeys) -> Result<DeviceBuffer<u32>>` (gridcl-topology). Keys are sorted local vertex indices of 1–4 words; the word count selects the entity type.
+   - The matching itself is `Topology::match_entities(&self, dim: usize, keys: &SortKeys) -> Result<DeviceBuffer<u32>>` (tetraloma-topology). Keys are sorted local vertex indices of 1–4 words; the word count selects the entity type.
    - The steps:
      - a sort kernel rebuilds entity keys from `EntityBlock::vertices`;
      - the entity keys go before the tag keys, and one stable `radix_sort` sorts both;
@@ -160,10 +160,10 @@ the tag-element degree in item 10 during M4 planning (2026-10-26).
     - **Binary:** always little-endian with an 8-byte `size_t`.
     - **Reader side:** node and element tags ≤ 0 give `Parse`.
 11. **Serendipity.**
-    - `gridcl_refcell::serendipity_upgrade(cell: CellType) -> Result<SerendipityUpgrade, RefCellError>` gives, in f64 on the host, the weights of the missing complete-P2 nodes over the file's 8, 20, 15 or 13 nodes (Gmsh order). The weights come from Gmsh's serendipity map evaluated at the missing nodes. The serendipity bases themselves are crate-private.
+    - `tetraloma_refcell::serendipity_upgrade(cell: CellType) -> Result<SerendipityUpgrade, RefCellError>` gives, in f64 on the host, the weights of the missing complete-P2 nodes over the file's 8, 20, 15 or 13 nodes (Gmsh order). The weights come from Gmsh's serendipity map evaluated at the missing nodes. The serendipity bases themselves are crate-private.
     - An added face-centre node is created once per face, keyed by the face's sorted corner node tags. It reuses the node of a complete-P2 neighbour where there is one, and otherwise takes a fresh tag above the file's largest node tag, in order of first use.
     - The upgraded cells are degree 2 in the cell type's block.
-12. **Logging.** gridcl depends on `log = "0.4"` (a workspace dependency). `gmsh::read` into an f32 mesh calls `log::warn!` once per file. M5's pyramid warning uses the same crate.
+12. **Logging.** tetraloma depends on `log = "0.4"` (a workspace dependency). `gmsh::read` into an f32 mesh calls `log::warn!` once per file. M5's pyramid warning uses the same crate.
 13. **Reader rules.**
     - Cell blocks are in `CellType` order, with cells in file order within a block.
     - One cell type in two degrees in D_TOP gives `DuplicateCellBlock`.
@@ -187,7 +187,7 @@ the tag-element degree in item 10 during M4 planning (2026-10-26).
   - **"Reference cells and conventions", node families:** append "(Until M5, `GmshWriter` rejects GLL geometry with `UnsupportedNodeFamily`; ADR-0022.)"
   - **The paragraph after Listing S1:** append "M4 adds `UnmatchedTagElement { dim: usize, tag: i64 }`, `Io(String)`, `Parse { format: &'static str, offset: u64, message: String }`, `UnsupportedElementType { format: &'static str, type_id: i32 }` and `UnknownTag { name: String, dim: usize }` (ADR-0022)."
   - **"Gmsh MSH 4.1":**
-    - "Own reader and writer" adds: "gridcl-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `gridcl::gmsh` builds and downloads meshes (ADR-0022)."
+    - "Own reader and writer" adds: "tetraloma-io parses and writes files through a host model (`MshFile`, `GmshMesh`); `tetraloma::gmsh` builds and downloads meshes (ADR-0022)."
     - "Mesh content":
       - the matching sub-bullet reads "… corner-node tags are mapped to local vertex indices, and the keys are matched against the mesh's entities of that dimension by a device sort and merge (`Topology::match_entities`) …";
       - it adds the block-order, mixed-degree and empty-file rules of item 13.
@@ -201,17 +201,17 @@ the tag-element degree in item 10 during M4 planning (2026-10-26).
     - The MeshTags bullet reads "(dimension, local entity indices in flat numbering sorted by (index, value), i32 values) on the device … An index repeats only with distinct values. `TagRegistry` holds a physical and an elementary `MeshTags` per dimension, the name table (name, dimension) → value and each group's size; `named` and `group` select one group on the device (ADR-0022)."
     - The codimension bullet adds `Codim::dim(tdim) -> Option<usize>`.
   - **"Workspace layout":**
-    - the gridcl-io row reads "Gmsh reader and writer (file model and host mesh description), VTU/PVTU, VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; hdf5-metno (optional); dev: mshio, serde_json";
-    - the gridcl row's purpose adds "`gmsh::read` and `GmshWriter`", and its dependencies read "all of the above; log".
+    - the tetraloma-io row reads "Gmsh reader and writer (file model and host mesh description), VTU/PVTU, VTKHDF | dims, refcell, device, topology, geometry, parallel, partition; hdf5-metno (optional); dev: mshio, serde_json";
+    - the tetraloma row's purpose adds "`gmsh::read` and `GmshWriter`", and its dependencies read "all of the above; log".
   - **Roadmap M4:**
     - acceptance bullet 1 reads "read → write → read gives identical topology (cell types and degrees, cell and vertex origin ids, names and tags keyed by origin ids), and coordinates equal to 10^−15 relative to the largest absolute coordinate (f64; 10^−5 in f32)";
     - bullet 2 adds "(file: Gmsh's node count; mesh: the nodes of D_TOP elements)".
 - **Public API changes:**
-  - gridcl-device: the five `GridError` variants.
-  - gridcl-refcell: `serendipity_upgrade`, `SerendipityUpgrade`.
-  - gridcl-topology: `Topology::match_entities`.
-  - gridcl-io: the `gmsh` module of item 1.
-  - gridcl:
+  - tetraloma-device: the five `GridError` variants.
+  - tetraloma-refcell: `serendipity_upgrade`, `SerendipityUpgrade`.
+  - tetraloma-topology: `Topology::match_entities`.
+  - tetraloma-io: the `gmsh` module of item 1.
+  - tetraloma:
     - the `gmsh` module (`read`, `GmshOptions`, `GmshWriter`);
     - `MeshTags`, `TagRegistry`, `Codim` and `Mesh::tags`;
     - prelude exports.

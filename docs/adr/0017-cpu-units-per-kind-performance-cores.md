@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-25
 - **Raised in:** M3s T14 (the m6 follow-up; docs/plans/M3s.md question 8)
-- **Design sections affected:** "Vectorization and CPU execution": Listing S2 (`VectorPolicy`, `testing`), the "CPUs" bullet of `LaunchPlan`, "Benchmarks" ("Conditions", "Decision rule", "Record"); "Development rules" (the FFI rule, mirrored in CLAUDE.md); "Workspace layout" (the gridcl-device row of the crate table); roadmap acceptance of M3s (bullets 3 and 4).
+- **Design sections affected:** "Vectorization and CPU execution": Listing S2 (`VectorPolicy`, `testing`), the "CPUs" bullet of `LaunchPlan`, "Benchmarks" ("Conditions", "Decision rule", "Record"); "Development rules" (the FFI rule, mirrored in CLAUDE.md); "Workspace layout" (the tetraloma-device row of the crate table); roadmap acceptance of M3s (bullets 3 and 4).
 
 ## Context
 
@@ -15,7 +15,7 @@
 
 > With static blocks, efficiency cores can finish last; M3s therefore also measures `cube_dim` equal to the performance-core count, and the policy may choose it.
 
-No policy key, API or detection exists for that choice. M3s question 8 kept the performance-core `cube_dim` out of the decision rule's configuration and asked for a separate ADR "for detection and a policy key" if it passes the rule on the M3 Max. ADR-0015 says the same. The CubeCL CPU runtime reports `max_units_per_cube` = 16 on the M3 Max (12 performance and 4 efficiency cores) and no performance-core count. Reading one on macOS (`sysctlbyname("hw.perflevel0.physicalcpu")`) is an FFI call, which the development rules allow only in gridcl-parallel (MPI) and gridcl-device (GPU-aware).
+No policy key, API or detection exists for that choice. M3s question 8 kept the performance-core `cube_dim` out of the decision rule's configuration and asked for a separate ADR "for detection and a policy key" if it passes the rule on the M3 Max. ADR-0015 says the same. The CubeCL CPU runtime reports `max_units_per_cube` = 16 on the M3 Max (12 performance and 4 efficiency cores) and no performance-core count. Reading one on macOS (`sysctlbyname("hw.perflevel0.physicalcpu")`) is an FFI call, which the development rules allow only in tetraloma-parallel (MPI) and tetraloma-device (GPU-aware).
 
 T14 also had to study the M3 review follow-up m6: debug `cargo test --workspace` on the M3 Max took 16:01 against a budget of about 15 min, mostly in `primitives_prop`.
 
@@ -43,14 +43,14 @@ So the design's "the policy may choose it" cannot be carried out: there is nothi
 3. **A per-kind policy entry (proposed).**
    - Each CPU class gets `[<Class>.cpu_units]`, one entry per `KernelKind` and element size, like `cpu_block`, with the values `"all"` or `"performance"`.
    - On CPUs, `LaunchPlan::elementwise` uses the performance-core count p when the entry says `performance` and the device reports p < `max_units_per_cube`; otherwise it uses `max_units_per_cube`, as now.
-   - gridcl-device reads p once per process. On macOS this is `sysctlbyname("hw.perflevel0.physicalcpu")` through a safe wrapper, with the declaration from the `libc` crate; everywhere else, and on any error, there is no count. Grace and the Xeons have one kind of core, so their plans do not change.
+   - tetraloma-device reads p once per process. On macOS this is `sysctlbyname("hw.perflevel0.physicalcpu")` through a safe wrapper, with the declaration from the `libc` crate; everywhere else, and on any error, there is no count. Grace and the Xeons have one kind of core, so their plans do not change.
    - The decision rule's configuration becomes (vector size, tile, block, units). The units are chosen like tile and block, by the 3% rule among the admitted configurations, with ties going to `all` (the current rule). A device without a performance-core count gives the same time for both settings.
    - T15 and T16 are unaffected: `vector_sweep --cube-dim auto` already measures both settings on the M3 Max and only `all` elsewhere.
 4. **A per-class entry.** Like option 3, but one value per CPU class. Simpler, but GeomFactors and Reduce share CpuSimd128 and want opposite settings, so one of them loses.
 
 ## Proposed decision
 
-Option 3. The design already says that the policy may choose the performance-core count. The T14 data shows that the right choice differs by family, as block sizes do, so the entry follows `cpu_block`'s layout and its rule. The FFI call is one read-only `sysctlbyname` on macOS in gridcl-device, the crate that already owns device properties. The m6 budget on the hosted cpu job (4 vCPUs, one kind of core) is not addressed by this ADR. T18 re-measures it; if it is still over budget, `RUST_TEST_THREADS` is lowered in that job, logged without an ADR, as M3's question 20 handled CI steps.
+Option 3. The design already says that the policy may choose the performance-core count. The T14 data shows that the right choice differs by family, as block sizes do, so the entry follows `cpu_block`'s layout and its rule. The FFI call is one read-only `sysctlbyname` on macOS in tetraloma-device, the crate that already owns device properties. The m6 budget on the hosted cpu job (4 vCPUs, one kind of core) is not addressed by this ADR. T18 re-measures it; if it is still over budget, `RUST_TEST_THREADS` is lowered in that job, logged without an ADR, as M3's question 20 handled CI steps.
 
 ## Consequences
 
@@ -60,9 +60,9 @@ Option 3. The design already says that the policy may choose the performance-cor
   - "Benchmarks", "Conditions": the last sentence ends "… and the policy chooses between the two per kind and element size (ADR-0017)."
   - "Decision rule": "Tile width, CPU block size and CPU units follow the same rule; ties in units go to all hardware threads."
   - "Record": "… CPU block sizes and CPU units per kind and element size …".
-  - "Development rules" (and CLAUDE.md): "FFI calls only in gridcl-parallel (MPI) and gridcl-device (GPU-aware; the macOS performance-core count)".
+  - "Development rules" (and CLAUDE.md): "FFI calls only in tetraloma-parallel (MPI) and tetraloma-device (GPU-aware; the macOS performance-core count)".
   - M3s acceptance bullet 3: "(vector size, tile width, block size, CPU units)". Bullet 4: "… and that every numeric value is a power of two from 1 to 16, and every `cpu_units` value is `all` or `performance`".
-- Public API changes: `CpuUnits`, `VectorPolicy::cpu_units`, and `testing::{with_cpu_units, with_performance_cores}`. gridcl-device gains a direct `libc` dependency on macOS (already in the lock file). `LaunchPlan` is unchanged.
+- Public API changes: `CpuUnits`, `VectorPolicy::cpu_units`, and `testing::{with_cpu_units, with_performance_cores}`. tetraloma-device gains a direct `libc` dependency on macOS (already in the lock file). `LaunchPlan` is unchanged.
 - Acceptance tests affected:
   - `policy_covers_every_kind_and_class` (the `cpu_units` entries);
   - `perf_record::policy_follows_the_decision_rule` (both `cube_dim` modes enter, the TOML's units are checked);
@@ -73,6 +73,6 @@ Option 3. The design already says that the policy may choose the performance-cor
 
 ## Decision record
 
-Accepted by the maintainer on 2026-10-25, as proposed (option 3), after a discussion of per-system compromise rules, which the maintainer decided against in favour of ADR-0015's per-kind scheme. Applied to docs/design.md and CLAUDE.md in `adr: 0017 apply`; the gridcl-device row of the crate table (the `libc` dependency) was added to the affected sections when applying. Implemented by M3s T20.
+Accepted by the maintainer on 2026-10-25, as proposed (option 3), after a discussion of per-system compromise rules, which the maintainer decided against in favour of ADR-0015's per-kind scheme. Applied to docs/design.md and CLAUDE.md in `adr: 0017 apply`; the tetraloma-device row of the crate table (the `libc` dependency) was added to the affected sections when applying. Implemented by M3s T20.
 
 Amended by ADR-0034 (the performance-core count on three or more perflevels: every level except the last), accepted 2026-11-02.

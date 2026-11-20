@@ -14,7 +14,7 @@ ADR-0046 added the clamp after the f32 pull-back converged to roots outside the 
 - MFEM's `InverseElementTransformation` starts from the closest point of a reference lattice or the closest physical node, and projects iterates onto the element.
 - deal.II's `MappingQ` starts from the inverse of the cell's affine (or quadratic) approximation and damps the Newton steps.
 - gslib's `findpts` runs a trust-region Newton constrained to the element.
-- DOLFINx starts at the midpoint, as gridcl does now.
+- DOLFINx starts at the midpoint, as tetraloma does now.
 
 The question here is whether a better start belongs in M9h, before T8–T10b add three more pull-back strategies that share the start and `newton_update`.
 
@@ -63,7 +63,7 @@ What the tables show:
 - At p = 8 that is under 2% of one Newton step of the `loops` evaluator.
 - At p = 1 it is about one step, so a 16-iteration pull-back costs about 6% more.
 
-The start needs each cell's vertex coordinates, which are the first nv nodes of the E-vector (gridcl-refcell numbers vertices first), and constant weights per cell type.
+The start needs each cell's vertex coordinates, which are the first nv nodes of the E-vector (tetraloma-refcell numbers vertices first), and constant weights per cell type.
 
 ## Options
 
@@ -93,13 +93,13 @@ Its value at the default 16 iterations is modest: at p = 8, one unconverged poin
   > Iteration starts at the preimage of x under the least-squares affine fit of the cell's vertex coordinates, clamped to the box below (exact on affine cells), with Δ = …
 - **Public API changes:** none. `PullBackOptions` and its default of 16 iterations stay. The `pull_back_block` and `Mesh::pull_back` documentation names the start.
 - **Code:**
-  - `gridcl-geometry/src/pull_back.rs`: the start in `pull_back_kernel` (`direct`) and in `pull_back_setup_kernel` / `pull_back_loops_kernel` (`loops`), with the comptime vertex weights per cell type.
+  - `tetraloma-geometry/src/pull_back.rs`: the start in `pull_back_kernel` (`direct`) and in `pull_back_setup_kernel` / `pull_back_loops_kernel` (`loops`), with the comptime vertex weights per cell type.
   - Later strategies (T8, T9, T10b) start the same way.
 - **ADR-0042, item 11 (as amended by ADR-0046):** `direct` is no longer bitwise M9's for points whose iterates differ from M9's. That is now every point of a non-affine cell, not only those that left the box, though the converged results agree to the tolerance. The paired comparison of rule 11 (policy against `direct`, both with the new start) is unaffected. The drift against T3's baseline stays a report: `direct` costs about one iteration more at p = 1 (about 6% of a 16-iteration pull-back) and nothing measurable at p = 8.
 - **Acceptance tests affected:** none change. The pull-back tests pass with either start. New unit or integration tests:
   - on affine cells (every cell type), one iteration converges from the affine start for points inside the box;
   - the ball at p = 8 converges in fewer iterations than from the centroid (a regression guard on the measurement above, at 8 iterations).
-- **Plan (M9h):** a new task T6c "Pull-back start" after T6b and before T7a, in `gridcl-geometry/src/pull_back.rs`, with the kernel-task check set and a Locust run.
+- **Plan (M9h):** a new task T6c "Pull-back start" after T6b and before T7a, in `tetraloma-geometry/src/pull_back.rs`, with the kernel-task check set and a Locust run.
 - **Later milestones affected:** none known. Point location and interpolation between meshes inherit the start.
 
 ## Decision record

@@ -4,7 +4,7 @@
 - **Date:** 2026-10-31
 - **Raised in:** M7 T3
 - **Design sections affected:** none in docs/design.md; ADR-0029, item 11 ("Slab bound"), and the
-  tests that implement it (`gridcl-mpi-tests::partition_quality`, `gridcl/tests/partition_threads.rs`,
+  tests that implement it (`tetraloma-mpi-tests::partition_quality`, `tetraloma/tests/partition_threads.rs`,
   `rank0::check`).
 
 ## Context

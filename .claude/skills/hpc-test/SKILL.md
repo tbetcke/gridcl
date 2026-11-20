@@ -1,6 +1,6 @@
 ---
 name: hpc-test
-description: Run gridcl tests on the UCL remote targets through scripts/hpc/remote-test.sh — Locust for every CUDA run (kernel tasks, milestone reviews, benchmarks); the A4000 workstation as the first CUDA fallback; Myriad V100/A100 only for multi-GPU tests, architecture comparisons and as the fallback after it; Myriad CPU-only D nodes for AVX-512 CPU benchmarks. Use for every CUDA test run and for 8-rank MPI runs.
+description: Run tetraloma tests on the UCL remote targets through scripts/hpc/remote-test.sh — Locust for every CUDA run (kernel tasks, milestone reviews, benchmarks); the A4000 workstation as the first CUDA fallback; Myriad V100/A100 only for multi-GPU tests, architecture comparisons and as the fallback after it; Myriad CPU-only D nodes for AVX-512 CPU benchmarks. Use for every CUDA test run and for 8-rank MPI runs.
 argument-hint: "[target] [-- command]"
 ---
 
@@ -23,14 +23,14 @@ tests cannot run until E0 is merged, and stop.
     - a Locust failure or result that looks architecture-dependent, to compare (sm_86).
 
   Never for CPU benchmarks or MPI (one GPU, no MPI; `--gpus 2` and `--ranks` are rejected).
-  State the reason in one line when you choose it. All software for gridcl on the workstation
+  State the reason in one line when you choose it. All software for tetraloma on the workstation
   lives under `~/local_disk`, never in its network home.
 - **`myriad-v100`** or **`myriad-a100`** only:
     - as the fallback when `a4000` is unavailable too, or a benchmark cannot get an idle node;
     - multi-GPU tests (`--gpus 2` on V100, `--gpus 4` on A100; Locust has one GPU; the
       GPU-aware transport is deferred, ADR-0059);
     - a Locust failure or result that looks architecture-dependent, to compare (sm_70, sm_80);
-    - a change to CUDA-version- or architecture-specific code (CUDA paths of gridcl-device,
+    - a change to CUDA-version- or architecture-specific code (CUDA paths of tetraloma-device,
       and, once it is built, the GPU-aware transport);
     - the user asked for it.
 
@@ -46,7 +46,7 @@ tests cannot run until E0 is merged, and stop.
 - **`myriad-cpu`** (a CPU-only D node, `-ac allow=D`; 36 cores, Xeon Gold 6240; never a GPU
   node) only as the fallback for CPU-only runs: Kathleen unreachable, a job still queued after
   `--max-wait`, or the user asks. State the reason in one line. The job sets
-  `GRIDCL_TEST_DEVICE=cpu`, and the runner rejects `--gpus` for this target.
+  `TETRALOMA_TEST_DEVICE=cpu`, and the runner rejects `--gpus` for this target.
 
 If the user named a target, use it.
 
@@ -54,13 +54,13 @@ If the user named a target, use it.
 
 - Before M0 is merged: `cargo run --release --manifest-path tools/env-check/Cargo.toml --features cuda`.
 - After M0: the command from the plan's verification line or acceptance-coverage table. The job
-  sets `GRIDCL_TEST_DEVICE=cuda`; add `--features gridcl-testing/cuda` as recorded in docs/plans/M0.md.
-  On `myriad-cpu` (and `kathleen`) the job sets `GRIDCL_TEST_DEVICE=cpu`; add no CUDA feature.
+  sets `TETRALOMA_TEST_DEVICE=cuda`; add `--features tetraloma-testing/cuda` as recorded in docs/plans/M0.md.
+  On `myriad-cpu` (and `kathleen`) the job sets `TETRALOMA_TEST_DEVICE=cpu`; add no CUDA feature.
 - `myriad-cpu`: always `--cores 36`. The CPU runtime's threads follow the job's slots, so a
   smaller request runs the CPU runtime on fewer threads (and shares the node with other jobs).
 - `--gpus 2` for multi-GPU tests on V100 (`--gpus 4` on A100); `--ranks N`
   for MPI runs; `--time 01:00:00` unless the test needs longer.
-- Benchmarks (gridcl-bench, from M3s) on Myriad: `--cores 36` so the node's CPU is not shared,
+- Benchmarks (tetraloma-bench, from M3s) on Myriad: `--cores 36` so the node's CPU is not shared,
   and a longer `--time`; never draw SIMD conclusions from a job with fewer slots (the prologue's
   `slots:` and `cpus:` lines show what the job had). Copy the JSON results from `target/hpc/<target>/<job id>/` to `docs/perf/data/`
   only when the plan's task asks for it.

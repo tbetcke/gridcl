@@ -1,6 +1,6 @@
 ---
 name: review-milestone
-description: Review an implemented gridcl milestone before its pull request - design review, full test evidence, acceptance coverage - and draft the PR description. Run as /review-milestone <milestone>.
+description: Review an implemented tetraloma milestone before its pull request - design review, full test evidence, acceptance coverage - and draft the PR description. Run as /review-milestone <milestone>.
 argument-hint: <milestone>
 arguments: milestone
 disable-model-invocation: true
@@ -26,7 +26,7 @@ If the milestone is empty, ask the user which milestone to review.
   CUDA on Locust (Myriad V100 as the fallback when Locust is unavailable, ADR-0014), every other
   target in the plan's acceptance-coverage table (Myriad for multi-GPU tests where
   docs/design.md requires them for this milestone), MPI if the milestone touches
-  gridcl-parallel or later crates, and conformance if gridcl-refcell or conformance/ changed.
+  tetraloma-parallel or later crates, and conformance if tetraloma-refcell or conformance/ changed.
   This is the standing matrix, run once. Add no sweeps or repeats beyond it (ADR-0057).
 
 ## 3. Check acceptance coverage yourself

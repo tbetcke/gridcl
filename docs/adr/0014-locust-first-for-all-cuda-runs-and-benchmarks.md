@@ -13,7 +13,7 @@ ADR-0006 made Locust the routine CUDA platform but kept Myriad as the milestone 
 
 The same section ends with "At most two remote jobs run at a time". "Vectorization and CPU execution" runs the benchmarks on "the M3 Max […] and a Myriad V100 node (CPU runtime on its AVX-512 Xeon as CpuSimd512, and CUDA)", with Locust and a Myriad A100 node optional.
 
-At M3's finish, release `cargo test --workspace --features gridcl-testing/cuda` went to all three targets.
+At M3's finish, release `cargo test --workspace --features tetraloma-testing/cuda` went to all three targets.
 - On Myriad the V100 job (3502) and the A100 job (3503) were still queued after about 15 minutes. The V100 job had been requeued once (`Rq`). The A100 job waited behind a 2-hour walltime request.
 - A first attempt failed because the two Myriad jobs were submitted at the same moment and raced in the shared remote tree (rsync exit code 23).
 - Locust started its run at once.

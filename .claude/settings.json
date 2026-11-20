@@ -38,7 +38,7 @@
       "Bash(scripts/hpc/status.sh)",
       "Bash(scripts/hpc/status.sh *)",
       "Bash(scripts/hpc/cancel.sh *)",
-      "Bash(cargo run --release -p gridcl-bench *)",
+      "Bash(cargo run --release -p tetraloma-bench *)",
       "Bash(cargo bench *)"
     ],
     "deny": [

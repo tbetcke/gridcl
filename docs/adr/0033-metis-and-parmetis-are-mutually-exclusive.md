@@ -28,7 +28,7 @@ different internals.
    ELF they take precedence over the shared library's own definitions. ParMETIS's METIS calls
    then run METIS 5.2.1 code on 5.1.0 data:
    - Kathleen (job 616046, Open MPI 4.1.6, the script's ParMETIS): `partition_quality`,
-     `partition_seed` and `partition_build` with `GRIDCL_MPI_FEATURES=partitioners,parmetis` die
+     `partition_seed` and `partition_build` with `TETRALOMA_MPI_FEATURES=partitioners,parmetis` die
      with SIGSEGV at 4 and 8 ranks, each when `ParMetis` runs (after Scotch, PT-Scotch and METIS
      succeed). The test executable exports 461 symbols that `libparmetis.so` also defines (job
      616060).
@@ -54,7 +54,7 @@ different internals.
    every system ParMETIS with a shared `libmetis` (Debian, Ubuntu, most distributions, the hosted
    CI job) still crashes when both features are on. A segfault that depends on how the library
    was packaged is not acceptable for a library feature.
-3. **Make `metis` and `parmetis` mutually exclusive.** gridcl-partition fails to compile with
+3. **Make `metis` and `parmetis` mutually exclusive.** tetraloma-partition fails to compile with
    both (`compile_error!` naming this ADR). A program uses METIS on rank 0 or ParMETIS, not both;
    every distribution's ParMETIS works, and so does the vendored METIS. Costs: no binary holds
    both partitioners, and `--all-features` builds fail (nothing in the repository uses them). The
@@ -64,8 +64,8 @@ different internals.
 4. **With `parmetis`, `Metis` calls the METIS that ParMETIS links**, through bindings in
    parmetis-sys. The `metis` crate still arrives with the feature `metis`, and whether a call to
    `METIS_PartGraphKway` binds to the vendored archive or to `libmetis` depends on the linker's
-   order of the libraries, which gridcl does not control. Not robust.
-5. **Vendor METIS in a gridcl crate with hidden symbols** (for example a crate replacing the
+   order of the libraries, which tetraloma does not control. Not robust.
+5. **Vendor METIS in a tetraloma crate with hidden symbols** (for example a crate replacing the
    `metis` crate, compiling METIS with `-fvisibility=hidden` and binding `METIS_PartGraphKway`).
    Every combination of features works on every platform. Costs: a new workspace crate and its
    bindings, a change to the crate table and dependency rules, and maintaining the vendored
@@ -90,14 +90,14 @@ out to be needed.
   - ADR-0029, item 14 is superseded by this ADR (a note under its decision record).
 - Public API changes: none (a compile error for the combination of the two features).
 - Acceptance tests affected: none of the bullets; their tests run in builds without ParMETIS.
-  - gridcl-mpi-tests: `partitioners = ["gridcl/ptscotch", "gridcl/scotch"]`, a new feature
-    `metis = ["gridcl/metis"]`, and `parmetis`; `partition_quality` asserts the METIS ratio when
-    `metis` is on. The acceptance run is `GRIDCL_MPI_FEATURES=partitioners,metis`; the ParMETIS
-    run is `GRIDCL_MPI_FEATURES=partitioners,parmetis` (imbalance, seed, `partition_build`, the
+  - tetraloma-mpi-tests: `partitioners = ["tetraloma/ptscotch", "tetraloma/scotch"]`, a new feature
+    `metis = ["tetraloma/metis"]`, and `parmetis`; `partition_quality` asserts the METIS ratio when
+    `metis` is on. The acceptance run is `TETRALOMA_MPI_FEATURES=partitioners,metis`; the ParMETIS
+    run is `TETRALOMA_MPI_FEATURES=partitioners,parmetis` (imbalance, seed, `partition_build`, the
     empty-rank check, and cut(ParMetis) / cut(Scotch) logged).
   - docs/plans/M7.md: the "all" targets of the acceptance table, T7's and T9's commands and T10's
     feature lists (`metis,scotch,ptscotch` and `scotch,ptscotch,parmetis`, each with
-    `gridcl-testing/mpi`) follow; question 17 closes with this ADR.
+    `tetraloma-testing/mpi`) follow; question 17 closes with this ADR.
 - Later milestones affected: M8 (`GmshOptions::partitioner`, the default choice): none beyond
   the documented exclusion.
 

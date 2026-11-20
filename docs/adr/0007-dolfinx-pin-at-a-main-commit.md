@@ -38,7 +38,7 @@ Option 2. The design asks only for pinned commits, and pinning a main commit is 
 - Text to change in docs/design.md: none. A.10's "pinned commits" covers a main commit. Optionally, A.10 could name the DOLFINx pin in the sources list; not required.
 - Plan: docs/plans/M1b.md question 7 records the DOLFINx pin as main at be8352e, Basix v0.11.0 (SHA in `sources.json`) and Symfem v2025.12.0; a Deviations-log row.
 - Public API changes: none.
-- Acceptance tests affected: `gridcl-refcell::node_maps::gmsh_p3_matches_dolfinx` copies its arrays from DOLFINx at be8352e. `fixtures/sources.json` (T10) records that SHA.
+- Acceptance tests affected: `tetraloma-refcell::node_maps::gmsh_p3_matches_dolfinx` copies its arrays from DOLFINx at be8352e. `fixtures/sources.json` (T10) records that SHA.
 - Later milestones affected: M4 (Gmsh I/O) cites the same pin; a later bump to a DOLFINx release that contains the arrays needs no ADR if the arrays are unchanged.
 
 ## Decision record

@@ -63,7 +63,7 @@ because later milestones rely on them.
    - An unclamped `Fixed(n)`, which fails at launch on narrow devices.
 
    Not chosen: it needs kernel infinity constants, it breaks the host-copy rule, and it makes
-   `GRIDCL_VECTOR_SIZE=16` unusable on Metal and the M3 Max CPU.
+   `TETRALOMA_VECTOR_SIZE=16` unusable on Metal and the M3 Max CPU.
 2. **Record the implemented behaviour** (proposed).
    - (a) The identities of Sum, Min and Max are 0, `T::max_value()` and `T::min_value()`, for
      floats the largest finite values. This holds on the device and in `exscan_bytes`.

@@ -13,7 +13,7 @@ M10's acceptance bullet 1 (as amended by ADR-0059) reads:
 
 > the host-staged halo exchange (`forward` and `reverse`, halos of 10^3, 10^4 and 10^5 nodes with block 3) is recorded on the local Mac (CPU runtime, Metal) and Locust (CUDA, 1 and 2 ranks); for 10^5 nodes, its host-to-device copy takes at most 1.5 times its device-to-host copy and `reverse` at most twice `forward` on each, and results stay bitwise identical to M9h's (ADR-0059);
 
-`gridcl-bench/tests/perf_record.rs::halo_exchange_recorded` (M10 T0) checks both bounds on every platform's records at 10^5 nodes. The host-to-device copy (H2D) is `DeviceBuffer::write_host` of the received values, the device-to-host copy (D2H) is `DeviceBuffer::to_host` of the packed send buffer: 3 · 10^5 values, 2.4 MB in f64 and 1.2 MB in f32.
+`tetraloma-bench/tests/perf_record.rs::halo_exchange_recorded` (M10 T0) checks both bounds on every platform's records at 10^5 nodes. The host-to-device copy (H2D) is `DeviceBuffer::write_host` of the received values, the device-to-host copy (D2H) is `DeviceBuffer::to_host` of the packed send buffer: 3 · 10^5 values, 2.4 MB in f64 and 1.2 MB in f32.
 
 The paragraph after Listing S2c describes `reverse` as "packs and exchanges the ghost values, gathers [owner values by `rev_targets` | received values] by `rev_order`, reduces over `rev_segments` and scatters the result to the targets (ADR-0026)".
 
@@ -31,18 +31,18 @@ On the GPU backends, T5's staged `write_host` meets the bound (on CUDA it took 2
 - `Client::read_one` returns a view of the runtime's storage (0.003 ms for 2.4 MB), so `to_host` costs one copy, the decode into a `Vec`;
 - an upload costs at least two: `write_host` copies the caller's slice into an owned buffer (its signature, Listing S1, takes `&[T]`), and the runtime copies that buffer into its storage.
 
-Even with gridcl's copy removed, which would need a new public `DeviceBuffer` method taking an owned buffer, the ratio stays at about 2.6. No change inside gridcl brings it to 1.5. The bound compares two different kinds of work on this runtime and measures nothing about the exchange.
+Even with tetraloma's copy removed, which would need a new public `DeviceBuffer` method taking an owned buffer, the ratio stays at about 2.6. No change inside tetraloma brings it to 1.5. The bound compares two different kinds of work on this runtime and measures nothing about the exchange.
 
 The other half of the bullet holds everywhere. `reverse` against `forward` at 10^5 nodes, 2 ranks:
 - CPU runtime, f64: 1.5–1.8 (2.2–2.6 ms against 1.5 ms; before T5, 34–51 ms, C24);
 - Metal, f32: 1.3;
 - CUDA, f64: 1.15 (Locust job 20261117121850-1159598, node busy before, so a guide only; T6 records it under the idle rule).
 
-**The design's description of `reverse` is out of date.** T5 replaced the `gather` by `rev_order` with element-wise `unpack`s that place the owner values and the received values directly in the reduce's order. It replaced the final `scatter` by an `unpack` over the (distinct) targets. On the Cpu class, each step waits for the previous one (C24). The reduce sees the same values in the same order, so the results are bitwise unchanged. Every step is still a gridcl-device primitive.
+**The design's description of `reverse` is out of date.** T5 replaced the `gather` by `rev_order` with element-wise `unpack`s that place the owner values and the received values directly in the reduce's order. It replaced the final `scatter` by an `unpack` over the (distinct) targets. On the Cpu class, each step waits for the previous one (C24). The reduce sees the same values in the same order, so the results are bitwise unchanged. Every step is still a tetraloma-device primitive.
 
 ## Options
 
-1. **Keep the design as written.** The bullet then fails on the CPU runtime with any implementation gridcl can make on CubeCL 0.11: even an owned-buffer upload, a public API change, is 2.6 times the read. M10 could not close.
+1. **Keep the design as written.** The bullet then fails on the CPU runtime with any implementation tetraloma can make on CubeCL 0.11: even an owned-buffer upload, a public API change, is 2.6 times the read. M10 could not close.
 2. **Apply the upload bound to the GPU backends; record and report the CPU runtime's ratio (proposed).** The bound stays for Metal and CUDA, where both copies cross a host–device boundary and T5's staged upload meets it. On the CPU runtime, both copies are recorded as planned, and docs/perf/halo-exchange.md gives the ratio at 10^5 nodes with its cause (the read is a view of the runtime's storage). `reverse` ≤ 2 × `forward` stays on every platform.
 3. **Compare the CPU runtime's upload with a host copy instead.** For example, require H2D ≤ 1.5 × (D2H + a `memcpy` of the same bytes). This keeps a number on the CPU runtime, but the reference is arbitrary and is not part of the exchange.
 4. **Drop the upload bound everywhere.** This loses the check that motivated ADR-0059 on the platforms where it matters (on CUDA the upload was 9 times the download before T5).
@@ -58,7 +58,7 @@ Option 2. The bound exists to keep the host-staged exchange's upload as fast as 
   - "Distributed mesh model", the paragraph after Listing S2c: "`reverse` packs and exchanges the ghost values, gathers [owner values by `rev_targets` | received values] by `rev_order`, reduces over `rev_segments` and scatters the result to the targets (ADR-0026)" becomes "`reverse` packs and exchanges the ghost values, uploads only the received values, places the targets' own values and the received values in the reduce's order by `unpack` (each segment the owner's value, then its contributions by neighbour rank and ghost position), reduces over `rev_segments` and unpacks the result to the targets; on the Cpu class each step waits for the previous one (ADR-0026, ADR-0059, ADR-0061)".
 - **Public API changes:** none.
 - **Acceptance tests affected:**
-  - `gridcl-bench/tests/perf_record.rs::halo_exchange_recorded` applies `h2d ≤ 1.5 × d2h` to the `metal` and `cuda` records only. For the `cpu` records, it checks that docs/perf/halo-exchange.md has a CPU-runtime row with the 10^5-node ratio and a cause. The `reverse` ≤ 2 × `forward` check is unchanged.
+  - `tetraloma-bench/tests/perf_record.rs::halo_exchange_recorded` applies `h2d ≤ 1.5 × d2h` to the `metal` and `cuda` records only. For the `cpu` records, it checks that docs/perf/halo-exchange.md has a CPU-runtime row with the 10^5-node ratio and a cause. The `reverse` ≤ 2 × `forward` check is unchanged.
   - The test changes in M10 T6, with a Deviations-log row.
   - No other test changes.
 - **Later milestones affected:**

@@ -11,12 +11,12 @@
     - the "CPUs" bullet after Listing S2;
     - "Where vectors apply" (the paragraph after the table);
     - "Benchmarks" ("Decision rule" and "Record");
-  - "Workspace layout": the crate table (gridcl-topology, gridcl-bench) and "Cargo features";
+  - "Workspace layout": the crate table (tetraloma-topology, tetraloma-bench) and "Cargo features";
   - "Implementation roadmap": M3s (acceptance bullet 3) and M10 (the re-run bullet).
 
 ## Context
 
-M3s measures where SIMD vectors pay off. It writes `gridcl-device/vector-policy.toml` and
+M3s measures where SIMD vectors pay off. It writes `tetraloma-device/vector-policy.toml` and
 `docs/perf/vectorization.md` from benchmark data. "Vectorization and CPU execution / Benchmarks"
 gives the protocol:
 
@@ -38,12 +38,12 @@ Bullet 4 adds that "every value is a power of two from 1 to 16".
 
 Planning read these sections against the code of M2 and M3. The relevant facts:
 
-- **`VectorPolicy`** (gridcl-device/src/policy.rs) holds a vector size per (`KernelKind`, element size) and one `quad_tile` per device class.
+- **`VectorPolicy`** (tetraloma-device/src/policy.rs) holds a vector size per (`KernelKind`, element size) and one `quad_tile` per device class.
 - **`LaunchPlan::elementwise`** (plan.rs) sizes CPU blocks from a private constant, `CPU_BLOCK_BYTES = 16 KiB`. Nothing can change it.
 - **The `testing` module** has `with_properties`, `with_vector_size`, `with_quad_tile` and `record_plans`. `with_vector_size` applies to every plan made inside its scope.
 - **Composite primitives plan several kinds.** `radix_sort` plans SortDigits and calls `exclusive_scan`, which plans ScanTile.
 - **TopologyKeys and PermutationInfo are private.** Key emission runs inside `Topology::create_entities`, and PermutationInfo inside `Topology::new`.
-- **Scalar kernels borrow candidate kinds.** The scalar primitives `histogram`, `segmented_reduce`, `scatter` and `run_length`/`unique_by_key` plan with candidate kinds (Reduce or Gather), and so do scalar helper kernels in gridcl-topology and gridcl-geometry (Fill, Copy, Gather, Reduce). The M3 review flagged this as m8.
+- **Scalar kernels borrow candidate kinds.** The scalar primitives `histogram`, `segmented_reduce`, `scatter` and `run_length`/`unique_by_key` plan with candidate kinds (Reduce or Gather), and so do scalar helper kernels in tetraloma-topology and tetraloma-geometry (Fill, Copy, Gather, Reduce). The M3 review flagged this as m8.
 
 ## Problem
 
@@ -107,12 +107,12 @@ planning (2026-10-24).
 2. **Tiles per element size.**
    - `VectorPolicy::quad_tile(&self, elem_bytes: usize) -> usize`, with `quad_tile = { 4 = 16, 8 = 16 }` per class.
    - Factor kernels and `QuadField` pass `size_of::<F>()`.
-   - `with_quad_tile` and `GRIDCL_QUAD_TILE` override both sizes.
+   - `with_quad_tile` and `TETRALOMA_QUAD_TILE` override both sizes.
 3. **A per-family vector size.**
    - `testing::with_kind_vector_size<R>(kind: KernelKind, v: VectorSizeOverride, f: impl FnOnce() -> R) -> R`.
-   - For `kind` it takes precedence over `with_vector_size`, `GRIDCL_VECTOR_SIZE` and the policy. Other kinds are unaffected.
+   - For `kind` it takes precedence over `with_vector_size`, `TETRALOMA_VECTOR_SIZE` and the policy. Other kinds are unaffected.
    - `Fixed(n)` and `Widest` keep their clamps (ADR-0011).
-4. **Benchmark hooks for the private mesh families.** gridcl-topology gets a Cargo feature `bench`, off by default and enabled only by gridcl-bench. It adds `#[doc(hidden)] pub mod bench` with:
+4. **Benchmark hooks for the private mesh families.** tetraloma-topology gets a Cargo feature `bench`, off by default and enabled only by tetraloma-bench. It adds `#[doc(hidden)] pub mod bench` with:
    - `emit_keys(topology: &Topology, dim: usize) -> Result<BenchOutput>`: key emission of `create_entities(dim)` ("Entity creation", step 1);
    - `permutation_info(topology: &Topology, b: usize) -> Result<BenchOutput>`: the PermutationInfo launch of cell block `b`.
 
@@ -164,18 +164,18 @@ planning (2026-10-24).
   - **"Device primitives":** the "one partition per primitive" bullet reads "… for the `KernelKind` of its vectorized phase, or `KernelKind::Scalar` if none is vectorized, …".
   - **"Where vectors apply":** the last sentence after the table reads "All other kernels are scalar, plan as `KernelKind::Scalar`, and still take their CPU work distribution from `LaunchPlan`."
   - **"Benchmarks", "Decision rule":** append "With several devices in one class, the rule uses the geometric mean of the per-device time ratios; the 3% rule chooses among the configurations the 10% rule admits; a 4-byte entry shared by f32 and u32 must be admitted for both (ADR-0015)."
-  - **"Benchmarks", "Record":** "the choices — vector sizes, QuadField tiles per element size, and CPU block sizes per kind and element size in units of 4 KiB — go to `gridcl-device/vector-policy.toml`".
+  - **"Benchmarks", "Record":** "the choices — vector sizes, QuadField tiles per element size, and CPU block sizes per kind and element size in units of 4 KiB — go to `tetraloma-device/vector-policy.toml`".
   - **"Workspace layout":**
-    - the gridcl-topology row adds "benchmark hooks (feature `bench`)";
-    - the gridcl-bench row's dependencies read "gridcl, gridcl-device, gridcl-topology (feature `bench`), gridcl-testing; cubecl with runtime features; serde_json, toml";
-    - "Cargo features" adds: "**Benchmark-support feature** (on gridcl-topology; not a library feature): `bench` enables the hidden `gridcl_topology::bench` module. gridcl-bench turns it on."
+    - the tetraloma-topology row adds "benchmark hooks (feature `bench`)";
+    - the tetraloma-bench row's dependencies read "tetraloma, tetraloma-device, tetraloma-topology (feature `bench`), tetraloma-testing; cubecl with runtime features; serde_json, toml";
+    - "Cargo features" adds: "**Benchmark-support feature** (on tetraloma-topology; not a library feature): `bench` enables the hidden `tetraloma_topology::bench` module. tetraloma-bench turns it on."
   - **Roadmap M3s, bullet 3:** "… at least 10% faster than size 1 at 10^6 and 10^7 items on its device class (the geometric mean over its measured devices), and every chosen configuration (vector size, tile width, block size) is within 3% of the fastest one the 10% rule admits (ADR-0015)".
   - **Roadmap M10:** "the M3s study covers every candidate `KernelKind`, including Pack and PullBack".
 - **Public API changes:**
-  - gridcl-device: `KernelKind::Scalar`; `VectorPolicy::quad_tile` takes `elem_bytes`; `VectorPolicy::cpu_block_bytes`; `testing::{with_kind_vector_size, with_cpu_block_bytes}`.
-  - gridcl-topology: the hidden `bench` module behind feature `bench`.
+  - tetraloma-device: `KernelKind::Scalar`; `VectorPolicy::quad_tile` takes `elem_bytes`; `VectorPolicy::cpu_block_bytes`; `testing::{with_kind_vector_size, with_cpu_block_bytes}`.
+  - tetraloma-topology: the hidden `bench` module behind feature `bench`.
   - `vector-policy.toml` gains `cpu_block` tables, per-size `quad_tile` entries and `Scalar` rows.
-  - The one breaking change is `quad_tile`'s signature. Its callers are gridcl-geometry (layout.rs) and doc examples in gridcl-device; there are no external users.
+  - The one breaking change is `quad_tile`'s signature. Its callers are tetraloma-geometry (layout.rs) and doc examples in tetraloma-device; there are no external users.
 - **Acceptance tests affected:**
   - M3s bullet 3 is read as in items 5 and 6; `perf_record::policy_follows_the_decision_rule` checks that reading.
   - Bullet 4's test (`policy_covers_every_kind_and_class`) also covers `cpu_block`, the per-size `quad_tile` and `Scalar`.

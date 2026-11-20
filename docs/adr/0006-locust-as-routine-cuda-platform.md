@@ -26,7 +26,7 @@ E0 has now run the same env-check through the runner on both systems:
 
 ## Problem
 
-CUDA runs "after every task that changes kernels" will happen many times per milestone from M0 on. On Myriad each one waits in the queue and builds on 1–8 cores on a network filesystem. env-check is a small crate; the gridcl workspace will be larger. A single kernel change can therefore cost tens of minutes to hours before its result arrives. Claude has to run such jobs in the background and check them before the next dependent task, so the delay holds up every kernel task. On Locust the same check starts at once and its build takes about a minute. Yet the design uses Locust only "when required", and keeps its runs short because ARC calls it experimental.
+CUDA runs "after every task that changes kernels" will happen many times per milestone from M0 on. On Myriad each one waits in the queue and builds on 1–8 cores on a network filesystem. env-check is a small crate; the tetraloma workspace will be larger. A single kernel change can therefore cost tens of minutes to hours before its result arrives. Claude has to run such jobs in the background and check them before the next dependent task, so the delay holds up every kernel task. On Locust the same check starts at once and its build takes about a minute. Yet the design uses Locust only "when required", and keeps its runs short because ARC calls it experimental.
 
 Locust cannot replace Myriad entirely:
 - It has one GPU, so `--gpus 2` and the GPU-aware MPI tests of M10 need Myriad.

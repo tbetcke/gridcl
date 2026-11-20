@@ -27,7 +27,7 @@ node owners from the node-owner candidates, which the parent node owner collects
 
 The child topology lives on the device. Its vertex rows (and the child dofmaps) index the
 child's local vertices (nodes), and the device builds the parent → child map by a compaction
-(`gridcl/src/submesh/topology.rs`, `compact`). For an unshared vertex the device knows that
+(`tetraloma/src/submesh/topology.rs`, `compact`). For an unshared vertex the device knows that
 this rank owns it. For a shared vertex, which rank owns it, and so whether it goes to the owned
 part or to a ghost slot (and which slot), is decided on the host. The device cannot place
 shared vertices without that decision, and item 18 lists no host → device transfer for it.
