@@ -28,6 +28,8 @@
 # high_order::open_ended_ranges_launch (p = 9 and 10; release only, M9h review) is in no shard:
 # like p = 5-8 it runs on Metal, CUDA and the local CPU runtime, not in hosted CI.
 # The options (for example --release --features tetraloma-testing/vulkan) go to every cargo test.
+# With TETRALOMA_SHARD_LIST=1 the shards list their tests instead of running them
+# (libtest's --list; scripts/check-ci-shards.sh checks that they cover the suite).
 set -eu
 set -o pipefail
 
@@ -72,7 +74,15 @@ ho=(
 named=(io_threads gmsh parallel_threads compile submesh_threads submesh orient_threads)
 run() {
     echo "+ cargo test -p tetraloma $*"
-    cargo test -p tetraloma "$@"
+    if [ -z "${TETRALOMA_SHARD_LIST:-}" ]; then
+        cargo test -p tetraloma "$@"
+        return
+    fi
+    # Listing mode (scripts/check-ci-shards.sh): the tests this call would run, one per line.
+    case " $* " in
+    *" -- "*) cargo test -p tetraloma "$@" --list --format terse ;;
+    *) cargo test -p tetraloma "$@" -- --list --format terse ;;
+    esac
 }
 for k in $shards; do
     # This shard's M9h tests (bash 3.2: no empty arrays under set -u).
