@@ -87,7 +87,8 @@ jobs:
   # tetraloma's tests, the larger half of `cargo test --workspace` (with the cpu job's), in the twelve
   # shards of scripts/ci-tetraloma-shard.sh, eleven jobs: in one job they took 52-59 min (M8 review).
   # Shard 1 also runs tetraloma-geometry's integration tests. Shards 11 and 12 (7 min together) share
-  # a job, which also checks that the shards run every test once (scripts/check-ci-shards.sh, E3).
+  # a job, which also checks that every test of tetraloma is in exactly one shard (h5-h8 and an
+  # exclusion included; scripts/check-ci-shards.sh, E3).
   cpu-tetraloma:
     name: cpu-tetraloma-${{ matrix.shard }}
     runs-on: ubuntu-24.04
@@ -115,7 +116,8 @@ jobs:
       - run: scripts/ci-tetraloma-shard.sh ${{ matrix.shard }}
       - if: matrix.shard == 1
         run: cargo test -p tetraloma-geometry --test integration
-      - if: matrix.shard == '11,12'
+      # Also when a shard failed, so a dropped test shows on that push too.
+      - if: ${{ !cancelled() && matrix.shard == '11,12' }}
         run: scripts/check-ci-shards.sh
 
   # Each MPI in two jobs: the MPI tests, and the hdf5 steps (together 25 min in one job, M8
