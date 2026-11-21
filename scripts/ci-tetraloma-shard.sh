@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# usage: scripts/ci-tetraloma-shard.sh <k>[,<k>...] [cargo test option]...   (k: 1-11, h5-h8)
+# usage: scripts/ci-tetraloma-shard.sh <k>[,<k>...] [cargo test option]...   (k: 1-12, h5-h8)
 # Runs shards k of `cargo test -p tetraloma` in hosted CI, where the whole suite took 52-59 min in
-# one job (M8 review). Shards 1-11 together run every test of tetraloma once, doc tests included;
+# one job (M8 review). Shards 1-12 together run every test of tetraloma once, doc tests included;
 # in release builds the M9h tests at p = 5-8 are in shards h5-h8 (one degree each), and are
 # ignored in debug builds. Hosted CI does not run h5-h8: on lavapipe p = 6 took 33 min and
 # p = 7 and 8 over an hour each; Metal and CUDA run p = 5-8 (maintainer, 2026-11-14).
@@ -13,18 +13,20 @@
 # count, are the slowest; shards 1-3 share them out by their times in CI. M9's thread tests
 # took shard 6 from 9 to 37 min, so they have shards of their own. M9h's tests are one test per
 # degree (`<test>::p<p>`, `degree_tests!`); M9h took shards 4 and 6 from 11 to 26-28 min, so
-# shards 2, 3, 6, 9, 10 and 11 share out p = 1-4 by their times (docs/plans/M9h.md, T12):
+# shards 2, 3, 6, 9, 10, 11 and 12 share out p = 1-4 by their times (docs/plans/M9h.md, T12):
 # vector_size_invariance at p = 3 and 4 runs alone: on lavapipe it slowed submesh's tests
-# five- to tenfold, and io_threads' twofold.
+# five- to tenfold, and io_threads' twofold. p = 3 and p = 4 each have a shard of their own
+# (docs/plans/E3.md): in one process on lavapipe they took 15 min on one run and over 30 min on
+# the next, which hit vulkan's 40-min job limit.
 #   1-3. io_threads: the global_mesh_identical tests of $gmi;
 #   4.   the rest of io_threads, gmsh and parallel_threads;
 #   5.   compile (trybuild) and the doc tests;
 #   6.   the library and the other modules;
 #   7.   submesh_threads;
 #   8.   orient_threads;
-#   9, 11. (M9h tests only);
+#   9, 11, 12. (M9h tests only);
 #   10.  submesh;
-#   and in shards 2, 3, 6, 9, 10 and 11 the M9h tests of $ho at p = 1-4; h5-h8 those at p = 5-8.
+#   and in shards 2, 3, 6, 9, 10, 11 and 12 the M9h tests of $ho at p = 1-4; h5-h8 those at p = 5-8.
 # high_order::open_ended_ranges_launch (p = 9 and 10; release only, M9h review) is in no shard:
 # like p = 5-8 it runs on Metal, CUDA and the local CPU runtime, not in hosted CI.
 # The options (for example --release --features tetraloma-testing/vulkan) go to every cargo test.
@@ -42,7 +44,7 @@ shards=${shards//,/ }
 [ -n "$shards" ] || usage
 for k in $shards; do
     case $k in
-    [1-9] | 1[01] | h[5-8]) ;;
+    [1-9] | 1[0-2] | h[5-8]) ;;
     *) usage ;;
     esac
 done
@@ -68,7 +70,8 @@ ho=(
     [6]="$factors::p1 $factors::p2 $factors::p3 $factors::p4 $pull_back::p1 $pull_back::p2"
     [9]="$parallel::p1 $parallel::p2 $parallel::p3 $parallel::p4 $tiles::p3 $tiles::p4"
     [10]="$twice::p3 $twice::p4 $pull_back::p3 $pull_back::p4"
-    [11]="$sizes::p3 $sizes::p4"
+    [11]="$sizes::p3"
+    [12]="$sizes::p4"
 )
 # The modules of shards 4, 5, 7, 8 and 10.
 named=(io_threads gmsh parallel_threads compile submesh_threads submesh orient_threads)
@@ -85,7 +88,8 @@ run() {
     esac
 }
 for k in $shards; do
-    # This shard's M9h tests (bash 3.2: no empty arrays under set -u).
+    # This shard's M9h tests (bash 3.2: no empty arrays under set -u), split into words.
+    # shellcheck disable=SC2206 # the names hold no spaces or glob characters
     mine=(${ho[${k#h}]:-})
     case $k in
     [1-3])
@@ -120,7 +124,7 @@ for k in $shards; do
     8)
         run "$@" --test integration -- orient_threads::
         ;;
-    9 | 11)
+    9 | 11 | 12)
         run "$@" --test integration -- --exact ${mine[@]+"${mine[@]}"}
         ;;
     10)
